@@ -1,0 +1,57 @@
+# AegisForge review ownership -- ADVISORY, NOT BLOCKING.
+#
+# The branch ruleset sets require_code_owner_review = false, so nothing in
+# this file can block a merge. Anyone on the team may open, review and merge
+# any pull request, including their own, once the checks are green. The rule
+# the team enforces is about pushing, not about reviewing: main and dev are
+# never pushed to directly.
+#
+# What this file still does: GitHub automatically requests a review from the
+# listed owner when a PR touches their paths. It is a "you probably want to
+# look at this" signal for the areas where a wrong merge is expensive --
+# governance, security, the wire protocol, the model catalogue, licensing.
+# That is the spirit of PRD 17.3 without a review quota that would stall a
+# six-person five-day sprint.
+#
+# There is deliberately no global `*` owner, so ordinary PRs ping nobody.
+#
+# To turn this into a hard gate later, run:
+#   REQUIRED_APPROVALS=1 ./scripts/setup-branch-protection.sh
+# and set require_code_owner_review to true in that script.
+#
+# ---------------------------------------------------------------------------
+# TODO (Day 1, PRD 21 "Assign component owners" / PRD 22 "Team Ownership"):
+# Replace the placeholder owners below once the team assigns the four PRD 22
+# roles. Current mapping of branch -> GitHub account:
+#
+#   aditya  -> @adityatadge31        prachi  -> @prachi-satbhai0741
+#   sahil   -> @sahilranade45        tanvi   -> @tanvishinde3010
+#   vedant  -> @vedantsur09          yug     -> @Yugu-48
+#
+# PRD 22 roles awaiting an owner:
+#   Member 1  Coordinator and routing        -> src/coordinator/**
+#   Member 2  Worker and inference           -> src/worker/**
+#   Member 3  Product UI and public site     -> src/ui/**, site/**
+#   Member 4  Workflows, security, verification -> src/tools/**, eval/**
+# ---------------------------------------------------------------------------
+
+# Repository governance and the rules in this directory.
+/.github/                     @prachi-satbhai0741 @adityatadge31
+/CONTRIBUTING.md              @prachi-satbhai0741 @adityatadge31
+/.githooks/                   @prachi-satbhai0741 @adityatadge31
+/scripts/setup-branch-protection.sh  @prachi-satbhai0741 @adityatadge31
+
+# Product source of truth. Changing it changes what the team has agreed to.
+/prd.md                       @prachi-satbhai0741 @adityatadge31
+
+# Licensing. PRD 17.1 records an unresolved Apache-2.0 vs proprietary conflict;
+# nobody changes this file without the repository owner.
+/LICENSE                      @prachi-satbhai0741
+/THIRD_PARTY_NOTICES.md       @prachi-satbhai0741
+
+# Security, protocol, and model catalogue. PRD 17.3 requires owner review here.
+/SECURITY.md                  @prachi-satbhai0741 @adityatadge31
+/docs/PROTOCOL.md             @prachi-satbhai0741 @adityatadge31
+/docs/THREAT_MODEL.md         @prachi-satbhai0741 @adityatadge31
+/docs/MODEL_CATALOG.md        @prachi-satbhai0741 @adityatadge31
+/docs/DECISIONS.md            @prachi-satbhai0741 @adityatadge31
