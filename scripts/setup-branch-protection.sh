@@ -115,6 +115,37 @@ fi
 ok "admin permission confirmed"
 
 # ---------------------------------------------------------------------------
+# Preflight: plan. Rulesets and branch protection on PRIVATE repositories
+# require GitHub Pro, Team, or Enterprise. GitHub Free (personal accounts and
+# free organisations alike) gets them on PUBLIC repositories only.
+# ---------------------------------------------------------------------------
+is_private="$(gh api "repos/$REPO" --jq '.private' 2>/dev/null || echo "unknown")"
+if [ "$is_private" = "true" ]; then
+  owner_type="$(gh api "repos/$REPO" --jq '.owner.type' 2>/dev/null || echo "User")"
+  if [ "$owner_type" = "Organization" ]; then
+    plan="$(gh api "orgs/${REPO%%/*}" --jq '.plan.name // "unknown"' 2>/dev/null || echo "unknown")"
+  else
+    plan="$(gh api user --jq '.plan.name // "unknown"' 2>/dev/null || echo "unknown")"
+  fi
+
+  case "$plan" in
+    free)
+      warn "This is a PRIVATE repository on a GitHub Free plan."
+      warn "Rulesets and branch protection on private repositories require"
+      warn "Pro, Team, or Enterprise. The calls below will almost certainly"
+      warn "fail with 403. See the options printed at the end."
+      ;;
+    unknown)
+      warn "Private repository; could not read the plan. If the calls below"
+      warn "fail with 403, the plan is the reason -- see the end of the output."
+      ;;
+    *)
+      ok "private repository on plan '$plan' (rulesets supported)"
+      ;;
+  esac
+fi
+
+# ---------------------------------------------------------------------------
 # Preflight: the required check must actually exist on the target branches
 # ---------------------------------------------------------------------------
 for br in main dev; do
@@ -264,10 +295,21 @@ Tell everyone to run once, in their clone:
 That installs a local pre-push hook so a stray `git push origin main`
 fails on their machine instead of being rejected by the server.
 
-If a ruleset call failed with 403 on a private repository, the account
-plan may not include the feature. Two fixes, both free:
-  - make the repository public, or
-  - transfer it to a GitHub Organisation (free orgs get full rulesets
-    and branch protection on private repositories)
+If a ruleset call failed with 403, this PRIVATE repository's plan very
+likely does not include rulesets. GitHub restricts rulesets and branch
+protection on PRIVATE repositories to GitHub Pro, Team, and Enterprise.
+GitHub Free -- personal accounts AND free organisations -- gets them on
+PUBLIC repositories only. Transferring to a free organisation does NOT
+help.
+
+Real options:
+  - make the repository public (free, works immediately). Settle the
+    prd.md 17.1 licence question first -- the repo carries Apache-2.0.
+  - the owner upgrades their personal account to GitHub Pro.
+  - transfer to an organisation on GitHub Team (per-user cost).
+
+Until one of those is true, main and dev are NOT protected. The pre-push
+hook and the no-direct-push workflow are the only guards, and neither can
+stop a determined or accidental push -- a fresh clone has no hook.
 ----------------------------------------------------------------------
 DONE
