@@ -1,0 +1,64 @@
+name: No Direct Push
+
+# Detects a commit that landed on `main` or `dev` without going through a pull
+# request.
+#
+# This is a BACKSTOP, not a lock. A workflow runs after the push has already
+# been accepted, so it can only raise a loud, permanent failure on the commit.
+# Actual prevention comes from the ruleset applied by
+# scripts/setup-branch-protection.sh, which requires repository admin.
+#
+# If this job ever fails, protection is missing or was bypassed. Fix the
+# ruleset before continuing.
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  no-direct-push:
+    name: no-direct-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify commit arrived via a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          count="$(gh api "repos/$REPO/commits/$SHA/pulls" \
+            -H "Accept: application/vnd.github+json" \
+            --jq 'length')"
+
+          if [ "$count" -gt 0 ]; then
+            echo "OK: $SHA on '$BRANCH' is associated with a merged pull request."
+            exit 0
+          fi
+
+          echo "::error title=Direct push detected::$ACTOR pushed $SHA directly to '$BRANCH'"
+          echo ""
+          echo "----------------------------------------------------------"
+          echo " DIRECT PUSH TO PROTECTED BRANCH"
+          echo "----------------------------------------------------------"
+          echo "  branch : $BRANCH"
+          echo "  commit : $SHA"
+          echo "  actor  : $ACTOR"
+          echo ""
+          echo "No pull request is associated with this commit."
+          echo ""
+          echo "'main' and 'dev' are pull-request only. Every change goes:"
+          echo "  <member branch>  ->  dev  ->  main"
+          echo ""
+          echo "If this fired, the branch ruleset is missing or was bypassed."
+          echo "A repository admin must run: scripts/setup-branch-protection.sh"
+          exit 1
