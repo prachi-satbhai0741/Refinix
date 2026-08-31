@@ -10,8 +10,8 @@
 # listed owner when a PR touches their paths. It is a "you probably want to
 # look at this" signal for the areas where a wrong merge is expensive --
 # governance, security, the wire protocol, the model catalogue, licensing.
-# That is the spirit of PRD 17.3 without a review quota that would stall a
-# six-person five-day sprint.
+# PRD 17.3 now matches this: reviews and CODEOWNERS are advisory, and the
+# enforced rule is that nothing is pushed directly to main or dev.
 #
 # There is deliberately no global `*` owner, so ordinary PRs ping nobody.
 #
@@ -49,7 +49,8 @@
 /LICENSE                      @prachi-satbhai0741
 /THIRD_PARTY_NOTICES.md       @prachi-satbhai0741
 
-# Security, protocol, and model catalogue. PRD 17.3 requires owner review here.
+# Security, protocol, and model catalogue. Highest-consequence paths, so an
+# owner is auto-requested here. Advisory: it does not block the merge.
 /SECURITY.md                  @prachi-satbhai0741 @adityatadge31
 /docs/PROTOCOL.md             @prachi-satbhai0741 @adityatadge31
 /docs/THREAT_MODEL.md         @prachi-satbhai0741 @adityatadge31

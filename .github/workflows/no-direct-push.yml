@@ -36,14 +36,27 @@ jobs:
         run: |
           set -euo pipefail
 
+          # A commit may be associated with several pull requests, and the API
+          # also returns OPEN ones for commits outside the default branch. So
+          # counting associations is not enough: a commit whose only PR targets
+          # a DIFFERENT branch, or is still open, would pass while having been
+          # pushed here directly.
+          #
+          # Require a PR that was actually MERGED INTO THIS BRANCH.
           count="$(gh api "repos/$REPO/commits/$SHA/pulls" \
             -H "Accept: application/vnd.github+json" \
-            --jq 'length')"
+            --jq "[.[] | select(.base.ref == \"$BRANCH\" and .merged_at != null)] | length")"
 
           if [ "$count" -gt 0 ]; then
-            echo "OK: $SHA on '$BRANCH' is associated with a merged pull request."
+            echo "OK: $SHA reached '$BRANCH' through a pull request merged into '$BRANCH'."
             exit 0
           fi
+
+          # Show what WAS associated, so a failure is diagnosable.
+          echo "Pull requests associated with $SHA (none merged into '$BRANCH'):"
+          gh api "repos/$REPO/commits/$SHA/pulls" \
+            --jq '.[] | "  #\(.number) base=\(.base.ref) state=\(.state) merged_at=\(.merged_at)"' \
+            || echo "  (none)"
 
           echo "::error title=Direct push detected::$ACTOR pushed $SHA directly to '$BRANCH'"
           echo ""
@@ -54,7 +67,7 @@ jobs:
           echo "  commit : $SHA"
           echo "  actor  : $ACTOR"
           echo ""
-          echo "No pull request is associated with this commit."
+          echo "No pull request merged into '$BRANCH' introduced this commit."
           echo ""
           echo "'main' and 'dev' are pull-request only. Every change goes:"
           echo "  <member branch>  ->  dev  ->  main"

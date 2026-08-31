@@ -979,13 +979,39 @@ The repository should eventually contain:
 
 ### 17.3 Collaboration rules
 
-- Protect the primary branch.
-- Use pull requests for reviewed changes.
-- Require at least one owner review for security, protocol, and model-catalogue changes.
+Branch and merge rules. These are implemented in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and enforced by
+`scripts/setup-branch-protection.sh`:
+
+- Protect `main` and `dev`. Direct pushes to either branch are prohibited for
+  every contributor, repository admins included.
+- Every change reaches `main` and `dev` through a pull request. Work flows one
+  way: member branch to `dev`, then `dev` to `main`.
+- A pull request merges when its required checks pass. Approving reviews are
+  **not** required, and any contributor may merge a pull request, including
+  their own.
+- Reviews and `.github/CODEOWNERS` ownership are advisory. CODEOWNERS
+  auto-requests a reviewer on security, protocol, model-catalogue, licensing,
+  and governance paths, but never blocks a merge.
+- The gate is the pull request and its checks, not an approval quota. Add
+  build, test, and validation jobs to the required-check list as they land so
+  the gate grows with the codebase.
+
+Evidence and honesty rules:
+
 - Keep decisions evidence-backed and dated.
 - Label features as planned, prototyped, verified, or deferred.
 - Do not commit generated AI output without human review.
 - Do not claim benchmarks that are not reproducible from repository instructions.
+
+> **Changed 2026-08-31.** This section previously required at least one owner
+> review for security, protocol, and model-catalogue changes. The team replaced
+> that with the rules above: the enforced constraint is that nothing is pushed
+> directly to `main` or `dev`, while merging stays open to anyone once checks
+> pass, so a six-person sprint never blocks on one reviewer. Revisit before any
+> external release — a review quota is cheap to reinstate with
+> `REQUIRED_APPROVALS=1 ./scripts/setup-branch-protection.sh` plus
+> `require_code_owner_review`.
 
 ---
 
