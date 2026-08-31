@@ -974,7 +974,6 @@ The repository should eventually contain:
 - `docs/RESEARCH.md` — benchmark results and rejected hypotheses
 - `docs/DECISIONS.md` — dated architecture decisions
 - `docs/DEMO.md` — reproducible demonstration procedure
-- `.github/CODEOWNERS` — review ownership
 - `.github/pull_request_template.md` — evidence-based review checklist
 
 ### 17.3 Collaboration rules
@@ -995,9 +994,9 @@ Branch and merge rules. These are implemented in
   release merges when its required checks pass.
 - Approving reviews are **not** required, and any contributor may merge a pull
   request, including their own.
-- Reviews and `.github/CODEOWNERS` ownership are advisory. CODEOWNERS
-  auto-requests a reviewer on security, protocol, model-catalogue, licensing,
-  and governance paths, but never blocks a merge.
+- Reviews are advisory and requested by hand. The repository carries no
+  `CODEOWNERS` file: automatic review requests are notification noise when no
+  review is required.
 - The release gate is the pull request and its checks, not an approval quota.
   Add build, test, and validation jobs to the `main` required-check list as
   they land; do not run them for member pull requests into `dev`.

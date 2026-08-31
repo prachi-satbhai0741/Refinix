@@ -121,3 +121,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260901-001](#up-20260901-001)
 - supersedes: none
 - linked_changes: [AC-20260901-003](agentchangelog.md#ac-20260901-003)
+
+<a id="up-20260901-004"></a>
+## UP-20260901-004 — Consolidate shared repository rules and drop CODEOWNERS
+- date: 2026-09-01
+- status: done
+- scope: docs, decision
+- tags: agents-md, git-safety, rules, codeowners, review-requests, consolidation
+- aliases: shared rules in agents.md, no new rules file, single agent instruction file, remove codeowners, stop review requests, git allowlist
+- paths: AGENTS.md, .github/CODEOWNERS, CONTRIBUTING.md, docs/prd.md, scripts/setup-branch-protection.sh, agent-memory/README.md
+- summary: Keep shared AegisForge obligations in the tracked `AGENTS.md` and remove `CODEOWNERS` so opening a pull request stops requesting reviews.
+- constraints: One tracked instruction file, no separate `docs/RULES.md`; include repository dos and don'ts only; exclude personal slash commands, modes, skills, plugins, tool preferences, and reviewer-assignment machinery; tool-local `CLAUDE.md` and `CODEX.md` stay ignored.
+- acceptance: `AGENTS.md` carries repository Git boundaries, agent-memory rules, implementation safety, and AegisForge invariants without personal commands or operating modes; no `CODEOWNERS` file exists and no live reference to one remains.
+- follow_up_to: [UP-20260901-003](#up-20260901-003)
+- supersedes: none
+- linked_changes: [AC-20260901-004](agentchangelog.md#ac-20260901-004)

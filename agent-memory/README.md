@@ -66,8 +66,8 @@ Verified 2026-08-31 on branch `aditya`. **Re-check before relying on any line.**
 - GitHub Actions run **only** for pull requests targeting `main`.
   `pr-flow-guard` is the sole workflow; nothing runs on any push, and nothing
   triggers for `dev`.
-- Merging is open: no approval quota, `.github/CODEOWNERS` is advisory,
-  self-merge is allowed once required checks pass.
+- Merging is open: no approval quota, no `CODEOWNERS` file and so no automatic
+  review requests, self-merge allowed once required checks pass.
 - **No server-side protection is active.** Zero rulesets; both branch
   protection endpoints return 404. With no push-audit workflow, nothing
   prevents a direct push to `main` or `dev` and nothing alerts on one. The
@@ -83,10 +83,8 @@ Verified 2026-08-31 on branch `aditya`. **Re-check before relying on any line.**
 - **Licence conflict** — `docs/prd.md` 17.1: the repository carries Apache-2.0
   while the product is described as proprietary. Blocks the public-repository
   option above.
-- **`.DS_Store` is tracked.** `.gitignore` cannot untrack it; a human must run
-  `git rm --cached .DS_Store` and commit.
-- **Component owners unassigned** — `.github/CODEOWNERS` holds placeholders
-  pending the `docs/prd.md` 22 role decision.
+- **Component owners unassigned** — the `docs/prd.md` 22 role decision is still
+  open; no file records ownership.
 - **PRD is a draft.** `docs/prd.md` is not a v1 baseline; see
   [`docs/README.md`](../docs/README.md) for the documents deferred until it is.
 

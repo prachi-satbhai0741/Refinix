@@ -116,3 +116,18 @@ work. No repository file change means no changelog entry.
 - changes: Ignored uppercase and lowercase Claude/Codex filenames and documented the shared-versus-local boundary.
 - verification: `git check-ignore -v` matched all four spellings; normal `git status --short` omitted the local `CLAUDE.md` and `CODEX.md` files; `git diff --check` passed.
 - remaining: none
+
+<a id="ac-20260901-004"></a>
+## AC-20260901-004 — Consolidate shared repository rules and remove CODEOWNERS
+- date: 2026-09-01
+- agent: Claude
+- status: implemented
+- prompt_id: [UP-20260901-004](userprompts.md#up-20260901-004)
+- related_prompts: [UP-20260901-003](userprompts.md#up-20260901-003)
+- tags: agents-md, git-safety, rules, codeowners, review-requests, consolidation
+- aliases: shared rules in agents.md, single agent instruction file, remove codeowners, stop review requests, git allowlist
+- paths: AGENTS.md, .github/CODEOWNERS, CONTRIBUTING.md, docs/prd.md, scripts/setup-branch-protection.sh, agent-memory/README.md
+- summary: Kept `AGENTS.md` as the single tracked repository guide and deleted `.github/CODEOWNERS` so opening a pull request no longer requests reviews.
+- changes: Added repository Git boundaries, agent-memory rules, and AegisForge invariants while excluding personal slash commands, PATCH/BUILD modes, skills, plugins, tool preferences, and reviewer-assignment machinery; compressed duplicated ledger guidance; deleted `.github/CODEOWNERS` with plain `rm` and updated its live references; corrected the stale `.DS_Store` snapshot.
+- verification: `git diff --check` clean; `AGENTS.md` contains no personal slash commands, PATCH/BUILD modes, skills, plugins, Ponytail, Graphify, or subagent preferences; Git boundaries, agent-memory rules, and AegisForge invariants remain; shell, workflow, ruleset, link, and ignore checks from this uncommitted batch still pass.
+- remaining: none
