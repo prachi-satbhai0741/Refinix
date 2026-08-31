@@ -4,9 +4,11 @@
 >
 > This document describes the workflow the repository is **moving to**. Right
 > now `main` and `dev` have **no ruleset and no branch protection** — anyone
-> with write access can still push to them directly. The only live guards are
-> the local `pre-push` hook (skippable, and absent in a fresh clone) and the
-> `no-direct-push` workflow (which reports *after* the fact).
+> with write access can still push to them directly. The local `pre-push` hook
+> guards both branches but is skippable and absent in a fresh clone, and it is
+> now the **only** guard. A direct push is still perfectly visible — the commit
+> lands in branch history and the repository activity feed like any other — but
+> nothing prevents it and nothing announces it. Someone has to look.
 >
 > Protection goes live when a repository admin runs
 > `./scripts/setup-branch-protection.sh` **and it succeeds**. That may require
@@ -17,7 +19,7 @@
 > is enforcing it yet. Delete this banner once protection is confirmed active.
 
 This document is the branch, review, and ownership workflow required by
-[`prd.md`](prd.md) section 17.3.
+[`docs/prd.md`](docs/prd.md) section 17.3.
 
 ## The one rule
 
@@ -29,11 +31,10 @@ This document is the branch, review, and ownership workflow required by
 in an emergency, not "just this once". Both branches accept commits only
 through a pull request.
 
-That is the *only* hard rule. Everything else is open: anyone may open a PR,
-anyone may review one, anyone may merge one — including their own — as soon
-as the checks are green. No approval quota, no owner sign-off, no waiting on
-a specific person. The gate is the pull request and its checks, not
-permission from a human.
+That is the *only* hard rule. Everything else is open: anyone may open, review,
+or merge a PR, including their own. Member → `dev` PRs run no automated CI.
+Automated checks run only on the `dev` → `main` release PR, which merges when
+those checks are green. No approval quota or owner sign-off is required.
 
 ## One-time setup
 
@@ -60,8 +61,8 @@ git push --dry-run origin HEAD:main
 
 | Branch | Owner | Purpose |
 |---|---|---|
-| `main` | PR-only *(protection pending)* | Release. Only ever receives a PR from `dev`. |
-| `dev` | PR-only *(protection pending)* | Integration. Receives PRs from member branches. |
+| `main` | PR-only *(protection pending)* | Release. Only receives a checked PR from `dev`. |
+| `dev` | PR-only *(protection pending)* | Integration. Receives member PRs without automated CI. |
 | `aditya` | @adityatadge31 | Personal work branch |
 | `prachi` | @prachi-satbhai0741 | Personal work branch |
 | `sahil` | @sahilranade45 | Personal work branch |
@@ -97,10 +98,13 @@ gh pr create --base dev --fill
 Fill in the PR template properly. The evidence and safety sections are not
 decoration — see "Review" below.
 
+Member → `dev` PRs do not start automated CI. The team may review and merge
+them directly; the accumulated `dev` branch is checked at release time.
+
 ## Releasing to `main`
 
-Only `dev` opens a PR into `main`. Any other source branch fails the
-`pr-flow-guard` check and cannot be merged.
+Only `dev` opens a PR into `main`. This is the only PR type that starts
+automated CI. Any other source branch fails `pr-flow-guard`.
 
 ```bash
 gh pr create --base main --head dev --title "Release: <what is in it>"
@@ -112,8 +116,9 @@ may be squashed.
 
 ## Merging
 
-A PR merges when its **checks are green**. That is the whole gate — no
-approving review is required, and you may merge your own PR.
+Member → `dev` PRs have no automated CI gate. The `dev` → `main` release PR
+merges when its checks are green. No approving review is required, and you may
+merge your own PR at either stage.
 
 [`.github/CODEOWNERS`](.github/CODEOWNERS) will auto-request a review on
 security, protocol, model-catalogue, licensing and governance paths. That is
@@ -150,23 +155,32 @@ Use synthetic or explicitly approved non-sensitive test fixtures.
 
 ## Enforcement
 
-Three layers, weakest to strongest:
+Two layers, weakest to strongest:
 
 | Layer | What it does | Can it be bypassed? |
 |---|---|---|
 | [`.githooks/pre-push`](.githooks/pre-push) | Blocks direct pushes to `main`/`dev` locally | Yes — `--no-verify`, or a clone that never ran the installer |
-| [`no-direct-push.yml`](.github/workflows/no-direct-push.yml) | Fails loudly if a commit lands without a PR | It reports after the fact; it cannot prevent |
 | Branch ruleset | Server-side rejection — **not applied yet** | Once applied, no: `bypass_actors` is empty, so admins are included |
 
-The ruleset requires a PR and passing checks. It does **not** require
-approvals — `required_approving_review_count` is `0` by design.
+There is deliberately **no** GitHub Actions audit of pushes. Automated checks
+run only on pull requests targeting `main`, so Actions minutes are spent on the
+release gate and nothing else. The trade-off is worth stating plainly: until
+the ruleset is applied, nothing prevents a direct push to `main` or `dev` and
+nothing alerts you to one. The commit is not hidden — it appears in `git log`,
+in the branch's commit list, and in the repository activity feed — but finding
+it depends on somebody checking. Install the hook, and treat the rule as a team
+commitment.
+
+Both rulesets require a PR. Only the `main` ruleset requires passing status
+checks; the `dev` ruleset has none. Neither requires approvals —
+`required_approving_review_count` is `0` by design.
 
 **It is not applied yet.** Rulesets and branch protection on a *private*
 repository require GitHub Pro, Team, or Enterprise; GitHub Free gets them on
 public repositories only, and moving to a free organisation does not change
 that. So one of these has to happen first:
 
-- make the repository public — free and immediate, but settle the `prd.md`
+- make the repository public — free and immediate, but settle the `docs/prd.md`
   17.1 licence question first, since the repo carries Apache-2.0
 - the owner upgrades to GitHub Pro
 - transfer to an organisation on GitHub Team
@@ -176,29 +190,28 @@ tells you which case you are in.
 
 The ruleset is applied by
 [`scripts/setup-branch-protection.sh`](scripts/setup-branch-protection.sh) and
-requires **repository admin**. If `no-direct-push` ever fails, protection is
-missing — tell @prachi-satbhai0741.
+requires **repository admin**. Until it succeeds, direct pushes to both `main`
+and `dev` rely entirely on the local hook and team discipline.
 
 ### Adding a build or test gate
 
-Right now the only required check is `pr-flow-guard`. As real build, test and
-lint jobs land, add their **job names** to the required list so `dev` cannot
-go to `main` until they pass:
+Right now the only main-release check is `pr-flow-guard`. As build, test, and
+lint jobs land, configure them to run for PRs targeting `main`, then add their
+**job names** to the main release list:
 
 ```bash
-REQUIRED_CHECKS="pr-flow-guard build test lint" ./scripts/setup-branch-protection.sh
+MAIN_REQUIRED_CHECKS="pr-flow-guard build test lint" ./scripts/setup-branch-protection.sh
 ```
 
 The name must match the workflow's `jobs.<id>.name` and that job must run on
-`pull_request` for the branch, or the PR waits forever on a check that never
-reports.
+`pull_request` for `main`, or the release PR waits forever on a check that
+never reports.
 
 ### Why pr-flow-guard exists
 
-The `pr-flow-guard` check enforces the *direction* of the flow. GitHub
-rulesets can require a pull request but cannot restrict which branch it comes
-from, so [`pr-flow-guard.yml`](.github/workflows/pr-flow-guard.yml) does that
-part and is registered as a required check on both `main` and `dev`.
+The `pr-flow-guard` release check enforces that a PR into `main` comes only
+from `dev`. It runs and is required on `main` only. Member → `dev` naming and
+ownership remain a team convention rather than an automated check.
 
 ## Emergency changes
 
@@ -214,10 +227,9 @@ Do not add a permanent bypass actor.
 
 ## Adding or removing a team member
 
-Three files must change together:
+Two files must change together:
 
-1. `MEMBERS` in [`.github/workflows/pr-flow-guard.yml`](.github/workflows/pr-flow-guard.yml)
-2. The branch table above
-3. [`.github/CODEOWNERS`](.github/CODEOWNERS) if they own reviewed paths
+1. The branch table above
+2. [`.github/CODEOWNERS`](.github/CODEOWNERS) if they own reviewed paths
 
 The change lands like any other: PR into `dev`, then `dev` into `main`.
