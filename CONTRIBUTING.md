@@ -1,5 +1,21 @@
 # Contributing to AegisForge
 
+> ### ⚠️ Server-side protection is NOT active yet
+>
+> This document describes the workflow the repository is **moving to**. Right
+> now `main` and `dev` have **no ruleset and no branch protection** — anyone
+> with write access can still push to them directly. The only live guards are
+> the local `pre-push` hook (skippable, and absent in a fresh clone) and the
+> `no-direct-push` workflow (which reports *after* the fact).
+>
+> Protection goes live when a repository admin runs
+> `./scripts/setup-branch-protection.sh` **and it succeeds**. That may require
+> a plan change first — rulesets on a private repository need GitHub Pro, Team,
+> or Enterprise. See [Enforcement](#enforcement).
+>
+> **Follow the workflow anyway.** It is the team's rule whether or not GitHub
+> is enforcing it yet. Delete this banner once protection is confirmed active.
+
 This document is the branch, review, and ownership workflow required by
 [`prd.md`](prd.md) section 17.3.
 
@@ -30,8 +46,9 @@ cd AegisForge
 ```
 
 That installs a `pre-push` hook that stops a stray `git push origin main`
-on your own machine, with a message telling you what to do instead. The
-server rejects it anyway; the hook just saves you the round trip.
+on your own machine, with a message telling you what to do instead. Until
+server-side protection is active this hook is the *only* thing standing
+between a tired developer and `main`, so please install it.
 
 Check it worked — this command **should fail**:
 
@@ -43,8 +60,8 @@ git push --dry-run origin HEAD:main
 
 | Branch | Owner | Purpose |
 |---|---|---|
-| `main` | protected | Release. Only ever receives a PR from `dev`. |
-| `dev` | protected | Integration. Receives PRs from member branches. |
+| `main` | PR-only *(protection pending)* | Release. Only ever receives a PR from `dev`. |
+| `dev` | PR-only *(protection pending)* | Integration. Receives PRs from member branches. |
 | `aditya` | @adityatadge31 | Personal work branch |
 | `prachi` | @prachi-satbhai0741 | Personal work branch |
 | `sahil` | @sahilranade45 | Personal work branch |
@@ -139,10 +156,23 @@ Three layers, weakest to strongest:
 |---|---|---|
 | [`.githooks/pre-push`](.githooks/pre-push) | Blocks direct pushes to `main`/`dev` locally | Yes — `--no-verify`, or a clone that never ran the installer |
 | [`no-direct-push.yml`](.github/workflows/no-direct-push.yml) | Fails loudly if a commit lands without a PR | It reports after the fact; it cannot prevent |
-| Branch ruleset | Server-side rejection | No. `bypass_actors` is empty, so admins are included |
+| Branch ruleset | Server-side rejection — **not applied yet** | Once applied, no: `bypass_actors` is empty, so admins are included |
 
 The ruleset requires a PR and passing checks. It does **not** require
 approvals — `required_approving_review_count` is `0` by design.
+
+**It is not applied yet.** Rulesets and branch protection on a *private*
+repository require GitHub Pro, Team, or Enterprise; GitHub Free gets them on
+public repositories only, and moving to a free organisation does not change
+that. So one of these has to happen first:
+
+- make the repository public — free and immediate, but settle the `prd.md`
+  17.1 licence question first, since the repo carries Apache-2.0
+- the owner upgrades to GitHub Pro
+- transfer to an organisation on GitHub Team
+
+Run `./scripts/setup-branch-protection.sh`; its preflight reports the plan and
+tells you which case you are in.
 
 The ruleset is applied by
 [`scripts/setup-branch-protection.sh`](scripts/setup-branch-protection.sh) and
