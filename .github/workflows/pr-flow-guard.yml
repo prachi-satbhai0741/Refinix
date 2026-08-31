@@ -1,0 +1,86 @@
+name: PR Flow Guard
+
+# Enforces the AegisForge branch flow:
+#   member branch  ->  dev  ->  main
+# Nothing else may open a pull request into `dev` or `main`.
+#
+# This workflow is the ONLY mechanism that can enforce the *source* of a pull
+# request. GitHub rulesets and branch protection can require a PR, reviews and
+# passing checks, but they cannot restrict which branch a PR comes from.
+# Register the `pr-flow-guard` job below as a REQUIRED status check on both
+# `main` and `dev` (scripts/setup-branch-protection.sh does this).
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+    branches:
+      - main
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  pr-flow-guard:
+    name: pr-flow-guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce branch flow
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          # Member branches. Keep this list in sync with .github/CODEOWNERS
+          # and CONTRIBUTING.md when the team changes.
+          MEMBERS="aditya prachi sahil tanvi vedant yug"
+
+          fail() {
+            echo "::error title=Branch flow violation::$1"
+            echo ""
+            echo "----------------------------------------------------------"
+            echo " BLOCKED: $HEAD_REF  ->  $BASE_REF"
+            echo "----------------------------------------------------------"
+            echo "$1"
+            echo ""
+            echo "Allowed flow:"
+            echo "  <member> or <member>/<topic>   ->  dev"
+            echo "  dev                            ->  main"
+            echo ""
+            echo "Members: $MEMBERS"
+            echo "See CONTRIBUTING.md for the full workflow."
+            exit 1
+          }
+
+          case "$BASE_REF" in
+            main)
+              if [ "$HEAD_REF" != "dev" ]; then
+                fail "Pull requests into 'main' may only come from 'dev'. Merge '$HEAD_REF' into 'dev' first, then open a dev -> main pull request."
+              fi
+              echo "OK: dev -> main is the release path."
+              ;;
+
+            dev)
+              if [ "$HEAD_REF" = "main" ]; then
+                fail "'main' never merges back into 'dev'. Work flows one way: member -> dev -> main."
+              fi
+
+              # Accept an exact member branch (e.g. "aditya") or a topic branch
+              # owned by that member (e.g. "aditya/coordinator-api").
+              owner="${HEAD_REF%%/*}"
+              matched=0
+              for m in $MEMBERS; do
+                if [ "$owner" = "$m" ]; then matched=1; break; fi
+              done
+
+              if [ "$matched" -ne 1 ]; then
+                fail "'$HEAD_REF' is not a recognised member branch. Push to your own branch (one of: $MEMBERS) or a topic branch under it such as '$(echo "$MEMBERS" | cut -d' ' -f1)/my-feature'."
+              fi
+              echo "OK: $HEAD_REF -> dev (owner: $owner)."
+              ;;
+
+            *)
+              echo "OK: '$BASE_REF' is not a protected branch; no flow restriction applies."
+              ;;
+          esac
