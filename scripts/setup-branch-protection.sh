@@ -22,7 +22,7 @@
 #   The main ruleset also requires every check in MAIN_REQUIRED_CHECKS.
 #   The dev ruleset requires a PR but deliberately runs no automated CI.
 #
-#   Deliberately NOT required: approving reviews and CODEOWNERS sign-off.
+#   Deliberately NOT required: approving reviews. There is no CODEOWNERS file.
 #   The team rule is "anyone can do anything, but nothing is pushed directly".
 #   Any member may open, review, and merge any pull request, including their
 #   own. Automated CI and required checks run only on the dev -> main release

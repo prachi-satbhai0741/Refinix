@@ -120,9 +120,9 @@ Member → `dev` PRs have no automated CI gate. The `dev` → `main` release PR
 merges when its checks are green. No approving review is required, and you may
 merge your own PR at either stage.
 
-[`.github/CODEOWNERS`](.github/CODEOWNERS) will auto-request a review on
-security, protocol, model-catalogue, licensing and governance paths. That is
-a heads-up, not a blocker; it never stops a merge.
+There is deliberately no `CODEOWNERS` file. It would auto-request a review on
+every PR touching an owned path, and since no review is required those requests
+are pure notification noise. Ask for a review when you want one.
 
 Work on `dev` until it is genuinely ready, then take it to `main` in one PR.
 Anyone can open and merge that release PR.
@@ -227,9 +227,8 @@ Do not add a permanent bypass actor.
 
 ## Adding or removing a team member
 
-Two files must change together:
-
-1. The branch table above
-2. [`.github/CODEOWNERS`](.github/CODEOWNERS) if they own reviewed paths
+Update the branch table above, and create or delete their branch. Nothing else
+references the member list: `pr-flow-guard` only checks that a pull request into
+`main` comes from `dev`, so member branches need no allowlist.
 
 The change lands like any other: PR into `dev`, then `dev` into `main`.
