@@ -4,7 +4,7 @@
 
 ## Branch flow
 
-<!-- Tick the one that applies. The pr-flow-guard check enforces this. -->
+<!-- Tick one. Automated PR checks run only for the dev -> main release. -->
 
 - [ ] `<my-branch>` → `dev` (feature / fix work)
 - [ ] `dev` → `main` (release)

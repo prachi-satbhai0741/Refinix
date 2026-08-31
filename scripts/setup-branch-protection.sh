@@ -18,19 +18,19 @@
 #     - block direct pushes (a pull request is required)
 #     - block force pushes
 #     - block branch deletion
-#     - require every check in REQUIRED_CHECKS to pass before merge
+#
+#   The main ruleset also requires every check in MAIN_REQUIRED_CHECKS.
+#   The dev ruleset requires a PR but deliberately runs no automated CI.
 #
 #   Deliberately NOT required: approving reviews and CODEOWNERS sign-off.
 #   The team rule is "anyone can do anything, but nothing is pushed directly".
 #   Any member may open, review, and merge any pull request, including their
-#   own, as soon as the checks are green. The gate is the pull request and its
-#   checks, not a human approval quota. Raise
+#   own. Automated CI and required checks run only on the dev -> main release
+#   PR, not on member -> dev integration PRs. Raise
 #   REQUIRED_APPROVALS below if the team later wants a review gate.
 #
-#   `pr-flow-guard` is the check that enforces the *direction* of the flow:
-#   only `dev` may open a PR into `main`, and only member branches may open a
-#   PR into `dev`. GitHub itself cannot express that rule; the workflow at
-#   .github/workflows/pr-flow-guard.yml does.
+#   `pr-flow-guard` enforces that only `dev` may open a PR into `main`.
+#   Member -> dev remains a team convention without automated checks.
 #
 # STRICTNESS
 #   bypass_actors is empty. Admins are NOT exempt — that is what "no direct
@@ -41,8 +41,8 @@
 #
 # PREREQUISITES
 #   1. gh CLI installed and authenticated:  gh auth status
-#   2. .github/workflows/pr-flow-guard.yml already merged into `main` and `dev`,
-#      otherwise the required check never reports and PRs hang forever.
+#   2. .github/workflows/pr-flow-guard.yml already merged into `main`, otherwise
+#      the release check never reports and PRs into main hang forever.
 #
 # USAGE
 #   ./scripts/setup-branch-protection.sh
@@ -53,14 +53,14 @@ set -euo pipefail
 
 REPO="${REPO:-prachi-satbhai0741/AegisForge}"
 
-# Checks that must pass before a pull request into main or dev can merge.
+# Checks that must pass before a dev -> main release pull request can merge.
 # Space separated, and each name must match a JOB name in a workflow that
-# actually runs on `pull_request` for that branch -- otherwise the PR waits
+# actually runs on `pull_request` for main -- otherwise the PR waits
 # forever for a check that never reports.
 #
 # Add build/test/lint jobs here as they land, e.g.
-#   REQUIRED_CHECKS="pr-flow-guard build test"
-REQUIRED_CHECKS="${REQUIRED_CHECKS:-pr-flow-guard}"
+#   MAIN_REQUIRED_CHECKS="pr-flow-guard build test"
+MAIN_REQUIRED_CHECKS="${MAIN_REQUIRED_CHECKS:-pr-flow-guard}"
 
 # 0 = anyone may merge their own pull request once checks pass.
 # Raise to 1 to require a second pair of eyes.
@@ -146,17 +146,16 @@ if [ "$is_private" = "true" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Preflight: the required check must actually exist on the target branches
+# Preflight: the release check must exist on main
 # ---------------------------------------------------------------------------
-for br in main dev; do
-  if gh api "repos/$REPO/contents/.github/workflows/pr-flow-guard.yml?ref=$br" >/dev/null 2>&1; then
-    ok "pr-flow-guard.yml present on '$br'"
-  else
-    warn "pr-flow-guard.yml is NOT on '$br' yet."
-    warn "Merge it there first, or PRs into '$br' will wait forever for a check that never runs."
-  fi
-done
-info "Required checks: $REQUIRED_CHECKS"
+if gh api "repos/$REPO/contents/.github/workflows/pr-flow-guard.yml?ref=main" >/dev/null 2>&1; then
+  ok "pr-flow-guard.yml present on 'main'"
+else
+  warn "pr-flow-guard.yml is NOT on 'main' yet."
+  warn "Merge it there first, or release PRs will wait forever for a check that never runs."
+fi
+info "Main release required checks: $MAIN_REQUIRED_CHECKS"
+info "Dev integration required checks: none"
 
 # ---------------------------------------------------------------------------
 # Ruleset payloads
@@ -164,13 +163,27 @@ info "Required checks: $REQUIRED_CHECKS"
 # main: release branch. Only `dev` may open a PR into it (enforced by the
 # pr-flow-guard check). Merge commits only, so `dev` never diverges from `main`.
 ruleset_json() {
-  local branch="$1" merge_methods="$2"
-  local checks_json="" c
+  local branch="$1" merge_methods="$2" required_checks="$3"
+  local checks_json="" status_rule_json="" c
 
-  for c in $REQUIRED_CHECKS; do
+  for c in $required_checks; do
     [ -n "$checks_json" ] && checks_json="${checks_json},"
     checks_json="${checks_json}{ \"context\": \"${c}\" }"
   done
+
+  if [ -n "$checks_json" ]; then
+    status_rule_json="$(cat <<JSON
+,
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "required_status_checks": [ ${checks_json} ]
+      }
+    }
+JSON
+)"
+  fi
 
   cat <<JSON
 {
@@ -197,25 +210,18 @@ ruleset_json() {
         "required_review_thread_resolution": false,
         "allowed_merge_methods": ${merge_methods}
       }
-    },
-    {
-      "type": "required_status_checks",
-      "parameters": {
-        "strict_required_status_checks_policy": false,
-        "required_status_checks": [ ${checks_json} ]
-      }
-    }
+    }${status_rule_json}
   ]
 }
 JSON
 }
 
 apply_ruleset() {
-  local branch="$1" merge_methods="$2"
+  local branch="$1" merge_methods="$2" required_checks="$3"
   local name="aegisforge-${branch}"
   local payload id
 
-  payload="$(ruleset_json "$branch" "$merge_methods")"
+  payload="$(ruleset_json "$branch" "$merge_methods" "$required_checks")"
 
   if [ "$DRY_RUN" -eq 1 ]; then
     info "[dry-run] would apply ruleset '$name':"
@@ -245,10 +251,10 @@ apply_ruleset() {
 
 # main takes merge commits only: a squash would rewrite the commits and leave
 # `dev` permanently diverged from `main`.
-apply_ruleset "main" '["merge"]'
+apply_ruleset "main" '["merge"]' "$MAIN_REQUIRED_CHECKS"
 
 # dev takes squash or merge: squashing a member branch keeps dev history clean.
-apply_ruleset "dev" '["squash","merge"]'
+apply_ruleset "dev" '["squash","merge"]' ""
 
 # ---------------------------------------------------------------------------
 # Repository-level merge settings
@@ -283,8 +289,9 @@ Done. The flow is now:
 
   - direct pushes to main and dev are rejected
   - force pushes and deletion of main and dev are rejected
+  - member -> dev PRs run no automated CI or required status checks
   - a PR into main that does not come from dev fails pr-flow-guard
-  - a PR must have green checks to merge
+  - dev -> main runs the release CI and must have green checks to merge
   - anyone may open, review and merge any PR, including their own
   - admins are NOT exempt (bypass_actors is empty)
 
@@ -304,12 +311,12 @@ help.
 
 Real options:
   - make the repository public (free, works immediately). Settle the
-    prd.md 17.1 licence question first -- the repo carries Apache-2.0.
+    docs/prd.md 17.1 licence question first -- the repo carries Apache-2.0.
   - the owner upgrades their personal account to GitHub Pro.
   - transfer to an organisation on GitHub Team (per-user cost).
 
 Until one of those is true, main and dev are NOT protected. The pre-push
-hook and the no-direct-push workflow are the only guards, and neither can
-stop a determined or accidental push -- a fresh clone has no hook.
+hook is the only guard, and it cannot stop a determined or accidental push --
+a fresh clone has no hook, and nothing on GitHub audits pushes.
 ----------------------------------------------------------------------
 DONE

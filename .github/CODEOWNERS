@@ -2,9 +2,10 @@
 #
 # The branch ruleset sets require_code_owner_review = false, so nothing in
 # this file can block a merge. Anyone on the team may open, review and merge
-# any pull request, including their own, once the checks are green. The rule
-# the team enforces is about pushing, not about reviewing: main and dev are
-# never pushed to directly.
+# any pull request, including their own. Member -> dev PRs have no automated
+# CI; the dev -> main release PR merges after its checks are green. The rule
+# the team enforces is about pushing, not reviewing: main and dev are never
+# pushed to directly.
 #
 # What this file still does: GitHub automatically requests a review from the
 # listed owner when a PR touches their paths. It is a "you probably want to
@@ -42,7 +43,7 @@
 /scripts/setup-branch-protection.sh  @prachi-satbhai0741 @adityatadge31
 
 # Product source of truth. Changing it changes what the team has agreed to.
-/prd.md                       @prachi-satbhai0741 @adityatadge31
+/docs/prd.md                  @prachi-satbhai0741 @adityatadge31
 
 # Licensing. PRD 17.1 records an unresolved Apache-2.0 vs proprietary conflict;
 # nobody changes this file without the repository owner.
