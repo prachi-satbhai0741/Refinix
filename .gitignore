@@ -1,0 +1,118 @@
+# AegisForge .gitignore
+#
+# Minimal and specific on purpose. Every rule names a real artifact type.
+# Generic directory names (models/, index/, workspace/, release/) are
+# deliberately absent: they are plausible source package names, and a
+# .gitignore that silently swallows source is worse than one that misses a
+# build artifact.
+#
+# Data folders are anchored with a leading slash (/private/, /secrets/,
+# /logs/) so they match ONLY at the repository root. Unanchored, `private/`
+# would also hide backend/private/auth.py. Dependency and build directories
+# stay unanchored on purpose: node_modules/, dist/, and .venv/ legitimately
+# appear inside backend/ and frontend/.
+#
+# The "never commit" list in docs/prd.md 15.3 is why the secret, weight, and
+# installer sections exist.
+#
+# A .gitignore only affects files that are NOT already tracked.
+
+# --- OS -------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# --- Environment and secrets  (docs/prd.md 15.3, 16.5) --------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+/secrets/
+/credentials/
+
+# --- Model weights  (docs/prd.md 15.3) ------------------------------------
+# Specific extensions only. `models/` is omitted: backend/models/ is a
+# plausible source package. `*.bin` is omitted: too broad for test fixtures.
+*.gguf
+*.safetensors
+*.ggml
+*.pt
+*.pth
+*.onnx
+*.mlmodel
+*.mlpackage/
+/weights/
+
+# --- Generated installers and release binaries  (docs/prd.md 15.3, 16.5) --
+*.dmg
+*.pkg
+*.exe
+*.msi
+*.AppImage
+*.deb
+*.rpm
+
+# --- Private documents and real scans  (docs/prd.md 15.3, 16.3) -----------
+# Put anything real or confidential here and it stays out of the repository.
+# Fixtures committed to the repo must be synthetic or explicitly approved.
+/private/
+/scans/
+/confidential/
+
+# --- Local database state  (docs/prd.md 4.4, 15.3) ------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+
+# --- Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node -----------------------------------------------------------------
+node_modules/
+dist/
+build/
+.vite/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# --- Rust and Tauri -------------------------------------------------------
+# Anchored so a source directory named `target` elsewhere is not swallowed.
+/target/
+src-tauri/target/
+src-tauri/gen/
+
+# --- Logs and test output -------------------------------------------------
+*.log
+/logs/
+coverage/
+htmlcov/
+.coverage
+test-results/
+playwright-report/
+
+# --- Editor and local agent harness config --------------------------------
+# AGENTS.md is shared. Tool-specific root instructions stay local.
+# List both cases because Linux filesystems are case-sensitive.
+CLAUDE.md
+claude.md
+CODEX.md
+codex.md
+.vscode/
+.idea/
+.claude/
+
+# --- Graphify local knowledge graph (regenerated locally) -----------------
+graphify-out/

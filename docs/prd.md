@@ -962,7 +962,7 @@ Until resolved, do not describe the repository as proprietary and do not assume 
 The repository should eventually contain:
 
 - `README.md` — project entry point and verified setup status
-- `prd.md` — this product source of truth
+- `docs/prd.md` — this product source of truth
 - `AGENTS.md` — repository-scoped rules for coding agents
 - `SECURITY.md` — reporting, supported versions, and security invariants
 - `CONTRIBUTING.md` — branch, review, testing, and ownership workflow
@@ -980,22 +980,27 @@ The repository should eventually contain:
 ### 17.3 Collaboration rules
 
 Branch and merge rules. These are implemented in
-[`CONTRIBUTING.md`](CONTRIBUTING.md) and enforced by
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) and enforced by
 `scripts/setup-branch-protection.sh`:
 
 - Protect `main` and `dev`. Direct pushes to either branch are prohibited for
   every contributor, repository admins included.
 - Every change reaches `main` and `dev` through a pull request. Work flows one
   way: member branch to `dev`, then `dev` to `main`.
-- A pull request merges when its required checks pass. Approving reviews are
-  **not** required, and any contributor may merge a pull request, including
-  their own.
+- Member-branch pull requests into `dev` run no automated CI or required status
+  checks, and pushes to `dev` start no GitHub Actions. The team may review and
+  merge integration PRs directly; the local hook and team discipline protect
+  `dev` until server-side rules are available.
+- Automated CI runs only for the `dev` to `main` release pull request. That
+  release merges when its required checks pass.
+- Approving reviews are **not** required, and any contributor may merge a pull
+  request, including their own.
 - Reviews and `.github/CODEOWNERS` ownership are advisory. CODEOWNERS
   auto-requests a reviewer on security, protocol, model-catalogue, licensing,
   and governance paths, but never blocks a merge.
-- The gate is the pull request and its checks, not an approval quota. Add
-  build, test, and validation jobs to the required-check list as they land so
-  the gate grows with the codebase.
+- The release gate is the pull request and its checks, not an approval quota.
+  Add build, test, and validation jobs to the `main` required-check list as
+  they land; do not run them for member pull requests into `dev`.
 
 Evidence and honesty rules:
 
@@ -1012,6 +1017,11 @@ Evidence and honesty rules:
 > external release — a review quota is cheap to reinstate with
 > `REQUIRED_APPROVALS=1 ./scripts/setup-branch-protection.sh` plus
 > `require_code_owner_review`.
+
+> **Changed 2026-08-31 (CI scope).** Automated PR checks now run only on the
+> `dev` to `main` release. Member branches still reach `dev` through PRs, but
+> neither those integration PRs nor pushes to `dev` start Actions, so limited
+> capacity is spent on the release candidate once.
 
 ---
 
