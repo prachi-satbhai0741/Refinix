@@ -1,34 +1,38 @@
 # frontend
 
-Desktop workspace UI and the public distribution site.
+Desktop agent application and separate public distribution site.
 
-## Intended boundary
+## Intended application surfaces
 
-From [`docs/prd.md`](../docs/prd.md) sections 4.2, 10.1, and 10.2:
+From [workflows.md](../docs/workflows.md):
 
-- **Multi-chat workspace** — the familiar local interface, with chats, files,
-  and job state owned by the coordinator.
-- **Model and capability installer UI** — compatibility state, installed state,
-  licence and source information (11.6, 11.7).
-- **Worker dashboard** — device identity, health, and selected model.
-- **Job timeline and routing explanation** — which worker, which model, and why
-  (the visible routing evidence in section 3).
-- **Public site** (4.2, 10.1) — explains the product, publishes installer
-  versions and SHA-256 checksums. It never runs inference, stores chats, or
-  coordinates workers.
+- **Chat** — general local agent and local knowledge.
+- **Documents** — OCR/vision, retrieval, citations, and generated artifacts.
+- **Code** — selected repository context, isolated validation, and patches.
+- **Control Center** — onboarding, models, jobs, approvals, paired devices,
+  health, cleanup, and sovereignty evidence.
 
-The UI must clearly distinguish **Connected Setup** from **Offline Runtime**
-(16.3), and the site must not claim the application is secure, signed, or
-production-ready before evidence exists (16.5).
+These surfaces consume one local harness API and event stream. They do not own
+separate model, memory, permission, routing, or audit systems.
+
+First-run onboarding creates a local workspace automatically, detects hardware,
+requires a main engine, resolves dependencies for enabled capabilities, shows
+source/licence/size information, and runs real self-tests. It never asks for a
+permanent coordinator, worker, or server role.
+
+The public site explains the product and may publish approved installer
+versions and checksums. It never runs inference, stores private chats,
+coordinates workers, or participates in offline runtime.
+
+The UI must distinguish connected setup from offline runtime and must follow the
+[Control Center evidence semantics](../docs/security.md#12-control-center-evidence-semantics).
+It cannot hard-code secure, blocked, healthy, or zero-traffic states.
 
 ## Status: no scaffolding yet
 
-There is no `package.json`, no source tree, and no dependencies — on purpose.
+There is no package.json, source tree, or dependency set.
 
-`docs/prd.md` section 18 lists React/Vite for the site and Tauri for the
-desktop shell, but Tauri is marked **decision required**, not settled. Choosing
-a shell now would commit the team to a packaging framework before one real
-end-to-end path exists.
-
-Scaffolding lands when the team approves the PRD baseline and the technology
-choices.
+The [architecture direction](../docs/architecture.md#8-working-technology-direction)
+defers the desktop shell decision until one real local and paired-worker harness
+path works. A local web interface may prove that path before packaging; do not
+let cross-platform installer work block inference and orchestration evidence.

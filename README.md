@@ -2,7 +2,7 @@
 
 # AegisForge
 
-**SovereignMesh — an air-gapped agentic AI workbench for confidential industrial knowledge work**
+**SovereignMesh — a private local agent harness for confidential industrial knowledge work**
 
 *A Smart India Hackathon 2026 submission for running open-weight, multimodal AI entirely on local infrastructure, with trusted-device task orchestration and demonstrable, verifiable offline operation.*
 
@@ -23,7 +23,7 @@
 - [What Is AegisForge?](#what-is-aegisforge)
 - [Why This Problem Is Hard](#why-this-problem-is-hard)
 - [Design Philosophy: Coordinator, Not a Cluster](#design-philosophy-coordinator-not-a-cluster)
-- [Intended Workflow](#intended-workflow)
+- [Product Surfaces and Setup](#product-surfaces-and-setup)
 - [Proposed Innovation: The Sovereign Proof Card](#proposed-innovation-the-sovereign-proof-card)
 - [Project Boundaries & Trust Model](#project-boundaries--trust-model)
 - [Repository Structure](#repository-structure)
@@ -66,9 +66,18 @@ The current requirement interpretation, open design decisions, and demonstration
 
 ## What Is AegisForge?
 
-**AegisForge** is the name of this repository. **SovereignMesh** is the current working name for the product and its underlying architecture — the two terms are used interchangeably in this codebase and its documentation, with AegisForge referring to the codebase itself and SovereignMesh referring to the system it implements.
+**AegisForge** is the name of this repository. **SovereignMesh** is the current
+working name for the product and its underlying architecture.
 
-SovereignMesh is designed as a single installable application that keeps a user's chats, files, job state, and final artifacts on a **local coordinator** machine, while optionally routing independent units of work to **compatible, trusted local devices** on the same network when they are available. The coordinator remains the single source of truth at all times; additional devices exist purely to extend capability and throughput, never to hold canonical state.
+SovereignMesh is one installable application with dedicated **Chat**,
+**Documents**, and **Code** surfaces over a shared local agent harness. A
+**Control Center** manages models, jobs, approvals, paired compute, health, and
+sovereignty evidence.
+
+Every installation creates a local workspace and remains useful on its own.
+Pairing is an optional, reversible relationship: the workspace coordinator may
+route bounded work to compatible trusted devices or a private server, but those
+nodes never receive canonical workspace ownership merely by joining.
 
 This is a deliberate architectural position, not an oversight — see [Design Philosophy](#design-philosophy-coordinator-not-a-cluster) below for why.
 
@@ -100,13 +109,25 @@ Extra trusted devices, when present, allow the coordinator to run independent jo
 
 ---
 
-## Intended Workflow
+## Product Surfaces and Setup
 
-1. **Work locally.** The user operates in a multi-chat workspace on the coordinator machine — their primary device.
-2. **Select a target.** For each task, the system (or the user, depending on the routing mode) selects an eligible trusted device and a suitable local model based on the task's requirements.
-3. **Run concurrently where possible.** Independent jobs — for instance, a document/OCR task and a coding task — can execute in parallel across available hardware rather than serially on one device.
-4. **Return structured results.** Each job returns citations (where retrieval was used), generated artifacts (documents, code, spreadsheets), patches or diffs, validation/test output, and job evidence back to the coordinator.
-5. **Coordinator retains control.** All final writes to the user's canonical files and chat history are performed by the coordinator, not by worker devices. Canonical state is never distributed.
+First launch detects the device and existing runtimes, requires a compatible
+main engine, lets the user enable capability packs, shows the full model
+download and licence plan, verifies manifests, and runs real local self-tests.
+It does **not** ask the user to choose a permanent coordinator, worker, or server
+role.
+
+| Surface | Purpose |
+|---|---|
+| Chat | General local agent and local knowledge |
+| Documents | OCR/vision, retrieval, citations, and generated artifacts |
+| Code | Repository context, isolated execution, validation, and patches |
+| Control Center | Models, devices, jobs, approvals, health, and sovereignty evidence |
+
+For each task the user may choose Auto, this device, trusted devices, or a
+specific paired target. Independent jobs can run concurrently where hardware
+permits. The coordinator retains canonical state and exactly-once final-write
+authority.
 
 ---
 
@@ -119,7 +140,10 @@ For every completed job, the proposed **Sovereign Proof Card** is intended to bu
 - **Validation results** — for example, sandbox test output for a coding task, or extraction confidence for an OCR task.
 - **Observed zero-egress evidence** — a record, tied to that specific job, that no external network call occurred during its execution.
 
-The goal of the Proof Card is to make the project's central sovereignty claim **inspectable during a live demonstration**, rather than something judges are asked to take on faith. This is a proposed feature at the design stage — it is not yet implemented or verified, and its exact format is one of the open decisions tracked in the [PRD](docs/prd.md).
+The goal of the Proof Card is to make the project's central sovereignty claim
+**inspectable during a live demonstration**, rather than something judges are
+asked to take on faith. This is proposed, not implemented or verified; its
+current contract is in [evaluation.md](docs/evaluation.md#7-sovereign-proof-card).
 
 ---
 
@@ -143,7 +167,12 @@ AegisForge/
 ├── backend/              # Planned coordinator, worker, router, and runtime boundary
 ├── frontend/             # Planned desktop workspace and public-site boundary
 ├── docs/
-│   └── prd.md            # Product requirements, open decisions, and demonstration evidence plan
+│   ├── prd.md             # Short product contract and priorities
+│   ├── architecture.md    # Harness, nodes, state, jobs, and local data
+│   ├── workflows.md       # Onboarding and task flows
+│   ├── security.md        # Trust, privacy, sandbox, and proof boundaries
+│   ├── model-catalog.md   # Model packs, manifests, and provisioning
+│   └── evaluation.md      # Prototype plan, acceptance, metrics, and demo
 ├── agent-memory/         # Searchable record of repository-affecting work and decisions
 ├── CONTRIBUTING.md       # Branch, review, and release workflow
 ├── AGENTS.md             # Repository-wide implementation rules and conventions
@@ -154,8 +183,11 @@ AegisForge/
 
 There is nothing to install or run yet. Before contributing code:
 
-1. Read the [PRD](docs/prd.md) in full, paying particular attention to the **settled decisions**, **open decisions**, **security requirements**, and the **five-day prototype plan**.
-2. Do not begin framework scaffolding ahead of an approved v1 baseline and measured evidence from the first Mac-to-worker local inference path — the plan is intentionally sequenced to validate the riskiest assumption (cross-device local inference) before investing in surrounding tooling.
+1. Start with the [documentation map](docs/README.md) and short
+   [PRD](docs/prd.md).
+2. Do not begin framework scaffolding ahead of an approved v1 baseline and
+   measured evidence from one local inference path followed by one real
+   paired-worker path.
 
 ## Contributing
 

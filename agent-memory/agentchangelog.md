@@ -191,3 +191,63 @@ work. No repository file change means no changelog entry.
 - changes: Recorded Sahil as an RTX 3050 6 GB Laptop GPU with 24 GB dual-channel DDR5 and Ethernet present, replacing the earlier RTX 4050/4060 guess, and flagged App Control for Business as a possible runtime blocker; recorded Tanvi as i5-1235U with Iris Xe only, 16 GB, and a 390 Mbps Wi-Fi 5 link; reassigned the coding pack to the ASUS V16 as the sole 8 GB GPU and gave Sahil a reasoning/CPU-offload pack; rewrote the PRD section 12 table with all six devices, a link to the inventory, and a warning against reading VRAM from `AdapterRAM`.
 - verification: `git diff --check` passed; confirmed the relative `devicespecifications.md` link resolves from `docs/`; re-grepped `docs/prd.md` for hardware mentions and found none outside the section 12 table; UP and AC cross-links confirmed reciprocal.
 - remaining: Free disk space on four machines, `nvidia-smi` VRAM recheck for both RTX 2050 nodes, installed runtimes fleet-wide, and Sahil's App Control verification are still open.
+
+<a id="ac-20260901-009"></a>
+## AC-20260901-009 — Require licence-safe local open-source reuse
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-009](userprompts.md#up-20260901-009)
+- related_prompts: none
+- tags: agents-md, open-source, reuse, licensing, offline-runtime
+- aliases: reuse github code, local open source libraries, prototype acceleration, dependency provenance
+- paths: AGENTS.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added a repository-wide implementation rule to adapt suitable local/offline open-source components before rebuilding commodity functionality.
+- changes: Required licence compatibility, pinned source provenance, material-change records, and rejection of unlicensed, incompatible, cloud-dependent, or silently networked components.
+- verification: `git diff --check` passed; the new rule and reciprocal UP/AC links were found in the working tree.
+- remaining: Vedant's reviewed device documentation was not changed; reported findings need a separate approved correction.
+
+<a id="ac-20260901-010"></a>
+## AC-20260901-010 — Correct device-inventory evidence and prerequisites
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-010](userprompts.md#up-20260901-010)
+- related_prompts: [UP-20260901-009](userprompts.md#up-20260901-009)
+- tags: device-specs, evidence, macbook, cuda, storage, prd
+- aliases: vedant review fixes, gpu configuration, cuda prerequisites, model capacity
+- paths: docs/devicespecifications.md, docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Corrected the three actionable findings from the device-inventory review and kept the PRD hardware row aligned.
+- changes: Labelled reported versus measured hardware; left the Mac GPU core count pending local confirmation; made NVIDIA driver, CUDA Toolkit, and container-toolkit requirements runtime-specific; changed 3–5 models from a false disk limit to an explicit prototype policy.
+- verification: `git diff --check` passed; stale overclaim phrases were absent; corrected evidence, prerequisite, capacity, PRD, and reciprocal ledger text was found.
+- remaining: Hardware probes, runtime installation, model downloads, and local inference benchmarks remain unrun.
+
+<a id="ac-20260901-011"></a>
+## AC-20260901-011 — Add private-server execution objective
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-011](userprompts.md#up-20260901-011)
+- related_prompts: none
+- tags: prd, topology, standalone, trusted-mesh, private-server, scope
+- aliases: one system multisystem server, private compute worker, three execution topologies
+- paths: docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added private-server-worker execution as the third product topology while preserving the narrower SIH implementation scope.
+- changes: Bumped the PRD to 1.2; added the topology to the executive summary, opportunity, thesis, use cases, principles, post-hackathon scope, non-goals, and P2 requirements; kept canonical state on the coordinator and excluded public-cloud inference and a full server-hosted control plane from the MVP.
+- verification: `git diff --check` passed; all intended topology references were found; stale two-mode/distributed-mode wording was absent; reciprocal UP/AC links were found.
+- remaining: Private-server mode is a documented post-hackathon objective, not implemented or runtime-verified.
+
+<a id="ac-20260901-012"></a>
+## AC-20260901-012 — Define the local agent harness and split product documentation
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-012](userprompts.md#up-20260901-012)
+- related_prompts: [UP-20260901-011](userprompts.md#up-20260901-011)
+- tags: agent-harness, onboarding, workflows, control-center, dynamic-nodes, models, prd-split
+- aliases: local ChatGPT app, chat documents code, mandatory main engine, reversible pairing, distributed PRD
+- paths: docs/prd.md, docs/architecture.md, docs/workflows.md, docs/security.md, docs/model-catalog.md, docs/evaluation.md, docs/README.md, docs/devicespecifications.md, README.md, AGENTS.md, CONTRIBUTING.md, backend/README.md, frontend/README.md, scripts/setup-branch-protection.sh
+- summary: Reframed SovereignMesh as one local agent harness with guided model setup, task-specific surfaces, dynamic compute participation, and a truthful Control Center, while moving detail out of the PRD.
+- changes: Reduced the PRD to the product contract and 10 P0 outcomes; created focused architecture, workflow, security, model, and evaluation documents; integrated approval, specialist workflow, and sovereignty-dashboard proposals; reconciled live repository references.
+- verification: `git diff --check` passed; all repository-local Markdown file links resolved; no stale numbered PRD references or raw proposal comments remained in live docs; new docs had no trailing whitespace; priorities counted 10 P0, 5 P1, and 3 P2.
+- remaining: Runtime implementation, official SIH/IP confirmation, technology and model selection, local benchmarks, packaging, sandbox, pairing, and zero-egress proof remain unverified; requester review is the final documentation gate.

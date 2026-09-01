@@ -196,3 +196,63 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260901-007](#up-20260901-007)
 - supersedes: none
 - linked_changes: [AC-20260901-008](agentchangelog.md#ac-20260901-008)
+
+<a id="up-20260901-009"></a>
+## UP-20260901-009 — Review device inventory and require open-source reuse
+- date: 2026-09-01
+- status: done
+- scope: review, repository-guidance
+- tags: device-specs, code-review, open-source, reuse, licensing, offline-runtime
+- aliases: vedant recent push, reuse github code, local open source libraries, prototype acceleration
+- paths: docs/devicespecifications.md, docs/prd.md, AGENTS.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Review Vedant's latest merged device-inventory change and require prototype work to reuse suitable local/offline open-source components before rebuilding commodity functionality.
+- constraints: Do not import competing SIH solutions; accept only licence-compatible components with provenance and no required cloud or silent network behavior; keep the review separate from fixes.
+- acceptance: Report actionable findings against merge `f4f0b62` and add the reusable-component policy to `AGENTS.md` without altering the reviewed device documentation.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260901-009](agentchangelog.md#ac-20260901-009)
+
+<a id="up-20260901-010"></a>
+## UP-20260901-010 — Correct reviewed device-inventory claims
+- date: 2026-09-01
+- status: done
+- scope: docs, correction
+- tags: device-specs, evidence, macbook, cuda, storage, prd
+- aliases: fix needs fix, vedant review fixes, gpu configuration, cuda prerequisites, model capacity
+- paths: docs/devicespecifications.md, docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Correct the evidence status, Mac GPU configuration, NVIDIA prerequisites, and storage-capacity wording found in the review of Vedant's merged device inventory.
+- constraints: Preserve tentative capability assignments; do not install runtimes, probe hardware, download models, or expand the architecture.
+- acceptance: Unmeasured facts are labelled honestly, CUDA requirements are runtime-specific, 3–5 models is a prototype policy rather than a disk limit, and the PRD matches the inventory.
+- follow_up_to: [UP-20260901-009](#up-20260901-009)
+- supersedes: none
+- linked_changes: [AC-20260901-010](agentchangelog.md#ac-20260901-010)
+
+<a id="up-20260901-011"></a>
+## UP-20260901-011 — Add private-server execution objective
+- date: 2026-09-01
+- status: done
+- scope: docs, product-decision
+- tags: prd, topology, standalone, trusted-mesh, private-server, scope
+- aliases: one system multisystem server, private compute worker, three execution topologies
+- paths: docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Make private-server execution an explicit third product topology alongside standalone and trusted-device mesh operation.
+- constraints: Treat the server as a worker using the existing job contract; preserve coordinator-owned canonical state, zero-cloud runtime, and the standalone-then-mesh SIH build order; defer a fully server-hosted multi-user control plane.
+- acceptance: The executive summary, product thesis, use cases, principles, release scope, non-goals, and functional requirements consistently record the objective without making it an SIH MVP requirement.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260901-011](agentchangelog.md#ac-20260901-011)
+
+<a id="up-20260901-012"></a>
+## UP-20260901-012 — Reframe the product as a local agent harness
+- date: 2026-09-01
+- status: done
+- scope: docs, product-decision, architecture
+- tags: agent-harness, onboarding, workflows, model-packs, control-center, dynamic-nodes, prd-split
+- aliases: local ChatGPT app, chat code documents sections, mandatory model setup, no permanent device role, distributed PRD
+- paths: docs/, README.md, AGENTS.md, CONTRIBUTING.md, backend/README.md, frontend/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Reframe AegisForge as one local agent harness with task-specific surfaces, guided model onboarding, dynamic compute participation, and a local Control Center, then split the oversized PRD into focused documents.
+- constraints: Every installation remains locally usable; pairing is reversible and never silently merges canonical state; required downloads depend on enabled capabilities; preserve offline, security, evidence, and licence boundaries; avoid speculative services and duplicate documentation.
+- acceptance: The compact PRD defines the product and priorities; focused architecture, workflow, security, model, and evaluation documents own implementation detail; all repository references match the new document boundaries.
+- follow_up_to: [UP-20260901-011](#up-20260901-011)
+- supersedes: none
+- linked_changes: [AC-20260901-012](agentchangelog.md#ac-20260901-012)
