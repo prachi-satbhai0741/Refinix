@@ -1433,3 +1433,21 @@ The first implementation milestone is not a complete ChatGPT replacement. It is 
 Future any-device input/output and coordinator roles remain compatible with this direction but require replicated state, failover, and conflict handling that are intentionally outside v1.
 
 This PRD is the starting point for the repository's architecture, workflow, security, model-catalogue, research, and demo documents. Any later decision that changes these requirements should be recorded in the repository and reflected here rather than left only in chat.
+## Comment by Tanvi
+>  
+>
+> I suggest adding an **AI Health & Sovereignty Dashboard** for administrators. It should provide a real-time view of server health, AI model status, CPU/RAM/GPU usage, active jobs, trusted workers, and network security.
+>
+> A key feature should be **Internet/Egress Monitoring**. If any AI component attempts to access an external service while offline/egress blocking is enabled, the connection should be blocked and recorded.
+>
+> The dashboard should visibly show:
+>
+> * Internet Access: **BLOCKED**
+> * External AI/API Calls: **0**
+> * External Connections: **0**
+> * Blocked Attempts: **N**
+> * Local AI/RAG/OCR: **ACTIVE**
+>
+> This makes our sovereignty claim **visible and auditable**, rather than simply stating that data stays inside the organization.
+>
+> — **Tanvi Shinde**
