@@ -131,3 +131,33 @@ work. No repository file change means no changelog entry.
 - changes: Added repository Git boundaries, agent-memory rules, and AegisForge invariants while excluding personal slash commands, PATCH/BUILD modes, skills, plugins, tool preferences, and reviewer-assignment machinery; compressed duplicated ledger guidance; deleted `.github/CODEOWNERS` with plain `rm` and updated its live references; corrected the stale `.DS_Store` snapshot.
 - verification: `git diff --check` clean; `AGENTS.md` contains no personal slash commands, PATCH/BUILD modes, skills, plugins, Ponytail, Graphify, or subagent preferences; Git boundaries, agent-memory rules, and AegisForge invariants remain; shell, workflow, ruleset, link, and ignore checks from this uncommitted batch still pass.
 - remaining: none
+
+<a id="ac-20260901-005"></a>
+## AC-20260901-005 — Add a truthful project README
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-005](userprompts.md#up-20260901-005)
+- related_prompts: none
+- tags: readme, prd, innovation, sovereignmesh, evidence
+- aliases: root readme, project overview, sovereign proof card
+- paths: README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replaced the one-line root README with an accurate planning-stage project overview.
+- changes: Documented the product intent, repository status, proposed proof-first differentiator, non-negotiable boundaries, layout, and contribution flow; explicitly labelled the Sovereign Proof Card as proposed rather than implemented.
+- verification: `git diff --check` passed; inspected the rendered Markdown source and its repository-relative links.
+- remaining: The PRD remains unchanged; the proof-card idea needs team approval before it becomes a requirement.
+
+<a id="ac-20260901-006"></a>
+## AC-20260901-006 — Present the SIH challenge in the root README
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-006](userprompts.md#up-20260901-006)
+- related_prompts: [UP-20260901-005](userprompts.md#up-20260901-005)
+- tags: readme, sih, sih26117, mrpl, sovereignmesh
+- aliases: SIH problem statement 117, MRPL challenge, centred README
+- paths: README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Reworked the root README around the SIH26117 challenge and its sponsor.
+- changes: Added the verified SIH title, description, organisation, category, and theme in a centred badge-led README while retaining accurate planning-stage and security-boundary wording.
+- verification: `git diff --check` passed; checked all repository-relative README targets exist.
+- remaining: Challenge metadata is based on the published SIH problem-statement listing; the product itself remains unimplemented.

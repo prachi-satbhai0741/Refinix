@@ -136,3 +136,33 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260901-003](#up-20260901-003)
 - supersedes: none
 - linked_changes: [AC-20260901-004](agentchangelog.md#ac-20260901-004)
+
+<a id="up-20260901-005"></a>
+## UP-20260901-005 — Add project README and propose a proof-first innovation
+- date: 2026-09-01
+- status: done
+- scope: docs, product-decision
+- tags: readme, prd, innovation, sovereignmesh, evidence
+- aliases: root readme, PRD comment, sovereign proof card, proof-first differentiator
+- paths: README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Create a useful root README and provide a copyable PRD comment proposing a named, evidence-based differentiator.
+- constraints: Keep the PRD unchanged; do not represent proposed capabilities as implemented or verified; preserve the repository's no-scaffolding status.
+- acceptance: README describes the current planning-stage repository, links the PRD, states the project boundaries and security invariants, and labels innovations as proposed.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260901-005](agentchangelog.md#ac-20260901-005)
+
+<a id="up-20260901-006"></a>
+## UP-20260901-006 — Present the SIH challenge in the root README
+- date: 2026-09-01
+- status: done
+- scope: docs, product-decision
+- tags: readme, sih, sih26117, mrpl, sovereignmesh
+- aliases: SIH problem statement 117, MRPL challenge, title description organisation
+- paths: README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Restructure the root README around the SIH Problem Statement 117 title, description, and sponsoring organisation.
+- constraints: Use verified challenge metadata; do not add Taskboard/Docker claims or present planned capabilities as implemented.
+- acceptance: README has a centered project header, accurate SIH26117/MRPL metadata, a concise challenge description, and an honest planning-stage project overview.
+- follow_up_to: [UP-20260901-005](#up-20260901-005)
+- supersedes: none
+- linked_changes: [AC-20260901-006](agentchangelog.md#ac-20260901-006)
