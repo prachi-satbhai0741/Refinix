@@ -251,3 +251,33 @@ work. No repository file change means no changelog entry.
 - changes: Reduced the PRD to the product contract and 10 P0 outcomes; created focused architecture, workflow, security, model, and evaluation documents; integrated approval, specialist workflow, and sovereignty-dashboard proposals; reconciled live repository references.
 - verification: `git diff --check` passed; all repository-local Markdown file links resolved; no stale numbered PRD references or raw proposal comments remained in live docs; new docs had no trailing whitespace; priorities counted 10 P0, 5 P1, and 3 P2.
 - remaining: Runtime implementation, official SIH/IP confirmation, technology and model selection, local benchmarks, packaging, sandbox, pairing, and zero-egress proof remain unverified; requester review is the final documentation gate.
+
+<a id="ac-20260902-001"></a>
+## AC-20260902-001 — Add the fast execution roadmap
+- date: 2026-09-02
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260902-001](userprompts.md#up-20260902-001)
+- related_prompts: [UP-20260901-012](userprompts.md#up-20260901-012)
+- tags: tasks, roadmap, internal-hackathon, distributed, integration, finals
+- aliases: tasks.md, fast execution plan, claude implementation, codex review, five day sprint, twelve day sprint
+- paths: tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added one operational roadmap for the distributed internal-hackathon build and twelve-day finals follow-through.
+- changes: Defined 19 planned tasks with owners, dependencies, daily gates, a nine-step demo, Claude implementation and Codex review handoffs, the proposed fleet mapping, definition of done, and explicit sprint exclusions.
+- verification: `git diff --check` passed; `tasks.md` has 19 uniquely numbered planned AF tasks across five daily gates, no trailing whitespace, and existing repository targets for every local file link inspected.
+- remaining: All runtime tasks remain planned and unverified; owners are proposed until Aditya confirms them, and the PRD still labels some aggressive internal targets as P1.
+
+<a id="ac-20260902-002"></a>
+## AC-20260902-002 — Rebalance roadmap ownership for tool access
+- date: 2026-09-02
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260902-002](userprompts.md#up-20260902-002)
+- related_prompts: [UP-20260902-001](userprompts.md#up-20260902-001)
+- tags: tasks, ownership, claude-pro, codex-plus, free-tier, team-capacity
+- aliases: aditya vedant build, antigravity free tier, nonblocking support tasks, paid agent seats
+- paths: tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Reassigned every critical-path build task to Aditya or Vedant and converted the other team roles into bounded, useful support and evidence ownership.
+- changes: Added the paid-agent capacity rule; split all 19 AF rows into build and support ownership; assigned Sahil integration drills, Yug document fixtures and scoring, Prachi Linux boundary operation, and Tanvi product acceptance and demo evidence; added the same ownership split to all twelve finals days.
+- verification: `git diff --check` passed; no trailing whitespace was found; extracted build-owner fields show only Aditya, Vedant, or both for all 19 AF tasks and all twelve finals days.
+- remaining: Antigravity plan capabilities and quotas remain intentionally unverified and noncritical; task owners must still accept their assignments, and all runtime work remains planned.

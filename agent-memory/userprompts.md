@@ -256,3 +256,33 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260901-011](#up-20260901-011)
 - supersedes: none
 - linked_changes: [AC-20260901-012](agentchangelog.md#ac-20260901-012)
+
+<a id="up-20260902-001"></a>
+## UP-20260902-001 — Create the fast execution roadmap
+- date: 2026-09-02
+- status: done
+- scope: docs, execution-planning
+- tags: tasks, roadmap, internal-hackathon, distributed, integration, finals
+- aliases: tasks.md, fast execution plan, claude implementation, codex review, five day sprint, twelve day sprint
+- paths: tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Create one operational roadmap that keeps a real distributed path in the internal-hackathon scope and carries the proven baseline into a twelve-day finals sprint.
+- constraints: Preserve the user's uncommitted `docs/README.md`; do not create runtime scaffolding or claim planned work is implemented; keep task-level distribution, canonical coordinator ownership, offline operation, bounded workers, and daily integration gates.
+- acceptance: `tasks.md` defines task IDs, owners, dependencies, five-day gates, the twelve-day follow-through, implementer/reviewer handoff rules, and an evidence-backed definition of done without duplicating focused product specifications.
+- follow_up_to: [UP-20260901-012](#up-20260901-012)
+- supersedes: none
+- linked_changes: [AC-20260902-001](agentchangelog.md#ac-20260902-001)
+
+<a id="up-20260902-002"></a>
+## UP-20260902-002 — Rebalance tasks for paid-agent access
+- date: 2026-09-02
+- status: done
+- scope: docs, execution-planning, ownership
+- tags: tasks, ownership, claude-pro, codex-plus, free-tier, team-capacity
+- aliases: aditya vedant build, antigravity free tier, nonblocking support tasks, paid agent seats
+- paths: tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Assign critical-path implementation to Aditya and Vedant, who have Claude Pro and Codex Plus, while giving the other four teammates bounded operational, fixture, evaluation, evidence, and demo responsibilities.
+- constraints: Every teammate must own useful acceptance evidence; no core implementation dependency may assume paid-agent access outside Aditya and Vedant; preserve the five-day distributed target and existing security boundaries.
+- acceptance: The ownership map and all AF task rows distinguish build owners from support or evidence owners, with every build task led by Aditya or Vedant and meaningful nonblocking work assigned to Sahil, Yug, Prachi, and Tanvi.
+- follow_up_to: [UP-20260902-001](#up-20260902-001)
+- supersedes: none
+- linked_changes: [AC-20260902-002](agentchangelog.md#ac-20260902-002)
