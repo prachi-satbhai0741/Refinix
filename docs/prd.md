@@ -686,12 +686,21 @@ Do not infer that a model is safe or distributable merely because its weights ar
 
 | Device | Known hardware | v1 role | Tentative capability |
 |---|---|---|---|
-| MacBook Air | M5, 16 GB unified memory | Coordinator, UI, canonical state, optional worker | Core chat/agent and local embeddings if benchmarks permit |
-| ASUS V16 | Intel Core 7, 16 GB RAM, RTX 5060 laptop GPU | Worker | Coding model and code validation |
-| Lenovo LOQ | Similar high-performance laptop configuration; exact spec to verify | Worker | OCR/vision or reasoning |
-| HP Victus | Lower capability; exact spec to verify | Optional worker/fallback | Voice, fast chat, or whichever pack passes benchmarks |
+| MacBook Air | Apple M5, 10-core CPU/GPU, 16 GB unified memory, 512 GB | Coordinator, UI, canonical state, optional worker | Core chat/agent and local embeddings if benchmarks permit |
+| ASUS V16 | Intel Core 7 240H, 16 GB DDR5 single-channel, RTX 5050 laptop GPU 8 GB VRAM, 512 GB | Worker | Coding model and code validation |
+| Lenovo LOQ 15IRX9 | Intel Core i5-13450HX, 24 GB DDR5 dual-channel, RTX 3050 laptop GPU 6 GB VRAM, 512 GB | Worker | Reasoning or a larger model with CPU offload |
+| HP Victus (Windows) | Intel Core i5-12450H, 16 GB DDR4, RTX 2050 4 GB VRAM, 1 TB | Worker | OCR/vision and model cache |
+| HP Victus (Linux) | Intel Core i5-13420H, 16 GB, RTX 2050 4 GB VRAM, 512 GB, Ubuntu 24.04 with Docker | Worker | Sandboxed code execution |
+| Dell Inspiron 15 3520 | Intel Core i5-1235U, 16 GB, Intel Iris Xe integrated only, 512 GB | Optional worker/fallback | Voice, fast chat, or embeddings |
+
+Full inventory, including storage, networking, driver versions, and outstanding
+gaps, is in [`devicespecifications.md`](devicespecifications.md).
 
 Assignments are hypotheses. The team must record exact GPU VRAM, driver/runtime support, sustained speed, temperature, and output quality before final placement.
+
+Do not read GPU VRAM from `systeminfo`, `Get-ComputerInfo`, or
+`Win32_VideoController.AdapterRAM`. That field saturates at 4 GB, and it
+misreported both the 8 GB and the 6 GB card in this fleet. Use `nvidia-smi`.
 
 On 8 GB GPUs, begin with Q4 models, bounded contexts, and task-specific output limits. Do not rely on advertised 128K or larger context windows without local quality and memory tests.
 

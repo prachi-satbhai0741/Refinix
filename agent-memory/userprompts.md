@@ -181,3 +181,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: none
 - supersedes: none
 - linked_changes: [AC-20260901-007](agentchangelog.md#ac-20260901-007)
+
+<a id="up-20260901-008"></a>
+## UP-20260901-008 — Confirm remaining device specs and align the PRD hardware table
+- date: 2026-09-01
+- status: done
+- scope: docs, research
+- tags: hardware, device-specs, model-selection, gpu, vram, prd, capability-packs
+- aliases: sahil specs, tanvi specs, rtx 3050 6gb, lenovo loq, dell inspiron, prd section 12, hardware table, adapterram
+- paths: docs/devicespecifications.md, docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Fold Sahil's and Tanvi's reported hardware into the device inventory and replace the hardware specifications in the PRD section 12 table so both documents agree.
+- constraints: The device inventory is the reference for specifications, not the PRD; keep capability assignments labelled as hypotheses; do not alter PRD sections other than the hardware table.
+- acceptance: All six devices carry confirmed CPU, RAM, GPU, and storage in the inventory; PRD section 12 lists all six with matching specifications and links to the inventory.
+- follow_up_to: [UP-20260901-007](#up-20260901-007)
+- supersedes: none
+- linked_changes: [AC-20260901-008](agentchangelog.md#ac-20260901-008)
