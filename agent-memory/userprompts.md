@@ -166,3 +166,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260901-005](#up-20260901-005)
 - supersedes: none
 - linked_changes: [AC-20260901-006](agentchangelog.md#ac-20260901-006)
+
+<a id="up-20260901-007"></a>
+## UP-20260901-007 — Team device specification inventory
+- date: 2026-09-01
+- status: done
+- scope: docs, research
+- tags: hardware, device-specs, model-selection, gpu, vram, capability-packs, benchmarks
+- aliases: devicespecifications.md, device specs, team laptops, hardware inventory, model fit, rtx, macbook m5, fleet, nvidia-smi
+- paths: docs/devicespecifications.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Collect the six team members' device hardware into a document that drives model selection and capability-pack assignment.
+- constraints: Treat model and capability notes as hypotheses until benchmarked; flag unreported fields rather than guessing them; do not edit the PRD in this change.
+- acceptance: A device specification document lists all six devices with a summary table, per-device detail, tentative capability mapping, and an open-items list.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260901-007](agentchangelog.md#ac-20260901-007)

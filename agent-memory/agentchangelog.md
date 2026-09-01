@@ -161,3 +161,18 @@ work. No repository file change means no changelog entry.
 - changes: Added the verified SIH title, description, organisation, category, and theme in a centred badge-led README while retaining accurate planning-stage and security-boundary wording.
 - verification: `git diff --check` passed; checked all repository-relative README targets exist.
 - remaining: Challenge metadata is based on the published SIH problem-statement listing; the product itself remains unimplemented.
+
+<a id="ac-20260901-007"></a>
+## AC-20260901-007 — Add six-device hardware inventory
+- date: 2026-09-01
+- agent: Claude Code
+- status: verified
+- prompt_id: [UP-20260901-007](userprompts.md#up-20260901-007)
+- related_prompts: none
+- tags: hardware, device-specs, model-selection, gpu, vram, capability-packs
+- aliases: devicespecifications.md, device specs, hardware inventory, model fit, fleet, nvidia-smi, adapterram
+- paths: docs/devicespecifications.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added `docs/devicespecifications.md` covering all six team devices with a summary table, per-device detail, tentative capability-pack mapping, and open items.
+- changes: Recorded CPU, RAM, GPU VRAM, storage, OS, and network per device; corrected the ASUS V16 to an RTX 5050 Laptop with 8 GB VRAM, 191 GB free of 477 GB, and no Ethernet adapter; documented the signed 32-bit `AdapterRAM` wrapping bug that under-reports VRAM and flagged the Yug and Prachi 4 GB figures for recheck; flagged Sahil GPU and storage, Tanvi storage, and all runtimes as still needed.
+- verification: `nvidia-smi`, `Get-PSDrive C`, and `Get-NetAdapter` run on the ASUS V16 for its row; `git diff --check` passed; confirmed every cited PRD section number exists in `docs/prd.md` and that the relative `prd.md` link resolves from `docs/`.
+- remaining: Other five devices are transcribed from members' reported output, not measured here. `docs/prd.md` §12 still lists the ASUS V16 as an RTX 5060 and needs a separate correction.
