@@ -616,7 +616,19 @@ This would make our "agentic" capability more suitable for real confidential ent
 
 
 Every tool call must be visible in the job timeline.
+- Comment by **Prachi**
 
+I suggest adding these two capabilities to strengthen SovereignMesh's focus on independent AI collaboration and protection of sensitive industrial data:
+
+1.**Interconnecting Independent Models**
+Allow multiple specialised local models to work independently while communicating through the coordinator when a task requires multiple capabilities. This enables models for coding, OCR, vision, reasoning, etc. to collaborate without sharing memory or combining VRAM.
+
+2.**Privacy and Security of Sensitive Files**
+Ensure confidential files remain within the trusted environment and are accessed only by authorised models, tools, and users. Data should be transferred on a minimum-necessary basis, protected with integrity checks, excluded from unnecessary audit logs, and never exposed to external AI services during offline operation.
+
+These additions would strengthen the system's modularity, security, and data-sovereignty principles.
+
+- **Prachi**
 ---
 
 ## 11. Model Provisioning and Capability Packs
