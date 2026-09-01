@@ -1,34 +1,43 @@
 # backend
 
-Coordinator and worker services.
+Local harness and worker service boundary.
 
 ## Intended boundary
 
-From [`docs/prd.md`](../docs/prd.md) sections 10.3–10.9:
+From [architecture.md](../docs/architecture.md):
 
-- **Coordinator** (10.3) — owns the canonical workspace: chats, job state,
-  device registry, artifacts. Runs on the Mac in v1.
-- **Worker service** (10.4) — executes one job on one complete model on one
-  device. Exposes the minimum LAN surface described in 14.3.
-- **Model runtime adapter** (10.5) — one adapter for the first proven runtime.
-  Not a plugin system.
-- **Router and scheduler** (10.6) — deterministic task-to-capability routing.
-- **Context manager** (10.7), **local knowledge base** (10.8), and **agent and
-  tool runner** (10.9).
+- **Local service** — owns workspace state and serves the loopback-only desktop
+  API.
+- **Coordinator** — owns canonical chats, rules, context, approvals, jobs,
+  artifacts, and final writes for one workspace.
+- **Worker service** — executes one bounded job step on one complete model and
+  may run locally, on a paired device, or headlessly on a private server.
+- **Workflow runner** — executes the named Chat, Documents, and Code contracts.
+- **Policy gate** — enforces automatic, approval-required, and denied actions.
+- **Router and scheduler** — selects only trusted, healthy, compatible nodes.
+- **Runtime adapter** — integrates one existing local model runtime first.
+- **Validators and proof events** — verify outputs and feed the task surfaces
+  and Control Center.
 
-Security invariants that apply to everything here: runtime operation must not
-require Internet access (16.2), local model runtimes bind to loopback (16.2),
-workers write only inside assigned temporary workspaces (15.2), and the sandbox
-has networking disabled by default (16.6).
+An installation does not have a permanent coordinator or worker identity. It
+always owns a local workspace and may accept bounded work from a paired
+workspace without merging canonical state.
+
+The [security boundaries](../docs/security.md) apply throughout: offline
+runtime has no required Internet traffic, runtimes bind to loopback, LAN
+services are authenticated and encrypted, worker writes remain inside assigned
+temporary workspaces, and code execution is network-disabled and resource
+bounded by default.
 
 ## Status: no scaffolding yet
 
-There is no `pyproject.toml`, no source tree, and no dependencies — on purpose.
+There is no pyproject.toml, source tree, or dependency set.
 
-`docs/prd.md` section 18 lists Python with FastAPI as a **candidate**, not a
-settled choice, and section 18 closes with: the prototype should not add
-multiple runtime adapters, vector databases, event systems, or packaging
-frameworks before one real end-to-end path proves they are needed.
+[Architecture technology direction](../docs/architecture.md#8-working-technology-direction)
+lists Python/FastAPI, Server-Sent Events, and SQLite as candidates, not settled
+choices. One real local inference path and one paired-worker path come before a
+message broker, generic agent framework, runtime plugin system, or vector
+database.
 
-Scaffolding lands when the team approves the PRD baseline and the technology
-choices. Until then this directory holds its definition and nothing else.
+Scaffolding begins only after the team accepts the v1 baseline and first runtime
+decision.

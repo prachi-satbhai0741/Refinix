@@ -310,8 +310,8 @@ PUBLIC repositories only. Transferring to a free organisation does NOT
 help.
 
 Real options:
-  - make the repository public (free, works immediately). Settle the
-    docs/prd.md 17.1 licence question first -- the repo carries Apache-2.0.
+  - make the repository public (free, works immediately). Settle
+    docs/prd.md OD-02 first -- the repo carries Apache-2.0.
   - the owner upgrades their personal account to GitHub Pro.
   - transfer to an organisation on GitHub Team (per-user cost).
 

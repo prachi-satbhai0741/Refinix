@@ -1,49 +1,42 @@
-# docs
+# AegisForge documentation
 
 ## Status
 
-[`prd.md`](prd.md) is the **current team-review draft**. It is **not final**
-until the team approves a v1 baseline.
+The documentation defines a team-review draft. The repository does not yet
+contain a verified runtime, installer, or model bundle.
 
-Treat it as the best available statement of intent, not as settled fact.
-Sections 17.1 (licence conflict), 11.5 (baseline package), and 24.2 (open
-decisions) list what is still undecided.
+## Start here
 
-## What is deferred
+1. [prd.md](prd.md) — short product contract, scope, priorities, and open decisions
+2. [architecture.md](architecture.md) — harness, nodes, state, jobs, and local data
+3. [workflows.md](workflows.md) — onboarding, Chat, Documents, Code, approvals, and Control Center
+4. [security.md](security.md) — trust, privacy, sandbox, supply chain, and sovereignty evidence
+5. [model-catalog.md](model-catalog.md) — model packs, manifests, provisioning, and selection
+6. [devicespecifications.md](devicespecifications.md) — current fleet evidence and open hardware checks
+7. [evaluation.md](evaluation.md) — five-day plan, measurements, acceptance, risks, and demo
 
-`prd.md` section 17.2 lists a full documentation set the repository should
-eventually carry:
+The PRD owns product scope. Each focused document owns implementation detail
+inside that scope. Record conflicts instead of duplicating or silently changing
+requirements.
 
-- `ARCHITECTURE.md` — component and deployment design
-- `PROTOCOL.md` — pairing, API, job, and event contracts
-- `THREAT_MODEL.md` — assets, actors, boundaries, mitigations
-- `MODEL_CATALOG.md` — approved model selection and evidence
-- `RESEARCH.md` — benchmark results and rejected hypotheses
-- `DECISIONS.md` — dated architecture decisions
-- `DEMO.md` — reproducible demonstration procedure
+## Documentation rules
 
-**None of these are created yet, and that is deliberate.** Writing them before
-the PRD baseline is accepted would document architecture the team has not
-agreed to, and each one would need rewriting when the baseline changes. They
-land once the PRD is approved.
+- Keep the PRD short; detailed contracts belong in their focused document.
+- Record a requirement once and link to it elsewhere.
+- Label features planned, prototyped, verified, deferred, or rejected.
+- Treat reported hardware, model names, licences, compatibility, and benchmarks
+  as unverified until evidence is recorded.
+- Do not leave discussion comments inside normative documents after a decision;
+  integrate the accepted requirement and rely on Git and the ledgers for history.
+- Do not create empty placeholder documents.
 
-Empty placeholder files are worse than absent ones: they look like coverage
-that does not exist.
+## Repository-level documents
 
-## Where things go
+- [../README.md](../README.md) — project entry point
+- [../AGENTS.md](../AGENTS.md) — shared coding-agent rules
+- [../CONTRIBUTING.md](../CONTRIBUTING.md) — branch, review, and release workflow
+- [../LICENSE](../LICENSE) — current repository licence
+- [../agent-memory/README.md](../agent-memory/README.md) — historical request and change index
 
-Future product and research documents belong under `docs/`.
-
-These files stay at the repository root, because tools and contributors expect
-them there:
-
-`README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `LICENSE`, `.gitignore`
-
-Tool-specific root files such as `CLAUDE.md` and `CODEX.md` are local-only and
-ignored. Shared agent rules belong in `AGENTS.md`.
-
-## Moved
-
-Root `prd.md` moved to `docs/prd.md`. Links, scripts, and ledger entries
-referring to the old path have been updated; if you find one that was missed,
-it is a bug.
+Tool-specific files such as CLAUDE.md and CODEX.md remain local and ignored.
+Shared rules belong in AGENTS.md.

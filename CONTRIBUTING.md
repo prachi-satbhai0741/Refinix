@@ -19,7 +19,7 @@
 > is enforcing it yet. Delete this banner once protection is confirmed active.
 
 This document is the branch, review, and ownership workflow required by
-[`docs/prd.md`](docs/prd.md) section 17.3.
+[`AGENTS.md`](AGENTS.md).
 
 ## The one rule
 
@@ -129,19 +129,21 @@ Anyone can open and merge that release PR.
 
 Reviewing is still worth doing. When you do, check:
 
-- **Evidence.** PRD 17.3: decisions are evidence-backed and dated. A claim
-  with no command output, timing, or test run behind it is not ready.
-- **Honest labels.** PRD 17.3: features are labelled planned, prototyped,
-  verified, or deferred. "Prototyped" presented as "verified" is a bug.
-- **No mocked paths sold as real.** PRD 21 Day 2 exit evidence: "No mocked
-  inference in the claimed path."
-- **AI output was actually read.** PRD 17.3: do not merge generated output
-  nobody has reviewed.
+- **Evidence.** [Evaluation rules](docs/evaluation.md#1-evidence-labels):
+  decisions are evidence-backed and dated. A claim with no reproducible
+  observation behind it is not ready.
+- **Honest labels.** Features are labelled planned, prototyped, verified,
+  deferred, or rejected. "Prototyped" presented as "verified" is a bug.
+- **No mocked paths sold as real.** The
+  [Day 1 gate](docs/evaluation.md#day-1-baseline-and-one-local-engine) requires
+  no mocked inference in the claimed path.
+- **AI output was actually read.** Do not merge generated output nobody has
+  reviewed.
 - **Nothing forbidden was committed.** See below.
 
 ## Never commit
 
-From PRD 15.3:
+From [security.md](docs/security.md#11-repository-content):
 
 - Model weights
 - Generated installers or release binaries
@@ -180,8 +182,9 @@ repository require GitHub Pro, Team, or Enterprise; GitHub Free gets them on
 public repositories only, and moving to a free organisation does not change
 that. So one of these has to happen first:
 
-- make the repository public — free and immediate, but settle the `docs/prd.md`
-  17.1 licence question first, since the repo carries Apache-2.0
+- make the repository public — free and immediate, but settle
+  [OD-02](docs/prd.md#11-open-decisions) first, since the repo carries
+  Apache-2.0
 - the owner upgrades to GitHub Pro
 - transfer to an organisation on GitHub Team
 

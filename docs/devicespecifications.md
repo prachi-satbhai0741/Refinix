@@ -2,7 +2,8 @@
 
 Hardware inventory for the six team devices, collected for **model selection and
 capability-pack assignment**. This document is the team's reference for what the
-fleet actually is; `prd.md` §12 carries a condensed version of the same table.
+fleet actually is; [model-catalog.md](model-catalog.md) owns model and pack
+policy.
 
 - **Collected:** 2026-09-01
 - **Status:** reported inventory covers all six devices; only values marked
@@ -10,7 +11,8 @@ fleet actually is; `prd.md` §12 carries a condensed version of the same table.
   installed runtimes, the Mac GPU-core configuration, and two VRAM figures
   needing a `nvidia-smi` recheck.
 - **Rule:** treat every capability and model note below as a **hypothesis** until
-  benchmarked on the actual device (`prd.md` §19 measurement plan).
+  benchmarked on the actual device under
+  [evaluation.md](evaluation.md#5-measurement-plan).
 
 > **Reading VRAM correctly.** `systeminfo`, `Get-ComputerInfo`, and
 > `Win32_VideoController.AdapterRAM` report GPU memory through a 32-bit field
@@ -50,7 +52,7 @@ adapters for at least the Mac and Vedant.
 
 ## Per-device detail
 
-### Aditya — MacBook Air (M5, 13-inch, 2026) — PRD v1 coordinator
+### Aditya — MacBook Air (M5, 13-inch, 2026) — primary alpha workspace
 - **SoC:** Apple M5 — 10-core CPU (4 performance + 6 efficiency), 8- or
   10-core GPU configuration **to confirm locally**, 16-core Neural Engine
 - **Unified memory:** 16 GB, bandwidth **153 GB/s** (shared across CPU/GPU/NE)
@@ -58,7 +60,9 @@ adapters for at least the Mac and Vedant.
 - **OS:** macOS 26.x
 - **Runtime fit:** MLX (native Apple Silicon) or Ollama/llama.cpp with Metal
 - **Network:** Wi-Fi only; the Air has no Ethernet port (USB-C adapter needed)
-- **Planning note:** This is the fixed **coordinator + UI** per `prd.md` §6.3.
+- **Planning note:** This is the planned **primary workspace + UI** for the
+  alpha, not a permanent installation role. The dynamic node model is in
+  [architecture.md](architecture.md#2-installation-and-runtime-responsibilities).
   Unified memory means model weights, KV cache, and the OS all share 16 GB —
   budget conservatively (a Q4 4B model is roughly 3–4 GB, leaving headroom for
   embeddings and the app). Good home for the **core chat/agent model** and
@@ -129,7 +133,8 @@ adapters for at least the Mac and Vedant.
 - **OS:** Ubuntu 24.04.4 LTS, GNOME 46
 - **Network:** Wi-Fi (Intel) + Realtek Gigabit Ethernet; **Docker already installed** (docker0 and bridges present)
 - **Planning note:** The only Linux box, and Docker is already running, making it
-  the **strongest fit for the sandboxed code-execution worker** (`prd.md` §16.6).
+  the **strongest fit for the sandboxed code-execution worker** under
+  [security.md](security.md#8-filesystem-and-sandbox).
   Native Docker with networking disabled is cleanest here, and the sandbox role
   does not need a GPU. **Action:** install a compatible NVIDIA driver if GPU
   inference is wanted; add `nvidia-container-toolkit` only when passing the GPU
@@ -154,9 +159,9 @@ adapters for at least the Mac and Vedant.
 
 ## Tentative capability-pack mapping (hypothesis — benchmark before committing)
 
-| Capability pack (`prd.md` §11.4) | Best-fit device | Why |
+| Capability pack ([model-catalog.md](model-catalog.md#2-baseline-and-conditional-packs)) | Best-fit device | Why |
 |---|---|---|
-| Core chat / agent + router (coordinator) | Aditya (M5 Air) | Fixed coordinator per §6.3; MLX and unified memory suit a small chat model plus embeddings |
+| Main engine + primary alpha workspace | Aditya (M5 Air) | MLX and unified memory may suit a small main model; the app may still use this or paired compute |
 | Coding worker | **Vedant (RTX 5050, 8 GB)** | The only 8 GB GPU; holds a 7B-Q4 coding model almost entirely in VRAM |
 | Reasoning / large-model worker | **Sahil (RTX 3050 6 GB + 24 GB dual-channel)** | Best CPU-offload host in the fleet; runs a larger model partly on CPU without collapsing |
 | Code sandbox execution | Prachi (Ubuntu + Docker) | Native Linux Docker with networking disabled; no GPU required |
@@ -165,8 +170,9 @@ adapters for at least the Mac and Vedant.
 | ASR / voice (optional) | Tanvi (CPU) | A small ASR model runs acceptably on CPU; suits the weakest node |
 
 Constraint reminder: **no device exceeds 8 GB discrete VRAM.** Plan every model as
-**Q4, bounded context, task-specific output limits** (`prd.md` §12). Do not rely on
-advertised 128K context windows without local quality and memory tests.
+**Q4, bounded context, task-specific output limits** under
+[model-catalog.md](model-catalog.md#9-hardware-policy). Do not rely on advertised
+128K context windows without local quality and memory tests.
 
 ---
 

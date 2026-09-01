@@ -9,10 +9,12 @@ Order when context conflicts:
 
 1. The current user request — defines the task and the permissions.
 2. This file.
-3. [`docs/prd.md`](docs/prd.md) — product requirements *(review draft, not a v1 baseline)*.
-4. [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch and merge flow.
-5. Current source, tests, and observed command output.
-6. [`agent-memory/`](agent-memory/README.md) — historical index only.
+3. [`docs/prd.md`](docs/prd.md) — product scope *(review draft, not a v1 baseline)*.
+4. The focused document linked by the PRD for architecture, workflow, security,
+   models, hardware, or evaluation detail.
+5. [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch and merge flow.
+6. Current source, tests, and observed command output.
+7. [`agent-memory/`](agent-memory/README.md) — historical index only.
 
 Report unresolved conflicts; never invent product behavior. Agents advise: raise
 an ordinary concern once, then drop it and proceed. Security, privacy,
@@ -109,22 +111,28 @@ ledgers, and archiving. Writing rules:
 
 ## AegisForge invariants
 
-From `docs/prd.md`; do not weaken without an approved decision.
+From [`docs/prd.md`](docs/prd.md) and
+[`docs/security.md`](docs/security.md); do not weaken without an approved
+decision.
 
 - Runtime operation must not require Internet access: no cloud inference,
   telemetry, analytics, or silent network calls in the offline runtime. Local
-  runtimes bind to loopback; workers expose the minimum LAN surface (16.2, 16.3).
+  runtimes bind to loopback; workers expose the minimum authenticated LAN
+  surface.
 - Workers write only inside assigned temporary workspaces, rejecting path
   traversal and symlink escape. Sandboxed execution has networking disabled by
-  default with bounded CPU, memory, runtime, and filesystem (15.2, 16.6).
+  default with bounded CPU, memory, runtime, process, and filesystem access.
 - Never commit model weights, installers or release binaries, signing keys or
   tokens, private documents, real confidential scans, local chat databases, or
-  environment files with secrets (15.3).
+  environment files with secrets
+  ([repository content](docs/security.md#11-repository-content)).
 - Record model source, licence, file hash, runtime, and version. Treat model
   names, licences, compatibility, and benchmarks as unverified until evidence is
-  recorded (16.4, 17.3).
+  recorded in the [model catalogue](docs/model-catalog.md) and
+  [evaluation evidence](docs/evaluation.md#1-evidence-labels).
 - Do not claim a benchmark that is not reproducible from repository
-  instructions. Label features planned, prototyped, verified, or deferred (17.3).
+  instructions. Label features planned, prototyped, verified, deferred, or
+  rejected.
 
 ## Completion report
 
