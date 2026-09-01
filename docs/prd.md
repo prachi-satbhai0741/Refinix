@@ -590,6 +590,31 @@ The MVP tool set is deliberately limited and auditable:
 - Validate task output
 - Retry or escalate low-confidence results
 
+**Comment by Sahil Ranade:**
+
+I suggest adding a configurable **Human Approval / Agent Autonomy mechanism** to the Agent and Tool Runner. Since SovereignMesh is designed for confidential industrial work and the agent can read files, execute code, generate artifacts, and potentially modify persistent data, the level of autonomy should not be the same for every workflow.
+
+I propose three operating modes:
+
+1. **Autonomous Mode** — The agent can perform permitted low-risk actions automatically, such as reading approved files, OCR, local retrieval, analysis, draft generation, and sandboxed validation. Existing security and tool restrictions still apply.
+
+2. **Controlled Mode** — The agent can perform routine actions automatically, but actions that affect persistent or consequential data require explicit user approval. For example, generating and validating a code patch can happen automatically, but applying the patch to the canonical repository requires approval.
+
+3. **Approval Mode** — The agent can analyse the task and prepare proposed actions, but controlled tool execution or consequential changes require explicit human approval before execution.
+
+The mode should be enforced by the coordinator and applied at the workspace or job level. This gives the system a practical balance between automation and human control instead of treating every AI action equally.
+
+This is particularly important for MRPL/industrial use cases because an agent should be able to work autonomously within a sandbox while keeping consequential operations under human authority. It also strengthens the existing principle that the coordinator retains final-write authority and prevents the agent from silently making persistent changes.
+
+Suggested flow:
+
+**User Request → Agent Planning → Policy/Permission Check → Execute Automatically OR Request Approval → Validation → Final Write**
+
+This would make our "agentic" capability more suitable for real confidential enterprise environments while still preserving automation where human intervention is unnecessary.
+
+— **Sahil Ranade**
+
+
 Every tool call must be visible in the job timeline.
 
 ---
