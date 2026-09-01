@@ -616,7 +616,19 @@ This would make our "agentic" capability more suitable for real confidential ent
 
 
 Every tool call must be visible in the job timeline.
+- Comment by **Prachi**
 
+I suggest adding these two capabilities to strengthen SovereignMesh's focus on independent AI collaboration and protection of sensitive industrial data:
+
+1.**Interconnecting Independent Models**
+Allow multiple specialised local models to work independently while communicating through the coordinator when a task requires multiple capabilities. This enables models for coding, OCR, vision, reasoning, etc. to collaborate without sharing memory or combining VRAM.
+
+2.**Privacy and Security of Sensitive Files**
+Ensure confidential files remain within the trusted environment and are accessed only by authorised models, tools, and users. Data should be transferred on a minimum-necessary basis, protected with integrity checks, excluded from unnecessary audit logs, and never exposed to external AI services during offline operation.
+
+These additions would strengthen the system's modularity, security, and data-sovereignty principles.
+
+- **Prachi**
 ---
 
 ## 11. Model Provisioning and Capability Packs
@@ -1433,3 +1445,21 @@ The first implementation milestone is not a complete ChatGPT replacement. It is 
 Future any-device input/output and coordinator roles remain compatible with this direction but require replicated state, failover, and conflict handling that are intentionally outside v1.
 
 This PRD is the starting point for the repository's architecture, workflow, security, model-catalogue, research, and demo documents. Any later decision that changes these requirements should be recorded in the repository and reflected here rather than left only in chat.
+## Comment by Tanvi
+>  
+>
+> I suggest adding an **AI Health & Sovereignty Dashboard** for administrators. It should provide a real-time view of server health, AI model status, CPU/RAM/GPU usage, active jobs, trusted workers, and network security.
+>
+> A key feature should be **Internet/Egress Monitoring**. If any AI component attempts to access an external service while offline/egress blocking is enabled, the connection should be blocked and recorded.
+>
+> The dashboard should visibly show:
+>
+> * Internet Access: **BLOCKED**
+> * External AI/API Calls: **0**
+> * External Connections: **0**
+> * Blocked Attempts: **N**
+> * Local AI/RAG/OCR: **ACTIVE**
+>
+> This makes our sovereignty claim **visible and auditable**, rather than simply stating that data stays inside the organization.
+>
+> — **Tanvi Shinde**
