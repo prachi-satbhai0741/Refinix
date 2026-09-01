@@ -686,7 +686,7 @@ Do not infer that a model is safe or distributable merely because its weights ar
 
 | Device | Known hardware | v1 role | Tentative capability |
 |---|---|---|---|
-| MacBook Air | Apple M5, 10-core CPU/GPU, 16 GB unified memory, 512 GB | Coordinator, UI, canonical state, optional worker | Core chat/agent and local embeddings if benchmarks permit |
+| MacBook Air | Apple M5, 10-core CPU, GPU core count pending local check, 16 GB unified memory, 512 GB | Coordinator, UI, canonical state, optional worker | Core chat/agent and local embeddings if benchmarks permit |
 | ASUS V16 | Intel Core 7 240H, 16 GB DDR5 single-channel, RTX 5050 laptop GPU 8 GB VRAM, 512 GB | Worker | Coding model and code validation |
 | Lenovo LOQ 15IRX9 | Intel Core i5-13450HX, 24 GB DDR5 dual-channel, RTX 3050 laptop GPU 6 GB VRAM, 512 GB | Worker | Reasoning or a larger model with CPU offload |
 | HP Victus (Windows) | Intel Core i5-12450H, 16 GB DDR4, RTX 2050 4 GB VRAM, 1 TB | Worker | OCR/vision and model cache |

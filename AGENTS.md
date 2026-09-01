@@ -95,6 +95,11 @@ ledgers, and archiving. Writing rules:
 
 - Make the smallest safe diff. Prefer deletion, reuse, and existing dependencies;
   avoid unrelated refactors and speculative abstractions.
+- Build prototypes by adapting suitable local/offline open-source libraries and
+  codebases before writing commodity functionality from scratch. Reuse only
+  when the licence permits it; record the source, pinned version or commit,
+  licence, and material local changes, and reject unlicensed, incompatible,
+  cloud-dependent, or silently networked code.
 - Fix root causes in the shared path after checking all callers. Never change
   behavior silently.
 - Do not run tests, installers, migrations, deployments, model downloads, or

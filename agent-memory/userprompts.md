@@ -196,3 +196,33 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260901-007](#up-20260901-007)
 - supersedes: none
 - linked_changes: [AC-20260901-008](agentchangelog.md#ac-20260901-008)
+
+<a id="up-20260901-009"></a>
+## UP-20260901-009 — Review device inventory and require open-source reuse
+- date: 2026-09-01
+- status: done
+- scope: review, repository-guidance
+- tags: device-specs, code-review, open-source, reuse, licensing, offline-runtime
+- aliases: vedant recent push, reuse github code, local open source libraries, prototype acceleration
+- paths: docs/devicespecifications.md, docs/prd.md, AGENTS.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Review Vedant's latest merged device-inventory change and require prototype work to reuse suitable local/offline open-source components before rebuilding commodity functionality.
+- constraints: Do not import competing SIH solutions; accept only licence-compatible components with provenance and no required cloud or silent network behavior; keep the review separate from fixes.
+- acceptance: Report actionable findings against merge `f4f0b62` and add the reusable-component policy to `AGENTS.md` without altering the reviewed device documentation.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260901-009](agentchangelog.md#ac-20260901-009)
+
+<a id="up-20260901-010"></a>
+## UP-20260901-010 — Correct reviewed device-inventory claims
+- date: 2026-09-01
+- status: done
+- scope: docs, correction
+- tags: device-specs, evidence, macbook, cuda, storage, prd
+- aliases: fix needs fix, vedant review fixes, gpu configuration, cuda prerequisites, model capacity
+- paths: docs/devicespecifications.md, docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Correct the evidence status, Mac GPU configuration, NVIDIA prerequisites, and storage-capacity wording found in the review of Vedant's merged device inventory.
+- constraints: Preserve tentative capability assignments; do not install runtimes, probe hardware, download models, or expand the architecture.
+- acceptance: Unmeasured facts are labelled honestly, CUDA requirements are runtime-specific, 3–5 models is a prototype policy rather than a disk limit, and the PRD matches the inventory.
+- follow_up_to: [UP-20260901-009](#up-20260901-009)
+- supersedes: none
+- linked_changes: [AC-20260901-010](agentchangelog.md#ac-20260901-010)
