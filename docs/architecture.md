@@ -7,7 +7,7 @@ This document owns the implementation shape allowed by
 
 ## 1. System shape
 
-SovereignMesh is one local agent harness with several user-facing workflow
+Refinix is one local agent harness with several user-facing workflow
 surfaces. The desktop interface and headless worker use the same local service
 and contracts.
 

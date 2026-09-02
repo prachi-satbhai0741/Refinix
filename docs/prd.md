@@ -1,6 +1,6 @@
 # AegisForge Product Requirements
 
-## SovereignMesh: Private Local Agent Harness
+## Refinix: Private Local Agent Harness
 
 | Field | Value |
 |---|---|
@@ -8,8 +8,9 @@
 | Status | Team-review draft; not an approved v1 baseline |
 | Target | Smart India Hackathon Problem Statement SIH26117 |
 | Repository name | AegisForge |
-| Product working name | SovereignMesh |
-| Last updated | 2026-09-02 |
+| Product working name | Refinix |
+| Team name | Rokunin Sync |
+| Last updated | 2026-09-01 |
 
 This document is the short product contract. Detailed design belongs in the
 linked architecture, workflow, security, model, hardware, and evaluation
@@ -17,7 +18,7 @@ documents; it should not be copied back into this file.
 
 ## 1. Product definition
 
-SovereignMesh is an installable, private agent harness for confidential
+Refinix is an installable, private agent harness for confidential
 industrial knowledge work. It provides dedicated Chat, Documents, and Code
 surfaces over one local coordinator, one policy boundary, and one auditable job
 system.
@@ -129,7 +130,7 @@ Auto routing uses deterministic capability and health evidence. The selected
 model, device, and reason remain visible and manually overridable for debugging
 and demonstrations.
 
-SovereignMesh performs task-level orchestration, not model sharding or combined
+Refinix performs task-level orchestration, not model sharding or combined
 VRAM. One job step runs one complete model on one selected device. A
 coordinator-managed workflow may pass validated, typed output between steps;
 models do not communicate directly or share unrestricted memory.
