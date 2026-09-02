@@ -16,6 +16,11 @@ From [architecture.md](../docs/architecture.md):
 - **Policy gate** — enforces automatic, approval-required, and denied actions.
 - **Router and scheduler** — selects only trusted, healthy, compatible nodes.
 - **Runtime adapter** — integrates one existing local model runtime first.
+- **Redis coordination** — carries bounded dispatch, lease, heartbeat,
+  cancellation, cache, and event state between worker API and executor Pods;
+  it is not canonical storage.
+- **Kubernetes profile** — runs the Docker-built worker API and executor as
+  Deployments behind a Service and code validation as short-lived Jobs.
 - **Validators and proof events** — verify outputs and feed the task surfaces
   and Control Center.
 
@@ -34,10 +39,14 @@ bounded by default.
 There is no pyproject.toml, source tree, or dependency set.
 
 [Architecture technology direction](../docs/architecture.md#8-working-technology-direction)
-lists Python/FastAPI, Server-Sent Events, and SQLite as candidates, not settled
-choices. One real local inference path and one paired-worker path come before a
-message broker, generic agent framework, runtime plugin system, or vector
-database.
+settles Python/FastAPI, Server-Sent Events, coordinator SQLite, Docker-built
+images, single-node K3s, and Redis 7.2.x for the five-day alpha. The first code
+must implement the frozen `/v1` contract and one real model path before a second
+runtime, framework, or database appears.
 
-Scaffolding begins only after the team accepts the v1 baseline and first runtime
-decision.
+Initial source is split only by the real process boundaries: shared contracts,
+coordinator, worker API/executor, runtime adapter, and runnable checks. Do not
+create a generic plugin framework or one package per future capability.
+
+Scaffolding begins with AF-001 and must stop at the first real Service-to-Pod
+model response before any optional package or abstraction is added.

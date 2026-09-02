@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Document version | 2.0 |
+| Document version | 2.1 |
 | Status | Team-review draft; not an approved v1 baseline |
 | Target | Smart India Hackathon Problem Statement SIH26117 |
 | Repository name | AegisForge |
@@ -29,6 +29,12 @@ organisation-managed private server without changing the user's workspace.
 
 > One private agent application for chat, documents, and code that works on one
 > device and can safely use trusted local compute when available.
+
+The five-day alpha also proves the mentor-directed deployment shape: a
+Docker-built worker image runs as Kubernetes-managed Pods, a Kubernetes Service
+exposes the authenticated worker API, and Redis coordinates bounded ephemeral
+work. Kubernetes is an execution profile for trusted compute; it does not make
+standalone use depend on a cluster.
 
 The repository currently contains product planning and documentation, not a
 verified runtime. No model, performance, security, or hardware claim becomes
@@ -163,6 +169,10 @@ The alpha must prove:
   harness rather than separate applications;
 - one real prompt travels from the primary workspace to one paired worker and
   streams back;
+- one Docker-built worker image is deployed through Kubernetes, reaches Ready
+  Pods behind a Service, and completes that paired-worker prompt;
+- Redis carries only bounded queue, lease, heartbeat, cache, and event state;
+  canonical workspace and final-write state remain on the coordinator;
 - the original request, selected device, model, routing reason, and job state
   are visible;
 - worker participation is reversible and does not move canonical state;
@@ -223,6 +233,8 @@ separate multi-user control plane.
 | FR-017 | Multiple organisational users and policy roles are supported | P2 |
 | FR-018 | Canonical workspace ownership can move between nodes safely | P2 |
 | FR-019 | Supported Indian languages work offline for input and output, preserving equipment tags, units, and citations, and showing low confidence | P1 |
+| FR-020 | A Docker-built worker image runs as Kubernetes-managed Pods behind a Service and completes one real bounded job | P0 |
+| FR-021 | Redis coordinates ephemeral dispatch, leases, heartbeats, cache, and worker events without becoming canonical workspace storage | P0 |
 
 ## 9. Non-goals
 
@@ -232,7 +244,9 @@ The alpha and finals MVP do not include:
 - training or fine-tuning models;
 - public-cloud inference;
 - arbitrary executable model code;
-- Kubernetes, a custom transport, or a generic message broker;
+- a multi-node or highly available Kubernetes control plane;
+- a Redis cluster, Redis as canonical storage, or another message broker;
+- a custom transport or Kubernetes operator;
 - a universal model downloader or runtime abstraction;
 - a generic multi-agent framework or visual workflow builder;
 - unrestricted autonomous host modification;
@@ -249,6 +263,8 @@ Prototype targets are hypotheses until measured:
 | External inference calls during offline demo | 0 |
 | Accepted corrupted transfers | 0 |
 | Real paired-worker path | At least 1 |
+| Ready worker Pods behind the Kubernetes Service | At least 1 |
+| Canonical records lost after Redis restart | 0 |
 | Concurrent independent workflow types | At least 2 for finals |
 | Duplicate final writes after retry | 0 |
 | Routing decision visible | Every demonstrated job |
@@ -268,6 +284,7 @@ Detailed measurement rules and the demo sequence are in
 | OD-05 | Select the main, document, coding, and embedding models from measured evidence | Before the demo baseline |
 | OD-06 | Define prototype pairing credentials versus finals-grade pairing | Before the paired-worker milestone |
 | OD-07 | Decide whether semantic retrieval is enabled by default after footprint testing | Before onboarding is frozen |
+| OD-08 | Pin the K3s release, Redis 7.2 patch and image digest, worker/sandbox image digests, and Service port | Before AF-002 |
 
 ## 12. Canonical document map
 

@@ -26,16 +26,36 @@ Distribution means task-level orchestration, not model sharding or combined
 VRAM. No mocked inference, routing, sandbox, artifact, or network evidence may
 be presented as real.
 
+## Friday product bar
+
+The candidate is not judged by file count, agent count, or Kubernetes objects:
+
+- **Usable:** a new operator can open the local UI, submit a real job, follow
+  progress, cancel it, and retrieve the result without a developer editing
+  state by hand.
+- **Viable:** one MRPL-relevant scanned-report workflow produces a grounded,
+  cited, openable approval note; the infrastructure is in service of this
+  outcome rather than the whole demonstration.
+- **Presentable:** the team can show Docker image provenance, Ready Pods,
+  Services, Redis queue state, deterministic routing, approval, failure
+  recovery, and scoped offline evidence in one coherent story.
+
+If the Documents workflow is not real by the Day 3 gate, a second worker,
+multilingual support, voice, scaling, and visual polish are stopped. If the
+complete frozen path does not pass three consecutive rehearsals, it is not the
+candidate regardless of how many individual components work.
+
 ## Operating contract
 
-- Aditya and Vedant are the only members with both Claude Pro and Codex Plus.
-  Every critical-path build task is therefore owned by one or both of them.
-- The other teammates use their available free or student tools for bounded
-  work that does not block on premium-agent limits: fixtures, hardware runs,
-  manual acceptance, failure drills, measurements, evidence, documentation,
-  and demo operation.
-- No critical dependency assumes that an unverified Antigravity plan provides
-  a particular model, quota, or feature.
+- The team reports access to six Antigravity seats, Claude Pro, Codex Plus,
+  free-tier Codex, OpenCode, and other assistants. This is planning capacity,
+  not evidence that any task or tool works.
+- A human owner remains accountable for every task. AI agents receive bounded
+  work packets with allowed paths, frozen contracts, an acceptance command, and
+  forbidden scope. Agent count never replaces integration or hardware proof.
+- Critical-path build work may be assigned across the team after each owner
+  proves the required local environment with the task's smallest acceptance
+  check. Until then, Aditya or Vedant remains the fallback build owner.
 - Aditya is integration owner and retains control of Git, merges, conflicts,
   scope decisions, and demo acceptance.
 - Claude takes bounded implementation tasks and returns changed paths, exact
@@ -47,6 +67,9 @@ be presented as real.
   [member branch -> `dev` -> `main` flow](CONTRIBUTING.md#the-one-rule).
 - Integrate into `dev` at least twice daily. A module is not considered working
   until it runs through the shared coordinator contract.
+- No two agents may invent parallel versions of the job envelope, event schema,
+  authentication, Redis keys, or Kubernetes manifests. AF-001 freezes those
+  seams before downstream work merges.
 - Tests, installers, model downloads, migrations, deployments, and live-system
   commands require the permission defined in [AGENTS.md](AGENTS.md).
 
@@ -59,18 +82,35 @@ Aditya may reassign work without changing the architecture.
 
 | Owner | Role | Required output |
 |---|---|---|
-| Aditya | Core builder, coordinator, integration owner | Coordinator, application, routing, workflows, proof, and release candidate |
-| Vedant | Core builder, model and worker owner | Runtime integration, worker execution, OCR/code adapters, and sandbox integration |
-| Sahil | Integration QA and distributed-run operator | State/routing matrices, repeatable pairing and failure drills, measurements |
-| Yug | Document-fixture and OCR-evaluation owner | Public scans, page-level ground truth, SOP fixtures, OCR quality report |
-| Prachi | Linux sandbox and network-evidence operator | Reproducible sandbox runs, resource/network observations, failure evidence |
-| Tanvi | Product acceptance and demo-evidence owner | Surface copy/checklists, manual UI acceptance, Proof Card review, demo pack |
+| Aditya | Coordinator and integration owner | Frozen contracts, SQLite authority, routing, integration, scope, and release candidate |
+| Vedant | Worker and model owner | Docker image, FastAPI worker, runtime adapter, Redis consumer, and streaming |
+| Prachi | Kubernetes and isolation owner | K3s host, manifests, Services, Redis, NetworkPolicies, sandbox Jobs, and cluster evidence |
+| Sahil | Contract and reliability owner | Contract checks, lifecycle/routing matrices, retry, cancellation, and failure drills |
+| Yug | Documents owner | Public fixtures, OCR/page mapping, retrieval grounding, and document quality evidence |
+| Tanvi | Product and demo owner | Local web UI, Control Center acceptance, Proof Card review, and demo pack |
 
 The hardware mapping is a hypothesis until measured; use
 [devicespecifications.md](docs/devicespecifications.md) for current evidence.
-The named owners must close its six
+Prachi must close the K3s-host portion of the
 [hardware checks](docs/devicespecifications.md#still-needed-before-final-model-placement)
-before AF-002 begins.
+before AF-002 begins. The other checks gate only the device or model assignment
+they affect; they do not block the first cluster spine.
+
+## Immediate work packets
+
+These four packets start in parallel after Aditya publishes the AF-001 contract
+draft. Each packet has one merge owner even when several AI agents assist.
+
+| Packet | Owner | Allowed initial paths | First observable result |
+|---|---|---|---|
+| Contract and coordinator | Aditya | `backend/contracts/`, coordinator source, smallest contract check | One SQLite-persisted local job emits the frozen event sequence |
+| Worker image and runtime | Vedant | worker source, `Dockerfile`, runtime adapter | One Docker-built image answers `/v1/health` and streams one real model response |
+| Kubernetes and Redis | Prachi | `infra/k3s/`, deployment instructions | K3s reports Ready worker and Redis Pods; only the worker Service is reachable from the LAN |
+| UI and acceptance | Tanvi | `frontend/`, acceptance checklist | The local browser UI shows one live job and truthful unavailable states |
+
+Sahil writes contract and failure checks against the frozen envelope. Yug
+prepares the public scan, page ground truth, SOP, and expected output without
+blocking the Day 1 spine.
 
 ## Internal hackathon: five-day execution
 
@@ -78,59 +118,64 @@ before AF-002 begins.
 
 | ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
 |---|---|---|---|---|---|---|
-| AF-001 | planned | Aditya | Sahil lists lifecycle cases and checks event names | Freeze the minimum node, model-manifest, job, event, step-result, approval, and proof contracts already defined in the architecture | — | One versioned contract set is used by the coordinator and worker code; catalogue entries load from valid manifests rather than code changes |
-| AF-002 | planned | Vedant | Sahil records the hardware run sheet and measurements | Select one cross-platform local runtime and verify one curated main model on actual hardware | AF-001 | A real prompt streams locally; model source, licence, revision, memory, and latency are recorded |
-| AF-003 | planned | Aditya | Sahil prepares expected state transitions and failure cases | Implement the smallest coordinator path: create job, route locally, stream events, persist terminal state | AF-001, AF-002 | Restart-safe job record reaches a truthful terminal state without mocked inference |
-| AF-004 | planned | Aditya | Tanvi supplies surface copy and an unavailable-state checklist | Create the thinnest usable Chat, Documents, Code, and Control Center shell over the shared event stream | AF-001 | All four surfaces open and display real coordinator state; unavailable capabilities say unavailable |
+| AF-001 | planned | Aditya | Sahil checks lifecycle and schema cases | Freeze versioned node, job, attempt, event, approval, proof, HTTPS, Redis-key, and idempotency contracts | — | Coordinator, worker, UI, and manifests consume one contract version; schema examples pass the smallest contract check |
+| AF-002 | planned | Prachi | Vedant reviews image/runtime requirements | Provision one pinned single-node K3s cluster on Prachi's Ubuntu host and deploy pinned Redis 7.2.x behind ClusterIP | AF-001 | Kubernetes reports Ready Redis and worker placeholders; Redis is unreachable from the LAN; versions, digests, and licences are recorded |
+| AF-003 | planned | Vedant | Sahil records latency and failure output | Build the smallest Docker worker image with FastAPI, one runtime adapter, the frozen Service API, and one real model | AF-001, AF-002 | A real prompt streams from a worker Pod; source, licence, revision, image digest, memory, and latency are recorded |
+| AF-004 | planned | Aditya + Tanvi | Sahil checks state transitions | Implement SQLite-backed coordinator state and the smallest local browser UI over one event stream | AF-001 | A local job reaches a truthful terminal state after restart; Chat and Control Center show live state while unfinished surfaces say unavailable |
 
-Day 1 gate: one real local response streams through the application and leaves
-a persisted job, model, device, and timing record.
+Day 1 gate: the pinned Docker image runs in a Ready Kubernetes Pod, one real
+response streams through the worker API, and the coordinator persists the job,
+attempt, model, device, and timing record. No workflow work starts before this
+spine passes.
 
 ### Day 2 — Prove real distributed execution
 
 | ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
 |---|---|---|---|---|---|---|
-| AF-005 | planned | Aditya + Vedant | Sahil repeats pairing and disconnect on his laptop and records outcomes | Run the same bounded worker service on the Mac and one Windows machine with prototype authenticated pairing | AF-001–AF-003 | Mac sends one real prompt to the worker and streams the result back |
-| AF-006 | planned | Aditya | Sahil supplies and executes the routing-scenario matrix | Implement deterministic capability and health routing with an explicit target override | AF-003, AF-005 | Route reason, selected node, selected model, queue state, and fallback reason are visible |
-| AF-007 | planned | Aditya | Tanvi performs Control Center acceptance and captures screenshots | Connect paired-node health, model capability, job progress, disconnect, and revoke controls to Control Center | AF-005, AF-006 | Displayed state comes from live worker/coordinator events, not constants |
+| AF-005 | planned | Vedant + Prachi | Sahil tests pending, acknowledged, expired, and reclaimed work | Connect the worker API and executor through Redis Streams, leases, cancellation, bounded retention, and cleanup | AF-002, AF-003 | One queued attempt is consumed and acknowledged; a killed consumer leaves recoverable pending work; Redis restart loses no canonical record |
+| AF-006 | planned | Aditya | Sahil executes the routing matrix | Route from the Mac coordinator to the Kubernetes Service using capability, health, queue, and explicit-target rules | AF-003–AF-005 | Mac -> authenticated Service -> Redis -> executor -> SSE response completes with visible route reason and local fallback |
+| AF-007 | planned | Tanvi | Aditya connects only the frozen event contract | Finish the usable Chat and Control Center slice with guided preflight/self-test, node health, Pod readiness, model, queue, progress, cancel, disconnect, and fallback state | AF-004–AF-006 | A fresh documented setup selects the curated manifest and reaches a real self-test; every displayed value has a source and missing evidence displays unavailable |
 
-Day 2 gate: a real Mac -> worker -> Mac inference completes, and disconnecting
-the worker leaves the Mac workspace usable.
+Day 2 gate: a real Mac -> Kubernetes Service -> Redis -> executor Pod -> Mac
+inference completes, and stopping the cluster leaves the Mac workspace and its
+canonical history usable.
 
-If real worker streaming has not passed by the end of Day 2, freeze a standalone
-demo baseline and move further mesh work behind AF-008–AF-011. Do not present
-pairing as working until its acceptance gate passes.
+If this path has not passed by the end of Day 2, freeze a standalone demo
+baseline and stop infrastructure expansion. Do not add nodes, replicas, Helm,
+Ingress, another broker, or another runtime to repair an unproven single path.
 
 ### Day 3 — Complete both signature workflows
 
 | ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
 |---|---|---|---|---|---|---|
-| AF-008 | planned | Vedant | Yug curates public scans, page ground truth, and OCR scores | Implement scan rendering plus local OCR/vision extraction with source hash, page mapping, and explicit uncertainty | AF-003 | The public sample scan produces structured, page-linked extraction without fabricated missing values |
-| AF-009 | planned | Aditya | Yug prepares the SOP/citation fixture; Tanvi opens and reviews the Word output | Add the minimum local SOP retrieval, cited drafting, Word generation, and artifact validation path | AF-008 | `inspection_report_to_approval_note` returns an openable cited `.docx` with checksum |
-| AF-010 | planned | Vedant | Sahil prepares the synthetic repository request and expected validation | Implement bounded repository context and patch generation inside an assigned temporary workspace | AF-003 | `repository_request_to_validated_patch` returns an applicable patch without modifying the canonical repository |
-| AF-011 | planned | Vedant | Prachi operates the Linux sandbox and records the enforced boundaries | Execute the approved validation command in a bounded Linux sandbox with networking disabled | AF-010 | Command, stdout, stderr, exit status, limits, and artifact hashes return to the coordinator |
+| AF-008 | planned | Yug + Vedant | Yug owns public scans, ground truth, and scores | Implement scan rendering plus local OCR/vision extraction with source hash, page mapping, and explicit uncertainty through the shared job contract | AF-003, AF-006 | The public sample scan produces structured, page-linked extraction without fabricated missing values |
+| AF-009 | planned | Aditya + Yug | Tanvi opens and reviews the Word output | Add the minimum local SOP retrieval, cited drafting, Word generation, and artifact validation path | AF-008 | `inspection_report_to_approval_note` returns an openable cited `.docx` with checksum |
+| AF-010 | planned | Vedant + Sahil | Sahil owns the synthetic repository fixture | Implement bounded repository context and patch generation inside an assigned temporary workspace | AF-003, AF-006 | `repository_request_to_validated_patch` returns an applicable patch without modifying the canonical repository |
+| AF-011 | planned | Prachi | Vedant supplies the sandbox image; Sahil checks outputs | Run each approved validation command as a short-lived restricted Kubernetes Job Pod | AF-002, AF-010 | Default-deny egress, non-root execution, limits, deadline, cleanup TTL, command output, and artifact hashes are observed; no Docker socket is mounted |
 
 Day 3 gate: the application produces one real Word approval note and one real
-validated code patch through the shared job system.
+validated code patch through the same Service, Redis, job, event, and approval
+contracts.
 
 ### Day 4 — Run concurrently and prove sovereignty
 
 | ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
 |---|---|---|---|---|---|---|
-| AF-012 | planned | Aditya | Sahil executes the concurrency matrix and records timings | Schedule independent Documents and Code steps concurrently on eligible nodes | AF-006, AF-009, AF-011 | Both jobs progress simultaneously and retain separate attempt and artifact state |
-| AF-013 | planned | Aditya | Tanvi executes the approval and denial acceptance checklist | Enforce approval before canonical writes and expose the exact action, target, attempt, and decision | AF-003, AF-009, AF-011 | Denial writes nothing; approval performs one bounded final write |
-| AF-014 | planned | Aditya | Tanvi checks every Proof Card value against its source and captures the demo evidence | Produce per-job Proof Cards from real model, device, tool, validation, integrity, approval, and network events | AF-012, AF-013 | Every displayed proof value has an identified source and observation window |
-| AF-015 | planned | Aditya + Vedant | Prachi operates the Linux enforcement/observer and records interface and time bounds | Block public egress while retaining required trusted-LAN traffic and capture independent observations | AF-005, AF-014 | The real concurrent run completes with zero observed public outbound flow in the named interval |
+| AF-012 | planned | Aditya + Prachi | Sahil executes the concurrency matrix and records timings | Run independent Documents and Code attempts concurrently through separate Redis consumers and Pods | AF-005, AF-009, AF-011 | Both jobs progress simultaneously, retain separate attempt/artifact state, and show honest queue time |
+| AF-013 | planned | Aditya | Tanvi executes the approval and denial checklist | Enforce approval before canonical writes and bind it to the exact action, target, and attempt | AF-004, AF-009, AF-011 | Denial writes nothing; retry cannot reuse a stale approval; approval performs one bounded final write |
+| AF-014 | planned | Aditya + Tanvi | Tanvi checks every value against its source | Produce per-job Proof Cards from SQLite, Redis, Kubernetes, model, validation, integrity, approval, and network evidence | AF-012, AF-013 | Every displayed value has an identified source and observation window; unavailable evidence is not inferred |
+| AF-015 | planned | Prachi | Vedant confirms runtime endpoints; Sahil records interface and time bounds | Enforce default-deny Pod egress and host public-egress blocking while retaining authenticated Service traffic | AF-011, AF-014 | The real concurrent run completes with zero observed public outbound flow in the named interval and only documented LAN/cluster flows |
 
 Day 4 gate: Documents and Code complete concurrently on distributed compute,
-with visible routing, approvals, artifacts, and scoped zero-egress evidence.
+with visible Pods, Redis queue state, routing, approvals, artifacts, and scoped
+zero-egress evidence.
 
 ### Day 5 — Break it, freeze it, and rehearse it
 
 | ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
 |---|---|---|---|---|---|---|
-| AF-016 | planned | Aditya + Vedant | Sahil executes the cancellation, disconnect, retry, and fallback drill | Exercise cancellation, worker loss, retry, and local fallback | AF-012 | Failure is recoverable and produces no duplicate canonical write |
-| AF-017 | planned | Aditya + Vedant | Every teammate runs assigned fixtures and records named-device measurements | Run the same standalone and distributed fixtures; record cold/warm latency, queue time, RAM/VRAM, and output quality | AF-008–AF-016 | Results are reproducible and slower results are reported honestly |
+| AF-016 | planned | Sahil | Aditya and Vedant repair only observed blockers | Exercise cancellation, executor-Pod loss, Redis restart, cluster loss, retry, and local fallback | AF-012–AF-015 | Failure is recoverable, canonical history survives, and no duplicate final write occurs |
+| AF-017 | planned | Sahil + Yug | Every teammate runs assigned fixtures and records named-device measurements | Run the same standalone and Kubernetes fixtures; record cold/warm latency, queue time, RAM/VRAM, restarts, and output quality | AF-008–AF-016 | Results are reproducible and slower results are reported honestly |
 | AF-018 | planned | Aditya | Codex reviews the integrated source; Tanvi assembles the evidence pack | Review the integrated source, licences, evidence, demo claims, and remaining blockers | AF-017 | Every claimed feature is observed; planned or broken paths are labelled and excluded from the script |
 | AF-019 | planned | Aditya + Vedant | The full team operates assigned demo stations and rehearses handoffs | Run the frozen demo from clean start three consecutive times and record one backup demonstration | AF-018 | Three successful runs use the same documented setup and public sample inputs |
 
@@ -139,15 +184,32 @@ and rehearsal may enter the internal candidate.
 
 ## Internal demo order
 
-1. Open the application and show the four surfaces.
-2. Show installed models and paired devices in Control Center.
-3. Block public Internet and start the named observation window.
-4. Start the scanned-report workflow and the code workflow.
-5. Show deterministic routing to different eligible nodes.
-6. Open the cited Word artifact and the validated code patch.
-7. Approve one bounded write and deny another.
-8. Disconnect a non-critical worker and show safe local continuity or requeue.
-9. Open both Proof Cards and end the observation window.
+1. Show the Ready worker, executor, and Redis Pods plus the worker and internal
+   Redis Services; explain that Docker built the pinned workload images.
+2. Open the application and show Chat, Documents, Code, and Control Center.
+3. Show the installed model, Kubernetes worker, queue, and route reason.
+4. Block public Internet and start the named observation window.
+5. Start the scanned-report workflow and the code workflow.
+6. Show Redis dispatch and separate executing Pods without exposing payloads.
+7. Open the cited Word artifact and the validated code patch.
+8. Approve one bounded write, deny another, then terminate one executor Pod.
+9. Show recovery, both Proof Cards, and the end of the observation window.
+
+## Early-completion ladder
+
+Finishing a calendar day early means starting the next unpassed gate, not
+starting unrelated features. Stretch work unlocks only in this order:
+
+1. **After Day 2 passes:** finish both signature workflows and their fixtures.
+2. **After Day 3 passes:** add one bounded image-understanding moment and one
+   calculation-with-steps inside the approval note.
+3. **After Day 4 passes:** add a second executor replica and prove Redis-backed
+   concurrency and Pod-loss recovery on the same cluster.
+4. **After three clean rehearsals:** evaluate one additional physical worker or
+   the narrow text-only part of FR-019.
+
+Do not unlock multi-node Kubernetes, voice, PPT, Excel, broad P&ID support,
+another runtime, or another broker during the five-day candidate.
 
 ## After internal selection: twelve-day finals sprint
 
@@ -185,7 +247,8 @@ and rehearsal may enter the internal candidate.
 - model sharding or pooled VRAM;
 - training or fine-tuning;
 - a generic multi-agent or visual workflow builder;
-- Kubernetes, a message broker, or a custom model runtime;
+- multi-node or highly available Kubernetes, Helm, an operator, a service mesh,
+  Redis Cluster, another message broker, or a custom model runtime;
 - production multi-user IAM, high availability, or coordinator transfer;
 - voice, PPT, Excel, and broad P&ID support before the two signature workflows
   and distributed proof are stable;
