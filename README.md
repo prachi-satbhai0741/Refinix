@@ -82,7 +82,7 @@ nodes never receive canonical workspace ownership merely by joining.
 
 This is a deliberate architectural position, not an oversight — see [Design Philosophy](#design-philosophy-coordinator-not-a-cluster) below for why.
 
-> **Status:** Research and prototype planning. No runtime source tree, package manifest, model bundle, or executable product currently exists in this repository. This README and the linked PRD describe the intended system, its constraints, and its demonstration plan.
+> **Status:** Day 1 implementation has started with [shared contracts and passing local checks](backend/contracts/README.md). No application runtime, model bundle or executable product exists yet. This README and the linked PRD describe the intended system, its constraints, and its demonstration plan.
 
 ---
 

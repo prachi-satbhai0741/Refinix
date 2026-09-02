@@ -341,3 +341,18 @@ work. No repository file change means no changelog entry.
 - changes: Consolidated problem context, portal/template verification boundaries, portal-ready copy, architecture and mentor-stack explanation, differentiation, feasibility, impact, six slide instructions, speaker timing, evidence placeholders, claim controls, judge Q&A, and primary research/implementation references; linked it from the documentation index.
 - verification: `git diff --check` passed; the brief contains 17 top-level numbered sections, all six required slide sections, the live-portal placeholder, evidence and claim controls, and only existing repository-local Markdown targets.
 - remaining: Team ID, live portal terms and deadline, the downloaded official template, final product name, selected model/runtime, prototype screenshots, measurements, and every runtime claim still require team verification before submission.
+
+<a id="ac-20260902-007"></a>
+## AC-20260902-007 — Start AF-001 with checked shared contracts
+- date: 2026-09-02
+- agent: Codex
+- status: partial
+- prompt_id: [UP-20260902-007](userprompts.md#up-20260902-007)
+- related_prompts: [UP-20260902-005](userprompts.md#up-20260902-005)
+- tags: af-001, day-1, contracts, lifecycle, redis, sse, pydantic
+- aliases: day 01, shared contract version 1.0, contract checks, unavailable evidence
+- paths: backend/contracts/, backend/requirements.txt, backend/README.md, tasks.md, README.md, docs/prd.md, docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added the initial shared contract package and passed its local checks while keeping AF-001 in progress and all application runtime gates open.
+- changes: Added seven versioned records, lifecycle and trust-boundary guards, SSE encoding, retry digests, Redis keys, schema export, synthetic examples, protocol semantics and dependency provenance; updated task and repository status text.
+- verification: After explicit user approval, created ignored .venv and installed five pinned dependencies; five unittest checks passed on Python 3.14.6/macOS 26.6.2 arm64; pip check found no broken requirements; CLI export parsed with seven schemas; git diff --check, Python/JSON syntax parsing and 38 local Markdown file targets passed.
+- remaining: OD-06 pairing protocol, all four contract consumers, requester verification, cluster, worker image/model inference, SQLite and UI remain unverified or unimplemented; no Git writes, model downloads or deployments ran.

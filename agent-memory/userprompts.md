@@ -346,3 +346,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260902-005](#up-20260902-005)
 - supersedes: none
 - linked_changes: [AC-20260902-006](agentchangelog.md#ac-20260902-006)
+
+<a id="up-20260902-007"></a>
+## UP-20260902-007 — Start Day 1 with the shared contracts
+- date: 2026-09-02
+- status: in-progress
+- scope: backend, contracts, execution
+- tags: af-001, day-1, contracts, lifecycle, redis, events
+- aliases: day 01, task.md, shared job envelope, contract freeze
+- paths: backend/contracts/, backend/requirements.txt, backend/README.md, tasks.md, README.md, docs/prd.md, docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Start Day 1 of tasks.md by implementing the AF-001 contract prerequisite for the coordinator, worker, UI, and cluster packets.
+- constraints: Preserve coordinator authority and offline boundaries; do not run Git writes, tests, installers, deployments, or model downloads without permission; no runtime or hardware claims from schemas.
+- acceptance: One versioned contract package defines payloads, lifecycle, HTTPS, SSE, Redis, idempotency, and evidence semantics with synthetic examples and a runnable check.
+- verification_authorization: User explicitly approved repository .venv creation, pinned Pydantic installation from PyPI, and offline contract checks.
+- follow_up_to: [UP-20260902-005](#up-20260902-005)
+- supersedes: none
+- linked_changes: [AC-20260902-007](agentchangelog.md#ac-20260902-007)
