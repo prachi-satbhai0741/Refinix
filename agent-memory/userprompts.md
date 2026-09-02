@@ -286,3 +286,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260902-001](#up-20260902-001)
 - supersedes: none
 - linked_changes: [AC-20260902-002](agentchangelog.md#ac-20260902-002)
+
+<a id="up-20260902-003"></a>
+## UP-20260902-003 — Apply the reviewed documentation corrections
+- date: 2026-09-02
+- status: done
+- scope: docs, execution-planning, repository-scaffolding
+- tags: stale-references, models, hardware, fallback, manifests
+- aliases: claude review corrections, qwen vision, day two kill switch, hardware owners, prd references
+- paths: .github/pull_request_template.md, .gitignore, agent-memory/README.md, docs/model-catalog.md, docs/devicespecifications.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Apply only the accepted documentation corrections from the external review without adding new workflows or implementation scope.
+- constraints: Preserve the mesh as a differentiator with a Day-2 fallback; retain active agent memory; do not add P&ID, PPT, Excel, calculation, or runtime-framework work.
+- acceptance: References target current documents; Qwen3.5-4B vision remains evidence-labelled; catalogue loading is manifest-driven; all hardware checks have owners; failed Day-2 streaming cannot block the standalone signature workflows.
+- follow_up_to: [UP-20260902-002](#up-20260902-002)
+- supersedes: none
+- linked_changes: [AC-20260902-003](agentchangelog.md#ac-20260902-003)

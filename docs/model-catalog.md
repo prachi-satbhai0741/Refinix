@@ -46,13 +46,17 @@ pipeline, not the name of a single model.
 
 | Pack | Candidate | Intended use | Status |
 |---|---|---|---|
-| Main engine | Qwen3.5-4B Q4 candidate | General chat, planning, and tool use | Research candidate |
+| Main engine | Qwen3.5-4B Q4 candidate | General chat, planning, tool use, and native vision | Research candidate |
 | Documents | PaddleOCR-VL-1.6 candidate | OCR, scans, and document layout | Research candidate |
 | Semantic knowledge | Qwen3-Embedding-0.6B candidate | Local embeddings | Research candidate |
 | Code | Qwen2.5-Coder-7B-Instruct Q4 candidate | Code generation and patch work | Research candidate |
 | Reasoning/vision | Qwen3.5-9B Q4 candidate | Optional stronger or visual fallback | Hardware-dependent hypothesis |
 | Voice | Qwen3-ASR-0.6B or evaluated local ASR | Local transcription | Optional research candidate |
 | Speech output | Kokoro-82M candidate | Local text-to-speech | Deferred |
+
+The upstream [Qwen3.5-4B model card](https://huggingface.co/Qwen/Qwen3.5-4B)
+records a vision encoder. This is candidate capability, not proof that a chosen
+Q4 file and local runtime work correctly on the target fleet.
 
 This shortlist is not an installation manifest. No candidate may enter the
 onboarding picker until its exact source, licence, version, files, hashes, and

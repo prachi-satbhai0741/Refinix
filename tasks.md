@@ -68,6 +68,9 @@ Aditya may reassign work without changing the architecture.
 
 The hardware mapping is a hypothesis until measured; use
 [devicespecifications.md](docs/devicespecifications.md) for current evidence.
+The named owners must close its six
+[hardware checks](docs/devicespecifications.md#still-needed-before-final-model-placement)
+before AF-002 begins.
 
 ## Internal hackathon: five-day execution
 
@@ -75,7 +78,7 @@ The hardware mapping is a hypothesis until measured; use
 
 | ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
 |---|---|---|---|---|---|---|
-| AF-001 | planned | Aditya | Sahil lists lifecycle cases and checks event names | Freeze the minimum node, model-manifest, job, event, step-result, approval, and proof contracts already defined in the architecture | — | One versioned contract set is used by the coordinator and worker code |
+| AF-001 | planned | Aditya | Sahil lists lifecycle cases and checks event names | Freeze the minimum node, model-manifest, job, event, step-result, approval, and proof contracts already defined in the architecture | — | One versioned contract set is used by the coordinator and worker code; catalogue entries load from valid manifests rather than code changes |
 | AF-002 | planned | Vedant | Sahil records the hardware run sheet and measurements | Select one cross-platform local runtime and verify one curated main model on actual hardware | AF-001 | A real prompt streams locally; model source, licence, revision, memory, and latency are recorded |
 | AF-003 | planned | Aditya | Sahil prepares expected state transitions and failure cases | Implement the smallest coordinator path: create job, route locally, stream events, persist terminal state | AF-001, AF-002 | Restart-safe job record reaches a truthful terminal state without mocked inference |
 | AF-004 | planned | Aditya | Tanvi supplies surface copy and an unavailable-state checklist | Create the thinnest usable Chat, Documents, Code, and Control Center shell over the shared event stream | AF-001 | All four surfaces open and display real coordinator state; unavailable capabilities say unavailable |
@@ -93,6 +96,10 @@ a persisted job, model, device, and timing record.
 
 Day 2 gate: a real Mac -> worker -> Mac inference completes, and disconnecting
 the worker leaves the Mac workspace usable.
+
+If real worker streaming has not passed by the end of Day 2, freeze a standalone
+demo baseline and move further mesh work behind AF-008–AF-011. Do not present
+pairing as working until its acceptance gate passes.
 
 ### Day 3 — Complete both signature workflows
 
