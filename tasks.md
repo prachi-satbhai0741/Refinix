@@ -191,5 +191,10 @@ and rehearsal may enter the internal candidate.
   and distributed proof are stable;
 - perfect installers for every operating system.
 
+Each exclusion that the problem statement names is recorded against its source
+line in [problem-statement coverage](docs/evaluation.md#11-problem-statement-coverage).
+Exclusion means excluded from the five-day sprint, not abandoned: multilingual
+and voice work is FR-019 in the finals scope.
+
 Add an excluded item only after the current day's gate passes and Aditya accepts
 the resulting risk to the frozen demo.

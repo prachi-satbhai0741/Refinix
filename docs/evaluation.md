@@ -267,3 +267,40 @@ Research only questions that materially affect feasibility:
 
 The user or requester independently verifies the final result before the project
 claims completion.
+
+## 11. Problem-statement coverage
+
+The authoritative SIH26117 text is retained in [README.md](README.md) pending
+[OD-01](prd.md#11-open-decisions). This table records which of its lines the
+current scope answers, so that a deferral is a recorded decision rather than an
+oversight. Status values follow the evidence labels in section 1.
+
+### Expected Solution
+
+| Problem-statement line | Scope | Status |
+|---|---|---|
+| Local deployment on a single workstation with a mid-range GPU | FR-001 | Planned |
+| Model auto-selection across at least two task types | FR-006, AF-006 | Planned |
+| Agentic task end to end: scanned report to Word approval note | FR-011, AF-008, AF-009 | Planned |
+| Coding task run and verified in a sandbox | FR-012, AF-010, AF-011 | Planned |
+| Multimodal task: image or scanned document understanding | FR-011 | Partial — OCR extraction is planned; no step yet exercises a vision model on an image |
+| Logs or network monitor showing no external calls | FR-010, AF-015 | Planned |
+
+### Description lines deferred beyond the alpha
+
+Each of these is named in the problem statement and intentionally excluded from
+the five-day sprint under
+[deliberately excluded](../tasks.md#deliberately-excluded-from-the-sprint).
+None is claimed as working.
+
+| Problem-statement line | Decision |
+|---|---|
+| Engineering drawings, photographs, P&IDs | Deferred. Trained symbol detection needs annotated data the sprint does not have; the main engine's vision capability is an untested cheaper path |
+| Handwritten notes | Deferred. Accuracy is uncertain and no fixture exists |
+| Spreadsheet work and Excel output | Deferred until both signature workflows are stable |
+| PowerPoint output | Deferred until both signature workflows are stable |
+| Calculations with steps shown | Deferred. Closest cheap path is a computed value inside the approval note |
+| Plan out multi-step work | Partial. Workflows are fixed contracts with one bounded repair attempt, not a general planner |
+| Multiple open-weight models, addable without redesign | Answered by the manifest-driven catalogue gate on AF-001 |
+| Grounding in manuals, SOPs, and correspondence | Answered by local retrieval in AF-009 |
+| Multilingual industrial interaction | FR-019, P1 finals scope |

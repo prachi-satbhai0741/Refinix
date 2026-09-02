@@ -301,3 +301,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260902-002](#up-20260902-002)
 - supersedes: none
 - linked_changes: [AC-20260902-003](agentchangelog.md#ac-20260902-003)
+
+<a id="up-20260902-004"></a>
+## UP-20260902-004 — Close the remaining reviewed corrections
+- date: 2026-09-02
+- status: done
+- scope: docs
+- tags: review-followup, multilingual, hardware-evidence, problem-statement, traceability
+- aliases: remaining claude review items, yug multilingual FR, FR-037, vedant disk space, PS coverage
+- paths: docs/prd.md, docs/evaluation.md, docs/model-catalog.md, docs/devicespecifications.md, tasks.md
+- summary: Apply the reviewed corrections Codex did not cover, integrate the multilingual requirement into the PRD structure, and replace unmeasured hardware figures with locally measured ones.
+- constraints: Do not add sprint scope that AF ownership already excluded; record each excluded problem-statement line as a decision instead; do not reassign teammates' tasks; documentation only, no runtime claims.
+- acceptance: No orphaned requirement block or dangling FR id remains; multilingual scope carries a numbered outcome and candidate models with licence caveats; Vedant hardware figures match local command output; every problem-statement line has a recorded coverage decision.
+- follow_up_to: [UP-20260902-003](#up-20260902-003)
+- supersedes: none
+- linked_changes: [AC-20260902-004](agentchangelog.md#ac-20260902-004)

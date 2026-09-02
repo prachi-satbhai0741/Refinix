@@ -33,6 +33,7 @@ model downloader.
 | Semantic knowledge | Required when semantic retrieval is enabled | Embedding model plus local index |
 | Code | Requires a coding-capable verified model when Code is enabled | May reuse the main engine if it passes the code benchmark |
 | Voice | Optional | Local transcription; speech output remains later scope |
+| Multilingual | Required when FR-019 Indian-language interaction is enabled | Indic speech input, translation, and speech output; text may reuse the main engine |
 
 Do not download a second model solely because a second profile exists. Profiles
 may share one compatible model while retaining different tools, instructions,
@@ -52,11 +53,26 @@ pipeline, not the name of a single model.
 | Code | Qwen2.5-Coder-7B-Instruct Q4 candidate | Code generation and patch work | Research candidate |
 | Reasoning/vision | Qwen3.5-9B Q4 candidate | Optional stronger or visual fallback | Hardware-dependent hypothesis |
 | Voice | Qwen3-ASR-0.6B or evaluated local ASR | Local transcription | Optional research candidate |
-| Speech output | Kokoro-82M candidate | Local text-to-speech | Deferred |
+| Multilingual ASR | IndicConformer 600M multilingual candidate | Indian-language speech input | Research candidate |
+| Multilingual translation | IndicTrans2 distilled 200M candidate | Indic and English text conversion | Research candidate |
+| Speech output | Kokoro-82M candidate; Indic-TTS candidate for Indian languages | Local text-to-speech | Research candidate |
 
 The upstream [Qwen3.5-4B model card](https://huggingface.co/Qwen/Qwen3.5-4B)
 records a vision encoder. This is candidate capability, not proof that a chosen
 Q4 file and local runtime work correctly on the target fleet.
+
+The FR-019 multilingual candidates come from AI4Bharat (IIT Madras).
+[IndicConformer 600M](https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual)
+is published under MIT and covers the 22 scheduled languages, including Kannada,
+Hindi, Malayalam, and Tamil;
+[IndicTrans2](https://github.com/AI4Bharat/IndicTrans2) ships a distilled 200M
+variant; [Kokoro-82M](https://github.com/PierrunoYT/Kokoro-TTS-Local) is
+Apache-2.0. Their combined footprint is roughly 1.8 GB and all three are
+reported to run on CPU, so this pack does not compete with the main engine for
+VRAM on an 8 GB device. Two cautions before any of this is called verified: the
+IndicTrans2 and Indic-TTS licences still need review, and published Indic ASR
+accuracy is far from perfect, so transcripts must enter the normal confidence
+and approval path rather than being treated as verbatim input.
 
 This shortlist is not an installation manifest. No candidate may enter the
 onboarding picker until its exact source, licence, version, files, hashes, and
