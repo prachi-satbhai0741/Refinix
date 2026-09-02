@@ -36,9 +36,9 @@ exposes the authenticated worker API, and Redis coordinates bounded ephemeral
 work. Kubernetes is an execution profile for trusted compute; it does not make
 standalone use depend on a cluster.
 
-The repository currently contains product planning and documentation, not a
-verified runtime. No model, performance, security, or hardware claim becomes
-current product evidence until it is reproduced and recorded.
+The repository currently contains product planning and initial shared contracts,
+not a verified application runtime. No model, performance, security, or hardware
+claim becomes current product evidence until it is reproduced and recorded.
 
 ## 2. Problem and intended outcome
 

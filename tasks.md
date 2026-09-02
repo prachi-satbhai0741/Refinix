@@ -1,6 +1,6 @@
 # AegisForge Execution Roadmap
 
-Status: active planning board; every AF task starts as `planned`.
+Status: active execution board; tasks advance only with recorded evidence.
 
 The internal sprint deliberately attempts every P0 outcome plus the signature
 workflow and concurrency outcomes currently labelled P1 in the PRD. This is an
@@ -118,10 +118,14 @@ blocking the Day 1 spine.
 
 | ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
 |---|---|---|---|---|---|---|
-| AF-001 | planned | Aditya | Sahil checks lifecycle and schema cases | Freeze versioned node, job, attempt, event, approval, proof, HTTPS, Redis-key, and idempotency contracts | — | Coordinator, worker, UI, and manifests consume one contract version; schema examples pass the smallest contract check |
+| AF-001 | in-progress | Aditya | Sahil checks lifecycle and schema cases | Freeze versioned node, job, attempt, event, approval, proof, HTTPS, Redis-key, and idempotency contracts | — | Coordinator, worker, UI, and manifests consume one contract version; schema examples pass the smallest contract check |
 | AF-002 | planned | Prachi | Vedant reviews image/runtime requirements | Provision one pinned single-node K3s cluster on Prachi's Ubuntu host and deploy pinned Redis 7.2.x behind ClusterIP | AF-001 | Kubernetes reports Ready Redis and worker placeholders; Redis is unreachable from the LAN; versions, digests, and licences are recorded |
 | AF-003 | planned | Vedant | Sahil records latency and failure output | Build the smallest Docker worker image with FastAPI, one runtime adapter, the frozen Service API, and one real model | AF-001, AF-002 | A real prompt streams from a worker Pod; source, licence, revision, image digest, memory, and latency are recorded |
 | AF-004 | planned | Aditya + Tanvi | Sahil checks state transitions | Implement SQLite-backed coordinator state and the smallest local browser UI over one event stream | AF-001 | A local job reaches a truthful terminal state after restart; Chat and Control Center show live state while unfinished surfaces say unavailable |
+
+AF-001 has a [contract draft with five passing local checks](backend/contracts/README.md).
+The OD-06 pairing decision, shared consumers and requester verification remain
+open; no Day 1 application runtime gate has passed.
 
 Day 1 gate: the pinned Docker image runs in a Ready Kubernetes Pod, one real
 response streams through the worker API, and the coordinator persists the job,
