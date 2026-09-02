@@ -80,11 +80,11 @@ Verified 2026-08-31 on branch `aditya`. **Re-check before relying on any line.**
   repository need GitHub Pro, Team, or Enterprise; Free covers public
   repositories only. Options: make the repository public, upgrade the owner
   account, or move to an organisation on Team.
-- **Licence conflict** — `docs/prd.md` 17.1: the repository carries Apache-2.0
-  while the product is described as proprietary. Blocks the public-repository
-  option above.
-- **Component owners unassigned** — the `docs/prd.md` 22 role decision is still
-  open; no file records ownership.
+- **Licence direction remains open** — [`docs/prd.md` OD-02](../docs/prd.md)
+  tracks Apache-2.0 versus another ownership direction before substantial
+  distribution.
+- **Proposed owners are not yet accepted** — [`tasks.md`](../tasks.md#proposed-ownership)
+  records build and support ownership, but each owner must still accept it.
 - **PRD is a draft.** `docs/prd.md` is not a v1 baseline; see
   [`docs/README.md`](../docs/README.md) for the documents deferred until it is.
 

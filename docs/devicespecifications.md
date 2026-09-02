@@ -178,21 +178,22 @@ Constraint reminder: **no device exceeds 8 GB discrete VRAM.** Plan every model 
 
 ## Still needed before final model placement
 
-1. **Free disk space** on Aditya, Sahil, Yug, and Tanvi. Record each approved
-   model's exact size. Keep the initial catalogue to 3–5 models per worker for
-   prototype simplicity, not as a hard storage-capacity claim.
+1. **Owner: Sahil — free disk space** on Aditya, Sahil, Yug, and Tanvi. Record
+   each approved model's exact size. Keep the initial catalogue to 3–5 models
+   per worker for prototype simplicity, not as a hard storage-capacity claim.
    Windows: `Get-PSDrive C | Select-Object Used,Free`. macOS/Linux: `df -h /`.
-2. **Yug and Prachi — re-read VRAM with `nvidia-smi`.** Their 4 GB figures came
-   from tools affected by the saturation bug noted at the top of this document.
-   Prachi needs the NVIDIA driver installed first.
-3. **Prachi — decide GPU or CPU** for her node and, if GPU, install a compatible
-   NVIDIA driver. Add `nvidia-container-toolkit` only for GPU inference inside
-   Docker.
-4. **Sahil — verify App Control for Business does not block a local runtime.**
-   Smart App Control is enforced on that machine and can refuse unsigned
-   binaries. This gates whether the node can run llama.cpp or Ollama at all.
-5. **Everyone — installed AI runtime** (Ollama / LM Studio / llama.cpp / MLX) and
-   version, plus the **driver and runtime-reported CUDA compatibility** on
-   NVIDIA machines.
-6. **Tanvi — confirm whether the Inspiron has an Ethernet port**, and plan
-   USB-Ethernet adapters for Aditya and Vedant, who definitely have none.
+2. **Owners: Yug and Prachi — re-read VRAM with `nvidia-smi`.** Their 4 GB
+   figures came from tools affected by the saturation bug noted at the top of
+   this document. Prachi needs the NVIDIA driver installed first.
+3. **Owner: Prachi — decide GPU or CPU** for her node and, if GPU, install a
+   compatible NVIDIA driver. Add `nvidia-container-toolkit` only for GPU
+   inference inside Docker.
+4. **Owner: Sahil — verify App Control for Business does not block a local
+   runtime.** Smart App Control is enforced on that machine and can refuse
+   unsigned binaries. This gates whether the node can run llama.cpp or Ollama.
+5. **Owner: Vedant — collect everyone's installed AI runtime** (Ollama / LM
+   Studio / llama.cpp / MLX) and version, plus the **driver and runtime-reported
+   CUDA compatibility** on NVIDIA machines.
+6. **Owners: Tanvi and Aditya — confirm whether the Inspiron has an Ethernet
+   port and obtain USB-Ethernet adapters**, respectively, for Aditya and Vedant,
+   who definitely have none.
