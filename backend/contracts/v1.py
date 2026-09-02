@@ -476,9 +476,16 @@ class Proof(Record):
 
 
 def require_grounded_citations(envelope: JobEnvelope, proof: Proof) -> None:
-    """Coordinator-side: a citation may only point at an input this job received."""
-    if envelope.job_id != proof.job_id:
-        raise ValueError("proof and envelope describe different jobs")
+    """Coordinator-side: a citation may only point at an input this attempt received."""
+    # Bind evidence to one attempt: a superseded retry's proof must not clear its successor.
+    for label, dispatched, observed in (
+        ("workspace", envelope.workspace_id, proof.workspace_id),
+        ("job", envelope.job_id, proof.job_id),
+        ("attempt", envelope.attempt_id, proof.attempt_id),
+        ("target node", envelope.target_node_id, proof.node_id),
+    ):
+        if dispatched != observed:
+            raise ValueError(f"proof and envelope describe a different {label}")
     if "citations.resolve" not in envelope.output.validators:
         return
     if not proof.citations:
