@@ -123,8 +123,9 @@ blocking the Day 1 spine.
 | AF-003 | planned | Vedant | Sahil records latency and failure output | Build the smallest Docker worker image with FastAPI, one runtime adapter, the frozen Service API, and one real model | AF-001, AF-002 | A real prompt streams from a worker Pod; source, licence, revision, image digest, memory, and latency are recorded |
 | AF-004 | planned | Aditya + Tanvi | Sahil checks state transitions | Implement SQLite-backed coordinator state and the smallest local browser UI over one event stream | AF-001 | A local job reaches a truthful terminal state after restart; Chat and Control Center show live state while unfinished surfaces say unavailable |
 
-AF-001 has a [contract draft with six passing local checks](backend/contracts/README.md),
-now including typed citations and a grounding guard for the documents workflow.
+AF-001 has a [contract draft with eight passing local checks](backend/contracts/README.md),
+now including kind-matched output validators, typed stop reasons, and citation
+payloads with a grounding guard.
 The OD-06 pairing decision, shared consumers and requester verification remain
 open; no Day 1 application runtime gate has passed.
 

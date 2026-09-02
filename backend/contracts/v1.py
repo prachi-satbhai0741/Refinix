@@ -112,18 +112,37 @@ class Limits(Object):
     tool_network: Literal["disabled"]
 
 
+Validator = Literal[
+    "text.nonempty", "json.schema", "document.readable",
+    "citations.resolve", "patch.applies", "sandbox.exit_zero",
+]
+# Each output kind names the validator that proves it, then what may be added.
+REQUIRED_VALIDATORS = {
+    "text": frozenset({"text.nonempty"}), "json": frozenset({"json.schema"}),
+    "docx": frozenset({"document.readable"}), "patch": frozenset({"patch.applies"}),
+}
+OPTIONAL_VALIDATORS = {
+    "text": frozenset({"citations.resolve"}), "json": frozenset({"citations.resolve"}),
+    "docx": frozenset({"citations.resolve"}), "patch": frozenset({"sandbox.exit_zero"}),
+}
+
+
 class OutputContract(Object):
     kind: Literal["text", "json", "docx", "patch"]
-    validators: Annotated[list[Literal[
-        "text.nonempty", "json.schema", "document.readable",
-        "citations.resolve", "patch.applies", "sandbox.exit_zero",
-    ]], Field(min_length=1, max_length=6)]
+    validators: Annotated[list[Validator], Field(min_length=1, max_length=6)]
     schema_ref: Digest | None
 
     @model_validator(mode="after")
-    def referenced_schema(self):
+    def applicable_validators(self):
         if ("json.schema" in self.validators) != (self.schema_ref is not None):
             raise ValueError("json.schema requires exactly one approved schema hash")
+        requested = set(self.validators)
+        if len(requested) != len(self.validators):
+            raise ValueError("each validator may be requested once")
+        if missing := REQUIRED_VALIDATORS[self.kind] - requested:
+            raise ValueError(f"{self.kind} output requires {sorted(missing)}")
+        if extra := requested - REQUIRED_VALIDATORS[self.kind] - OPTIONAL_VALIDATORS[self.kind]:
+            raise ValueError(f"{sorted(extra)} cannot validate {self.kind} output")
         return self
 
 
@@ -188,6 +207,8 @@ ATTEMPT_TRANSITIONS = {
     "queued": {"running"}, "running": {"validating"}, "validating": {"completed"},
 }
 TERMINAL_ATTEMPT_STATES = frozenset({"completed", "failed", "cancelled", "interrupted"})
+# Every way an attempt can stop without producing output owes a typed reason.
+STOPPED_ATTEMPT_STATES = TERMINAL_ATTEMPT_STATES - {"completed"}
 
 
 def require_transition(current: str, following: str, *, attempt: bool = False) -> None:
@@ -218,7 +239,7 @@ class Failure(Object):
     code: Literal[
         "invalid_request", "incompatible_contract", "unavailable", "deadline_exceeded",
         "worker_lost", "redis_lost", "validation_failed", "permission_denied",
-        "idempotency_conflict", "events_expired", "internal_error",
+        "idempotency_conflict", "events_expired", "cancelled_by_user", "internal_error",
     ]
     message: Label
     retryable: bool
@@ -255,8 +276,11 @@ class Attempt(Record):
         times = [time for time in (self.created_at, self.started_at, self.finished_at) if time is not None]
         if times != sorted(times):
             raise ValueError("attempt timestamps are out of order")
-        if (self.state == "failed") != (self.error is not None):
-            raise ValueError("failed attempts require an error; other states do not carry one")
+        if (self.state in STOPPED_ATTEMPT_STATES) != (self.error is not None):
+            raise ValueError("a stopped attempt records exactly one typed reason")
+        if (self.error is not None and self.error.code == "cancelled_by_user"
+                and self.state != "cancelled"):
+            raise ValueError("cancelled_by_user cannot explain a failure or interruption")
         return self
 
 

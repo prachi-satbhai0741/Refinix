@@ -79,6 +79,20 @@ existence remain workflow-side checks, not contract validation.
 owns exact source, revision, licences and file hashes. Worker claims do not
 establish approval, compatibility or self-test success.
 
+`OutputContract` binds each output `kind` to the validator that proves it:
+`text` requires `text.nonempty`, `json` requires `json.schema` and its approved
+hash, `docx` requires `document.readable`, and `patch` requires `patch.applies`.
+`citations.resolve` may be added to any rendered output; `sandbox.exit_zero` may
+be added only to `patch`. A validator that cannot judge the declared kind, and a
+validator requested twice, are rejected rather than silently ignored. Declaring
+a validator is a requirement on the executor, not evidence that it ran.
+
+An attempt that stops without output — `failed`, `cancelled` or `interrupted` —
+carries exactly one typed `Failure`, so a lost worker, an expired deadline and
+an operator cancellation stay distinguishable in canonical history instead of
+collapsing into an untyped stop. `cancelled_by_user` is reserved for a real
+cancellation and cannot be used to relabel a crash or an interruption.
+
 The envelope's tool allowlist cannot contain canonical-write, installation,
 network-enablement or pairing actions. Enforce CPU, memory, process, runtime,
 workspace and output bounds in the executor; reject unsupported limits rather
@@ -330,12 +344,12 @@ Environment: Yug's local Windows 11 (AMD64) host, Python 3.13.2, **pydantic
 used. This is a second-platform smoke run, not a pinned-environment result; the
 pinned interpreter and wheel remain unverified on Windows.
 
-- `python -m unittest backend.contracts.test_contracts -v`: **6 tests passed**
-  (Aditya's five plus the citation grounding check).
+- `python -m unittest backend.contracts.test_contracts -v`: **8 tests passed**
+  (Aditya's five plus the C01 output-validator, stop-reason and citation checks).
 - `python -m backend.contracts`: **exported parseable JSON**, version 1.0, all
-  seven schemas, `Citation` resolved under `Proof`, 52266 bytes.
-- Each `require_grounded_citations` rejection branch was executed individually
-  and returned its own distinct message; the happy path returned `None`.
+  seven schemas, `Citation` resolved under `Proof`, 52304 bytes.
+- Every added rejection branch was executed individually and returned its own
+  distinct message; each accepted case and the grounded happy path passed.
 - `json.load` on `examples.json` and `git diff --check`: passed.
 
 Before AF-001 can become `verified`: resolve OD-06, connect all four consumers

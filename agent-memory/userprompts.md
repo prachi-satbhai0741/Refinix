@@ -377,3 +377,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260902-007](#up-20260902-007)
 - supersedes: none
 - linked_changes: [AC-20260903-001](agentchangelog.md#ac-20260903-001)
+
+## UP-20260903-002 — Execute the revised tasks.md C01 contract repairs
+- date: 2026-09-03
+- status: in-progress
+- scope: backend, contracts, execution
+- tags: c01, af-001, contracts, output-validators, cancellation, interruption, checkpoints
+- aliases: numbered execution tasks, chunk C01, contract repair, human checkpoint, stop reason
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Execute the C01 contract repairs defined by the renumbered execution board, then report the human checkpoint actions the board requires before C02.
+- constraints: Only Yug and Aditya are available; no Git or GitHub writes; keep contract version 1.0 and the draft status; do not activate a runtime chunk or advance past the C01 human checkpoint.
+- acceptance: Output validators match their declared kind, stopped attempts carry a typed reason, citation payloads exist, and the focused contract check runs and passes locally.
+- verification_authorization: User instruction to execute the board covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- follow_up_to: [UP-20260903-001](#up-20260903-001)
+- supersedes: none
+- linked_changes: [AC-20260903-002](agentchangelog.md#ac-20260903-002)

@@ -106,6 +106,54 @@ class ContractChecks(unittest.TestCase):
         self.assertTrue(frame.startswith("id: 1\nevent: output.delta\ndata: "))
         self.assertEqual(json.loads(frame.splitlines()[2][6:]), example)
 
+    def test_validators_match_the_output_kind(self):
+        def output(kind, validators, schema_ref=None):
+            envelope = deepcopy(EXAMPLES["JobEnvelope"])
+            envelope["output"] = {"kind": kind, "validators": validators,
+                                  "schema_ref": schema_ref}
+            return envelope
+
+        for kind, validators in (("text", ["text.nonempty"]),
+                                 ("docx", ["document.readable", "citations.resolve"]),
+                                 ("patch", ["patch.applies", "sandbox.exit_zero"])):
+            with self.subTest(accepts=kind):
+                parse("JobEnvelope", output(kind, validators))
+
+        for description, envelope in (
+            ("a docx proved by a patch validator", output("docx", ["patch.applies"])),
+            ("citations on a code patch", output("patch", ["patch.applies", "citations.resolve"])),
+            ("a docx with no readability check", output("docx", ["citations.resolve"])),
+            ("the same validator twice", output("text", ["text.nonempty", "text.nonempty"])),
+        ):
+            with self.subTest(rejects=description), self.assertRaises(ValueError):
+                parse("JobEnvelope", envelope)
+
+    def test_stopped_attempts_carry_a_typed_reason(self):
+        def attempt(state, code):
+            record = deepcopy(EXAMPLES["Attempt"])
+            record["state"] = state
+            record["started_at"] = "2026-09-02T10:00:10Z"
+            record["finished_at"] = "2026-09-02T10:00:20Z"
+            record["error"] = code and {"code": code, "message": "Synthetic stop reason.",
+                                        "retryable": code != "cancelled_by_user"}
+            return record
+
+        for state, code in (("cancelled", "cancelled_by_user"),
+                            ("cancelled", "deadline_exceeded"),
+                            ("interrupted", "worker_lost"),
+                            ("failed", "validation_failed")):
+            with self.subTest(accepts=f"{state}/{code}"):
+                self.assertEqual(parse("Attempt", attempt(state, code)).error.code, code)
+
+        for description, record in (
+            ("a cancellation with no reason", attempt("cancelled", None)),
+            ("an interruption with no reason", attempt("interrupted", None)),
+            ("a crash relabelled as a user cancellation", attempt("failed", "cancelled_by_user")),
+            ("a completed attempt carrying a failure", attempt("completed", "worker_lost")),
+        ):
+            with self.subTest(rejects=description), self.assertRaises(ValueError):
+                parse("Attempt", record)
+
     def test_citations_resolve_only_against_supplied_inputs(self):
         envelope = deepcopy(EXAMPLES["JobEnvelope"])
         envelope["task_type"] = "documents"
