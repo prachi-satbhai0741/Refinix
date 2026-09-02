@@ -55,13 +55,24 @@ placeholder, never an approved model or artifact hash.
 | `Attempt` | One execution and its node, model, route, times, error and artifacts; the coordinator persists accepted observations |
 | `Event` | Typed state, output, artifact, approval or proof event; worker events cannot decide job completion, approval or proof |
 | `Approval` | Coordinator-only exact action, target, attempt and action digest, actor, expiry and decision |
-| `Proof` | Coordinator's evidence references and values; unavailable measurements stay `null` and have no inferred security status |
+| `Proof` | Coordinator's evidence references, citations and values; unavailable measurements stay `null` and have no inferred security status |
 
 `ResourceRef` contains an opaque ID, SHA-256, byte size and media type. A worker
 resolves it only against its explicitly transferred task package, never an
 arbitrary URL, host path, repository, or knowledge base. Verify size and hash
 before use. Reject traversal, symlink/hard-link escape and unselected resources
 in the receiving filesystem code. Contract validation alone cannot do this.
+
+`Citation` binds one drafted claim to the `ResourceRef` and 1-based page it came
+from, carrying the verbatim source quote. `Proof.citations` is where the
+`citations.resolve` validator finds its evidence; citation IDs are unique within
+a proof. `require_grounded_citations(envelope, proof)` is the coordinator-side
+grounding guard for
+[documents step 8](../../docs/workflows.md#5-documents-workflow): it rejects a
+proof paired with another job, a grounded output that carries no citation, and
+any citation naming a resource the envelope never supplied. It cannot detect a
+quote that misreads a page it was genuinely given — extraction fidelity and page
+existence remain workflow-side checks, not contract validation.
 
 `ModelRef.manifest_sha256` identifies the reviewed manifest in the coordinator's
 [model catalogue](../../docs/model-catalog.md#4-required-manifest). The manifest
@@ -312,7 +323,23 @@ Environment: Aditya's local Mac, macOS 26.6.2 arm64, Python 3.14.6 in repository
 - `git diff --check`: passed; new Python/JSON files also passed syntax parsing
   and whitespace inspection.
 
+### Observed local verification — 2026-09-03
+
+Environment: Yug's local Windows 11 (AMD64) host, Python 3.13.2, **pydantic
+2.13.4 already present — not the pinned 2.13.5**, and no `.venv` or install was
+used. This is a second-platform smoke run, not a pinned-environment result; the
+pinned interpreter and wheel remain unverified on Windows.
+
+- `python -m unittest backend.contracts.test_contracts -v`: **6 tests passed**
+  (Aditya's five plus the citation grounding check).
+- `python -m backend.contracts`: **exported parseable JSON**, version 1.0, all
+  seven schemas, `Citation` resolved under `Proof`, 52266 bytes.
+- Each `require_grounded_citations` rejection branch was executed individually
+  and returned its own distinct message; the happy path returned `None`.
+- `json.load` on `examples.json` and `git diff --check`: passed.
+
 Before AF-001 can become `verified`: resolve OD-06, connect all four consumers
-to this version, and obtain requester
-verification. Before Day 1 passes: prove Prachi's cluster, the pinned worker
-image and real model response, plus SQLite persistence and the local UI.
+to this version, obtain requester verification, and repeat the checks on the
+pinned pydantic 2.13.5 on at least one non-macOS host. Before Day 1 passes:
+prove Prachi's cluster, the pinned worker image and real model response, plus
+SQLite persistence and the local UI.

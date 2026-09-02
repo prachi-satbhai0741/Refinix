@@ -9,7 +9,7 @@ from .v1 import (
     CONTRACT_VERSION, MAX_EVENT_BYTES, MAX_REQUEST_BYTES, RECORDS,
     TERMINAL_ATTEMPT_STATES, TERMINAL_JOB_STATES,
     Event, JobEnvelope, export_contract, parse_message, payload_sha256,
-    redis_key, require_transition, sse_frame,
+    redis_key, require_grounded_citations, require_transition, sse_frame,
 )
 
 EXAMPLES = json.loads(Path(__file__).with_name("examples.json").read_text())
@@ -61,6 +61,9 @@ class ContractChecks(unittest.TestCase):
             ("Proof", ("network", "public_egress_policy"), "enforced"),
             ("Node", ("health",), "healthy"),
             ("Node", ("queue_depth",), 0),
+            ("Proof", ("citations", 0, "page"), 0),
+            ("Proof", ("citations", 0, "quote"), "   "),
+            ("Proof", ("citations",), EXAMPLES["Proof"]["citations"] * 2),
         ]
         for name, path, value in cases:
             with self.subTest(record=name, field=path):
@@ -102,6 +105,38 @@ class ContractChecks(unittest.TestCase):
         self.assertEqual(len(frame.splitlines()), 4)
         self.assertTrue(frame.startswith("id: 1\nevent: output.delta\ndata: "))
         self.assertEqual(json.loads(frame.splitlines()[2][6:]), example)
+
+    def test_citations_resolve_only_against_supplied_inputs(self):
+        envelope = deepcopy(EXAMPLES["JobEnvelope"])
+        envelope["task_type"] = "documents"
+        envelope["required_capabilities"] = ["document.extract"]
+        envelope["context"] = [{
+            "resource_id": EXAMPLES["Proof"]["citations"][0]["resource_id"],
+            "sha256": "a" * 64, "size_bytes": 4096, "media_type": "application/pdf",
+        }]
+        envelope["output"] = {"kind": "docx", "schema_ref": None,
+                              "validators": ["document.readable", "citations.resolve"]}
+        grounded = parse("JobEnvelope", envelope)
+        cited = parse("Proof", EXAMPLES["Proof"])
+        require_grounded_citations(grounded, cited)
+
+        uncited = deepcopy(EXAMPLES["Proof"])
+        uncited["citations"] = []
+        elsewhere = deepcopy(EXAMPLES["Proof"])
+        elsewhere["job_id"] = "00000000-0000-4000-8000-000000000022"
+        no_inputs = deepcopy(envelope)
+        no_inputs["context"] = []
+        for description, package, proof in (
+            ("cites a document the job never received", no_inputs, cited),
+            ("claims grounding with no citation", envelope, parse("Proof", uncited)),
+            ("pairs a proof with another job", envelope, parse("Proof", elsewhere)),
+        ):
+            with self.subTest(rejects=description), self.assertRaises(ValueError):
+                require_grounded_citations(parse("JobEnvelope", package), proof)
+
+        # A workflow that never asked for grounding is not forced to carry citations.
+        require_grounded_citations(parse("JobEnvelope", EXAMPLES["JobEnvelope"]),
+                                   parse("Proof", uncited))
 
     def test_retry_digest_and_redis_namespace(self):
         example = EXAMPLES["JobEnvelope"]

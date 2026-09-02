@@ -123,6 +123,14 @@
     "validation": "unavailable",
     "validation_source": null,
     "artifacts": [],
+    "citations": [
+      {
+        "citation_id": "00000000-0000-4000-8000-000000000020",
+        "resource_id": "00000000-0000-4000-8000-000000000021",
+        "page": 4,
+        "quote": "Synthetic fixture: vessel wall thickness recorded as 11.4 mm."
+      }
+    ],
     "approval_id": null,
     "network": {
       "public_egress_policy": "unavailable",

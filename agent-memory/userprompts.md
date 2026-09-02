@@ -362,3 +362,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260902-005](#up-20260902-005)
 - supersedes: none
 - linked_changes: [AC-20260902-007](agentchangelog.md#ac-20260902-007)
+
+## UP-20260903-001 — Analyse the documents and execute Day 1 tasks
+- date: 2026-09-03
+- status: in-progress
+- scope: backend, contracts, documents-workflow, execution
+- tags: af-001, day-1, contracts, citations, documents, grounding, page-mapping
+- aliases: task.md execution, citation contract, cited approval note, documents owner, reduced team
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/examples.json, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Analyse the planning documents and begin executing tasks.md with only Yug and Aditya available, closing the citation gap that the merged AF-001 draft left in the documents workflow.
+- constraints: Only Yug and Aditya are available, so tasks.md role assignments are suspended for this change; no Git or GitHub writes; keep the contract version at 1.0 and preserve coordinator authority and offline boundaries.
+- acceptance: The contract carries a typed citation with source and page, a coordinator-side grounding guard rejects ungrounded output, and the contract check runs and passes locally.
+- verification_authorization: User instruction to execute tasks covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- follow_up_to: [UP-20260902-007](#up-20260902-007)
+- supersedes: none
+- linked_changes: [AC-20260903-001](agentchangelog.md#ac-20260903-001)

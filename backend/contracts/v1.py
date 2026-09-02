@@ -415,6 +415,15 @@ class PodEvidence(Object):
     observed_at: Timestamp
 
 
+class Citation(Object):
+    """One drafted claim bound to the source page it was taken from."""
+
+    citation_id: Id
+    resource_id: Id
+    page: Annotated[int, Field(ge=1)]
+    quote: Annotated[str, StringConstraints(min_length=1, max_length=2048, pattern=r"\S")]
+
+
 class Proof(Record):
     proof_id: Id
     workspace_id: Id
@@ -428,6 +437,7 @@ class Proof(Record):
     validation: Literal["passed", "failed", "unavailable"]
     validation_source: Label | None
     artifacts: Annotated[list[ResourceRef], Field(max_length=16)]
+    citations: Annotated[list[Citation], Field(max_length=64)]
     approval_id: Id | None
     network: NetworkEvidence
     recorded_at: Timestamp
@@ -436,7 +446,25 @@ class Proof(Record):
     def validation_has_source(self):
         if (self.validation != "unavailable") != (self.validation_source is not None):
             raise ValueError("validation result requires its evidence reference")
+        if len({item.citation_id for item in self.citations}) != len(self.citations):
+            raise ValueError("citation references must be unique within the proof")
         return self
+
+
+def require_grounded_citations(envelope: JobEnvelope, proof: Proof) -> None:
+    """Coordinator-side: a citation may only point at an input this job received."""
+    if envelope.job_id != proof.job_id:
+        raise ValueError("proof and envelope describe different jobs")
+    if "citations.resolve" not in envelope.output.validators:
+        return
+    if not proof.citations:
+        raise ValueError("citations.resolve requires at least one citation")
+    inputs = {item.resource_id for item in envelope.context + envelope.attachments}
+    for citation in proof.citations:
+        if citation.resource_id not in inputs:
+            raise ValueError("citation cites a resource the job never received")
+    # ponytail: page existence is unchecked until an extractor reports page counts;
+    # add a per-resource page bound to ResourceRef when AF-00x OCR lands.
 
 
 def parse_message(record_type: type[Record], body: bytes) -> Record:
