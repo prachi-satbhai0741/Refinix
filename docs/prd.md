@@ -279,3 +279,18 @@ Detailed measurement rules and the demo sequence are in
 When these documents conflict, this PRD owns product scope while the focused
 document owns implementation detail within that scope. Unresolved conflicts must
 be recorded instead of silently choosing one.
+
+Comment By Yug :-
+## FR-037 — Multilingual Industrial Interaction (P1)
+
+Support local, offline interaction in English, Hindi, Kannada, Malayalam, and Tamil.
+
+- Accept multilingual text and supported speech input.
+- Support multilingual OCR/document understanding where models permit.
+- Preserve technical terms, equipment tags, units, and citations.
+- Generate responses/artifacts in the selected language.
+- Use only local models/services; no cloud translation, OCR, ASR, or LLM.
+- Show low-confidence/unsupported language results clearly.
+- Keep the language layer extensible for future languages.
+
+**Acceptance:** The feature works with the network disconnected and all processing remains on-premise.
