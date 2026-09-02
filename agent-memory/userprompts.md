@@ -439,3 +439,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260903-004](#up-20260903-004)
 - supersedes: none
 - linked_changes: [AC-20260903-005](agentchangelog.md#ac-20260903-005)
+
+<a id="up-20260903-006"></a>
+## UP-20260903-006 — Address the C01 review findings
+- date: 2026-09-03
+- status: in-progress
+- scope: backend, contracts, execution, review
+- tags: c01, af-001, code-review, citations, evidence-binding, retry, board-status
+- aliases: NEEDS FIX, Codex review, PR 29, proof attempt binding, current scope note
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Address Codex's two C01 review findings on merge d50ea38 so citation evidence binds to one dispatched attempt and the board reports C01's real review stage.
+- constraints: Stay inside C01; keep C02 locked and the contract at version 1.0; no Git or GitHub writes; do not claim a runtime or pinned-environment result that was not observed.
+- acceptance: The guard rejects a proof whose workspace, job, attempt or target node differs from the envelope, each with its own check, and the current-scope note states C01's review stage and open human checkpoint.
+- verification_authorization: User instruction to address the review covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- follow_up_to: [UP-20260903-005](#up-20260903-005)
+- supersedes: none
+- linked_changes: [AC-20260903-006](agentchangelog.md#ac-20260903-006)

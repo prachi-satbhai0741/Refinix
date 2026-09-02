@@ -170,14 +170,22 @@ class ContractChecks(unittest.TestCase):
 
         uncited = deepcopy(EXAMPLES["Proof"])
         uncited["citations"] = []
-        elsewhere = deepcopy(EXAMPLES["Proof"])
-        elsewhere["job_id"] = "00000000-0000-4000-8000-000000000022"
         no_inputs = deepcopy(envelope)
         no_inputs["context"] = []
+
+        def elsewhere(field):
+            """Evidence produced under a different identity than the one dispatched."""
+            proof = deepcopy(EXAMPLES["Proof"])
+            proof[field] = "00000000-0000-4000-8000-000000000022"
+            return parse("Proof", proof)
+
         for description, package, proof in (
             ("cites a document the job never received", no_inputs, cited),
             ("claims grounding with no citation", envelope, parse("Proof", uncited)),
-            ("pairs a proof with another job", envelope, parse("Proof", elsewhere)),
+            ("pairs a proof with another workspace", envelope, elsewhere("workspace_id")),
+            ("pairs a proof with another job", envelope, elsewhere("job_id")),
+            ("accepts a superseded retry's evidence", envelope, elsewhere("attempt_id")),
+            ("accepts evidence from an untargeted node", envelope, elsewhere("node_id")),
         ):
             with self.subTest(rejects=description), self.assertRaises(ValueError):
                 require_grounded_citations(parse("JobEnvelope", package), proof)

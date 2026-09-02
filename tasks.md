@@ -121,12 +121,15 @@ checkpoint and return-evidence checks are all clear. At **Wait**, pause until
 the named people return the required evidence. Do not skip ahead while waiting.
 Progress depends on these conditions, with no duration limit or delivery date.
 
-**Current scope:** documentation only. No runtime chunk is activated by this
-edit. **Next implementation task: C01 — Contracts and prerequisites**, once
-authorised. AF-001 remains a draft; its review fixes, pairing decision and
-consumer integration are outstanding.
-Update this current-scope note when the requester authorises a new chunk; the
-note itself never grants permission.
+**Current scope: C01 — Contracts and prerequisites, in review and fix.** The
+three requested AF-001 contract repairs are implemented and the reviewed
+evidence-binding finding is fixed; the checks run offline and no runtime chunk
+is activated. AF-001 remains a draft; its pairing decision and consumer
+integration are outstanding. **C01's human checkpoint is open:** Aditya's
+acceptance of the reviewed contract diff, and the read-only device inventory
+from Aditya, Yug, Sahil, Vedant, Prachi and Tanvi. **C02 stays locked** until
+both return. Update this current-scope note when the requester authorises a new
+chunk; the note itself never grants permission.
 
 Names use the currently documented devices: Aditya's Mac is the coordinator,
 Prachi's Ubuntu device is the candidate single-node K3s host, and Yug's Windows

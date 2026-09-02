@@ -431,3 +431,18 @@ work. No repository file change means no changelog entry.
 - changes: Bound OutputContract validators to the declared output kind with required/optional tables and rejected duplicate validators; added the cancelled_by_user failure code, required a typed Failure on failed, cancelled and interrupted attempts, and blocked cancelled_by_user from relabelling a crash or interruption; added two focused checks and documented both rules.
 - verification: Eight unittest checks passed on Python 3.13.2/Windows 11 AMD64; each added rejection branch was executed individually and returned a distinct correct message; every added accepted case parsed; schema export parsed at 52304 bytes with seven schemas.
 - remaining: Ran against pydantic 2.13.4, not the pinned 2.13.5; the C01 human checkpoint is open, needing Aditya's acceptance of the reviewed contract diff and read-only device inventory from all six people; extraction uncertainty records, OD-06, consumer integration and every runtime gate remain open; no Git writes ran.
+
+<a id="ac-20260903-006"></a>
+## AC-20260903-006 — Bind citation evidence to one dispatched attempt
+- date: 2026-09-03
+- agent: Claude
+- status: partial
+- prompt_id: [UP-20260903-006](userprompts.md#up-20260903-006)
+- related_prompts: [UP-20260903-005](userprompts.md#up-20260903-005)
+- tags: c01, af-001, code-review, citations, evidence-binding, retry, board-status
+- aliases: require_grounded_citations, superseded retry, proof pairing, current scope note
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Fixed the reviewed evidence-binding defect so a superseded retry's proof can no longer clear the attempt that replaced it, and corrected the board's current-scope note.
+- changes: Replaced the guard's single job_id comparison with a workspace, job, attempt and target-node comparison naming the mismatched field; added four rejection checks covering workspace, job, superseded attempt and untargeted node; documented the binding and recorded Codex's independent pinned-dependency run; set the current-scope note to C01 in review with C02 locked.
+- verification: Reproduced all three reported acceptances before the fix and confirmed each is now rejected with its own message; eight unittest checks passed and the grounded happy path still passes on Python 3.13.2/Windows 11 AMD64 with pydantic 2.13.4; schema export unchanged at 52304 bytes.
+- remaining: Windows verification against the pinned pydantic 2.13.5 is still outstanding; Aditya's acceptance and the six device inventories keep the C01 checkpoint open and C02 locked; extraction uncertainty records, OD-06, consumer integration and every runtime gate remain open; no Git writes ran.

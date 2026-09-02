@@ -68,9 +68,11 @@ from, carrying the verbatim source quote. `Proof.citations` is where the
 `citations.resolve` validator finds its evidence; citation IDs are unique within
 a proof. `require_grounded_citations(envelope, proof)` is the coordinator-side
 grounding guard for
-[documents step 8](../../docs/workflows.md#5-documents-workflow): it rejects a
-proof paired with another job, a grounded output that carries no citation, and
-any citation naming a resource the envelope never supplied. It cannot detect a
+[documents step 8](../../docs/workflows.md#5-documents-workflow). Evidence binds
+to one dispatch: it rejects a proof whose workspace, job, attempt or target node
+differs from the envelope, so a superseded retry's proof cannot clear the
+attempt that replaced it. It also rejects a grounded output carrying no
+citation, and any citation naming a resource the envelope never supplied. It cannot detect a
 quote that misreads a page it was genuinely given — extraction fidelity and page
 existence remain workflow-side checks, not contract validation.
 
@@ -351,6 +353,17 @@ pinned interpreter and wheel remain unverified on Windows.
 - Every added rejection branch was executed individually and returned its own
   distinct message; each accepted case and the grounded happy path passed.
 - `json.load` on `examples.json` and `git diff --check`: passed.
+
+### Independent review verification — 2026-09-03
+
+Codex re-ran the checks on Aditya's Mac, macOS, Python 3.14.6, against the
+**pinned pydantic 2.13.5** with every dependency matching
+[requirements.txt](../requirements.txt): **8 tests passed** and the combined
+diff passed whitespace checks. That review also found the citation guard
+matched only `job_id`, accepting a superseded retry's evidence; the guard now
+binds workspace, job, attempt and target node, with a rejection check for each.
+Windows verification against the pinned dependencies remains outstanding, and
+no application or model runtime was exercised on either host.
 
 Before AF-001 can become `verified`: resolve OD-06, connect all four consumers
 to this version, obtain requester verification, and repeat the checks on the
