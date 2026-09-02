@@ -33,6 +33,8 @@ integrity, or explicit user authority.
 9. Tool sandbox
 10. User-selected documents and repositories
 11. Local application-data and credential stores
+12. Kubernetes API, worker Service, Pods, and node boundary
+13. Redis coordination service
 
 Data crossing a boundary requires an explicit contract, minimum content,
 authentication where applicable, size limits, integrity metadata, and an audit
@@ -65,6 +67,22 @@ The strongest demonstration uses operating-system or network enforcement plus
 independent observation. Application logs alone cannot prove that traffic was
 blocked.
 
+### Kubernetes worker exposure
+
+- The Kubernetes API is administered only from the Linux host and is not the
+  product's worker API.
+- The worker API is the only cluster workload exposed to the trusted LAN, using
+  a fixed Kubernetes Service port and authenticated HTTPS. The host firewall
+  limits that port to the coordinator address or named trusted subnet, and the
+  coordinator pins the prototype certificate fingerprint during pairing.
+- Redis remains behind a ClusterIP Service. It is not exposed through NodePort,
+  LoadBalancer, Ingress, or a host port.
+- Default-deny NetworkPolicies are applied before confidential fixtures enter
+  the cluster. The team must verify that the selected K3s network-policy
+  controller enforces them; accepted YAML alone is not proof.
+- Public image pulls, package downloads, and model downloads finish before the
+  offline evidence window. Runtime Pods use only preloaded, pinned images.
+
 ## 4. Node identity, pairing, and revocation
 
 - Every installation creates a unique local node identity.
@@ -94,6 +112,9 @@ general file browsing, direct model-runtime access, or unrestricted shell use.
 - Sensitive logging is opt-in, visibly labelled, and subject to retention.
 - Temporary task data is deleted after a documented retention period or
   explicit cleanup.
+- Redis stores only bounded task envelopes and ephemeral coordination state,
+  with expiry and a memory limit. Persistence is disabled for the alpha, and
+  payload values are excluded from ordinary logs.
 - Pairing, disconnecting, or revoking never silently merges or deletes local
   workspace data.
 
@@ -143,6 +164,27 @@ A container is a candidate isolation mechanism, not proof of isolation on every
 macOS, Windows, and Linux configuration. Platform behaviour requires runtime
 verification.
 
+The Kubernetes alpha applies these Pod controls unless a narrower exception is
+recorded and reviewed:
+
+- non-root user and group;
+- `allowPrivilegeEscalation: false`;
+- all Linux capabilities dropped;
+- `seccompProfile: RuntimeDefault`;
+- read-only root filesystem plus explicit writable temporary volumes;
+- CPU, memory, process, output-size, and active-deadline limits;
+- no privileged containers, host networking, host PID/IPC, host home mounts, or
+  Docker socket;
+- no service-account token by default;
+- a namespace-scoped service account only for the component that creates and
+  inspects validation Jobs, with no Secret or cluster-wide access;
+- default-deny ingress and egress, then the minimum DNS, Redis, API, and model
+  traffic explicitly allowed.
+
+Finished validation Jobs use a cleanup TTL. Inputs mount read-only, output uses
+one disposable volume, and the coordinator accepts only validated artifacts
+whose hashes match the active attempt.
+
 ## 9. Models and dependencies
 
 The curated catalogue accepts only components with:
@@ -162,6 +204,11 @@ Prefer suitable local/open-source components over reimplementing standard
 functionality, but reject competing SIH submissions, unlicensed snippets,
 incompatible copyleft obligations, unreviewed installers, and components that
 silently contact external services.
+
+Docker base images, Kubernetes workload images, K3s, Redis, clients, and model
+runtimes require the same recorded source, pinned version or digest, licence,
+hash where available, and runtime network review. `latest` image tags are not
+accepted in the reproducible demo path.
 
 ## 10. Application and release supply chain
 

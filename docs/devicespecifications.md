@@ -142,12 +142,13 @@ adapters for at least the Mac and Vedant.
 - **OS:** Ubuntu 24.04.4 LTS, GNOME 46
 - **Network:** Wi-Fi (Intel) + Realtek Gigabit Ethernet; **Docker already installed** (docker0 and bridges present)
 - **Planning note:** The only Linux box, and Docker is already running, making it
-  the **strongest fit for the sandboxed code-execution worker** under
+  the **five-day single-node K3s host and sandboxed code-execution worker** under
   [security.md](security.md#8-filesystem-and-sandbox).
-  Native Docker with networking disabled is cleanest here, and the sandbox role
-  does not need a GPU. **Action:** install a compatible NVIDIA driver if GPU
-  inference is wanted; add `nvidia-container-toolkit` only when passing the GPU
-  into Docker.
+  The mentor-aligned baseline uses Docker to build pinned images and K3s to run
+  the worker, Redis, and validation Pods. The cluster and sandbox roles do not
+  require a GPU. **Action:** install a compatible NVIDIA driver only if GPU
+  inference is accepted after the CPU/container path works; add
+  `nvidia-container-toolkit` only when passing the GPU into a container.
 
 ### Tanvi — Dell Inspiron 15 3520
 - **CPU:** 12th Gen Intel Core i5-1235U (U-series, low-power) — 10 cores (2P+8E) / 12 threads, 1.3 GHz base
@@ -173,7 +174,7 @@ adapters for at least the Mac and Vedant.
 | Main engine + primary alpha workspace | Aditya (M5 Air) | MLX and unified memory may suit a small main model; the app may still use this or paired compute |
 | Coding worker | **Vedant (RTX 5050, 8 GB)** | The only 8 GB GPU; holds a 7B-Q4 coding model almost entirely in VRAM |
 | Reasoning / large-model worker | **Sahil (RTX 3050 6 GB + 24 GB dual-channel)** | Best CPU-offload host in the fleet; runs a larger model partly on CPU without collapsing |
-| Code sandbox execution | Prachi (Ubuntu + Docker) | Native Linux Docker with networking disabled; no GPU required |
+| Kubernetes worker, Redis, and code sandbox | Prachi (Ubuntu + Docker/K3s) | Single Linux host for the mentor-aligned Pods, Services, Redis, NetworkPolicies, and validation Jobs; no GPU required for the first spine |
 | OCR / vision worker | Yug (RTX 2050, 1 TB) | 4 GB VRAM fits a small OCR/vision model; most disk, and has Ethernet |
 | Embeddings / RAG | Aditya (coordinator) or Tanvi | Small footprint; can run alongside chat or CPU-only |
 | ASR / voice (optional) | Tanvi (CPU) | A small ASR model runs acceptably on CPU; suits the weakest node |
@@ -194,9 +195,10 @@ Constraint reminder: **no device exceeds 8 GB discrete VRAM.** Plan every model 
 2. **Owners: Yug and Prachi — re-read VRAM with `nvidia-smi`.** Their 4 GB
    figures came from tools affected by the saturation bug noted at the top of
    this document. Prachi needs the NVIDIA driver installed first.
-3. **Owner: Prachi — decide GPU or CPU** for her node and, if GPU, install a
-   compatible NVIDIA driver. Add `nvidia-container-toolkit` only for GPU
-   inference inside Docker.
+3. **Owner: Prachi — prove the Kubernetes host before GPU work.** Record Docker,
+   K3s, kubectl, kernel/cgroup, storage, Service exposure, and NetworkPolicy
+   behaviour. Use CPU for the first spine; only then decide whether to install a
+   compatible NVIDIA driver and `nvidia-container-toolkit` for GPU inference.
 4. **Owner: Sahil — verify App Control for Business does not block a local
    runtime.** Smart App Control is enforced on that machine and can refuse
    unsigned binaries. This gates whether the node can run llama.cpp or Ollama.

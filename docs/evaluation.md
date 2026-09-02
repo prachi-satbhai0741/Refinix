@@ -27,63 +27,72 @@ evidence.
 The purpose of the alpha is to answer the risks that could kill the product,
 not to imitate every ChatGPT feature.
 
-### Day 1: baseline and one local engine
+### Day 1: one Kubernetes worker spine
 
-- Freeze the P0 outcomes and authoritative problem-statement copy.
-- Select the smallest service/UI boundary and one runtime candidate.
-- Define the node, model-manifest, job, event, and proof contracts.
-- Complete one real local main-engine inference on the primary machine.
-- Record cold/warm latency and memory.
+- Freeze the node, job, attempt, event, approval, HTTPS, Redis, and proof
+  contracts.
+- Pin K3s, Redis 7.2.x, base-image, worker-image, runtime, and model evidence.
+- Start one single-node K3s cluster on Prachi's Ubuntu machine.
+- Deploy Redis behind ClusterIP and the Docker-built worker behind a Kubernetes
+  Service.
+- Complete one real model response from a Ready worker Pod.
+- Persist the job and attempt in coordinator SQLite and show it in the smallest
+  local browser UI.
 
 Exit evidence:
 
-- model source/licence/revision recorded;
-- local runtime and prompt are reproducible;
+- model, image, K3s, Redis, and dependency source/licence/revision recorded;
+- Pod, Service, runtime, and prompt are reproducible;
 - no mocked inference in the claimed path.
 
-### Day 2: one real paired-worker path
+### Day 2: Mac to Service to Redis to executor
 
-- Start the harness on the primary workspace device.
-- Start the same worker service on one Windows device.
-- Add a clearly labelled prototype pairing flow.
-- Report heartbeat, capabilities, model, and health.
-- Route one real prompt and stream output back.
-- Show original request, selected device/model, and routing reason.
+- Connect worker API and executor Pods through Redis Streams.
+- Add bounded retention, acknowledgement, pending-work recovery, cancellation,
+  heartbeats, and leases.
+- Authenticate the Mac coordinator to the worker Service over HTTPS.
+- Route one real prompt through the Service and Redis to an executor Pod.
+- Stream events back and show the request, model, Pod, queue, and routing reason.
+- Complete the smallest guided preflight that selects the curated manifest,
+  verifies dependencies, and runs the real self-test.
+- Stop the cluster and prove the Mac's canonical SQLite history remains usable.
 
 Exit evidence:
 
-- reproducible prompt-to-worker-to-coordinator path;
+- reproducible Mac-to-Service-to-Redis-to-Pod-to-Mac path;
 - bounded request and streamed response captured;
-- disconnect leaves the local workspace usable.
+- Redis or cluster loss does not lose canonical history.
 
-### Day 3: onboarding and policy
+### Day 3: both signature workflows
 
-- Turn the proven runtime path into guided main-engine setup.
-- Add one curated manifest and integrity check.
-- Add enabled-capability dependency resolution.
-- Add the fixed action matrix and awaiting-approval state.
-- Show real health, model, and job events in the Control Center.
-
-Exit evidence:
-
-- clean installation or reset reaches a real self-test;
-- required dependencies cannot be reported enabled when missing;
-- canonical final write remains approval-gated.
-
-### Day 4: signature workflows
-
-- Complete the fixed Documents pipeline.
-- Complete the fixed Code pipeline.
-- Preserve OCR page mapping and uncertainty.
-- Generate the cited Word artifact.
-- Validate the code patch in an isolated network-disabled workspace.
-- Run independent tasks concurrently where hardware permits.
+- Complete the fixed Documents path from scan to page-linked extraction,
+  grounded drafting, and validated Word artifact.
+- Complete the fixed Code path from bounded repository context to patch.
+- Run code validation as a restricted short-lived Kubernetes Job Pod.
+- Preserve hashes, uncertainty, command output, exit status, and cleanup state.
+- Use the same Service, Redis, event, and approval contracts for both paths.
 
 Exit evidence:
 
-- real artifacts from both workflows;
-- validation evidence for each;
-- sequential and concurrent timings on the same task set.
+- one openable cited Word artifact;
+- one applicable patch with observed sandbox evidence;
+- no direct canonical write from a worker or Job Pod.
+
+### Day 4: concurrency, approval, and sovereignty
+
+- Run Documents and Code attempts concurrently through separate Redis consumers
+  and Pods.
+- Enforce approval before canonical writes and make retries idempotent.
+- Apply and verify default-deny Pod egress plus required cluster/LAN allowances.
+- Produce Proof Cards from SQLite, Redis, Kubernetes, model, validation,
+  integrity, approval, and network observations.
+- Record sequential and concurrent timing honestly.
+
+Exit evidence:
+
+- both real artifacts complete concurrently;
+- denial writes nothing and retry creates no duplicate final write;
+- the real run records no observed public outbound flow in the named window.
 
 ### Day 5: sovereign proof and rehearsal
 
@@ -92,6 +101,7 @@ Exit evidence:
 - Capture trustworthy network, device, model, tool, integrity, and approval
   evidence.
 - Exercise cancellation or one worker interruption.
+- Exercise executor-Pod loss, Redis restart, and cluster loss.
 - Complete third-party notices for selected components.
 - Replace projected numbers with measured results.
 - Rehearse and record a backup demonstration.
@@ -103,10 +113,10 @@ Exit evidence:
 - benchmark table and limitations;
 - no unfinished feature presented as working.
 
-### Day 6: buffer if available
-
-Only fix demo-breaking defects, improve reproduction, and rehearse. Do not add a
-new framework, workflow, model, runtime, or product surface.
+If a gate passes early, begin the next gate. Only after Day 3 passes may the
+team add the bounded image-understanding and calculation-with-steps stretch;
+only after Day 4 passes may it add a second executor replica. Do not add another
+framework, cluster, broker, runtime, or product surface.
 
 ## 3. Alpha acceptance
 
@@ -116,10 +126,14 @@ new framework, workflow, model, runtime, or product surface.
 - [ ] Guided setup selects, installs or imports, verifies, and self-tests one
       real main engine.
 - [ ] A real local chat completes.
-- [ ] A second installation pairs explicitly and reports capabilities.
-- [ ] One real prompt runs on the paired worker and streams back.
+- [ ] The pinned Docker worker image runs in a Ready Kubernetes-managed Pod.
+- [ ] A Kubernetes Service exposes only the authenticated worker API to the
+      trusted LAN; Redis remains cluster-internal.
+- [ ] Redis dispatches one bounded attempt to an executor and reports queue,
+      pending, acknowledgement, heartbeat, and cancellation state.
+- [ ] One real prompt runs through the Kubernetes Service and streams back.
 - [ ] The UI or logs show original request, device, model, route, and status.
-- [ ] Disconnecting the worker leaves both local workspaces intact.
+- [ ] Stopping Redis or the cluster leaves canonical SQLite history intact.
 - [ ] One bounded agent workflow produces a validated output.
 - [ ] Consequential final write requires a recorded approval.
 - [ ] Runtime endpoints and public-egress evidence are documented honestly.
@@ -156,6 +170,9 @@ Initial targets are hypotheses:
 | M-06 | Worker-loss detection | Under 5 seconds |
 | M-07 | Duplicate final writes after retry | 0 |
 | M-08 | Distributed makespan improvement over sequential baseline | Positive and reported honestly |
+| M-09 | Ready worker Pods behind the Service | At least 1 |
+| M-10 | Canonical records lost after Redis restart | 0 |
+| M-11 | Redis pending attempt reclaimed after executor loss | 1 fixed failure fixture succeeds |
 
 Measurement rules:
 
@@ -174,9 +191,12 @@ Measurement rules:
 
 1. Show the separate public distribution surface and release checksum only if
    they exist.
-2. Show completed local setup, installed models, licences, and self-test state.
-3. Disconnect or block public Internet while preserving the trusted LAN.
-4. Start the evidence window.
+2. Show the pinned Docker image, Ready Pods, Kubernetes Services, Redis licence,
+   installed model, and self-test state.
+3. Confirm Redis has no LAN-exposed Service and the worker API requires the
+   paired credential.
+4. Disconnect or block public Internet while preserving the trusted LAN.
+5. Start the evidence window.
 
 ### Standalone
 
@@ -224,15 +244,17 @@ It proves only the recorded job and observation window.
 
 The six useful workstreams are:
 
-1. Harness, state, and job lifecycle
-2. Worker, runtime, pairing, and streaming
-3. Onboarding, task surfaces, and Control Center
-4. Documents, OCR, retrieval, and artifact validation
-5. Code context, sandbox, patch, and validation
-6. Security evidence, model provenance, integration, and demo
+1. Frozen contracts, coordinator SQLite, routing, and integration
+2. Docker worker, model runtime, Redis consumer, and SSE
+3. K3s, Pods, Services, NetworkPolicies, and sandbox Jobs
+4. Local browser UI, Control Center, and product acceptance
+5. Documents/OCR/retrieval and Code/patch validation
+6. Fixtures, contract checks, failure drills, proof, and demo
 
-Assign owners by capability and keep one integration owner. Do not create empty
-components merely to give each member a folder.
+Assign one human owner per work packet and keep one integration owner. Multiple
+AI agents may work on disjoint packets after the contracts freeze; they do not
+share authority to change the seams. Do not create empty components merely to
+give each member or agent a folder.
 
 ## 9. Major risks
 
@@ -240,6 +262,11 @@ components merely to give each member a folder.
 |---|---|
 | Product becomes only a networking demo | Complete one real agentic artifact workflow |
 | P0 scope expands again | Treat the PRD outcome table as the release boundary |
+| Kubernetes consumes the sprint | Use one single-node K3s host; no Helm, operator, service mesh, HA, or multi-node cluster |
+| Redis becomes a second database | Keep canonical state in SQLite; use expiring Redis coordination state only |
+| Agent count creates incompatible implementations | Freeze contracts first, give each packet one human owner, and integrate twice daily |
+| Worker Service exposes confidential traffic | Authenticated HTTPS only; Redis stays ClusterIP; verify NetworkPolicy and host firewall behaviour |
+| Kubernetes Job is mistaken for a complete sandbox | Require observed non-root, seccomp, capability, path, resource, deadline, and egress checks |
 | Setup forces unnecessary downloads | Resolve dependencies only for enabled capabilities |
 | Main model is too weak | Benchmark the actual tasks before polishing UI |
 | Cross-platform runtime differs | Prove one runtime path, add one fallback only for a measured blocker |
@@ -261,6 +288,10 @@ Research only questions that materially affect feasibility:
 - RAM, VRAM, storage, cold-load time, and sustained thermals;
 - pairing credential storage and encrypted LAN transport;
 - platform sandbox behaviour;
+- pinned K3s, Kubernetes workload, Docker image, and Redis 7.2.x compatibility
+  and licences;
+- Service exposure, Redis isolation, NetworkPolicy enforcement, and Pod
+  security on Prachi's Ubuntu host;
 - connected and air-gapped model installation;
 - trustworthy public-egress enforcement and observation;
 - dependency and model licences.
@@ -304,3 +335,16 @@ None is claimed as working.
 | Multiple open-weight models, addable without redesign | Answered by the manifest-driven catalogue gate on AF-001 |
 | Grounding in manuals, SOPs, and correspondence | Answered by local retrieval in AF-009 |
 | Multilingual industrial interaction | FR-019, P1 finals scope |
+
+## 12. Mentor implementation-direction coverage
+
+These are implementation requirements from the mentor, not claims from the
+problem statement. They remain Planned until the named acceptance evidence is
+observed.
+
+| Mentor direction | Repository interpretation | Acceptance evidence | Status |
+|---|---|---|---|
+| Use Kubernetes and Docker | Docker builds pinned OCI worker/sandbox images; single-node K3s runs them | AF-002, AF-003: image digest plus Ready Deployment/Pod | Planned |
+| Create Pods | Deployments own long-running API/executor Pods; Jobs create short-lived validation Pods | AF-002, AF-011: Pod readiness, limits, termination, and cleanup | Planned |
+| Use Service API | Kubernetes Service provides a stable endpoint for the versioned FastAPI worker contract | AF-006: authenticated Mac-to-Service job completes | Planned |
+| Use Redis | Redis Streams and expiring keys coordinate dispatch, leases, heartbeats, cache, cancellation, and events | AF-005: acknowledge, pending-work recovery, restart, and retention fixtures pass | Planned |

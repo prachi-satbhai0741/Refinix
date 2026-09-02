@@ -48,6 +48,7 @@ Coordinator, worker, and server are dynamic responsibilities:
 | Local worker | Executes an eligible job for its own coordinator |
 | Paired worker | Accepts bounded jobs from a trusted remote coordinator |
 | Private-server worker | Runs the same worker service headlessly on organisation-managed compute |
+| Kubernetes worker host | Runs the containerised worker API, executor Pods, and ephemeral Redis coordination for a trusted workspace |
 
 An installation may coordinate its own workspace while acting as a worker for
 one explicitly paired remote workspace. The prototype may limit a node to one
@@ -56,6 +57,11 @@ active remote pairing at a time. Multi-workspace concurrency is P2.
 Pairing does not copy, merge, replace, or promote a local workspace. Coordinator
 transfer is a separate P2 feature because it requires explicit state migration,
 conflict handling, and rollback.
+
+For the five-day alpha, Prachi's Ubuntu machine is the only Kubernetes host.
+It runs a single-node K3s cluster. Docker builds the worker and sandbox images;
+K3s runs those OCI images through its CRI-compatible container runtime. The
+team does not build a six-laptop Kubernetes cluster during the sprint.
 
 ## 3. Harness components
 
@@ -126,6 +132,10 @@ The router considers:
 - measured compatibility evidence;
 - optional thermal state when reliable.
 
+Redis reports only ephemeral queue depth, leases, and worker heartbeats. The
+router never treats Redis as the authority for completed work, approvals, or
+final writes.
+
 Prototype routing order:
 
 1. Respect an explicit compatible target.
@@ -194,6 +204,21 @@ A paired worker stores only:
 Remote job content follows a documented deletion policy. A worker never stores
 the coordinator's full chat history, rules, memory, repository, or knowledge
 base.
+
+### 4.3 Redis coordination state
+
+Redis exists to coordinate disposable work between the worker API and executor
+Pods. It may hold:
+
+- bounded job and attempt envelopes;
+- queue and consumer-group state;
+- short leases, heartbeats, cancellation flags, and progress events;
+- explicitly safe caches with a size limit and expiry.
+
+It does not hold canonical chats, approvals, model manifests, artifact records,
+or final-write authority. The coordinator persists those in SQLite before a job
+is dispatched. Redis loss marks active attempts interrupted; the coordinator
+decides whether to create a new attempt and requeue it.
 
 ## 5. Local application data
 
@@ -276,11 +301,20 @@ original user request.
 
 ### 6.3 Minimum node surface
 
-Exact routes remain a protocol decision, but the capability surface requires:
+The alpha freezes one versioned JSON/HTTPS application contract:
 
-    pair, confirm, and revoke
-    health and capabilities
-    create, inspect, stream, and cancel jobs
+    GET    /v1/health
+    GET    /v1/capabilities
+    POST   /v1/pairing/confirm
+    DELETE /v1/pairing/{relationship_id}
+    POST   /v1/jobs
+    GET    /v1/jobs/{job_id}
+    GET    /v1/jobs/{job_id}/events
+    DELETE /v1/jobs/{job_id}
+
+The events route uses Server-Sent Events. Every mutating request carries a job
+or relationship identifier, authentication, size limits, and an idempotency
+key where retry can create duplicate work.
 
 Use standard authenticated HTTPS or mTLS over the trusted LAN. Do not invent
 cryptography or a custom transport.
@@ -298,6 +332,39 @@ The coordinator sends independent complete job steps to paired workers. It may
 run unrelated Code and Documents jobs concurrently. This is orchestration, not
 model sharding.
 
+### Kubernetes execution profile — five-day alpha
+
+The first mentor-aligned profile is deliberately one cluster on one Linux host:
+
+    Mac coordinator + SQLite
+              |
+        authenticated HTTPS
+              |
+    Kubernetes Service (NodePort on trusted LAN)
+              |
+       worker-api Deployment
+              |
+        Redis ClusterIP Service
+          |               |
+    executor Pods    sandbox Job Pods
+
+- A Dockerfile builds the worker image; model weights are never baked into the
+  image or committed to the repository.
+- A Kubernetes Deployment owns the long-running worker API and executor Pods.
+- A Kubernetes Service gives the changing API Pods one stable endpoint. Redis
+  has a ClusterIP Service and is never exposed to the LAN.
+- Redis Streams provide bounded at-least-once dispatch and progress events.
+  SQLite idempotency prevents duplicate canonical writes.
+- A short-lived Kubernetes Job runs each code-validation task with an explicit
+  deadline and cleanup TTL. It does not receive the Docker socket.
+- Models mount read-only from an approved host path or persistent volume. Each
+  job receives only a disposable workspace.
+- Scaling above one executor replica is a stretch only after the single-Pod
+  end-to-end path and retry semantics pass.
+
+This is not a peer-to-peer Kubernetes cluster, production high availability,
+or a new control plane for canonical application state.
+
 ### Private server
 
 An organisation-managed server runs the same worker service, advertises
@@ -307,19 +374,47 @@ cloud inference.
 
 ## 8. Working technology direction
 
-Current candidates minimise prototype risk:
+The five-day baseline minimises prototype risk:
 
 | Area | Direction | Status |
 |---|---|---|
-| Local service | Python with FastAPI or equivalent | Candidate |
-| One-way job streaming | Server-Sent Events | Candidate |
-| Coordinator state | SQLite | Candidate |
+| Local service and worker API | Python with FastAPI | Alpha decision |
+| One-way job streaming | Server-Sent Events | Alpha decision |
+| Coordinator state | SQLite | Alpha decision |
+| Container image build | Docker with pinned base-image digest | Alpha decision |
+| Kubernetes distribution | Single-node K3s on the Ubuntu host | Alpha decision; runtime proof required |
+| Kubernetes workloads | Deployments for services; short-lived Jobs for code validation | Alpha decision |
+| Shared ephemeral coordination | Redis 7.2.x Streams and expiring keys | Alpha decision; exact image digest required |
 | Runtime | One existing local runtime first | Decision required |
 | Retrieval | SQLite full-text baseline; semantic index only when proven necessary | Candidate |
-| Code isolation | Existing container/runtime sandbox with networking disabled | Platform proof required |
-| Desktop shell | Lightweight wrapper around the local service | Decision required after the harness path |
+| Code isolation | Restricted Kubernetes Job Pod with default-deny egress | Platform proof required |
+| Alpha UI | Local HTML/CSS/JavaScript served by the coordinator; desktop wrapper deferred | Alpha decision |
 | Checksums | Standard SHA-256 | Settled |
 
-Do not add a message broker, event platform, vector database, generic agent
-framework, plugin framework, or multiple runtime adapters before a measured
-end-to-end path proves the need.
+Do not add Helm, an operator, service mesh, Redis Cluster, another event
+platform, vector database, generic agent framework, plugin framework, or a
+second runtime adapter before a measured end-to-end path proves the need.
+
+Redis 7.2.x is selected for the alpha because it retains the BSD-3-Clause
+licence; AF-002 must choose the latest supported 7.2 patch, review its current
+security notices, and pin the container digest.
+K3s uses a CRI-compatible runtime rather than the removed Kubernetes Docker
+shim, while still running the OCI images built with Docker.
+
+## 9. Implementation references
+
+- [Kubernetes workloads](https://kubernetes.io/docs/concepts/workloads/) — Pods,
+  Deployments, and Jobs.
+- [Kubernetes Service API](https://kubernetes.io/docs/concepts/services-networking/)
+  — stable endpoints for changing Pods.
+- [K3s quick start](https://docs.k3s.io/quick-start) and
+  [networking services](https://docs.k3s.io/networking/networking-services) —
+  single-node cluster and the included network-policy controller.
+- [Redis Streams](https://redis.io/docs/latest/develop/data-types/streams/) —
+  consumer groups, acknowledgements, pending work, and bounded retention.
+- [Redis licences](https://redis.io/legal/licenses/) — Redis 7.2.x and earlier
+  remain BSD-3-Clause.
+- [Redis Open Source version management](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/)
+  — supported releases and maintenance dates.
+- [Docker build guidance](https://docs.docker.com/build/building/best-practices/)
+  — minimal images and digest pinning.

@@ -32,7 +32,8 @@ It cannot hard-code secure, blocked, healthy, or zero-traffic states.
 
 There is no package.json, source tree, or dependency set.
 
-The [architecture direction](../docs/architecture.md#8-working-technology-direction)
-defers the desktop shell decision until one real local and paired-worker harness
-path works. A local web interface may prove that path before packaging; do not
-let cross-platform installer work block inference and orchestration evidence.
+The five-day alpha uses local HTML, CSS, and JavaScript served by the coordinator
+instead of adding a frontend build chain or desktop wrapper. Chat and Control
+Center form the first usable slice; Documents and Code reuse the same job form,
+event stream, artifact links, and truthful unavailable states. Packaging remains
+deferred until the complete demonstration path works.

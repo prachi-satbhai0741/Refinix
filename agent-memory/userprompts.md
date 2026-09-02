@@ -316,3 +316,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260902-003](#up-20260902-003)
 - supersedes: none
 - linked_changes: [AC-20260902-004](agentchangelog.md#ac-20260902-004)
+
+<a id="up-20260902-005"></a>
+## UP-20260902-005 — Align the five-day build with the mentor infrastructure
+- date: 2026-09-02
+- status: done
+- scope: docs, architecture, execution-planning, security
+- tags: kubernetes, docker, pods, service-api, redis, five-day-sprint
+- aliases: mentor infrastructure, friday implementation plan, k3s worker, redis queue, parallel agents
+- paths: docs/prd.md, docs/architecture.md, docs/security.md, docs/evaluation.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replace the deferred Kubernetes and Redis position with a bounded five-day implementation plan that produces a usable mentor-aligned alpha.
+- constraints: Keep standalone operation; use one Linux Kubernetes host rather than a speculative fleet cluster; keep SQLite canonical; use Redis only for bounded ephemeral coordination; treat reported agent capacity as parallel assistance rather than verification.
+- acceptance: The PRD, architecture, security model, evaluation gates, and task board agree on Docker-built worker images, Kubernetes Pods and Service exposure, Redis responsibilities, named owners, early-completion stretch gates, and a five-day frozen demo path.
+- follow_up_to: [UP-20260902-004](#up-20260902-004)
+- supersedes: none
+- linked_changes: [AC-20260902-005](agentchangelog.md#ac-20260902-005)
