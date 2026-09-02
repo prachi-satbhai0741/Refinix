@@ -28,7 +28,7 @@ Section:
 
 <!--
 Evaluation "Evidence labels": keep decisions evidence-backed and dated.
-Evaluation "Five-day critical path", Day 5: replace projected metrics with measured results.
+Evaluation "Task acceptance sequence", C12–C13: replace projected metrics with measured results.
 
 Paste real output: command + result, screenshot, timing, test run, log excerpt.
 "It works on my machine" is not evidence. If there is nothing to measure yet,

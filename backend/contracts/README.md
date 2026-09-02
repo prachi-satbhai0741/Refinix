@@ -3,7 +3,7 @@
 Status: **in progress; local contract checks passed, not frozen**. The Python
 records, protocol constants, synthetic examples, and runnable checks exist. Coordinator,
 worker, UI, and manifest consumers do not exist yet. Passing the contract check
-alone does not satisfy the AF-001 integration gate or the Day 1 spine.
+alone does not satisfy the AF-001 integration gate or the C05 integration gate.
 
 This implements the shared boundary in
 [architecture §6](../../docs/architecture.md#6-job-and-workflow-contracts).
@@ -354,6 +354,9 @@ pinned interpreter and wheel remain unverified on Windows.
 
 Before AF-001 can become `verified`: resolve OD-06, connect all four consumers
 to this version, obtain requester verification, and repeat the checks on the
-pinned pydantic 2.13.5 on at least one non-macOS host. Before Day 1 passes:
-prove Prachi's cluster, the pinned worker image and real model response, plus
+pinned pydantic 2.13.5 on at least one non-macOS host. Before C05 passes: prove
+the authorised cluster, the pinned worker image and real model response, plus
 SQLite persistence and the local UI.
+The [shared execution chunks](../../tasks.md#numbered-execution-tasks)
+separate contract repair, named human setup and consumer integration; none of
+those individual steps alone freezes AF-001.

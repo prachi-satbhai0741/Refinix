@@ -109,6 +109,27 @@ ledgers, and archiving. Writing rules:
 - Add the smallest runnable check for non-trivial logic and run proportionate
   validation before reporting.
 
+## Human checkpoints
+
+- Agents should follow the authorised chunk and named human checkpoints in
+  [tasks.md](tasks.md#numbered-execution-tasks). Anyone may implement
+  any module; a named setup operator is not an exclusive code owner.
+- Build, review and fix within the authorised scope without repeated permission
+  requests for ordinary coding. Stop at a required human action or missing
+  permission; do not skip to another chunk or perform that action by assumption.
+- Before stopping, prepare a reviewable handoff naming the people, devices,
+  shells, directories, exact commands or UI steps, expected results and evidence
+  to return. Downloads need approved sources, versions, licences, integrity and
+  storage requirements; host changes need applicable rollback instructions.
+- If required values or artifacts do not exist yet, request the concrete
+  decision or prerequisite first. Do not provide speculative setup commands.
+- Resume only after the human reports back and the relevant result is verified
+  with permitted checks. A review pass or an install report alone does not prove
+  the runtime acceptance gate or authorise a later chunk.
+- Keep checks proportional to the changed behavior and required gates. After
+  each build and review cycle, explain **Built**, **Verified**, and **Next / Human
+  action** in plain language with an example, limitations and actual names.
+
 ## AegisForge invariants
 
 From [`docs/prd.md`](docs/prd.md) and

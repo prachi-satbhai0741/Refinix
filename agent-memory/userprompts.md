@@ -363,22 +363,69 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - supersedes: none
 - linked_changes: [AC-20260902-007](agentchangelog.md#ac-20260902-007)
 
-## UP-20260903-001 — Analyse the documents and execute Day 1 tasks
+<a id="up-20260903-001"></a>
+## UP-20260903-001 — Assign Yug the worker execution spine
 - date: 2026-09-03
-- status: in-progress
-- scope: backend, contracts, documents-workflow, execution
-- tags: af-001, day-1, contracts, citations, documents, grounding, page-mapping
-- aliases: task.md execution, citation contract, cited approval note, documents owner, reduced team
-- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/examples.json, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
-- summary: Analyse the planning documents and begin executing tasks.md with only Yug and Aditya available, closing the citation gap that the merged AF-001 draft left in the documents workflow.
-- constraints: Only Yug and Aditya are available, so tasks.md role assignments are suspended for this change; no Git or GitHub writes; keep the contract version at 1.0 and preserve coordinator authority and offline boundaries.
-- acceptance: The contract carries a typed citation with source and page, a coordinator-side grounding guard rejects ungrounded output, and the contract check runs and passes locally.
-- verification_authorization: User instruction to execute tasks covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- status: done
+- scope: docs, execution-planning, ownership
+- tags: yug, claude, worker-spine, day-1, day-2, ownership
+- aliases: huge task for Yug Claude, two builders, worker runtime Redis K3s, review handoff
+- paths: docs/yug-worker-spine.md, docs/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Create a substantial implementation packet for Yug's Claude after his current contract review, with Aditya and Yug owning current implementation and Aditya/Codex reviewing the resulting changes.
+- constraints: Planning only in this turn; preserve shared contracts and daily gates; keep other members' hardware/evidence roles; use member-to-dev-to-main publication; do not transfer prior local test/install permission to another machine or session.
+- acceptance: A self-contained packet defines the worker/runtime/Redis/container/K3s outcome, allowed paths, review prerequisite, phases, acceptance commands, failure cases, permissions, and review evidence; the current sprint reflects two build owners.
 - follow_up_to: [UP-20260902-007](#up-20260902-007)
 - supersedes: none
 - linked_changes: [AC-20260903-001](agentchangelog.md#ac-20260903-001)
 
-## UP-20260903-002 — Execute the revised tasks.md C01 contract repairs
+<a id="up-20260903-002"></a>
+## UP-20260903-002 — Execute the human-checkpoint documentation plan
+- date: 2026-09-03
+- status: in-progress
+- scope: docs, execution-planning, agent-guidance
+- tags: human-checkpoints, claude, codex, setup, five-day-sprint
+- aliases: named human intervention, checkpoint chunks, remove personal packet, build review explain resume
+- paths: AGENTS.md, tasks.md, docs/README.md, docs/yug-worker-spine.md, docs/architecture.md, docs/devicespecifications.md, docs/evaluation.md, backend/contracts/README.md, CONTRIBUTING.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replace personal implementation assignments with reviewed execution chunks that pause for named human actions and resume only after their results are verified.
+- constraints: Documentation only; preserve AF task evidence and product/security gates; no runtime implementation, installs, downloads, deployments, tests or Git writes; preserve device facts and historical ledgers.
+- acceptance: One shared tasks.md names each human checkpoint, required commands/evidence, stop/resume rules and plain-language build reports; obsolete personal packet is removed and active references are consistent.
+- follow_up_to: [UP-20260903-001](#up-20260903-001)
+- supersedes: [UP-20260903-001](#up-20260903-001)
+- linked_changes: [AC-20260903-002](agentchangelog.md#ac-20260903-002)
+
+<a id="up-20260903-003"></a>
+## UP-20260903-003 — Remove calendar constraints from execution
+- date: 2026-09-03
+- status: in-progress
+- scope: docs, execution-planning
+- tags: numbered-tasks, human-checkpoints, prerequisites, calendar-independent
+- aliases: no days, task number and name, execute then wait for human, remove deadline schedule
+- paths: tasks.md, AGENTS.md, CONTRIBUTING.md, README.md, backend/README.md, backend/contracts/README.md, frontend/README.md, docs/README.md, docs/prd.md, docs/architecture.md, docs/evaluation.md, docs/devicespecifications.md, docs/sih-ppt-submission-brief.md, .github/pull_request_template.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replace implementation day labels and calendar cadence with numbered tasks, explicit prerequisites and named human stop/resume checkpoints.
+- constraints: Preserve existing uncommitted documentation, AF task state/acceptance, named human actions, evidence dates, history and runtime safety deadlines; no runtime changes, tests, installations or Git writes.
+- acceptance: Active planning references use task numbers/names with no delivery dates or day limits, and all local links and sequence dependencies remain consistent.
+- follow_up_to: [UP-20260903-002](#up-20260903-002)
+- supersedes: none
+- linked_changes: [AC-20260903-003](agentchangelog.md#ac-20260903-003)
+
+<a id="up-20260903-004"></a>
+## UP-20260903-004 — Analyse the documents and execute the board
+- date: 2026-09-03
+- status: in-progress
+- scope: backend, contracts, documents-workflow, execution
+- tags: c01, af-001, contracts, citations, documents, grounding, page-mapping
+- aliases: execute tasks.md, citation contract, cited approval note, reduced team
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/examples.json, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Analyse the planning documents and begin executing the board with only Yug and Aditya available, closing the citation gap the merged AF-001 draft left in the documents workflow.
+- constraints: Only Yug and Aditya are available, so role assignments are suspended for this change; no Git or GitHub writes; keep the contract version at 1.0 and preserve coordinator authority and offline boundaries.
+- acceptance: The contract carries a typed citation with source and page, a coordinator-side grounding guard rejects ungrounded output, and the contract check runs and passes locally.
+- verification_authorization: User instruction to execute tasks covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- follow_up_to: [UP-20260902-007](#up-20260902-007)
+- supersedes: none
+- linked_changes: [AC-20260903-004](agentchangelog.md#ac-20260903-004)
+
+<a id="up-20260903-005"></a>
+## UP-20260903-005 — Execute the renumbered C01 contract repairs
 - date: 2026-09-03
 - status: in-progress
 - scope: backend, contracts, execution
@@ -389,6 +436,6 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Only Yug and Aditya are available; no Git or GitHub writes; keep contract version 1.0 and the draft status; do not activate a runtime chunk or advance past the C01 human checkpoint.
 - acceptance: Output validators match their declared kind, stopped attempts carry a typed reason, citation payloads exist, and the focused contract check runs and passes locally.
 - verification_authorization: User instruction to execute the board covered running the existing offline contract check; no installation, network access, or Git write was performed.
-- follow_up_to: [UP-20260903-001](#up-20260903-001)
+- follow_up_to: [UP-20260903-004](#up-20260903-004)
 - supersedes: none
-- linked_changes: [AC-20260903-002](agentchangelog.md#ac-20260903-002)
+- linked_changes: [AC-20260903-005](agentchangelog.md#ac-20260903-005)

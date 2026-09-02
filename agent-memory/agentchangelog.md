@@ -357,26 +357,73 @@ work. No repository file change means no changelog entry.
 - verification: After explicit user approval, created ignored .venv and installed five pinned dependencies; five unittest checks passed on Python 3.14.6/macOS 26.6.2 arm64; pip check found no broken requirements; CLI export parsed with seven schemas; git diff --check, Python/JSON syntax parsing and 38 local Markdown file targets passed.
 - remaining: OD-06 pairing protocol, all four contract consumers, requester verification, cluster, worker image/model inference, SQLite and UI remain unverified or unimplemented; no Git writes, model downloads or deployments ran.
 
-## AC-20260903-001 — Ground the documents workflow with typed citations
+<a id="ac-20260903-001"></a>
+## AC-20260903-001 — Prepare Yug's worker-spine execution packet
+- date: 2026-09-03
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- related_prompts: [UP-20260902-007](userprompts.md#up-20260902-007)
+- tags: yug, claude, worker-spine, ownership, execution-packet, review
+- aliases: WP-YUG-001, huge task, two builders, worker runtime Redis K3s handoff
+- paths: docs/yug-worker-spine.md, docs/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Created a substantial worker execution packet for Yug's Claude and updated current-sprint build ownership to Aditya and Yug.
+- changes: Defined six phases covering the review baseline, real model adapter, authenticated worker, Redis recovery, Docker/K3s and coordinator integration, with allowed paths, permission boundaries, runnable acceptance targets, failure evidence and publication/review handoff; kept other members' operational/evidence support and provisional finals assignments.
+- verification: git diff --check passed; all 37 local Markdown file targets inspected exist; no trailing whitespace in the packet/index/board; all 19 AF IDs, states, task scopes, dependencies and acceptance gates are unchanged; current-sprint build owners are only Aditya/Yug; six packet phases are present.
+- remaining: Yug's contract review, implementation, required runtime/host permissions, model/pairing decisions and actual acceptance remain open; no runtime tests, installs, deployments, Git writes or external messages were performed.
+
+<a id="ac-20260903-002"></a>
+## AC-20260903-002 — Replace personal packets with named human checkpoints
+- date: 2026-09-03
+- agent: Codex
+- status: review
+- prompt_id: [UP-20260903-002](userprompts.md#up-20260903-002)
+- related_prompts: [UP-20260903-001](userprompts.md#up-20260903-001)
+- tags: human-checkpoints, claude, codex, setup, five-day-sprint
+- aliases: thirteen chunks, named setup operators, stop verify resume, team explanation
+- paths: AGENTS.md, tasks.md, docs/README.md, docs/yug-worker-spine.md, docs/architecture.md, docs/devicespecifications.md, docs/evaluation.md, backend/contracts/README.md, CONTRIBUTING.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replaced the personal worker packet and fixed build assignments with thirteen shared chunks ending at named human actions, including inventory commands and verification handoffs.
+- changes: Deleted docs/yug-worker-spine.md; aligned shared agent, architecture, evaluation and contribution guidance; separated image build/digest receipt from deployment and required Built/Verified/Next explanations after each cycle.
+- verification: git diff --check and static document comparisons passed; all 19 AF states/dependencies/acceptance rows, five daily gates and historical device measurements were preserved; thirteen chunks have named human actions and return evidence; no active obsolete-packet references or build-owner tables remain.
+- remaining: Requester documentation acceptance and C01 authorisation are pending; no runtime code, tests, setup commands, installers, model downloads, deployments or Git writes were executed.
+
+<a id="ac-20260903-003"></a>
+## AC-20260903-003 — Make execution depend on task prerequisites
+- date: 2026-09-03
+- agent: Codex
+- status: docs-only
+- prompt_id: [UP-20260903-003](userprompts.md#up-20260903-003)
+- related_prompts: [UP-20260903-002](userprompts.md#up-20260903-002)
+- tags: numbered-tasks, human-checkpoints, prerequisites, calendar-independent
+- aliases: C01 to C13, task name and number, wait for human, no implementation timetable
+- paths: tasks.md, AGENTS.md, CONTRIBUTING.md, README.md, backend/README.md, backend/contracts/README.md, frontend/README.md, docs/README.md, docs/prd.md, docs/architecture.md, docs/evaluation.md, docs/devicespecifications.md, docs/sih-ppt-submission-brief.md, .github/pull_request_template.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replaced implementation schedules with named C01–C13 tasks, explicit predecessors, human waits and task-numbered acceptance gates throughout active planning documents.
+- changes: Removed delivery-day labels, Friday target and timed integration cadence; labelled later tasks F01–F12; aligned presentation/PR guidance and updated section links while retaining prior documentation changes.
+- verification: Static comparisons passed for all 19 AF rows, five acceptance requirements, 13 human-action/evidence pairs and 12 follow-up requirements; historical dates, ledger prefixes and contract source/dependency hashes were preserved; active planning text has no remaining day/sprint cadence labels and git diff --check passed.
+- remaining: Requester documentation review and C01 authorisation remain pending; no runtime implementation, runtime tests, setup operations or Git writes were performed.
+
+<a id="ac-20260903-004"></a>
+## AC-20260903-004 — Ground the documents workflow with typed citations
 - date: 2026-09-03
 - agent: Claude
 - status: partial
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-004](userprompts.md#up-20260903-004)
 - related_prompts: [UP-20260902-007](userprompts.md#up-20260902-007)
-- tags: af-001, day-1, contracts, citations, documents, grounding, page-mapping
+- tags: c01, af-001, contracts, citations, documents, grounding, page-mapping
 - aliases: citations.resolve, Citation record, require_grounded_citations, cited approval note
 - paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/examples.json, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
 - summary: Gave the merged AF-001 draft's citations.resolve validator a typed payload and a coordinator-side grounding guard so the documents workflow has a contract to build against.
-- changes: Added a Citation record binding a claim to a resource and 1-based page with its verbatim quote; added Proof.citations with a uniqueness guard; added require_grounded_citations rejecting mismatched jobs, missing citations and unsupplied sources; extended the synthetic Proof example and the contract check; documented the guard's limits and a second-platform verification run.
+- changes: Added a Citation record binding a claim to a resource and 1-based page with its verbatim quote; added Proof.citations with a uniqueness guard; added require_grounded_citations rejecting mismatched jobs, missing citations and unsupplied sources; extended the synthetic Proof example and the contract check.
 - verification: Six unittest checks passed on Python 3.13.2/Windows 11 AMD64; each guard rejection branch was executed individually and returned a distinct message; schema export parsed with seven schemas and Citation resolved under Proof; examples.json parsed; git diff --check passed.
-- remaining: Ran against pydantic 2.13.4, not the pinned 2.13.5, so the pinned environment is unverified on Windows; extraction uncertainty and unresolved-field records are deferred until an extractor exists; OD-06, the four contract consumers, cluster, worker image, SQLite and UI remain open; no Git writes ran.
+- remaining: Ran against pydantic 2.13.4, not the pinned 2.13.5, so the pinned environment is unverified on Windows; extraction uncertainty and unresolved-field records are deferred until an extractor exists; OD-06, consumer integration and every runtime gate remain open; no Git writes ran.
 
-## AC-20260903-002 — Complete the C01 contract repairs
+<a id="ac-20260903-005"></a>
+## AC-20260903-005 — Complete the C01 contract repairs
 - date: 2026-09-03
 - agent: Claude
 - status: partial
-- prompt_id: [UP-20260903-002](userprompts.md#up-20260903-002)
-- related_prompts: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-005](userprompts.md#up-20260903-005)
+- related_prompts: [UP-20260903-004](userprompts.md#up-20260903-004)
 - tags: c01, af-001, contracts, output-validators, cancellation, interruption, failure-codes
 - aliases: chunk C01, applicable validators, stopped attempt reason, cancelled_by_user
 - paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md

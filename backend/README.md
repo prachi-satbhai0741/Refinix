@@ -43,7 +43,7 @@ verified. The coordinator, worker, runtime adapter and database do not exist yet
 
 [Architecture technology direction](../docs/architecture.md#8-working-technology-direction)
 settles Python/FastAPI, Server-Sent Events, coordinator SQLite, Docker-built
-images, single-node K3s, and Redis 7.2.x for the five-day alpha. The first code
+images, single-node K3s, and Redis 7.2.x for the alpha. The first code
 must implement the frozen `/v1` contract and one real model path before a second
 runtime, framework, or database appears.
 

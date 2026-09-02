@@ -142,7 +142,7 @@ adapters for at least the Mac and Vedant.
 - **OS:** Ubuntu 24.04.4 LTS, GNOME 46
 - **Network:** Wi-Fi (Intel) + Realtek Gigabit Ethernet; **Docker already installed** (docker0 and bridges present)
 - **Planning note:** The only Linux box, and Docker is already running, making it
-  the **five-day single-node K3s host and sandboxed code-execution worker** under
+  the **alpha single-node K3s host and sandboxed code-execution worker** under
   [security.md](security.md#8-filesystem-and-sandbox).
   The mentor-aligned baseline uses Docker to build pinned images and K3s to run
   the worker, Redis, and validation Pods. The cluster and sandbox roles do not
@@ -188,24 +188,96 @@ Constraint reminder: **no device exceeds 8 GB discrete VRAM.** Plan every model 
 
 ## Still needed before final model placement
 
-1. **Owner: Sahil — free disk space** on Aditya, Sahil, Yug, and Tanvi. Record
-   each approved model's exact size. Keep the initial catalogue to 3–5 models
-   per worker for prototype simplicity, not as a hard storage-capacity claim.
-   Windows: `Get-PSDrive C | Select-Object Used,Free`. macOS/Linux: `df -h /`.
-2. **Owners: Yug and Prachi — re-read VRAM with `nvidia-smi`.** Their 4 GB
-   figures came from tools affected by the saturation bug noted at the top of
-   this document. Prachi needs the NVIDIA driver installed first.
-3. **Owner: Prachi — prove the Kubernetes host before GPU work.** Record Docker,
-   K3s, kubectl, kernel/cgroup, storage, Service exposure, and NetworkPolicy
-   behaviour. Use CPU for the first spine; only then decide whether to install a
-   compatible NVIDIA driver and `nvidia-container-toolkit` for GPU inference.
-4. **Owner: Sahil — verify App Control for Business does not block a local
-   runtime.** Smart App Control is enforced on that machine and can refuse
-   unsigned binaries. This gates whether the node can run llama.cpp or Ollama.
-5. **Owner: Vedant — collect everyone's installed AI runtime** (Ollama / LM
-   Studio / llama.cpp / MLX) and version, plus the **driver and runtime-reported
-   CUDA compatibility** on NVIDIA machines.
-   Vedant's own device is recorded above; the other five remain outstanding.
-6. **Owners: Tanvi and Aditya — confirm whether the Inspiron has an Ethernet
-   port and obtain USB-Ethernet adapters**, respectively, for Aditya and Vedant,
-   who definitely have none.
+These are human actions, not permanent coding assignments. The
+[shared checkpoint plan](../tasks.md#numbered-execution-tasks) owns when
+execution stops and resumes. Existing measurements above keep their original
+dates; the commands below have not been run on the team's devices by this
+documentation change. Do not treat a planned placement as runtime proof.
+
+1. **Aditya, Yug, Sahil, Vedant, Prachi and Tanvi:** each reports current free
+   disk, OS, RAM, installed tools/models and network readiness for their own
+   machine at C01. Record unavailable information explicitly. A machine not
+   available for the implementation must be identified before selecting it.
+2. **Yug, Sahil, Vedant and Prachi:** report GPU memory and driver version with
+   the existing `nvidia-smi`, if available. **Prachi:** report the missing driver
+   rather than installing one during inventory; CPU is the first cluster path.
+3. **Prachi:** return existing Docker/K3s/kubectl availability at C01. The later
+   reviewed C04/C05 commands establish actual build, cgroup/resource, Service,
+   storage and NetworkPolicy behavior. GPU driver/toolkit installation is a
+   separate checkpoint only if the selected runtime needs GPU execution.
+4. **Sahil:** report any application-control refusal when the approved runtime
+   is used; do not disable Windows security policy to make it run.
+5. **Aditya and Vedant:** confirm available wired adapters or the intended Wi-Fi
+   setup. **Tanvi:** confirm whether Ethernet exists. **All six named people:**
+   report whether their machine can join the agreed trusted LAN. Do not purchase
+   adapters or change network settings during inventory.
+6. **Aditya, Yug and Prachi:** perform only the C02 setup individually specified
+   for their machines. **Sahil, Vedant and Tanvi:** no model download is assigned
+   by default; if hardware evidence selects one of these machines, the next
+   handoff must name that person and provide the exact approved instructions.
+
+## Checkpoint C01: read-only inventory
+
+Use the following on the named person's **own machine**, from any directory,
+when C01 requests the inventory. These commands read local metadata; they do not
+install tools, start services, change permissions or download models. Do not
+add `sudo`, elevate PowerShell or install a missing command to finish this list.
+A missing tool or permission error is useful evidence to return.
+
+### Aditya — macOS Terminal, zsh
+
+```sh
+sw_vers
+uname -m
+sysctl hw.model hw.memsize
+df -h /
+command -v python3 docker kubectl k3s ollama llama-cli
+```
+
+### Yug, Sahil, Vedant and Tanvi — Windows PowerShell
+
+Each person runs this block on their own Windows machine:
+
+```powershell
+Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture
+Get-CimInstance Win32_ComputerSystem | Select-Object TotalPhysicalMemory
+Get-CimInstance Win32_Processor | Select-Object Name
+Get-PSDrive -PSProvider FileSystem | Select-Object Name, Used, Free
+Get-NetAdapter | Select-Object Name, InterfaceDescription, Status, LinkSpeed
+Get-Command python, python3, py, docker, kubectl, ollama, llama-cli -ErrorAction SilentlyContinue | Select-Object Name, Source
+if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+    nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+}
+```
+
+A Python entry under `WindowsApps` can be a Microsoft Store alias. Report it as
+such; this command list does not prove that a usable interpreter is installed.
+Tanvi need not have `nvidia-smi`; absence is expected without an NVIDIA GPU.
+
+### Prachi — Ubuntu Terminal, bash
+
+```sh
+cat /etc/os-release
+uname -srmo
+free -h
+df -h /
+command -v python3 docker k3s kubectl ollama llama-cli nvidia-smi
+if command -v nvidia-smi >/dev/null 2>&1
+then
+    nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+fi
+```
+
+### What each person returns
+
+Send the outputs to their agent or Aditya with the collection date and their
+name. Also state: machine availability, installed runtime/model versions already
+known from local records or the application's About screen, whether Docker is
+already running, and intended Wi-Fi/Ethernet availability. Mark unknown values
+as unknown. Do not include credentials, tokens, full environment dumps or
+private documents. Terminal metadata and an installed binary path alone do not
+prove that a model or container can run.
+
+The next checkpoint will supply reviewed installation/startup/self-test commands
+for the actual chosen versions and paths. Do not substitute guessed commands,
+unpinned downloads or policy bypasses for a missing prerequisite.
