@@ -326,3 +326,18 @@ work. No repository file change means no changelog entry.
 - changes: Selected one Ubuntu K3s host, Docker-built FastAPI workers, Kubernetes Deployments/Services/Jobs, internal Redis 7.2.x coordination, coordinator SQLite authority, a static local UI, named work packets, daily acceptance gates, and an early-completion ladder.
 - verification: `git diff --check` passed; tasks.md contains 19 planned AF rows; targeted searches found no remaining Kubernetes/message-broker exclusion or stale Windows-worker Day-2 path; authoritative documents agree that Redis is ephemeral and not LAN-exposed.
 - remaining: The repository still contains no runtime source; all cluster, image, Redis, model, sandbox, security, workflow, performance, and demo claims remain planned until observed on named hardware.
+
+<a id="ac-20260902-006"></a>
+## AC-20260902-006 — Add the SIH PPT submission research brief
+- date: 2026-09-02
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260902-006](userprompts.md#up-20260902-006)
+- related_prompts: [UP-20260902-005](userprompts.md#up-20260902-005)
+- tags: sih26117, ppt, portal-submission, research, judge-preparation
+- aliases: SIH PPT brief, six slide deck, presentation workers, research papers, portal submission
+- paths: docs/sih-ppt-submission-brief.md, docs/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added one non-normative research and production brief for the official six-slide SIH26117 idea presentation.
+- changes: Consolidated problem context, portal/template verification boundaries, portal-ready copy, architecture and mentor-stack explanation, differentiation, feasibility, impact, six slide instructions, speaker timing, evidence placeholders, claim controls, judge Q&A, and primary research/implementation references; linked it from the documentation index.
+- verification: `git diff --check` passed; the brief contains 17 top-level numbered sections, all six required slide sections, the live-portal placeholder, evidence and claim controls, and only existing repository-local Markdown targets.
+- remaining: Team ID, live portal terms and deadline, the downloaded official template, final product name, selected model/runtime, prototype screenshots, measurements, and every runtime claim still require team verification before submission.

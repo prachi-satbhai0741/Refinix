@@ -331,3 +331,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260902-004](#up-20260902-004)
 - supersedes: none
 - linked_changes: [AC-20260902-005](agentchangelog.md#ac-20260902-005)
+
+<a id="up-20260902-006"></a>
+## UP-20260902-006 — Create the SIH PPT submission research brief
+- date: 2026-09-02
+- status: done
+- scope: docs, presentation, research
+- tags: sih26117, ppt, portal-submission, research, judge-preparation
+- aliases: SIH PPT brief, six slide deck, presentation workers, research papers, portal submission
+- paths: docs/sih-ppt-submission-brief.md, docs/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Create one non-normative source brief that lets the presentation team build the official six-slide SIH26117 idea deck without turning pitch copy into the v1 product baseline.
+- constraints: Separate official wording, repository decisions, research, assumptions, and unverified prototype claims; follow the official template; do not claim planned runtime behaviour as working.
+- acceptance: The brief provides exact problem context, a six-slide content plan, architecture and mentor mapping, feasibility and impact, source/research library, evidence placeholders, claim controls, and judge Q&A.
+- follow_up_to: [UP-20260902-005](#up-20260902-005)
+- supersedes: none
+- linked_changes: [AC-20260902-006](agentchangelog.md#ac-20260902-006)

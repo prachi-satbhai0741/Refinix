@@ -32,6 +32,7 @@ contain a verified runtime, installer, or model bundle.
 5. [model-catalog.md](model-catalog.md) — model packs, manifests, provisioning, and selection
 6. [devicespecifications.md](devicespecifications.md) — current fleet evidence and open hardware checks
 7. [evaluation.md](evaluation.md) — five-day plan, measurements, acceptance, risks, and demo
+8. [sih-ppt-submission-brief.md](sih-ppt-submission-brief.md) — non-normative SIH portal/PPT research, six-slide copy, evidence, and judge preparation
 
 The PRD owns product scope. Each focused document owns implementation detail
 inside that scope. Record conflicts instead of duplicating or silently changing
