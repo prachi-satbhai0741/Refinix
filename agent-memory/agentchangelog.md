@@ -281,3 +281,18 @@ work. No repository file change means no changelog entry.
 - changes: Added the paid-agent capacity rule; split all 19 AF rows into build and support ownership; assigned Sahil integration drills, Yug document fixtures and scoring, Prachi Linux boundary operation, and Tanvi product acceptance and demo evidence; added the same ownership split to all twelve finals days.
 - verification: `git diff --check` passed; no trailing whitespace was found; extracted build-owner fields show only Aditya, Vedant, or both for all 19 AF tasks and all twelve finals days.
 - remaining: Antigravity plan capabilities and quotas remain intentionally unverified and noncritical; task owners must still accept their assignments, and all runtime work remains planned.
+
+<a id="ac-20260902-003"></a>
+## AC-20260902-003 — Apply focused documentation corrections
+- date: 2026-09-02
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260902-003](userprompts.md#up-20260902-003)
+- related_prompts: [UP-20260902-002](userprompts.md#up-20260902-002)
+- tags: stale-references, models, hardware, fallback, manifests
+- aliases: claude review corrections, qwen vision, day two kill switch, hardware owners, prd references
+- paths: .github/pull_request_template.md, .gitignore, agent-memory/README.md, docs/model-catalog.md, docs/devicespecifications.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Corrected stale documentation references and tightened the existing five-day plan without adding a workflow or framework.
+- changes: Replaced dead PRD numbers with current document headings; recorded Qwen3.5-4B upstream vision capability with an evidence caveat; made catalogue loading manifest-driven; assigned all six hardware checks; added the Day-2 standalone fallback gate; refreshed stale ledger status.
+- verification: `git diff --check` passed; targeted stale-reference search returned no matches; six hardware-check owner items and 19 unique AF task rows were found; introduced local targets and headings exist.
+- remaining: Model/runtime compatibility, hardware readiness, owner acceptance, pairing, and all runtime behavior remain unverified.
