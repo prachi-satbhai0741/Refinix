@@ -34,9 +34,12 @@ services are authenticated and encrypted, worker writes remain inside assigned
 temporary workspaces, and code execution is network-disabled and resource
 bounded by default.
 
-## Status: no scaffolding yet
+## Status: AF-001 contract draft
 
-There is no pyproject.toml, source tree, or dependency set.
+The [shared contracts](contracts/README.md) now contain versioned Python records,
+protocol constants, synthetic examples, a schema exporter and a runnable check.
+Their five local contract checks pass; they are not frozen or application-runtime
+verified. The coordinator, worker, runtime adapter and database do not exist yet.
 
 [Architecture technology direction](../docs/architecture.md#8-working-technology-direction)
 settles Python/FastAPI, Server-Sent Events, coordinator SQLite, Docker-built

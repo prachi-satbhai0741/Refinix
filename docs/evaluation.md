@@ -2,10 +2,10 @@
 
 ## Current status
 
-The repository is in product-definition and prototype-planning state. It does
-not currently contain a runtime source tree, model bundle, installer, or
-executable proof. Every capability in this document is planned until observed
-evidence changes its state.
+The repository has initial shared contracts with passing local schema and
+lifecycle checks, documented in [AF-001](../backend/contracts/README.md).
+It has no application runtime, model bundle or installer. Product capabilities
+in this document remain planned until observed evidence changes their state.
 
 ## 1. Evidence labels
 
