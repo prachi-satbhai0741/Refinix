@@ -136,3 +136,213 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260901-003](#up-20260901-003)
 - supersedes: none
 - linked_changes: [AC-20260901-004](agentchangelog.md#ac-20260901-004)
+
+<a id="up-20260901-005"></a>
+## UP-20260901-005 — Add project README and propose a proof-first innovation
+- date: 2026-09-01
+- status: done
+- scope: docs, product-decision
+- tags: readme, prd, innovation, sovereignmesh, evidence
+- aliases: root readme, PRD comment, sovereign proof card, proof-first differentiator
+- paths: README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Create a useful root README and provide a copyable PRD comment proposing a named, evidence-based differentiator.
+- constraints: Keep the PRD unchanged; do not represent proposed capabilities as implemented or verified; preserve the repository's no-scaffolding status.
+- acceptance: README describes the current planning-stage repository, links the PRD, states the project boundaries and security invariants, and labels innovations as proposed.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260901-005](agentchangelog.md#ac-20260901-005)
+
+<a id="up-20260901-006"></a>
+## UP-20260901-006 — Present the SIH challenge in the root README
+- date: 2026-09-01
+- status: done
+- scope: docs, product-decision
+- tags: readme, sih, sih26117, mrpl, sovereignmesh
+- aliases: SIH problem statement 117, MRPL challenge, title description organisation
+- paths: README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Restructure the root README around the SIH Problem Statement 117 title, description, and sponsoring organisation.
+- constraints: Use verified challenge metadata; do not add Taskboard/Docker claims or present planned capabilities as implemented.
+- acceptance: README has a centered project header, accurate SIH26117/MRPL metadata, a concise challenge description, and an honest planning-stage project overview.
+- follow_up_to: [UP-20260901-005](#up-20260901-005)
+- supersedes: none
+- linked_changes: [AC-20260901-006](agentchangelog.md#ac-20260901-006)
+
+<a id="up-20260901-007"></a>
+## UP-20260901-007 — Team device specification inventory
+- date: 2026-09-01
+- status: done
+- scope: docs, research
+- tags: hardware, device-specs, model-selection, gpu, vram, capability-packs, benchmarks
+- aliases: devicespecifications.md, device specs, team laptops, hardware inventory, model fit, rtx, macbook m5, fleet, nvidia-smi
+- paths: docs/devicespecifications.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Collect the six team members' device hardware into a document that drives model selection and capability-pack assignment.
+- constraints: Treat model and capability notes as hypotheses until benchmarked; flag unreported fields rather than guessing them; do not edit the PRD in this change.
+- acceptance: A device specification document lists all six devices with a summary table, per-device detail, tentative capability mapping, and an open-items list.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260901-007](agentchangelog.md#ac-20260901-007)
+
+<a id="up-20260901-008"></a>
+## UP-20260901-008 — Confirm remaining device specs and align the PRD hardware table
+- date: 2026-09-01
+- status: done
+- scope: docs, research
+- tags: hardware, device-specs, model-selection, gpu, vram, prd, capability-packs
+- aliases: sahil specs, tanvi specs, rtx 3050 6gb, lenovo loq, dell inspiron, prd section 12, hardware table, adapterram
+- paths: docs/devicespecifications.md, docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Fold Sahil's and Tanvi's reported hardware into the device inventory and replace the hardware specifications in the PRD section 12 table so both documents agree.
+- constraints: The device inventory is the reference for specifications, not the PRD; keep capability assignments labelled as hypotheses; do not alter PRD sections other than the hardware table.
+- acceptance: All six devices carry confirmed CPU, RAM, GPU, and storage in the inventory; PRD section 12 lists all six with matching specifications and links to the inventory.
+- follow_up_to: [UP-20260901-007](#up-20260901-007)
+- supersedes: none
+- linked_changes: [AC-20260901-008](agentchangelog.md#ac-20260901-008)
+
+<a id="up-20260901-009"></a>
+## UP-20260901-009 — Review device inventory and require open-source reuse
+- date: 2026-09-01
+- status: done
+- scope: review, repository-guidance
+- tags: device-specs, code-review, open-source, reuse, licensing, offline-runtime
+- aliases: vedant recent push, reuse github code, local open source libraries, prototype acceleration
+- paths: docs/devicespecifications.md, docs/prd.md, AGENTS.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Review Vedant's latest merged device-inventory change and require prototype work to reuse suitable local/offline open-source components before rebuilding commodity functionality.
+- constraints: Do not import competing SIH solutions; accept only licence-compatible components with provenance and no required cloud or silent network behavior; keep the review separate from fixes.
+- acceptance: Report actionable findings against merge `f4f0b62` and add the reusable-component policy to `AGENTS.md` without altering the reviewed device documentation.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260901-009](agentchangelog.md#ac-20260901-009)
+
+<a id="up-20260901-010"></a>
+## UP-20260901-010 — Correct reviewed device-inventory claims
+- date: 2026-09-01
+- status: done
+- scope: docs, correction
+- tags: device-specs, evidence, macbook, cuda, storage, prd
+- aliases: fix needs fix, vedant review fixes, gpu configuration, cuda prerequisites, model capacity
+- paths: docs/devicespecifications.md, docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Correct the evidence status, Mac GPU configuration, NVIDIA prerequisites, and storage-capacity wording found in the review of Vedant's merged device inventory.
+- constraints: Preserve tentative capability assignments; do not install runtimes, probe hardware, download models, or expand the architecture.
+- acceptance: Unmeasured facts are labelled honestly, CUDA requirements are runtime-specific, 3–5 models is a prototype policy rather than a disk limit, and the PRD matches the inventory.
+- follow_up_to: [UP-20260901-009](#up-20260901-009)
+- supersedes: none
+- linked_changes: [AC-20260901-010](agentchangelog.md#ac-20260901-010)
+
+<a id="up-20260901-011"></a>
+## UP-20260901-011 — Add private-server execution objective
+- date: 2026-09-01
+- status: done
+- scope: docs, product-decision
+- tags: prd, topology, standalone, trusted-mesh, private-server, scope
+- aliases: one system multisystem server, private compute worker, three execution topologies
+- paths: docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Make private-server execution an explicit third product topology alongside standalone and trusted-device mesh operation.
+- constraints: Treat the server as a worker using the existing job contract; preserve coordinator-owned canonical state, zero-cloud runtime, and the standalone-then-mesh SIH build order; defer a fully server-hosted multi-user control plane.
+- acceptance: The executive summary, product thesis, use cases, principles, release scope, non-goals, and functional requirements consistently record the objective without making it an SIH MVP requirement.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260901-011](agentchangelog.md#ac-20260901-011)
+
+<a id="up-20260901-012"></a>
+## UP-20260901-012 — Reframe the product as a local agent harness
+- date: 2026-09-01
+- status: done
+- scope: docs, product-decision, architecture
+- tags: agent-harness, onboarding, workflows, model-packs, control-center, dynamic-nodes, prd-split
+- aliases: local ChatGPT app, chat code documents sections, mandatory model setup, no permanent device role, distributed PRD
+- paths: docs/, README.md, AGENTS.md, CONTRIBUTING.md, backend/README.md, frontend/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Reframe AegisForge as one local agent harness with task-specific surfaces, guided model onboarding, dynamic compute participation, and a local Control Center, then split the oversized PRD into focused documents.
+- constraints: Every installation remains locally usable; pairing is reversible and never silently merges canonical state; required downloads depend on enabled capabilities; preserve offline, security, evidence, and licence boundaries; avoid speculative services and duplicate documentation.
+- acceptance: The compact PRD defines the product and priorities; focused architecture, workflow, security, model, and evaluation documents own implementation detail; all repository references match the new document boundaries.
+- follow_up_to: [UP-20260901-011](#up-20260901-011)
+- supersedes: none
+- linked_changes: [AC-20260901-012](agentchangelog.md#ac-20260901-012)
+
+<a id="up-20260902-001"></a>
+## UP-20260902-001 — Create the fast execution roadmap
+- date: 2026-09-02
+- status: done
+- scope: docs, execution-planning
+- tags: tasks, roadmap, internal-hackathon, distributed, integration, finals
+- aliases: tasks.md, fast execution plan, claude implementation, codex review, five day sprint, twelve day sprint
+- paths: tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Create one operational roadmap that keeps a real distributed path in the internal-hackathon scope and carries the proven baseline into a twelve-day finals sprint.
+- constraints: Preserve the user's uncommitted `docs/README.md`; do not create runtime scaffolding or claim planned work is implemented; keep task-level distribution, canonical coordinator ownership, offline operation, bounded workers, and daily integration gates.
+- acceptance: `tasks.md` defines task IDs, owners, dependencies, five-day gates, the twelve-day follow-through, implementer/reviewer handoff rules, and an evidence-backed definition of done without duplicating focused product specifications.
+- follow_up_to: [UP-20260901-012](#up-20260901-012)
+- supersedes: none
+- linked_changes: [AC-20260902-001](agentchangelog.md#ac-20260902-001)
+
+<a id="up-20260902-002"></a>
+## UP-20260902-002 — Rebalance tasks for paid-agent access
+- date: 2026-09-02
+- status: done
+- scope: docs, execution-planning, ownership
+- tags: tasks, ownership, claude-pro, codex-plus, free-tier, team-capacity
+- aliases: aditya vedant build, antigravity free tier, nonblocking support tasks, paid agent seats
+- paths: tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Assign critical-path implementation to Aditya and Vedant, who have Claude Pro and Codex Plus, while giving the other four teammates bounded operational, fixture, evaluation, evidence, and demo responsibilities.
+- constraints: Every teammate must own useful acceptance evidence; no core implementation dependency may assume paid-agent access outside Aditya and Vedant; preserve the five-day distributed target and existing security boundaries.
+- acceptance: The ownership map and all AF task rows distinguish build owners from support or evidence owners, with every build task led by Aditya or Vedant and meaningful nonblocking work assigned to Sahil, Yug, Prachi, and Tanvi.
+- follow_up_to: [UP-20260902-001](#up-20260902-001)
+- supersedes: none
+- linked_changes: [AC-20260902-002](agentchangelog.md#ac-20260902-002)
+
+<a id="up-20260902-003"></a>
+## UP-20260902-003 — Apply the reviewed documentation corrections
+- date: 2026-09-02
+- status: done
+- scope: docs, execution-planning, repository-scaffolding
+- tags: stale-references, models, hardware, fallback, manifests
+- aliases: claude review corrections, qwen vision, day two kill switch, hardware owners, prd references
+- paths: .github/pull_request_template.md, .gitignore, agent-memory/README.md, docs/model-catalog.md, docs/devicespecifications.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Apply only the accepted documentation corrections from the external review without adding new workflows or implementation scope.
+- constraints: Preserve the mesh as a differentiator with a Day-2 fallback; retain active agent memory; do not add P&ID, PPT, Excel, calculation, or runtime-framework work.
+- acceptance: References target current documents; Qwen3.5-4B vision remains evidence-labelled; catalogue loading is manifest-driven; all hardware checks have owners; failed Day-2 streaming cannot block the standalone signature workflows.
+- follow_up_to: [UP-20260902-002](#up-20260902-002)
+- supersedes: none
+- linked_changes: [AC-20260902-003](agentchangelog.md#ac-20260902-003)
+
+<a id="up-20260902-004"></a>
+## UP-20260902-004 — Close the remaining reviewed corrections
+- date: 2026-09-02
+- status: done
+- scope: docs
+- tags: review-followup, multilingual, hardware-evidence, problem-statement, traceability
+- aliases: remaining claude review items, yug multilingual FR, FR-037, vedant disk space, PS coverage
+- paths: docs/prd.md, docs/evaluation.md, docs/model-catalog.md, docs/devicespecifications.md, tasks.md
+- summary: Apply the reviewed corrections Codex did not cover, integrate the multilingual requirement into the PRD structure, and replace unmeasured hardware figures with locally measured ones.
+- constraints: Do not add sprint scope that AF ownership already excluded; record each excluded problem-statement line as a decision instead; do not reassign teammates' tasks; documentation only, no runtime claims.
+- acceptance: No orphaned requirement block or dangling FR id remains; multilingual scope carries a numbered outcome and candidate models with licence caveats; Vedant hardware figures match local command output; every problem-statement line has a recorded coverage decision.
+- follow_up_to: [UP-20260902-003](#up-20260902-003)
+- supersedes: none
+- linked_changes: [AC-20260902-004](agentchangelog.md#ac-20260902-004)
+
+<a id="up-20260902-005"></a>
+## UP-20260902-005 — Align the five-day build with the mentor infrastructure
+- date: 2026-09-02
+- status: done
+- scope: docs, architecture, execution-planning, security
+- tags: kubernetes, docker, pods, service-api, redis, five-day-sprint
+- aliases: mentor infrastructure, friday implementation plan, k3s worker, redis queue, parallel agents
+- paths: docs/prd.md, docs/architecture.md, docs/security.md, docs/evaluation.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replace the deferred Kubernetes and Redis position with a bounded five-day implementation plan that produces a usable mentor-aligned alpha.
+- constraints: Keep standalone operation; use one Linux Kubernetes host rather than a speculative fleet cluster; keep SQLite canonical; use Redis only for bounded ephemeral coordination; treat reported agent capacity as parallel assistance rather than verification.
+- acceptance: The PRD, architecture, security model, evaluation gates, and task board agree on Docker-built worker images, Kubernetes Pods and Service exposure, Redis responsibilities, named owners, early-completion stretch gates, and a five-day frozen demo path.
+- follow_up_to: [UP-20260902-004](#up-20260902-004)
+- supersedes: none
+- linked_changes: [AC-20260902-005](agentchangelog.md#ac-20260902-005)
+
+<a id="up-20260902-006"></a>
+## UP-20260902-006 — Create the SIH PPT submission research brief
+- date: 2026-09-02
+- status: done
+- scope: docs, presentation, research
+- tags: sih26117, ppt, portal-submission, research, judge-preparation
+- aliases: SIH PPT brief, six slide deck, presentation workers, research papers, portal submission
+- paths: docs/sih-ppt-submission-brief.md, docs/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Create one non-normative source brief that lets the presentation team build the official six-slide SIH26117 idea deck without turning pitch copy into the v1 product baseline.
+- constraints: Separate official wording, repository decisions, research, assumptions, and unverified prototype claims; follow the official template; do not claim planned runtime behaviour as working.
+- acceptance: The brief provides exact problem context, a six-slide content plan, architecture and mentor mapping, feasibility and impact, source/research library, evidence placeholders, claim controls, and judge Q&A.
+- follow_up_to: [UP-20260902-005](#up-20260902-005)
+- supersedes: none
+- linked_changes: [AC-20260902-006](agentchangelog.md#ac-20260902-006)

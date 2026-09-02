@@ -131,3 +131,213 @@ work. No repository file change means no changelog entry.
 - changes: Added repository Git boundaries, agent-memory rules, and AegisForge invariants while excluding personal slash commands, PATCH/BUILD modes, skills, plugins, tool preferences, and reviewer-assignment machinery; compressed duplicated ledger guidance; deleted `.github/CODEOWNERS` with plain `rm` and updated its live references; corrected the stale `.DS_Store` snapshot.
 - verification: `git diff --check` clean; `AGENTS.md` contains no personal slash commands, PATCH/BUILD modes, skills, plugins, Ponytail, Graphify, or subagent preferences; Git boundaries, agent-memory rules, and AegisForge invariants remain; shell, workflow, ruleset, link, and ignore checks from this uncommitted batch still pass.
 - remaining: none
+
+<a id="ac-20260901-005"></a>
+## AC-20260901-005 — Add a truthful project README
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-005](userprompts.md#up-20260901-005)
+- related_prompts: none
+- tags: readme, prd, innovation, sovereignmesh, evidence
+- aliases: root readme, project overview, sovereign proof card
+- paths: README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replaced the one-line root README with an accurate planning-stage project overview.
+- changes: Documented the product intent, repository status, proposed proof-first differentiator, non-negotiable boundaries, layout, and contribution flow; explicitly labelled the Sovereign Proof Card as proposed rather than implemented.
+- verification: `git diff --check` passed; inspected the rendered Markdown source and its repository-relative links.
+- remaining: The PRD remains unchanged; the proof-card idea needs team approval before it becomes a requirement.
+
+<a id="ac-20260901-006"></a>
+## AC-20260901-006 — Present the SIH challenge in the root README
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-006](userprompts.md#up-20260901-006)
+- related_prompts: [UP-20260901-005](userprompts.md#up-20260901-005)
+- tags: readme, sih, sih26117, mrpl, sovereignmesh
+- aliases: SIH problem statement 117, MRPL challenge, centred README
+- paths: README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Reworked the root README around the SIH26117 challenge and its sponsor.
+- changes: Added the verified SIH title, description, organisation, category, and theme in a centred badge-led README while retaining accurate planning-stage and security-boundary wording.
+- verification: `git diff --check` passed; checked all repository-relative README targets exist.
+- remaining: Challenge metadata is based on the published SIH problem-statement listing; the product itself remains unimplemented.
+
+<a id="ac-20260901-007"></a>
+## AC-20260901-007 — Add six-device hardware inventory
+- date: 2026-09-01
+- agent: Claude Code
+- status: verified
+- prompt_id: [UP-20260901-007](userprompts.md#up-20260901-007)
+- related_prompts: none
+- tags: hardware, device-specs, model-selection, gpu, vram, capability-packs
+- aliases: devicespecifications.md, device specs, hardware inventory, model fit, fleet, nvidia-smi, adapterram
+- paths: docs/devicespecifications.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added `docs/devicespecifications.md` covering all six team devices with a summary table, per-device detail, tentative capability-pack mapping, and open items.
+- changes: Recorded CPU, RAM, GPU VRAM, storage, OS, and network per device; corrected the ASUS V16 to an RTX 5050 Laptop with 8 GB VRAM, 191 GB free of 477 GB, and no Ethernet adapter; documented the signed 32-bit `AdapterRAM` wrapping bug that under-reports VRAM and flagged the Yug and Prachi 4 GB figures for recheck; flagged Sahil GPU and storage, Tanvi storage, and all runtimes as still needed.
+- verification: `nvidia-smi`, `Get-PSDrive C`, and `Get-NetAdapter` run on the ASUS V16 for its row; `git diff --check` passed; confirmed every cited PRD section number exists in `docs/prd.md` and that the relative `prd.md` link resolves from `docs/`.
+- remaining: Other five devices are transcribed from members' reported output, not measured here. `docs/prd.md` §12 still lists the ASUS V16 as an RTX 5060 and needs a separate correction.
+
+<a id="ac-20260901-008"></a>
+## AC-20260901-008 — Confirm remaining device specs and align the PRD hardware table
+- date: 2026-09-01
+- agent: Claude Code
+- status: verified
+- prompt_id: [UP-20260901-008](userprompts.md#up-20260901-008)
+- related_prompts: [UP-20260901-007](userprompts.md#up-20260901-007)
+- tags: hardware, device-specs, model-selection, gpu, vram, prd
+- aliases: sahil specs, tanvi specs, rtx 3050 6gb, lenovo loq, dell inspiron, prd section 12, hardware table
+- paths: docs/devicespecifications.md, docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Completed the six-device inventory with Sahil's and Tanvi's hardware and replaced the PRD section 12 specifications so both documents agree.
+- changes: Recorded Sahil as an RTX 3050 6 GB Laptop GPU with 24 GB dual-channel DDR5 and Ethernet present, replacing the earlier RTX 4050/4060 guess, and flagged App Control for Business as a possible runtime blocker; recorded Tanvi as i5-1235U with Iris Xe only, 16 GB, and a 390 Mbps Wi-Fi 5 link; reassigned the coding pack to the ASUS V16 as the sole 8 GB GPU and gave Sahil a reasoning/CPU-offload pack; rewrote the PRD section 12 table with all six devices, a link to the inventory, and a warning against reading VRAM from `AdapterRAM`.
+- verification: `git diff --check` passed; confirmed the relative `devicespecifications.md` link resolves from `docs/`; re-grepped `docs/prd.md` for hardware mentions and found none outside the section 12 table; UP and AC cross-links confirmed reciprocal.
+- remaining: Free disk space on four machines, `nvidia-smi` VRAM recheck for both RTX 2050 nodes, installed runtimes fleet-wide, and Sahil's App Control verification are still open.
+
+<a id="ac-20260901-009"></a>
+## AC-20260901-009 — Require licence-safe local open-source reuse
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-009](userprompts.md#up-20260901-009)
+- related_prompts: none
+- tags: agents-md, open-source, reuse, licensing, offline-runtime
+- aliases: reuse github code, local open source libraries, prototype acceleration, dependency provenance
+- paths: AGENTS.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added a repository-wide implementation rule to adapt suitable local/offline open-source components before rebuilding commodity functionality.
+- changes: Required licence compatibility, pinned source provenance, material-change records, and rejection of unlicensed, incompatible, cloud-dependent, or silently networked components.
+- verification: `git diff --check` passed; the new rule and reciprocal UP/AC links were found in the working tree.
+- remaining: Vedant's reviewed device documentation was not changed; reported findings need a separate approved correction.
+
+<a id="ac-20260901-010"></a>
+## AC-20260901-010 — Correct device-inventory evidence and prerequisites
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-010](userprompts.md#up-20260901-010)
+- related_prompts: [UP-20260901-009](userprompts.md#up-20260901-009)
+- tags: device-specs, evidence, macbook, cuda, storage, prd
+- aliases: vedant review fixes, gpu configuration, cuda prerequisites, model capacity
+- paths: docs/devicespecifications.md, docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Corrected the three actionable findings from the device-inventory review and kept the PRD hardware row aligned.
+- changes: Labelled reported versus measured hardware; left the Mac GPU core count pending local confirmation; made NVIDIA driver, CUDA Toolkit, and container-toolkit requirements runtime-specific; changed 3–5 models from a false disk limit to an explicit prototype policy.
+- verification: `git diff --check` passed; stale overclaim phrases were absent; corrected evidence, prerequisite, capacity, PRD, and reciprocal ledger text was found.
+- remaining: Hardware probes, runtime installation, model downloads, and local inference benchmarks remain unrun.
+
+<a id="ac-20260901-011"></a>
+## AC-20260901-011 — Add private-server execution objective
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-011](userprompts.md#up-20260901-011)
+- related_prompts: none
+- tags: prd, topology, standalone, trusted-mesh, private-server, scope
+- aliases: one system multisystem server, private compute worker, three execution topologies
+- paths: docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added private-server-worker execution as the third product topology while preserving the narrower SIH implementation scope.
+- changes: Bumped the PRD to 1.2; added the topology to the executive summary, opportunity, thesis, use cases, principles, post-hackathon scope, non-goals, and P2 requirements; kept canonical state on the coordinator and excluded public-cloud inference and a full server-hosted control plane from the MVP.
+- verification: `git diff --check` passed; all intended topology references were found; stale two-mode/distributed-mode wording was absent; reciprocal UP/AC links were found.
+- remaining: Private-server mode is a documented post-hackathon objective, not implemented or runtime-verified.
+
+<a id="ac-20260901-012"></a>
+## AC-20260901-012 — Define the local agent harness and split product documentation
+- date: 2026-09-01
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260901-012](userprompts.md#up-20260901-012)
+- related_prompts: [UP-20260901-011](userprompts.md#up-20260901-011)
+- tags: agent-harness, onboarding, workflows, control-center, dynamic-nodes, models, prd-split
+- aliases: local ChatGPT app, chat documents code, mandatory main engine, reversible pairing, distributed PRD
+- paths: docs/prd.md, docs/architecture.md, docs/workflows.md, docs/security.md, docs/model-catalog.md, docs/evaluation.md, docs/README.md, docs/devicespecifications.md, README.md, AGENTS.md, CONTRIBUTING.md, backend/README.md, frontend/README.md, scripts/setup-branch-protection.sh
+- summary: Reframed Refinix as one local agent harness with guided model setup, task-specific surfaces, dynamic compute participation, and a truthful Control Center, while moving detail out of the PRD.
+- changes: Reduced the PRD to the product contract and 10 P0 outcomes; created focused architecture, workflow, security, model, and evaluation documents; integrated approval, specialist workflow, and sovereignty-dashboard proposals; reconciled live repository references.
+- verification: `git diff --check` passed; all repository-local Markdown file links resolved; no stale numbered PRD references or raw proposal comments remained in live docs; new docs had no trailing whitespace; priorities counted 10 P0, 5 P1, and 3 P2.
+- remaining: Runtime implementation, official SIH/IP confirmation, technology and model selection, local benchmarks, packaging, sandbox, pairing, and zero-egress proof remain unverified; requester review is the final documentation gate.
+
+<a id="ac-20260902-001"></a>
+## AC-20260902-001 — Add the fast execution roadmap
+- date: 2026-09-02
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260902-001](userprompts.md#up-20260902-001)
+- related_prompts: [UP-20260901-012](userprompts.md#up-20260901-012)
+- tags: tasks, roadmap, internal-hackathon, distributed, integration, finals
+- aliases: tasks.md, fast execution plan, claude implementation, codex review, five day sprint, twelve day sprint
+- paths: tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added one operational roadmap for the distributed internal-hackathon build and twelve-day finals follow-through.
+- changes: Defined 19 planned tasks with owners, dependencies, daily gates, a nine-step demo, Claude implementation and Codex review handoffs, the proposed fleet mapping, definition of done, and explicit sprint exclusions.
+- verification: `git diff --check` passed; `tasks.md` has 19 uniquely numbered planned AF tasks across five daily gates, no trailing whitespace, and existing repository targets for every local file link inspected.
+- remaining: All runtime tasks remain planned and unverified; owners are proposed until Aditya confirms them, and the PRD still labels some aggressive internal targets as P1.
+
+<a id="ac-20260902-002"></a>
+## AC-20260902-002 — Rebalance roadmap ownership for tool access
+- date: 2026-09-02
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260902-002](userprompts.md#up-20260902-002)
+- related_prompts: [UP-20260902-001](userprompts.md#up-20260902-001)
+- tags: tasks, ownership, claude-pro, codex-plus, free-tier, team-capacity
+- aliases: aditya vedant build, antigravity free tier, nonblocking support tasks, paid agent seats
+- paths: tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Reassigned every critical-path build task to Aditya or Vedant and converted the other team roles into bounded, useful support and evidence ownership.
+- changes: Added the paid-agent capacity rule; split all 19 AF rows into build and support ownership; assigned Sahil integration drills, Yug document fixtures and scoring, Prachi Linux boundary operation, and Tanvi product acceptance and demo evidence; added the same ownership split to all twelve finals days.
+- verification: `git diff --check` passed; no trailing whitespace was found; extracted build-owner fields show only Aditya, Vedant, or both for all 19 AF tasks and all twelve finals days.
+- remaining: Antigravity plan capabilities and quotas remain intentionally unverified and noncritical; task owners must still accept their assignments, and all runtime work remains planned.
+
+<a id="ac-20260902-003"></a>
+## AC-20260902-003 — Apply focused documentation corrections
+- date: 2026-09-02
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260902-003](userprompts.md#up-20260902-003)
+- related_prompts: [UP-20260902-002](userprompts.md#up-20260902-002)
+- tags: stale-references, models, hardware, fallback, manifests
+- aliases: claude review corrections, qwen vision, day two kill switch, hardware owners, prd references
+- paths: .github/pull_request_template.md, .gitignore, agent-memory/README.md, docs/model-catalog.md, docs/devicespecifications.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Corrected stale documentation references and tightened the existing five-day plan without adding a workflow or framework.
+- changes: Replaced dead PRD numbers with current document headings; recorded Qwen3.5-4B upstream vision capability with an evidence caveat; made catalogue loading manifest-driven; assigned all six hardware checks; added the Day-2 standalone fallback gate; refreshed stale ledger status.
+- verification: `git diff --check` passed; targeted stale-reference search returned no matches; six hardware-check owner items and 19 unique AF task rows were found; introduced local targets and headings exist.
+- remaining: Model/runtime compatibility, hardware readiness, owner acceptance, pairing, and all runtime behavior remain unverified.
+
+<a id="ac-20260902-004"></a>
+## AC-20260902-004 — Integrate multilingual scope and correct measured hardware
+- date: 2026-09-02
+- agent: Claude
+- status: docs-only
+- prompt_id: [UP-20260902-004](userprompts.md#up-20260902-004)
+- related_prompts: [UP-20260902-003](userprompts.md#up-20260902-003)
+- tags: review-followup, multilingual, hardware-evidence, problem-statement, traceability
+- aliases: FR-037, FR-019, vedant disk space, PS coverage, indic models, wsl2 ubuntu
+- paths: docs/prd.md, docs/evaluation.md, docs/model-catalog.md, docs/devicespecifications.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Integrated the multilingual requirement as a numbered PRD outcome, replaced unmeasured hardware figures with local command evidence, and made every problem-statement line traceable to a recorded decision.
+- changes: Removed the orphaned `Comment By Yug` block whose `FR-037` id had no table entry and re-entered it as FR-019 in the outcome table and finals scope; restored a terminating newline; corrected Vedant free disk from 191 GB to a measured 43.3 GB in three places and recorded measured runtime state including absent Ollama, a Store-alias-only `python`, a stopped Docker daemon, and a usable Ubuntu WSL2 distro; added a Multilingual pack with AI4Bharat and Kokoro candidates carrying licence and ASR-accuracy caveats; added a problem-statement coverage section; linked sprint exclusions to their source lines.
+- verification: `git diff --check` clean and no trailing whitespace; no `FR-037` or `Comment By Yug` residue anywhere; FR-019 resolves across four documents; diffstat 81 insertions and 26 deletions with no line-ending churn under `core.autocrlf=true`; hardware values reproduced on the ASUS V16 with `nvidia-smi`, `Get-PSDrive C`, `Get-Command`, and `wsl --list --verbose`.
+- remaining: Task-ownership rebalance not applied because reassignment belongs to the integration owner; vision, calculation, PPT, and Excel coverage stay deferred by recorded decision; IndicTrans2 and Indic-TTS licences remain unreviewed; all runtime behaviour remains unverified.
+
+<a id="ac-20260902-005"></a>
+## AC-20260902-005 — Align the five-day plan with the mentor infrastructure
+- date: 2026-09-02
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260902-005](userprompts.md#up-20260902-005)
+- related_prompts: [UP-20260902-004](userprompts.md#up-20260902-004)
+- tags: kubernetes, docker, pods, service-api, redis, five-day-sprint
+- aliases: mentor infrastructure, friday plan, k3s worker, redis streams, early completion
+- paths: docs/prd.md, docs/architecture.md, docs/security.md, docs/evaluation.md, docs/devicespecifications.md, tasks.md, backend/README.md, frontend/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replaced the Kubernetes and Redis deferral with a bounded mentor-aligned five-day alpha plan.
+- changes: Selected one Ubuntu K3s host, Docker-built FastAPI workers, Kubernetes Deployments/Services/Jobs, internal Redis 7.2.x coordination, coordinator SQLite authority, a static local UI, named work packets, daily acceptance gates, and an early-completion ladder.
+- verification: `git diff --check` passed; tasks.md contains 19 planned AF rows; targeted searches found no remaining Kubernetes/message-broker exclusion or stale Windows-worker Day-2 path; authoritative documents agree that Redis is ephemeral and not LAN-exposed.
+- remaining: The repository still contains no runtime source; all cluster, image, Redis, model, sandbox, security, workflow, performance, and demo claims remain planned until observed on named hardware.
+
+<a id="ac-20260902-006"></a>
+## AC-20260902-006 — Add the SIH PPT submission research brief
+- date: 2026-09-02
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260902-006](userprompts.md#up-20260902-006)
+- related_prompts: [UP-20260902-005](userprompts.md#up-20260902-005)
+- tags: sih26117, ppt, portal-submission, research, judge-preparation
+- aliases: SIH PPT brief, six slide deck, presentation workers, research papers, portal submission
+- paths: docs/sih-ppt-submission-brief.md, docs/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added one non-normative research and production brief for the official six-slide SIH26117 idea presentation.
+- changes: Consolidated problem context, portal/template verification boundaries, portal-ready copy, architecture and mentor-stack explanation, differentiation, feasibility, impact, six slide instructions, speaker timing, evidence placeholders, claim controls, judge Q&A, and primary research/implementation references; linked it from the documentation index.
+- verification: `git diff --check` passed; the brief contains 17 top-level numbered sections, all six required slide sections, the live-portal placeholder, evidence and claim controls, and only existing repository-local Markdown targets.
+- remaining: Team ID, live portal terms and deadline, the downloaded official template, final product name, selected model/runtime, prototype screenshots, measurements, and every runtime claim still require team verification before submission.

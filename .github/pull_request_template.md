@@ -11,13 +11,13 @@
 
 ## PRD reference
 
-<!-- Which PRD section does this implement or change? e.g. "10.6 Router and scheduler" -->
+<!-- Which requirement or focused section does this implement? e.g. "FR-006 and architecture 'Router and scheduler'" -->
 
 Section:
 
 ## Maturity label
 
-<!-- PRD 17.3: "Label features as planned, prototyped, verified, or deferred." -->
+<!-- PRD "Product invariants": label features planned, prototyped, verified, deferred, or rejected. -->
 
 - [ ] planned — design only, no working path
 - [ ] prototyped — runs, not yet measured or verified
@@ -27,8 +27,8 @@ Section:
 ## Evidence
 
 <!--
-PRD 17.3: "Keep decisions evidence-backed and dated."
-PRD 19: "Replace projected metrics with measured results."
+Evaluation "Evidence labels": keep decisions evidence-backed and dated.
+Evaluation "Five-day critical path", Day 5: replace projected metrics with measured results.
 
 Paste real output: command + result, screenshot, timing, test run, log excerpt.
 "It works on my machine" is not evidence. If there is nothing to measure yet,
@@ -37,7 +37,7 @@ write "N/A — planned only" and say what would prove it.
 
 ## Safety checklist
 
-<!-- PRD 15.3 "Repository content rules". All must be true to merge. -->
+<!-- Security "Repository content". All must be true to merge. -->
 
 - [ ] No model weights committed
 - [ ] No installers or release binaries committed
@@ -48,7 +48,7 @@ write "N/A — planned only" and say what would prove it.
 
 ## AI-assisted output
 
-<!-- PRD 17.3: "Do not commit generated AI output without human review." -->
+<!-- CONTRIBUTING "Review": do not merge generated output nobody has reviewed. -->
 
 - [ ] Any AI-generated code or text in this PR has been read and understood by me
 - [ ] N/A — no AI-generated content

@@ -12,8 +12,8 @@
 # stay unanchored on purpose: node_modules/, dist/, and .venv/ legitimately
 # appear inside backend/ and frontend/.
 #
-# The "never commit" list in docs/prd.md 15.3 is why the secret, weight, and
-# installer sections exist.
+# The "Repository content" list in docs/security.md is why the secret,
+# weight, and installer sections exist.
 #
 # A .gitignore only affects files that are NOT already tracked.
 
@@ -21,7 +21,7 @@
 .DS_Store
 Thumbs.db
 
-# --- Environment and secrets  (docs/prd.md 15.3, 16.5) --------------------
+# --- Environment and secrets  (docs/security.md "Repository content") -----
 .env
 .env.*
 !.env.example
@@ -34,7 +34,7 @@ Thumbs.db
 /secrets/
 /credentials/
 
-# --- Model weights  (docs/prd.md 15.3) ------------------------------------
+# --- Model weights  (docs/security.md "Repository content") ---------------
 # Specific extensions only. `models/` is omitted: backend/models/ is a
 # plausible source package. `*.bin` is omitted: too broad for test fixtures.
 *.gguf
@@ -47,7 +47,7 @@ Thumbs.db
 *.mlpackage/
 /weights/
 
-# --- Generated installers and release binaries  (docs/prd.md 15.3, 16.5) --
+# --- Generated installers and release binaries  (docs/security.md) --------
 *.dmg
 *.pkg
 *.exe
@@ -56,14 +56,14 @@ Thumbs.db
 *.deb
 *.rpm
 
-# --- Private documents and real scans  (docs/prd.md 15.3, 16.3) -----------
+# --- Private documents and real scans  (docs/security.md) ------------------
 # Put anything real or confidential here and it stays out of the repository.
 # Fixtures committed to the repo must be synthetic or explicitly approved.
 /private/
 /scans/
 /confidential/
 
-# --- Local database state  (docs/prd.md 4.4, 15.3) ------------------------
+# --- Local database state  (docs/security.md "Repository content") --------
 *.db
 *.sqlite
 *.sqlite3
