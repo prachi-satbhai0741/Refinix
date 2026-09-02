@@ -362,3 +362,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260902-005](#up-20260902-005)
 - supersedes: none
 - linked_changes: [AC-20260902-007](agentchangelog.md#ac-20260902-007)
+
+<a id="up-20260903-001"></a>
+## UP-20260903-001 — Assign Yug the worker execution spine
+- date: 2026-09-03
+- status: done
+- scope: docs, execution-planning, ownership
+- tags: yug, claude, worker-spine, day-1, day-2, ownership
+- aliases: huge task for Yug Claude, two builders, worker runtime Redis K3s, review handoff
+- paths: docs/yug-worker-spine.md, docs/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Create a substantial implementation packet for Yug's Claude after his current contract review, with Aditya and Yug owning current implementation and Aditya/Codex reviewing the resulting changes.
+- constraints: Planning only in this turn; preserve shared contracts and daily gates; keep other members' hardware/evidence roles; use member-to-dev-to-main publication; do not transfer prior local test/install permission to another machine or session.
+- acceptance: A self-contained packet defines the worker/runtime/Redis/container/K3s outcome, allowed paths, review prerequisite, phases, acceptance commands, failure cases, permissions, and review evidence; the current sprint reflects two build owners.
+- follow_up_to: [UP-20260902-007](#up-20260902-007)
+- supersedes: none
+- linked_changes: [AC-20260903-001](agentchangelog.md#ac-20260903-001)

@@ -52,6 +52,8 @@ requirements.
 ## Repository-level documents
 
 - [../README.md](../README.md) — project entry point
+- [../tasks.md](../tasks.md) — execution order, current owners and acceptance gates
+- [yug-worker-spine.md](yug-worker-spine.md) — WP-YUG-001 execution packet for Yug's Claude, after the AF-001 review
 - [../AGENTS.md](../AGENTS.md) — shared coding-agent rules
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — branch, review, and release workflow
 - [../LICENSE](../LICENSE) — current repository licence
