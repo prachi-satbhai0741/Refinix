@@ -5,11 +5,12 @@ capability-pack assignment**. This document is the team's reference for what the
 fleet actually is; [model-catalog.md](model-catalog.md) owns model and pack
 policy.
 
-- **Collected:** 2026-09-01
+- **Collected:** 2026-09-01; Vedant's device re-measured 2026-09-02
 - **Status:** reported inventory covers all six devices; only values marked
-  measured have local command evidence. Remaining gaps are free disk space,
-  installed runtimes, the Mac GPU-core configuration, and two VRAM figures
-  needing a `nvidia-smi` recheck.
+  measured have local command evidence. Vedant's free disk space and installed
+  runtimes are now measured. Remaining gaps are free disk space on Aditya,
+  Sahil, and Tanvi, installed runtimes on the other five devices, the Mac
+  GPU-core configuration, and two VRAM figures needing a `nvidia-smi` recheck.
 - **Rule:** treat every capability and model note below as a **hypothesis** until
   benchmarked on the actual device under
   [evaluation.md](evaluation.md#5-measurement-plan).
@@ -29,7 +30,7 @@ policy.
 |---|---|---|---|---|---|---|---|---|
 | Aditya | MacBook Air (M5, 13″, 2026) | macOS 26.x | Apple M5 | 10C (4P+6E) / 10 | 16 GB unified | — (8- or 10-core Apple GPU; confirm locally) | shared (unified) | ~470 GB / 512 GB _(confirm)_ |
 | Sahil | Lenovo LOQ 15IRX9 (83DV) | Windows 11 Home SL (26200) | Intel Core i5-13450HX | 10C (6P+4E) / 16 | 24 GB DDR5-4800 (2 × 12 GB, dual-channel) | NVIDIA RTX 3050 Laptop | **6 GB** | _(confirm)_ / 477 GB |
-| Vedant | ASUS V16 (V3607VH) | Windows 11 Home SL (26200) | Intel Core 7 240H | 10C / 16 | 16 GB DDR5-5600 (1 × 16 GB, single-channel) | NVIDIA RTX 5050 Laptop | **8 GB** _(measured)_ | 191 GB / 477 GB |
+| Vedant | ASUS V16 (V3607VH) | Windows 11 Home SL (26200) | Intel Core 7 240H | 10C / 16 | 16 GB DDR5-5600 (1 × 16 GB, single-channel) | NVIDIA RTX 5050 Laptop | **8 GB** _(measured)_ | **43 GB** _(measured 2026-09-02)_ / 477 GB |
 | Yug | HP Victus 15-fa1xxx | Windows 11 Home SL | Intel Core i5-12450H | 8C / 12 | 16 GB DDR4-3200 | NVIDIA RTX 2050 | 4 GB _(recheck)_ | ~700 GB / 1 TB _(confirm)_ |
 | Prachi | HP Victus 15-fa1xxx | Ubuntu 24.04.4 LTS | Intel Core i5-13420H | 8C / 12 | 16 GB | NVIDIA RTX 2050 (GA107) | 4 GB _(recheck)_ | ~357 GB / 477 GB |
 | Tanvi | Dell Inspiron 15 3520 | Windows 11 Home SL (26200) | Intel Core i5-1235U | 10C (2P+8E) / 12 | 16 GB | — (Intel Iris Xe iGPU only) | — | _(confirm)_ / 477 GB |
@@ -96,7 +97,7 @@ adapters for at least the Mac and Vedant.
 - **RAM:** 16 GB DDR5-5600 (single SK Hynix DIMM — **single-channel**; second slot free)
 - **GPU (discrete):** NVIDIA RTX 5050 Laptop, **8 GB VRAM** — 8151 MiB measured via `nvidia-smi`, driver 592.00 / 32.0.15.9200
 - **GPU (integrated):** Intel Graphics, shares system memory dynamically
-- **Storage:** 512 GB NVMe SSD (Micron MTFDKBA512QGN) — **191 GB free of 477 GB**
+- **Storage:** 512 GB NVMe SSD (Micron MTFDKBA512QGN) — **43.3 GB free of 477 GB** _(measured 2026-09-02 via `Get-PSDrive C`; an earlier 191 GB reading is superseded)_
 - **OS:** Windows 11 Home Single Language (build 26200), VBS/Hyper-V active
 - **Display:** 1920 × 1200 @ 144 Hz
 - **Network:** **Wi-Fi only** — Realtek 8852BE Wi-Fi 6 at 866 Mbps. Confirmed to have **no Ethernet adapter at all** (only Wi-Fi and Bluetooth PAN present).
@@ -105,9 +106,17 @@ adapters for at least the Mac and Vedant.
   coding-worker role. Two caveats: single-channel DDR5 limits memory bandwidth,
   so anything that spills to CPU runs slower than the spec sheet suggests
   (populating the free DIMM slot would improve this), and temporary workspaces
-  plus model caches still need reserved disk headroom. Its 191 GB free is ample
-  for the prototype's selected model set. Needs a USB-Ethernet adapter for a
-  wired demo.
+  plus model caches still need reserved disk headroom. Only **43 GB is free**,
+  which fits the selected model set (~9 GB) but leaves little margin once a WSL2
+  virtual disk and container images are added, so clear space before
+  provisioning. Needs a USB-Ethernet adapter for a wired demo.
+- **Installed runtimes** _(measured 2026-09-02)_: **Ollama not installed**;
+  `python` resolves only to the Microsoft Store alias, not a usable interpreter;
+  Node.js and Git present; **Docker Desktop installed but the daemon is
+  stopped**; WSL2 carries both an **Ubuntu** and a `docker-desktop` distro. The
+  Ubuntu distro means this machine can host the network-disabled sandbox through
+  Docker Engine inside WSL2 without Docker Desktop. No `.wslconfig` exists, so
+  WSL2 may claim up to half of system RAM and starve a local model runtime.
 
 ### Yug — HP Victus 15-fa1xxx
 - **CPU:** Intel Core i5-12450H — 8 cores / 12 threads
@@ -194,6 +203,7 @@ Constraint reminder: **no device exceeds 8 GB discrete VRAM.** Plan every model 
 5. **Owner: Vedant — collect everyone's installed AI runtime** (Ollama / LM
    Studio / llama.cpp / MLX) and version, plus the **driver and runtime-reported
    CUDA compatibility** on NVIDIA machines.
+   Vedant's own device is recorded above; the other five remain outstanding.
 6. **Owners: Tanvi and Aditya — confirm whether the Inspiron has an Ethernet
    port and obtain USB-Ethernet adapters**, respectively, for Aditya and Vedant,
    who definitely have none.
