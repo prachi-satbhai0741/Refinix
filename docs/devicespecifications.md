@@ -1,4 +1,4 @@
-# Device Specifications — AegisForge / SovereignMesh Team
+# Device Specifications — AegisForge / Refinix — Team Rokunin Sync
 
 Hardware inventory for the six team devices, collected for **model selection and
 capability-pack assignment**. This document is the team's reference for what the

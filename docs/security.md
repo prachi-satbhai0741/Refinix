@@ -8,7 +8,7 @@ cannot prove isolation, secure storage, zero egress, or resistance to attack.
 
 ## 1. Security objectives
 
-SovereignMesh must:
+Refinix must:
 
 - keep selected confidential work inside the trusted environment;
 - prevent silent public inference and background traffic during offline runtime;

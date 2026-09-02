@@ -2,7 +2,7 @@
 
 # AegisForge
 
-**SovereignMesh — a private local agent harness for confidential industrial knowledge work**
+**Refinix — a private local agent harness for confidential industrial knowledge work**
 
 *A Smart India Hackathon 2026 submission for running open-weight, multimodal AI entirely on local infrastructure, with trusted-device task orchestration and demonstrable, verifiable offline operation.*
 
@@ -43,6 +43,7 @@
 | **Organisation** | Mangalore Refinery and Petrochemicals Limited (MRPL) |
 | **Category** | Software |
 | **Theme** | Smart Automation |
+| **Team Name** | Rokunin Sync |
 
 ### Challenge Description
 
@@ -66,10 +67,10 @@ The current requirement interpretation, open design decisions, and demonstration
 
 ## What Is AegisForge?
 
-**AegisForge** is the name of this repository. **SovereignMesh** is the current
+**AegisForge** is the name of this repository. **Refinix** is the current
 working name for the product and its underlying architecture.
 
-SovereignMesh is one installable application with dedicated **Chat**,
+Refinix is one installable application with dedicated **Chat**,
 **Documents**, and **Code** surfaces over a shared local agent harness. A
 **Control Center** manages models, jobs, approvals, paired compute, health, and
 sovereignty evidence.
@@ -98,7 +99,7 @@ It's worth being explicit about why "just run a local LLM" doesn't satisfy the c
 
 ## Design Philosophy: Coordinator, Not a Cluster
 
-SovereignMesh is **not** model sharding, distributed inference, or pooled VRAM across machines. Every job runs as **one complete model on one selected device** — there is no attempt to split a single model's weights or a single job's computation across multiple machines.
+Refinix is **not** model sharding, distributed inference, or pooled VRAM across machines. Every job runs as **one complete model on one selected device** — there is no attempt to split a single model's weights or a single job's computation across multiple machines.
 
 This matters for two reasons:
 
@@ -205,3 +206,9 @@ This repository is currently licensed under [Apache-2.0](LICENSE). The final pro
 *Built for Smart India Hackathon 2026 — Problem Statement SIH26117 — Mangalore Refinery and Petrochemicals Limited (MRPL)*
 
 </div>
+
+---
+
+## Team
+
+**Team Name: Rokunin Sync**
