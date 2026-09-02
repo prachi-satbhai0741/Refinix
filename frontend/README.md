@@ -32,7 +32,7 @@ It cannot hard-code secure, blocked, healthy, or zero-traffic states.
 
 There is no package.json, source tree, or dependency set.
 
-The five-day alpha uses local HTML, CSS, and JavaScript served by the coordinator
+The alpha uses local HTML, CSS, and JavaScript served by the coordinator
 instead of adding a frontend build chain or desktop wrapper. Chat and Control
 Center form the first usable slice; Documents and Code reuse the same job form,
 event stream, artifact links, and truthful unavailable states. Packaging remains

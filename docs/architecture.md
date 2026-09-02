@@ -58,10 +58,13 @@ Pairing does not copy, merge, replace, or promote a local workspace. Coordinator
 transfer is a separate P2 feature because it requires explicit state migration,
 conflict handling, and rollback.
 
-For the five-day alpha, Prachi's Ubuntu machine is the only Kubernetes host.
-It runs a single-node K3s cluster. Docker builds the worker and sandbox images;
-K3s runs those OCI images through its CRI-compatible container runtime. The
-team does not build a six-laptop Kubernetes cluster during the sprint.
+For the alpha, one authorised Ubuntu machine runs the single-node K3s
+cluster. Prachi's device is the current candidate; confirm access and readiness
+at the [human checkpoints](../tasks.md#numbered-execution-tasks).
+This device placement does not assign code ownership. Docker builds the worker
+and sandbox images; K3s runs those OCI images through its CRI-compatible
+container runtime. The team does not build a six-laptop Kubernetes cluster
+for the alpha.
 
 ## 3. Harness components
 
@@ -332,7 +335,7 @@ The coordinator sends independent complete job steps to paired workers. It may
 run unrelated Code and Documents jobs concurrently. This is orchestration, not
 model sharding.
 
-### Kubernetes execution profile — five-day alpha
+### Kubernetes execution profile — alpha
 
 The first mentor-aligned profile is deliberately one cluster on one Linux host:
 
@@ -374,7 +377,7 @@ cloud inference.
 
 ## 8. Working technology direction
 
-The five-day baseline minimises prototype risk:
+The alpha baseline minimises prototype risk:
 
 | Area | Direction | Status |
 |---|---|---|

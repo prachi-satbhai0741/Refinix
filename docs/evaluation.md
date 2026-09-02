@@ -22,17 +22,31 @@ procedure, input class, result, and known limitations. Another agent's summary,
 a screenshot without provenance, or a static code inspection is not execution
 evidence.
 
-## 2. Five-day critical path
+## 2. Task acceptance sequence
 
 The purpose of the alpha is to answer the risks that could kill the product,
 not to imitate every ChatGPT feature.
 
-### Day 1: one Kubernetes worker spine
+Execute these outcomes through the [numbered tasks and named human
+checkpoints](../tasks.md#numbered-execution-tasks). The implementer builds, the reviewer checks the actual diff and
+results, and execution stops for the named human action. A reported installation
+or code-review pass does not satisfy a runtime gate. Verify the returned evidence
+before continuing within the authorised scope.
+
+Choose focused checks before each chunk. Reuse evidence only when its source and
+environment still apply; rerun affected checks after changes and the required
+end-to-end path at task acceptance gates. Add broader checks only for a concrete remaining
+risk. After each build/review cycle, explain what was built, what was observed,
+what remains unverified and the next named action using the
+[team report](../tasks.md#verification-and-team-explanation).
+
+### C05: Contracts and local execution
 
 - Freeze the node, job, attempt, event, approval, HTTPS, Redis, and proof
   contracts.
 - Pin K3s, Redis 7.2.x, base-image, worker-image, runtime, and model evidence.
-- Start one single-node K3s cluster on Prachi's Ubuntu machine.
+- Start one single-node K3s cluster on the authorised Ubuntu host confirmed at
+  the human checkpoint; Prachi's device is the current candidate.
 - Deploy Redis behind ClusterIP and the Docker-built worker behind a Kubernetes
   Service.
 - Complete one real model response from a Ready worker Pod.
@@ -45,7 +59,7 @@ Exit evidence:
 - Pod, Service, runtime, and prompt are reproducible;
 - no mocked inference in the claimed path.
 
-### Day 2: Mac to Service to Redis to executor
+### C06: Distributed execution
 
 - Connect worker API and executor Pods through Redis Streams.
 - Add bounded retention, acknowledgement, pending-work recovery, cancellation,
@@ -63,7 +77,7 @@ Exit evidence:
 - bounded request and streamed response captured;
 - Redis or cluster loss does not lose canonical history.
 
-### Day 3: both signature workflows
+### C09: Signature workflows
 
 - Complete the fixed Documents path from scan to page-linked extraction,
   grounded drafting, and validated Word artifact.
@@ -78,7 +92,7 @@ Exit evidence:
 - one applicable patch with observed sandbox evidence;
 - no direct canonical write from a worker or Job Pod.
 
-### Day 4: concurrency, approval, and sovereignty
+### C11: Concurrency, approvals and offline evidence
 
 - Run Documents and Code attempts concurrently through separate Redis consumers
   and Pods.
@@ -94,7 +108,7 @@ Exit evidence:
 - denial writes nothing and retry creates no duplicate final write;
 - the real run records no observed public outbound flow in the named window.
 
-### Day 5: sovereign proof and rehearsal
+### C13: Recovery and candidate acceptance
 
 - Enforce or physically isolate public egress while preserving the trusted LAN.
 - Run the real signature workflow.
@@ -113,9 +127,11 @@ Exit evidence:
 - benchmark table and limitations;
 - no unfinished feature presented as working.
 
-If a gate passes early, begin the next gate. Only after Day 3 passes may the
-team add the bounded image-understanding and calculation-with-steps stretch;
-only after Day 4 passes may it add a second executor replica. Do not add another
+When a task passes, proceed to the next eligible, authorised task after
+clearing its human prerequisites. Only after C09 passes may the team add the
+bounded image-understanding and calculation-with-steps stretch; only after C11
+passes may it add a second executor replica. Additional scope needs requester
+approval. Do not add another
 framework, cluster, broker, runtime, or product surface.
 
 ## 3. Alpha acceptance
@@ -240,9 +256,9 @@ Each demonstrated job records:
 
 It proves only the recorded job and observation window.
 
-## 8. Parallel workstreams
+## 8. Implementation areas
 
-The six useful workstreams are:
+The six implementation areas are:
 
 1. Frozen contracts, coordinator SQLite, routing, and integration
 2. Docker worker, model runtime, Redis consumer, and SSE
@@ -251,10 +267,10 @@ The six useful workstreams are:
 5. Documents/OCR/retrieval and Code/patch validation
 6. Fixtures, contract checks, failure drills, proof, and demo
 
-Assign one human owner per work packet and keep one integration owner. Multiple
-AI agents may work on disjoint packets after the contracts freeze; they do not
-share authority to change the seams. Do not create empty components merely to
-give each member or agent a folder.
+Anyone may implement any area. Follow the numbered task sequence, use the
+shared contracts, review the combined changes, and stop at named human
+checkpoints. A person is named for a human action or device access, not exclusive
+code ownership. Do not create empty components merely to give someone a folder.
 
 ## 9. Major risks
 
@@ -262,9 +278,9 @@ give each member or agent a folder.
 |---|---|
 | Product becomes only a networking demo | Complete one real agentic artifact workflow |
 | P0 scope expands again | Treat the PRD outcome table as the release boundary |
-| Kubernetes consumes the sprint | Use one single-node K3s host; no Helm, operator, service mesh, HA, or multi-node cluster |
+| Infrastructure displaces workflow work | Use one single-node K3s host; no Helm, operator, service mesh, HA, or multi-node cluster |
 | Redis becomes a second database | Keep canonical state in SQLite; use expiring Redis coordination state only |
-| Agent count creates incompatible implementations | Freeze contracts first, give each packet one human owner, and integrate twice daily |
+| Agent count creates incompatible implementations | Use reviewed shared contracts, integrate accepted tasks and verify named human checkpoints |
 | Worker Service exposes confidential traffic | Authenticated HTTPS only; Redis stays ClusterIP; verify NetworkPolicy and host firewall behaviour |
 | Kubernetes Job is mistaken for a complete sandbox | Require observed non-root, seccomp, capability, path, resource, deadline, and egress checks |
 | Setup forces unnecessary downloads | Resolve dependencies only for enabled capabilities |
@@ -320,13 +336,13 @@ oversight. Status values follow the evidence labels in section 1.
 ### Description lines deferred beyond the alpha
 
 Each of these is named in the problem statement and intentionally excluded from
-the five-day sprint under
-[deliberately excluded](../tasks.md#deliberately-excluded-from-the-sprint).
+the alpha under
+[deliberately excluded](../tasks.md#outside-the-alpha-scope).
 None is claimed as working.
 
 | Problem-statement line | Decision |
 |---|---|
-| Engineering drawings, photographs, P&IDs | Deferred. Trained symbol detection needs annotated data the sprint does not have; the main engine's vision capability is an untested cheaper path |
+| Engineering drawings, photographs, P&IDs | Deferred. Trained symbol detection needs annotated data the project does not have; the main engine's vision capability is an untested cheaper path |
 | Handwritten notes | Deferred. Accuracy is uncertain and no fixture exists |
 | Spreadsheet work and Excel output | Deferred until both signature workflows are stable |
 | PowerPoint output | Deferred until both signature workflows are stable |

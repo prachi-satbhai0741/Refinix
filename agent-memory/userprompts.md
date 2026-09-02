@@ -377,3 +377,33 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260902-007](#up-20260902-007)
 - supersedes: none
 - linked_changes: [AC-20260903-001](agentchangelog.md#ac-20260903-001)
+
+<a id="up-20260903-002"></a>
+## UP-20260903-002 — Execute the human-checkpoint documentation plan
+- date: 2026-09-03
+- status: in-progress
+- scope: docs, execution-planning, agent-guidance
+- tags: human-checkpoints, claude, codex, setup, five-day-sprint
+- aliases: named human intervention, checkpoint chunks, remove personal packet, build review explain resume
+- paths: AGENTS.md, tasks.md, docs/README.md, docs/yug-worker-spine.md, docs/architecture.md, docs/devicespecifications.md, docs/evaluation.md, backend/contracts/README.md, CONTRIBUTING.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replace personal implementation assignments with reviewed execution chunks that pause for named human actions and resume only after their results are verified.
+- constraints: Documentation only; preserve AF task evidence and product/security gates; no runtime implementation, installs, downloads, deployments, tests or Git writes; preserve device facts and historical ledgers.
+- acceptance: One shared tasks.md names each human checkpoint, required commands/evidence, stop/resume rules and plain-language build reports; obsolete personal packet is removed and active references are consistent.
+- follow_up_to: [UP-20260903-001](#up-20260903-001)
+- supersedes: [UP-20260903-001](#up-20260903-001)
+- linked_changes: [AC-20260903-002](agentchangelog.md#ac-20260903-002)
+
+<a id="up-20260903-003"></a>
+## UP-20260903-003 — Remove calendar constraints from execution
+- date: 2026-09-03
+- status: in-progress
+- scope: docs, execution-planning
+- tags: numbered-tasks, human-checkpoints, prerequisites, calendar-independent
+- aliases: no days, task number and name, execute then wait for human, remove deadline schedule
+- paths: tasks.md, AGENTS.md, CONTRIBUTING.md, README.md, backend/README.md, backend/contracts/README.md, frontend/README.md, docs/README.md, docs/prd.md, docs/architecture.md, docs/evaluation.md, docs/devicespecifications.md, docs/sih-ppt-submission-brief.md, .github/pull_request_template.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replace implementation day labels and calendar cadence with numbered tasks, explicit prerequisites and named human stop/resume checkpoints.
+- constraints: Preserve existing uncommitted documentation, AF task state/acceptance, named human actions, evidence dates, history and runtime safety deadlines; no runtime changes, tests, installations or Git writes.
+- acceptance: Active planning references use task numbers/names with no delivery dates or day limits, and all local links and sequence dependencies remain consistent.
+- follow_up_to: [UP-20260903-002](#up-20260903-002)
+- supersedes: none
+- linked_changes: [AC-20260903-003](agentchangelog.md#ac-20260903-003)
