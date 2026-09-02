@@ -364,7 +364,7 @@ on the named demo machine.
 - The team fleet includes one measured 8 GB NVIDIA laptop GPU, one 6 GB GPU,
   two reported 4 GB GPUs, one 16 GB unified-memory Mac, and one CPU/iGPU
   laptop.
-- The five-day alpha needs only one Ubuntu K3s host and one real distributed
+- The alpha needs only one Ubuntu K3s host and one real distributed
   path; it does not require a production cluster.
 - Q4 models and bounded contexts are the working policy because no discrete GPU
   exceeds 8 GB.
@@ -374,32 +374,33 @@ on the named demo machine.
   existing components; the project integrates them rather than rebuilding
   commodity infrastructure.
 
-### 8.2 Five-day evidence path
+### 8.2 Task evidence path
 
-| Day | Evidence target |
+| Completed task | Evidence target |
 |---:|---|
-| 1 | One pinned Docker worker image runs in a Ready K3s Pod and returns a real local-model response; coordinator persists the job in SQLite |
-| 2 | Mac -> authenticated Kubernetes Service -> Redis -> executor Pod -> SSE -> Mac completes; cluster shutdown leaves SQLite history intact |
-| 3 | Public sample scan becomes a cited Word note; synthetic repository request becomes a patch validated in a restricted Job |
-| 4 | Document and code attempts run concurrently; approval, idempotency, egress enforcement, and Proof Cards are demonstrated |
-| 5 | Cancellation, Pod loss, Redis restart, cluster loss, recovery, measurement, and three rehearsals pass |
+| C05 | One pinned Docker worker image runs in a Ready K3s Pod and returns a real local-model response; coordinator persists the job in SQLite |
+| C06 | Mac -> authenticated Kubernetes Service -> Redis -> executor Pod -> SSE -> Mac completes; cluster shutdown leaves SQLite history intact |
+| C09 | Public sample scan becomes a cited Word note; synthetic repository request becomes a patch validated in a restricted Job |
+| C11 | Document and code attempts run concurrently; approval, idempotency, egress enforcement, and Proof Cards are demonstrated |
+| C13 | Cancellation, Pod loss, Redis restart, cluster loss, recovery, measurement, and three rehearsals pass |
 
-If the distributed path does not work by the Day 2 gate, the team freezes a
-standalone demonstration and protects the problem-statement workflows. A broken
-mesh is not allowed to destroy the required single-workstation solution.
+While C06 is unverified, retain the standalone baseline and repair the existing
+distributed path before C07. Do not expand infrastructure to hide a failed
+integration gate. Follow the [numbered task sequence](../tasks.md#numbered-execution-tasks)
+and its named human checkpoints.
 
 ### 8.3 Main risks and mitigations
 
 | Risk | Consequence | Mitigation |
 |---|---|---|
 | Model quality is inadequate on small hardware | Weak OCR, routing, or code output | Benchmark the exact fixture early; choose smaller fixed tasks; keep humans in approval loop |
-| Kubernetes consumes the sprint | Infrastructure demo with no useful artifact | One single-node K3s host; no Helm, operator, service mesh, HA, or multi-node cluster |
+| Infrastructure displaces workflow work | Infrastructure demo with no useful artifact | One single-node K3s host; no Helm, operator, service mesh, HA, or multi-node cluster |
 | Redis becomes a second database | State loss or inconsistency | SQLite remains canonical; Redis persistence disabled for alpha; TTL and memory limits |
 | Venue network is unreliable | Distributed demo fails | Standalone operation, wired adapters where possible, and recorded backup demonstration |
 | Executor repeats work after failure | Duplicate persistent change | Attempt IDs, idempotency keys, approval binding, and one coordinator-owned final-write gate |
 | Container is treated as perfect isolation | Misleading security claim | Non-root, seccomp, dropped capabilities, read-only root, limits, default-deny egress, and observed tests |
 | “Zero egress” is inferred from silence | Unprovable sovereignty | Name the enforcement layer, observer, interface, time window, allowed LAN traffic, and limitations |
-| Too many AI agents create incompatible code | Integration failure | Freeze shared contracts, one human owner per packet, integrate twice daily, review current source |
+| Too many AI agents create incompatible code | Integration failure | Use reviewed shared contracts, integrate accepted tasks, verify named human checkpoints |
 
 ### 8.4 Viability after the prototype
 
@@ -645,7 +646,7 @@ mock-up, label it **UI concept**. Never present a mock-up as a runtime screensho
 ### Safe design statements now
 
 - “The proposed architecture keeps canonical state on the coordinator.”
-- “The five-day plan uses a single-node K3s host.”
+- “The alpha plan uses a single-node K3s host.”
 - “Redis is designed for temporary coordination, not permanent business state.”
 - “The system performs task-level routing, not model sharding.”
 - “The product is designed to work standalone if trusted workers are absent.”
@@ -774,7 +775,7 @@ added only if measured hardware incompatibility requires it.
 ### Why not train your own model?
 
 The problem asks for a useful workbench using open-weight models. Training would
-consume the sprint without solving data governance, tools, artifacts,
+consume implementation effort without solving data governance, tools, artifacts,
 approvals, deployment, and proof. Our contribution is the engineered
 orchestration and control layer; models are integrated and evaluated, not
 claimed as newly trained.

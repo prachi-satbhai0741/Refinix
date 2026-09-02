@@ -77,7 +77,7 @@ Both the bare name and the `name/topic` form are accepted into `dev`.
 Do not push to someone else's branch. Open a PR against it if you need to
 contribute there.
 
-## Daily flow
+## Contribution flow
 
 ```bash
 # 1. Start from the latest dev
@@ -127,6 +127,12 @@ are pure notification noise. Ask for a review when you want one.
 Work on `dev` until it is genuinely ready, then take it to `main` in one PR.
 Anyone can open and merge that release PR.
 
+For the alpha build, follow the [execution review and named human
+checkpoints](tasks.md#numbered-execution-tasks) before promotion.
+These are work-acceptance gates; they do not add a GitHub approval quota or
+change the workflow triggers. Git publication remains a human action unless
+explicitly authorised under [AGENTS.md](AGENTS.md#git).
+
 Reviewing is still worth doing. When you do, check:
 
 - **Evidence.** [Evaluation rules](docs/evaluation.md#1-evidence-labels):
@@ -135,7 +141,7 @@ Reviewing is still worth doing. When you do, check:
 - **Honest labels.** Features are labelled planned, prototyped, verified,
   deferred, or rejected. "Prototyped" presented as "verified" is a bug.
 - **No mocked paths sold as real.** The
-  [Day 1 gate](docs/evaluation.md#day-1-baseline-and-one-local-engine) requires
+  [C05 gate](docs/evaluation.md#c05-contracts-and-local-execution) requires
   no mocked inference in the claimed path.
 - **AI output was actually read.** Do not merge generated output nobody has
   reviewed.

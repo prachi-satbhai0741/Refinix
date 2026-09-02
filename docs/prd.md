@@ -30,7 +30,7 @@ organisation-managed private server without changing the user's workspace.
 > One private agent application for chat, documents, and code that works on one
 > device and can safely use trusted local compute when available.
 
-The five-day alpha also proves the mentor-directed deployment shape: a
+The alpha also proves the mentor-directed deployment shape: a
 Docker-built worker image runs as Kubernetes-managed Pods, a Kubernetes Service
 exposes the authenticated worker API, and Redis coordinates bounded ephemeral
 work. Kubernetes is an execution profile for trusted compute; it does not make
@@ -160,7 +160,7 @@ The enforceable boundaries are detailed in [security.md](security.md).
 
 ## 7. Release scope
 
-### 7.1 Five-day alpha: P0
+### 7.1 Alpha: P0
 
 The alpha must prove:
 
