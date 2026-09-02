@@ -281,7 +281,7 @@ document owns implementation detail within that scope. Unresolved conflicts must
 be recorded instead of silently choosing one.
 
 Comment By Yug :-
-### FR-037 — Multilingual Industrial Interaction (P1)
+## FR-037 — Multilingual Industrial Interaction (P1)
 
 Support local, offline interaction in English, Hindi, Kannada, Malayalam, and Tamil.
 
