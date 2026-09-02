@@ -55,7 +55,7 @@ placeholder, never an approved model or artifact hash.
 | `Attempt` | One execution and its node, model, route, times, error and artifacts; the coordinator persists accepted observations |
 | `Event` | Typed state, output, artifact, approval or proof event; worker events cannot decide job completion, approval or proof |
 | `Approval` | Coordinator-only exact action, target, attempt and action digest, actor, expiry and decision |
-| `Proof` | Coordinator's evidence references and values; unavailable measurements stay `null` and have no inferred security status |
+| `Proof` | Coordinator's evidence references, citations and values; unavailable measurements stay `null` and have no inferred security status |
 
 `ResourceRef` contains an opaque ID, SHA-256, byte size and media type. A worker
 resolves it only against its explicitly transferred task package, never an
@@ -63,10 +63,35 @@ arbitrary URL, host path, repository, or knowledge base. Verify size and hash
 before use. Reject traversal, symlink/hard-link escape and unselected resources
 in the receiving filesystem code. Contract validation alone cannot do this.
 
+`Citation` binds one drafted claim to the `ResourceRef` and 1-based page it came
+from, carrying the verbatim source quote. `Proof.citations` is where the
+`citations.resolve` validator finds its evidence; citation IDs are unique within
+a proof. `require_grounded_citations(envelope, proof)` is the coordinator-side
+grounding guard for
+[documents step 8](../../docs/workflows.md#5-documents-workflow): it rejects a
+proof paired with another job, a grounded output that carries no citation, and
+any citation naming a resource the envelope never supplied. It cannot detect a
+quote that misreads a page it was genuinely given — extraction fidelity and page
+existence remain workflow-side checks, not contract validation.
+
 `ModelRef.manifest_sha256` identifies the reviewed manifest in the coordinator's
 [model catalogue](../../docs/model-catalog.md#4-required-manifest). The manifest
 owns exact source, revision, licences and file hashes. Worker claims do not
 establish approval, compatibility or self-test success.
+
+`OutputContract` binds each output `kind` to the validator that proves it:
+`text` requires `text.nonempty`, `json` requires `json.schema` and its approved
+hash, `docx` requires `document.readable`, and `patch` requires `patch.applies`.
+`citations.resolve` may be added to any rendered output; `sandbox.exit_zero` may
+be added only to `patch`. A validator that cannot judge the declared kind, and a
+validator requested twice, are rejected rather than silently ignored. Declaring
+a validator is a requirement on the executor, not evidence that it ran.
+
+An attempt that stops without output — `failed`, `cancelled` or `interrupted` —
+carries exactly one typed `Failure`, so a lost worker, an expired deadline and
+an operator cancellation stay distinguishable in canonical history instead of
+collapsing into an untyped stop. `cancelled_by_user` is reserved for a real
+cancellation and cannot be used to relabel a crash or an interruption.
 
 The envelope's tool allowlist cannot contain canonical-write, installation,
 network-enablement or pairing actions. Enforce CPU, memory, process, runtime,
@@ -312,10 +337,26 @@ Environment: Aditya's local Mac, macOS 26.6.2 arm64, Python 3.14.6 in repository
 - `git diff --check`: passed; new Python/JSON files also passed syntax parsing
   and whitespace inspection.
 
+### Observed local verification — 2026-09-03
+
+Environment: Yug's local Windows 11 (AMD64) host, Python 3.13.2, **pydantic
+2.13.4 already present — not the pinned 2.13.5**, and no `.venv` or install was
+used. This is a second-platform smoke run, not a pinned-environment result; the
+pinned interpreter and wheel remain unverified on Windows.
+
+- `python -m unittest backend.contracts.test_contracts -v`: **8 tests passed**
+  (Aditya's five plus the C01 output-validator, stop-reason and citation checks).
+- `python -m backend.contracts`: **exported parseable JSON**, version 1.0, all
+  seven schemas, `Citation` resolved under `Proof`, 52304 bytes.
+- Every added rejection branch was executed individually and returned its own
+  distinct message; each accepted case and the grounded happy path passed.
+- `json.load` on `examples.json` and `git diff --check`: passed.
+
 Before AF-001 can become `verified`: resolve OD-06, connect all four consumers
-to this version, and obtain requester
-verification. Before C05 passes: prove the authorised cluster, the pinned
-worker image and real model response, plus SQLite persistence and the local UI.
+to this version, obtain requester verification, and repeat the checks on the
+pinned pydantic 2.13.5 on at least one non-macOS host. Before C05 passes: prove
+the authorised cluster, the pinned worker image and real model response, plus
+SQLite persistence and the local UI.
 The [shared execution chunks](../../tasks.md#numbered-execution-tasks)
 separate contract repair, named human setup and consumer integration; none of
 those individual steps alone freezes AF-001.

@@ -407,3 +407,35 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260903-002](#up-20260903-002)
 - supersedes: none
 - linked_changes: [AC-20260903-003](agentchangelog.md#ac-20260903-003)
+
+<a id="up-20260903-004"></a>
+## UP-20260903-004 — Analyse the documents and execute the board
+- date: 2026-09-03
+- status: in-progress
+- scope: backend, contracts, documents-workflow, execution
+- tags: c01, af-001, contracts, citations, documents, grounding, page-mapping
+- aliases: execute tasks.md, citation contract, cited approval note, reduced team
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/examples.json, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Analyse the planning documents and begin executing the board with only Yug and Aditya available, closing the citation gap the merged AF-001 draft left in the documents workflow.
+- constraints: Only Yug and Aditya are available, so role assignments are suspended for this change; no Git or GitHub writes; keep the contract version at 1.0 and preserve coordinator authority and offline boundaries.
+- acceptance: The contract carries a typed citation with source and page, a coordinator-side grounding guard rejects ungrounded output, and the contract check runs and passes locally.
+- verification_authorization: User instruction to execute tasks covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- follow_up_to: [UP-20260902-007](#up-20260902-007)
+- supersedes: none
+- linked_changes: [AC-20260903-004](agentchangelog.md#ac-20260903-004)
+
+<a id="up-20260903-005"></a>
+## UP-20260903-005 — Execute the renumbered C01 contract repairs
+- date: 2026-09-03
+- status: in-progress
+- scope: backend, contracts, execution
+- tags: c01, af-001, contracts, output-validators, cancellation, interruption, checkpoints
+- aliases: numbered execution tasks, chunk C01, contract repair, human checkpoint, stop reason
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Execute the C01 contract repairs defined by the renumbered execution board, then report the human checkpoint actions the board requires before C02.
+- constraints: Only Yug and Aditya are available; no Git or GitHub writes; keep contract version 1.0 and the draft status; do not activate a runtime chunk or advance past the C01 human checkpoint.
+- acceptance: Output validators match their declared kind, stopped attempts carry a typed reason, citation payloads exist, and the focused contract check runs and passes locally.
+- verification_authorization: User instruction to execute the board covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- follow_up_to: [UP-20260903-004](#up-20260903-004)
+- supersedes: none
+- linked_changes: [AC-20260903-005](agentchangelog.md#ac-20260903-005)
