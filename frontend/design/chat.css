@@ -1,0 +1,155 @@
+/* Refinix — Chat surface.
+ * Load after tokens.css and app.css; only Chat-specific rules live here.
+ */
+
+/* ------------------------------------------------------------- thread --- */
+
+.thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-height: 0;
+}
+.turn { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 74ch; }
+.turn-user { align-self: flex-end; align-items: flex-end; max-width: 58ch; }
+
+.bubble {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-bubble);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-body);
+}
+/* A turn is anchored to one side, so the corner on that side is tightened —
+   the shape points back at whoever said it. */
+.turn-user  .bubble { border-radius: var(--radius-bubble) 7px var(--radius-bubble) var(--radius-bubble); }
+.turn-agent .bubble { border-radius: 7px var(--radius-bubble) var(--radius-bubble) var(--radius-bubble); }
+.turn-agent .prose { font-size: var(--fs-body); }
+.turn-agent .prose p { margin: 0 0 var(--sp-3); }
+.turn-agent .prose p:last-child { margin: 0; }
+
+.turn-meta { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* streaming caret for an output.delta that has not terminated */
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  background: var(--signal);
+  border-radius: 2px;
+  vertical-align: -2px;
+  margin-left: 2px;
+  animation: blink 1.05s steps(2, start) infinite;
+}
+@keyframes blink { to { visibility: hidden; } }
+
+/* --------------------------------------------------------- plan steps --- */
+
+/* Purple rail: this list is the model's own plan, not a system claim. That is
+   the whole job of --agent — provenance, never state. */
+.plan {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  border-left: 2px solid var(--agent);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+.plan li {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: var(--sp-2);
+  align-items: baseline;
+  padding: 5px 0 5px var(--sp-3);
+  position: relative;
+}
+.plan .mark { font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: -.02em; }
+/* the capability that ran the step — the model's own doing, so it is purple
+   wherever it appears, here and in the Documents pipeline */
+.plan .cap {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--agent);
+  white-space: nowrap;
+}
+.step-done .mark { color: var(--st-enforced); }
+.step-run  .mark { color: var(--signal); }
+.step-idle .mark,
+.step-idle .txt { color: var(--text-faint); }
+
+/* ----------------------------------------------------------- composer --- */
+
+.composer {
+  border-top: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+}
+.composer-box {
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-lg);
+  background: var(--veil);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.composer-box:focus-within { box-shadow: 0 0 0 3px var(--signal-soft); }
+.composer-box:focus-within { border-color: var(--signal); }
+.composer-input {
+  width: 100%;
+  min-height: 46px;
+  max-height: 180px;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  padding: var(--sp-3);
+  display: block;
+}
+.composer-input::placeholder { color: var(--text-faint); }
+.composer-input:focus { outline: none; }
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+/* execution target: Auto | this device | trusted devices | a named node.
+   Shared with Documents and Code — every surface starts a job the same way. */
+.targets {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.target {
+  font-size: var(--fs-label);
+  padding: 4px 10px;
+  color: var(--text-dim);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.target:last-child { border-right: 0; }
+.target:hover { color: var(--text); background: var(--veil-sunken); }
+.target[aria-pressed="true"] { color: var(--signal); background: var(--signal-soft); }
+/* An unpaired node stays visible and legible — it is information, not noise.
+   Recessed onto the sunken ground, struck through, and never colour-coded. */
+.target:disabled {
+  color: var(--text-faint);
+  background: var(--veil-sunken);
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.target:disabled:hover { background: var(--veil-sunken); color: var(--text-faint); }
+
+.composer-send { margin-left: auto; }
+
+@media (max-width: 760px) {
+  .thread { padding: var(--sp-4); }
+  .composer { padding: var(--sp-3) var(--sp-4); }
+}
+@media (prefers-reduced-motion: reduce) { .caret { visibility: visible; } }

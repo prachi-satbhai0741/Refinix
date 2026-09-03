@@ -1,0 +1,523 @@
+/* Refinix — shared application shell.
+ *
+ * Everything common to Chat, Documents, Code and Control Center lives here:
+ * the three-column frame, the surface nav, the inspector rail, and the state
+ * vocabulary. Surface files carry only what is unique to that surface.
+ *
+ * Load order is always: tokens.css, app.css, <surface>.css
+ *
+ * Vocabulary follows backend/contracts/v1.py exactly. Job states are the
+ * JobState literals, event rows are Event.data.kind values, approval cards
+ * carry an Approval.action, and evidence rows carry the enforced / observed /
+ * unavailable distinction from docs/security.md section 12. Nothing here
+ * invents a state the coordinator cannot emit.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  /* Three soft fields over the flat ground. Without these the glass has
+     nothing to refract and every panel reads as flat translucent grey. The
+     alphas are deliberately low — see the note in tokens.css. */
+  background:
+    radial-gradient(58% 48% at 16% -4%,  var(--atmo-1), transparent 70%),
+    radial-gradient(48% 44% at 96% 18%,  var(--atmo-2), transparent 72%),
+    radial-gradient(72% 58% at 46% 106%, var(--atmo-3), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+/* Uppercase micro-label. Used for every machine-side label in the UI. */
+.lbl {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ==================================================================== glass === */
+/* Applied to the frame and to containers, never to verbatim output or to a
+   document. A diff, a stdout pane, an artifact and the Proof Card stay opaque:
+   they are things you read literally, and refracted ground behind small
+   monospace text costs legibility for nothing.
+ *
+ * Two tiers on purpose. .glass carries the backdrop blur and belongs to
+ * top-level surfaces; .veil is fill only, for containers already sitting on a
+ * blurred parent. Blurring an already-blurred surface is expensive and shows
+ * almost nothing, and this app can have a dozen panels on screen at once. */
+
+.nav, .rail, .main-head,
+.composer, .gate, .panel, .dialog,
+.bubble, .pick, .side, .code-box {
+  background: var(--glass-fill), var(--glass-base);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-color: var(--glass-edge);
+}
+
+.rows, .pipe, .findings, .fileset,
+.tests, .terms, .checks,
+.cap-row, .confirm, .targets, .source, .plan-total > div {
+  background: var(--veil);
+  border-color: var(--glass-edge);
+}
+
+/* Panels lift off the ground; nested containers do not, or the page turns into
+   a pile of shadows. */
+.panel, .dialog, .gate, .pick, .side, .code-box {
+  box-shadow: var(--glass-hi), var(--glass-shadow);
+}
+.nav, .rail, .main-head, .composer, .bubble { box-shadow: var(--glass-hi); }
+
+/* Rows inside a veiled container carry no fill of their own — the container is
+   the surface, the rows are just ruled lines across it. */
+.rows > li, .pipe > li, .findings > li,
+.fileset > li, .tests > li, .terms > li { background: transparent; }
+
+/* ============================================================== app frame === */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--nav-w) 1fr var(--rail-w);
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------------ nav --- */
+
+.nav {
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.nav-brand {
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+/* Rokunin Sync symbol — stand-in until the real asset lands, see
+   assets/README.md. --brand is a product mark, not a state signal, so it is
+   kept as its own token even though it now resolves to silver. Give it a
+   colour here and nowhere else if the team wants the mark to stand out. */
+.nav-brand .mark { width: 18px; height: 18px; flex: none; color: var(--brand); }
+.nav-brand b {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.nav-brand span {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.surfaces {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.surface-link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 1px var(--sp-2);
+  padding: 7px var(--sp-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.surface-link:hover { color: var(--text); background: var(--veil); }
+/* The active marker is an inset shadow, not a border: a 2px left border on a
+   rounded box bows around the corner instead of reading as a straight bar. */
+.surface-link[aria-current="page"] {
+  color: var(--text);
+  background: var(--veil);
+  box-shadow: inset 2px 0 0 var(--signal);
+}
+.surface-link .k {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  margin-left: auto;
+}
+
+/* the nav's scrolling middle: threads, documents, repositories */
+.nav-list { flex: 1; overflow-y: auto; padding: var(--sp-3) 0; min-height: 0; }
+.nav-list-h { padding: 0 var(--sp-4) var(--sp-2); }
+.nav-item {
+  display: block;
+  width: calc(100% - var(--sp-4));
+  text-align: left;
+  margin: 1px var(--sp-2);
+  padding: 6px var(--sp-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-item:hover { color: var(--text); background: var(--veil); }
+.nav-item[aria-current="true"] {
+  color: var(--text);
+  background: var(--veil);
+  box-shadow: inset 2px 0 0 var(--line);
+}
+.nav-item small {
+  display: block;
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+.nav-foot {
+  border-top: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.node-line { display: flex; justify-content: space-between; gap: var(--sp-2); align-items: center; }
+.node-line b { font-family: var(--font-data); font-size: var(--fs-label); font-weight: 400; }
+
+/* ----------------------------------------------------------------- main --- */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+}
+.main-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.main-head h1 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.head-spacer { flex: 1; }
+
+/* the scrolling body of a surface */
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  min-height: 0;
+}
+
+/* a titled block inside a surface body */
+.block { margin-bottom: var(--sp-6); }
+.block:last-child { margin-bottom: 0; }
+.block-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  flex-wrap: wrap;
+}
+.block-h h2 { margin: 0; font-size: var(--fs-body); font-weight: 600; letter-spacing: .01em; }
+.block-h em { font-style: normal; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--text-faint); }
+
+/* Sample-content marker. Every surface is a design reference, and nothing on
+   it is a measurement — say so on the page rather than only in a doc. */
+.sample {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-pill);
+  padding: 2px 9px;
+}
+
+/* ============================================================ right rail === */
+
+.rail {
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rail-sec { padding: var(--sp-4); border-bottom: 1px solid var(--line); }
+.rail-sec > .lbl { display: block; margin-bottom: var(--sp-3); }
+
+/* lifecycle stepper — the JobState literals, in transition order */
+.life { list-style: none; margin: 0; padding: 0; }
+.life li {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: var(--sp-3);
+  align-items: start;
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  padding-bottom: var(--sp-2);
+  position: relative;
+}
+.life li::before {
+  content: "";
+  position: absolute;
+  left: 5px; top: 14px; bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+.life li:last-child::before { display: none; }
+.life .dot {
+  width: 9px; height: 9px;
+  margin-top: 4px;
+  border: 1px solid var(--st-observed);
+  border-radius: var(--radius-pill);
+  background: var(--veil-sunken);
+  z-index: 1;
+}
+.life .st-done .dot { background: var(--st-enforced); border-color: var(--st-enforced); }
+.life .st-now  .dot { background: var(--signal); border-color: var(--signal); }
+.life .st-now  { color: var(--signal); }
+.life .st-todo { color: var(--text-faint); }
+.life time { display: block; color: var(--text-faint); font-size: var(--fs-micro); }
+
+/* event log — Event.data.kind values */
+.events { list-style: none; margin: 0; padding: 0; }
+.events li {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: var(--sp-2);
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.events li:last-child { border-bottom: 0; }
+.events time { color: var(--text-faint); }
+.events .kind { color: var(--text); overflow-wrap: anywhere; }
+
+/* key/value readout — routing decisions, limits, counts */
+.kv { display: flex; flex-direction: column; gap: var(--sp-2); }
+.kv div { display: flex; justify-content: space-between; gap: var(--sp-3); align-items: baseline; }
+.kv dt { color: var(--text-dim); font-size: var(--fs-sm); }
+.kv dd {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================ state chips === */
+/* A chip states which kind of claim this is. Enforced and observed are not
+   synonyms and never share a colour; unavailable is grey by rule. */
+
+.chip {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.chip-enforced { color: var(--st-enforced); }
+.chip-observed { color: var(--st-observed); }
+.chip-unknown  { color: var(--st-unknown); border-style: dashed; }
+.chip-caution  { color: var(--st-caution); }
+.chip-fault    { color: var(--st-fault); }
+.chip-running  { color: var(--signal); }
+
+/* An unavailable fact is struck with the drawing hatch, so it can never be
+   misread as a healthy zero. */
+.unavailable {
+  background: repeating-linear-gradient(-45deg, transparent 0 5px, var(--line-soft) 5px 6px);
+  color: var(--st-unknown);
+}
+
+.proof-row { display: flex; justify-content: space-between; gap: var(--sp-2); align-items: center; padding: 3px 0; }
+.proof-row span { font-size: var(--fs-sm); color: var(--text-dim); }
+
+/* ================================================================ buttons === */
+
+.btn {
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 7px 15px;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius);
+  background: var(--veil);
+  color: var(--text);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.btn:hover { border-color: var(--text-dim); background: var(--veil-sunken); }
+.btn-primary { border-color: var(--st-enforced); color: var(--st-enforced); }
+.btn-primary:hover { background: var(--st-enforced); color: var(--text-invert); border-color: var(--st-enforced); }
+.btn-deny:hover { border-color: var(--st-fault); color: var(--st-fault); background: transparent; }
+.btn:disabled { color: var(--text-faint); border-color: var(--line-soft); cursor: not-allowed; }
+.btn:disabled:hover { background: var(--veil); border-color: var(--line-soft); }
+
+/* ========================================================== approval gate === */
+/* Emitted as an approval.required event. Its action is one of the
+   Approval.action literals; the digest is action_sha256. */
+
+.gate {
+  border: 1px solid var(--signal);
+  border-radius: var(--radius-xl);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: 72ch;
+}
+.gate-h { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.gate-h b { font-size: var(--fs-body); font-weight: 600; }
+.gate-h .lbl { color: var(--signal); }
+.gate-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 5px var(--sp-4);
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+}
+.gate-facts dt { color: var(--text-dim); }
+.gate-facts dd { margin: 0; overflow-wrap: anywhere; }
+.gate-actions { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.gate-expiry { margin-left: auto; }
+
+/* ======================================================= artifact document === */
+/* The one place the document treatment is allowed. An artifact is a document,
+   so it is drawn as one; in dark mode it becomes a cyanotype rather than
+   inverted paper. */
+
+/* Opaque and square, deliberately. An artifact is a document: paper in light,
+   cyanotype in dark. Glass would make it look like another panel. */
+.artifact {
+  background: var(--bp-surface);
+  border: 1px solid var(--bp-line);
+  border-radius: var(--radius-data);
+  color: var(--bp-ink);
+  font-family: var(--font-doc);
+  padding: var(--sp-3) var(--sp-4);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-2) var(--sp-4);
+  align-items: center;
+  max-width: 62ch;
+}
+.artifact-name { font-size: var(--fs-lg); font-weight: 600; line-height: 1.25; }
+.artifact-sub {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--bp-dim);
+  margin-top: 2px;
+}
+.artifact-open {
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border: 1px solid var(--bp-line);
+  border-radius: var(--radius-sm);
+  padding: 5px 11px;
+  color: var(--bp-ink);
+  transition: background var(--dur-fast) var(--ease);
+}
+.artifact-open:hover { background: var(--bp-void); }
+/* unsigned / uncertified draft carries the drawing hatch, never a colour */
+.artifact-draft {
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 5px, var(--bp-void) 5px 6px),
+    var(--bp-surface);
+}
+
+/* ================================================================== tables === */
+/* Dense readouts: jobs, devices, models, evidence. Every row that makes a
+   claim carries the layer or observer it came from. */
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.rows > li {
+  display: grid;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: 9px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.rows > li:last-child { border-bottom: 0; }
+.rows .k { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rows .k b { font-weight: 500; font-size: var(--fs-sm); }
+.rows .src { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--text-faint); }
+.rows .n {
+  font-family: var(--font-data);
+  font-size: var(--fs-lg);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rows .unk .n { color: var(--st-unknown); }
+.rows .unk .k b { color: var(--text-dim); }
+
+/* ---------------------------------------------------------- responsive --- */
+
+@media (max-width: 1180px) {
+  .app { grid-template-columns: var(--nav-w) 1fr; }
+  .rail { display: none; }
+}
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; }
+  .nav { display: none; }
+  .body { padding: var(--sp-4); }
+}
+
+/* A theme swap must not animate. Transitioning colour across a token change
+   reads as lag, and on a throttled tab the transition may not tick at all,
+   leaving the previous theme's colour on screen. The Control Center toggle
+   sets this attribute for one frame around the swap. */
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after { transition: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

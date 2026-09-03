@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat — Refinix</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="chat.css">
+</head>
+<body>
+
+<!--
+  Refinix Chat surface — static design reference.
+
+  Every state name here comes from backend/contracts/v1.py: JobState for the
+  lifecycle rail, Event.data.kind for the log, Approval.action for the gate.
+  Sample content only; nothing on this page is a measurement.
+-->
+
+<div class="app">
+
+  <!-- ============================================================== nav -->
+  <nav class="nav" aria-label="Surfaces and conversations">
+    <div class="nav-brand">
+      <!-- Rokunin Sync symbol — stand-in, see assets/README.md -->
+      <svg class="mark" viewBox="0 0 120 120" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="9">
+          <path d="M107,67 A48,48 0 0 1 64,108"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(120 60 60)"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(240 60 60)"/>
+        </g>
+        <g fill="currentColor">
+          <path d="M47,111 L66,119 L63,96 Z"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(120 60 60)"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(240 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(120 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(240 60 60)"/>
+        </g>
+      </svg>
+      <b>Refinix</b>
+      <span>v0.1-alpha</span>
+    </div>
+
+    <div class="surfaces">
+      <a class="surface-link" href="chat.html" aria-current="page">Chat <span class="k">1</span></a>
+      <a class="surface-link" href="documents.html">Documents <span class="k">2</span></a>
+      <a class="surface-link" href="code.html">Code <span class="k">3</span></a>
+      <a class="surface-link" href="control.html">Control Center <span class="k">4</span></a>
+    </div>
+
+    <div class="nav-list">
+      <p class="lbl nav-list-h">Conversations</p>
+      <button class="nav-item" type="button" aria-current="true">Inspection report SR-4471</button>
+      <button class="nav-item" type="button">Pump seal replacement note</button>
+      <button class="nav-item" type="button">Vendor quote comparison</button>
+      <button class="nav-item" type="button">SOP-114 clause lookup</button>
+    </div>
+
+    <div class="nav-foot">
+      <div class="node-line">
+        <span class="lbl">This device</span>
+        <b>node-01</b>
+      </div>
+      <div class="node-line">
+        <span class="lbl">Paired</span>
+        <b>1 trusted</b>
+      </div>
+      <div class="node-line">
+        <span class="lbl">Egress</span>
+        <span class="chip chip-enforced">Enforced</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- =========================================================== thread -->
+  <main class="main">
+    <header class="main-head">
+      <h1>Inspection report SR-4471</h1>
+      <span class="chip chip-running">Running</span>
+      <div class="head-spacer"></div>
+      <span class="lbl">Job 4c19f8</span>
+    </header>
+
+    <div class="thread">
+
+      <!-- user turn -->
+      <article class="turn turn-user">
+        <div class="bubble">
+          Read the scanned inspection report in <code>/intake/SR-4471.pdf</code> and draft
+          an approval note against SOP-114.
+        </div>
+        <div class="turn-meta">
+          <span class="lbl">14:21:04</span>
+          <span class="lbl">3 attachments</span>
+        </div>
+      </article>
+
+      <!-- agent turn: plan + steps -->
+      <article class="turn turn-agent">
+        <div class="prose">
+          <p>
+            Four steps. The report is a scan, so the extraction pass needs the vision
+            model — that is resident on <b>node-02</b>, so I am routing step 1 there and
+            keeping the rest on this device.
+          </p>
+        </div>
+
+        <ol class="plan">
+          <li class="step-done">
+            <span class="mark">[&times;]</span>
+            <span class="txt">Extracted 14 pages, mapped each finding to its page number</span>
+            <span class="cap">document.extract</span>
+          </li>
+          <li class="step-done">
+            <span class="mark">[&times;]</span>
+            <span class="txt">Retrieved SOP-114 clauses 4.2 and 9.1 from the local index</span>
+            <span class="cap">knowledge.retrieve</span>
+          </li>
+          <li class="step-run">
+            <span class="mark">[&gt;]</span>
+            <span class="txt">Drafting the approval note with citations to pages 6, 9 and 11</span>
+            <span class="cap">document.generate</span>
+          </li>
+          <li class="step-idle">
+            <span class="mark">[&nbsp;]</span>
+            <span class="txt">Validate the document, then ask you to approve the write</span>
+            <span class="cap">docx validator</span>
+          </li>
+        </ol>
+
+        <div class="prose" style="margin-top: var(--sp-4)">
+          <p>
+            Six findings, two of which exceed the clause 4.2 threshold and need sign-off.
+            Draft so far<span class="caret" aria-hidden="true"></span>
+          </p>
+        </div>
+
+        <!-- artifact.created — Blueprint treatment, hatched while unsigned -->
+        <div class="artifact artifact-draft">
+          <div>
+            <div class="artifact-name">Approval note — SR-4471</div>
+            <div class="artifact-sub">docx &middot; 41 KB &middot; draft, unsigned &middot; not yet validated</div>
+          </div>
+          <button class="artifact-open" type="button">Open</button>
+        </div>
+      </article>
+
+      <!-- approval.required — the gate -->
+      <article class="turn turn-agent">
+        <section class="gate" aria-labelledby="gate-h">
+          <div class="gate-h">
+            <span class="lbl">Approval required</span>
+            <b id="gate-h">Write the approval note into the workspace</b>
+          </div>
+
+          <dl class="gate-facts">
+            <dt>action</dt>       <dd>canonical.write</dd>
+            <dt>target</dt>       <dd>workspace/notes/SR-4471-approval.docx</dd>
+            <dt>digest</dt>       <dd>sha256:9b5c2e17&hellip;4f8a6d90</dd>
+            <dt>requested by</dt> <dd>coordinator &middot; node-01</dd>
+          </dl>
+
+          <div class="gate-actions">
+            <button class="btn btn-primary" type="button">Approve write</button>
+            <button class="btn btn-deny" type="button">Deny</button>
+            <span class="lbl gate-expiry">Expires 14:56:11</span>
+          </div>
+        </section>
+      </article>
+
+    </div>
+
+    <!-- ======================================================= composer -->
+    <form class="composer" onsubmit="return false">
+      <div class="composer-box">
+        <label class="lbl" for="ask" hidden>Message</label>
+        <textarea class="composer-input" id="ask" rows="2"
+          placeholder="Ask, or describe the task…"></textarea>
+
+        <div class="composer-bar">
+          <span class="lbl">Run on</span>
+          <div class="targets" role="group" aria-label="Execution target">
+            <button class="target" type="button" aria-pressed="true">Auto</button>
+            <button class="target" type="button" aria-pressed="false">This device</button>
+            <button class="target" type="button" aria-pressed="false">Trusted devices</button>
+            <button class="target" type="button" aria-pressed="false">node-02</button>
+            <button class="target" type="button" disabled
+              title="Not paired. Pair it from the Control Center.">node-03</button>
+          </div>
+          <button class="btn composer-send" type="submit">Send</button>
+        </div>
+      </div>
+    </form>
+  </main>
+
+  <!-- ====================================================== inspector -->
+  <aside class="rail" aria-label="Job inspector">
+
+    <section class="rail-sec">
+      <span class="lbl">Lifecycle</span>
+      <ol class="life">
+        <li class="st-done"><span class="dot"></span><span>created<time>14:21:04</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>context_preparing<time>14:21:05</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>queued<time>14:21:07</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>routing<time>14:21:09</time></span></li>
+        <li class="st-now"><span class="dot"></span><span>running<time>14:22:31</time></span></li>
+        <li class="st-todo"><span class="dot"></span><span>validating</span></li>
+        <li class="st-todo"><span class="dot"></span><span>awaiting_approval</span></li>
+        <li class="st-todo"><span class="dot"></span><span>completed</span></li>
+      </ol>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Routing decision</span>
+      <dl class="kv">
+        <div><dt>Requested</dt><dd>Auto</dd></div>
+        <div><dt>Selected</dt><dd>node-02</dd></div>
+        <div><dt>Reason</dt><dd>vision model resident</dd></div>
+        <div><dt>Overridable</dt><dd>yes</dd></div>
+      </dl>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Events</span>
+      <ul class="events">
+        <li><time>14:21:04</time><span class="kind">job.state</span></li>
+        <li><time>14:21:09</time><span class="kind">attempt.state</span></li>
+        <li><time>14:22:31</time><span class="kind">output.delta</span></li>
+        <li><time>14:24:52</time><span class="kind">artifact.created</span></li>
+        <li><time>14:26:11</time><span class="kind">proof.updated</span></li>
+        <li><time>14:26:11</time><span class="kind">approval.required</span></li>
+      </ul>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Sovereignty evidence</span>
+      <div class="proof-row">
+        <span>Public egress policy</span>
+        <span class="chip chip-enforced">Enforced</span>
+      </div>
+      <div class="proof-row">
+        <span>External AI calls observed</span>
+        <span class="chip chip-observed">0 observed</span>
+      </div>
+      <div class="proof-row">
+        <span>Trusted LAN connections</span>
+        <span class="chip chip-observed">2 observed</span>
+      </div>
+      <div class="proof-row unavailable">
+        <span>Kernel packet capture</span>
+        <span class="chip chip-unknown">Unavailable</span>
+      </div>
+      <p class="lbl" style="margin: var(--sp-3) 0 0">
+        Observer: coordinator &middot; window 30 min. Enforcer: host firewall.
+      </p>
+    </section>
+
+  </aside>
+</div>
+
+<script>
+  // Design-reference interactions only. The shipped surface drives all of this
+  // from the coordinator event stream; nothing here fabricates a state.
+  document.querySelectorAll('.targets .target').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (btn.disabled) return;
+      document.querySelectorAll('.targets .target').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

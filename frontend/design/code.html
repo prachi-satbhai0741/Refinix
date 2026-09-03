@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code — Refinix</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="code.css">
+</head>
+<body>
+
+<!--
+  Refinix Code surface — static design reference.
+
+  Draws repository_request_to_validated_patch (docs/workflows.md section 6).
+  State names come from backend/contracts/v1.py. Sample content only; nothing
+  on this page is a measurement.
+-->
+
+<div class="app">
+
+  <!-- ============================================================== nav -->
+  <nav class="nav" aria-label="Surfaces and repositories">
+    <div class="nav-brand">
+      <svg class="mark" viewBox="0 0 120 120" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="9">
+          <path d="M107,67 A48,48 0 0 1 64,108"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(120 60 60)"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(240 60 60)"/>
+        </g>
+        <g fill="currentColor">
+          <path d="M47,111 L66,119 L63,96 Z"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(120 60 60)"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(240 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(120 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(240 60 60)"/>
+        </g>
+      </svg>
+      <b>Refinix</b>
+      <span>v0.1-alpha</span>
+    </div>
+
+    <div class="surfaces">
+      <a class="surface-link" href="chat.html">Chat <span class="k">1</span></a>
+      <a class="surface-link" href="documents.html">Documents <span class="k">2</span></a>
+      <a class="surface-link" href="code.html" aria-current="page">Code <span class="k">3</span></a>
+      <a class="surface-link" href="control.html">Control Center <span class="k">4</span></a>
+    </div>
+
+    <div class="nav-list">
+      <p class="lbl nav-list-h">Approved repositories</p>
+      <button class="nav-item" type="button" aria-current="true">
+        plant-tools <small>selected &middot; 3 files in scope</small>
+      </button>
+      <button class="nav-item" type="button">
+        tag-exporter <small>approved</small>
+      </button>
+      <button class="nav-item" type="button">
+        shift-report-cli <small>approved</small>
+      </button>
+      <button class="nav-item" type="button">
+        inspection-parsers <small>approved</small>
+      </button>
+    </div>
+
+    <div class="nav-foot">
+      <div class="node-line"><span class="lbl">Sandbox net</span><span class="chip chip-enforced">Disabled</span></div>
+      <div class="node-line"><span class="lbl">Writes</span><b>temp only</b></div>
+      <div class="node-line"><span class="lbl">Egress</span><span class="chip chip-enforced">Enforced</span></div>
+    </div>
+  </nav>
+
+  <!-- ============================================================= main -->
+  <main class="main">
+    <header class="main-head">
+      <h1>plant-tools &mdash; raise on an empty tag file</h1>
+      <span class="chip chip-caution">Awaiting approval</span>
+      <div class="head-spacer"></div>
+      <span class="sample">Sample data</span>
+      <span class="lbl">Job b83e40</span>
+    </header>
+
+    <div class="body">
+
+      <!-- 1. scope — the whole repository is not transferred -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Files in scope</h2>
+          <em>the minimum relevant set &mdash; the repository is not transferred</em>
+        </div>
+        <ul class="fileset">
+          <li><span class="path">tools/tag_export.py</span>
+              <span class="hash">sha256:41ac&hellip;9d02</span>
+              <span class="chip chip-observed">Copied</span></li>
+          <li><span class="path">tools/errors.py</span>
+              <span class="hash">sha256:7b18&hellip;0c55</span>
+              <span class="chip chip-observed">Copied</span></li>
+          <li><span class="path">tests/test_tag_export.py</span>
+              <span class="hash">sha256:e390&hellip;1af7</span>
+              <span class="chip chip-observed">Copied</span></li>
+        </ul>
+      </section>
+
+      <!-- 2. the patch, prepared inside the temporary workspace -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Proposed patch</h2>
+          <em>prepared in /tmp/refinix-b83e40 &middot; never written to the repository</em>
+        </div>
+<pre class="diff"><span class="ctx">--- a/tools/tag_export.py</span>
+<span class="ctx">+++ b/tools/tag_export.py</span>
+<span class="hunk">@@ -14,9 +14,12 @@</span>
+<span class="ctx"> from .errors import EmptyTagFile</span>
+<span class="ctx"> </span>
+<span class="ctx"> def load(path):</span>
+<span class="del">-    rows = read_tags(path)</span>
+<span class="add">+    rows = read_tags(path)</span>
+<span class="add">+    if not rows:</span>
+<span class="add">+        raise EmptyTagFile(path)</span>
+<span class="ctx">     return normalise(rows)</span>
+<span class="hunk">@@ -3,6 +3,11 @@</span>
+<span class="ctx"> tests/test_tag_export.py</span>
+<span class="add">+def test_empty_file_raises():</span>
+<span class="add">+    with pytest.raises(EmptyTagFile):</span>
+<span class="add">+        load(EMPTY_FIXTURE)</span>
+</pre>
+      </section>
+
+      <!-- 3. the sandbox run -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Validation run</h2>
+          <em>networking disabled &middot; bounded CPU, memory, runtime and filesystem</em>
+        </div>
+        <div class="run">
+          <div class="run-h">
+            <span class="lbl">Command</span>
+            <code>pytest -q tests/test_tag_export.py</code>
+            <div class="head-spacer"></div>
+            <span class="lbl">exit 0</span>
+            <span class="chip chip-enforced">Passed</span>
+          </div>
+          <div class="run-split">
+            <div>
+              <h4>stdout</h4>
+              <pre class="run-out">.......................
+<span class="ok">24 passed</span> in 1.83s</pre>
+            </div>
+            <div>
+              <h4>stderr</h4>
+              <pre class="run-out"><span class="run-empty">(empty)</span></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. coordinator checks before the write is even offered -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Coordinator checks</h2>
+          <em>run on the returned patch before any approval is offered</em>
+        </div>
+        <ul class="rows">
+          <li style="grid-template-columns:1fr auto">
+            <span class="k"><b>Target paths inside the selected scope</b>
+              <span class="src">2 files &middot; no path outside the approved set</span></span>
+            <span class="chip chip-enforced">Enforced</span></li>
+          <li style="grid-template-columns:1fr auto">
+            <span class="k"><b>Patch applies cleanly to the canonical tree</b>
+              <span class="src">3-way apply &middot; no conflict</span></span>
+            <span class="chip chip-enforced">Enforced</span></li>
+          <li style="grid-template-columns:1fr auto">
+            <span class="k"><b>No symlink or traversal escape</b>
+              <span class="src">worker workspace guard</span></span>
+            <span class="chip chip-enforced">Enforced</span></li>
+          <li style="grid-template-columns:1fr auto">
+            <span class="k"><b>Artifact hashes returned by the worker</b>
+              <span class="src">patch sha256:2c41&hellip;8fb0</span></span>
+            <span class="chip chip-observed">Recorded</span></li>
+          <li class="unk" style="grid-template-columns:1fr auto">
+            <span class="k"><b>Repository test suite beyond the selected files</b>
+              <span class="src">not run — outside the approved scope for this job</span></span>
+            <span class="chip chip-unknown">Unavailable</span></li>
+        </ul>
+      </section>
+
+      <!-- 5. the gate -->
+      <section class="block">
+        <div class="gate">
+          <div class="gate-h">
+            <span class="lbl">Approval required</span>
+            <b>Apply the patch to the canonical repository</b>
+          </div>
+          <dl class="gate-facts">
+            <dt>action</dt>       <dd>canonical.write</dd>
+            <dt>target</dt>       <dd>plant-tools @ main &middot; 2 files</dd>
+            <dt>digest</dt>       <dd>sha256:2c41f7a9&hellip;58e08fb0</dd>
+            <dt>validated by</dt> <dd>node-03 &middot; sandbox, network disabled</dd>
+            <dt>writes</dt>       <dd>exactly once, by the coordinator</dd>
+          </dl>
+          <div class="gate-actions">
+            <button class="btn btn-primary" type="button">Approve write</button>
+            <button class="btn btn-deny" type="button">Deny</button>
+            <span class="lbl gate-expiry">Expires 15:21:38</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ============================================================= rail -->
+  <aside class="rail" aria-label="Job inspector">
+    <section class="rail-sec">
+      <span class="lbl">Lifecycle</span>
+      <ol class="life">
+        <li class="st-done"><span class="dot"></span><span>created<time>15:06:02</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>context_preparing<time>15:06:05</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>queued<time>15:06:09</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>routing<time>15:06:11</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>running<time>15:06:44</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>validating<time>15:08:20</time></span></li>
+        <li class="st-now"><span class="dot"></span><span>awaiting_approval<time>15:08:38</time></span></li>
+        <li class="st-todo"><span class="dot"></span><span>completed</span></li>
+      </ol>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Sandbox</span>
+      <dl class="kv">
+        <div><dt>Network</dt><dd>disabled</dd></div>
+        <div><dt>Workspace</dt><dd>/tmp/refinix-b83e40</dd></div>
+        <div><dt>Writes</dt><dd>temp only</dd></div>
+        <div><dt>CPU limit</dt><dd>2 cores</dd></div>
+        <div><dt>Memory limit</dt><dd>2 GiB</dd></div>
+        <div><dt>Runtime limit</dt><dd>120 s</dd></div>
+        <div><dt>Used</dt><dd>1.83 s</dd></div>
+      </dl>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Routing decision</span>
+      <dl class="kv">
+        <div><dt>Requested</dt><dd>Auto</dd></div>
+        <div><dt>Selected</dt><dd>node-03</dd></div>
+        <div><dt>Reason</dt><dd>sandbox capable</dd></div>
+        <div><dt>Overridable</dt><dd>yes</dd></div>
+      </dl>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Events</span>
+      <ul class="events">
+        <li><time>15:06:02</time><span class="kind">job.state</span></li>
+        <li><time>15:06:11</time><span class="kind">attempt.state</span></li>
+        <li><time>15:06:44</time><span class="kind">output.delta</span></li>
+        <li><time>15:08:20</time><span class="kind">artifact.created</span></li>
+        <li><time>15:08:38</time><span class="kind">approval.required</span></li>
+      </ul>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Sovereignty evidence</span>
+      <div class="proof-row"><span>Sandbox network</span><span class="chip chip-enforced">Disabled</span></div>
+      <div class="proof-row"><span>Public egress policy</span><span class="chip chip-enforced">Enforced</span></div>
+      <div class="proof-row"><span>External AI calls</span><span class="chip chip-observed">0 observed</span></div>
+      <div class="proof-row unavailable"><span>Kernel packet capture</span><span class="chip chip-unknown">Unavailable</span></div>
+    </section>
+  </aside>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,109 @@
+/* Refinix — Code surface.
+ * Load after tokens.css and app.css.
+ *
+ * Draws repository_request_to_validated_patch (docs/workflows.md section 6).
+ * The two facts this surface exists to make unmissable: the whole repository
+ * was not transferred, and validation ran with networking disabled inside a
+ * temporary workspace. Both are stated on screen, not implied.
+ */
+
+/* ------------------------------------------------------- selected files --- */
+
+.fileset {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.fileset > li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: 8px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+}
+.fileset > li:last-child { border-bottom: 0; }
+.fileset .hash { color: var(--text-faint); font-size: var(--fs-micro); }
+.fileset .path { overflow-wrap: anywhere; }
+
+/* ------------------------------------------------------------- the diff --- */
+
+/* A diff is a readout, so it keeps its square instrument face AND its opaque
+   ground. See the notes in tokens.css and app.css — both are deliberate:
+   refracted atmosphere behind 11px monospace costs legibility for nothing. */
+.diff {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  background: var(--surface);
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  line-height: 1.75;
+  overflow-x: auto;
+  padding: var(--sp-3);
+}
+.diff .add { color: var(--st-enforced); }
+.diff .del { color: var(--st-fault); }
+.diff .ctx { color: var(--text-faint); }
+.diff .hunk { color: var(--signal); }
+
+/* ------------------------------------------------------------ sandbox --- */
+/* The run record: command, exit status, stdout and stderr all come back from
+   the worker. An empty stderr is shown as empty rather than hidden, so the
+   absence is visible. */
+
+.run {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.run-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 8px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--veil-sunken);
+  flex-wrap: wrap;
+}
+.run-h code {
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.run-out {
+  margin: 0;
+  padding: var(--sp-3);
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  line-height: 1.7;
+  color: var(--text-2, var(--text-dim));
+  overflow-x: auto;
+  max-height: 210px;
+  overflow-y: auto;
+}
+.run-out .ok   { color: var(--st-enforced); }
+.run-out .bad  { color: var(--st-fault); }
+.run-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line-soft); }
+.run-split > div { background: var(--surface); min-width: 0; }
+.run-split h4 {
+  margin: 0;
+  padding: 6px var(--sp-3);
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--line);
+  font-weight: 400;
+}
+.run-empty { color: var(--text-faint); font-style: normal; }
+
+@media (max-width: 900px) { .run-split { grid-template-columns: 1fr; } }
