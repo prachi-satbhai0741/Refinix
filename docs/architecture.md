@@ -58,9 +58,9 @@ Pairing does not copy, merge, replace, or promote a local workspace. Coordinator
 transfer is a separate P2 feature because it requires explicit state migration,
 conflict handling, and rollback.
 
-For the alpha, one authorised Ubuntu machine runs the single-node K3s
-cluster. Prachi's device is the current candidate; confirm access and readiness
-at the [human checkpoints](../tasks.md#numbered-execution-tasks).
+For the alpha, one authorised Ubuntu machine — the **Ubuntu worker** in the
+first configuration — runs the single-node K3s cluster. Confirm access and
+readiness at the [human checkpoints](../tasks.md#numbered-execution-tasks).
 This device placement does not assign code ownership. Docker builds the worker
 and sandbox images; K3s runs those OCI images through its CRI-compatible
 container runtime. The team does not build a six-laptop Kubernetes cluster
@@ -384,11 +384,11 @@ The alpha baseline minimises prototype risk:
 | Local service and worker API | Python with FastAPI | Alpha decision |
 | One-way job streaming | Server-Sent Events | Alpha decision |
 | Coordinator state | SQLite | Alpha decision |
-| Container image build | Docker with pinned base-image digest | Alpha decision |
-| Kubernetes distribution | Single-node K3s on the Ubuntu host | Alpha decision; runtime proof required |
+| Container image build | Docker from pinned base `python:3.13-slim-bookworm` | OD-08 resolved; built worker digest follows C04 |
+| Kubernetes distribution | Single-node K3s on the Ubuntu worker, pinned to `v1.36.4+k3s1` | OD-08 resolved; runtime proof required |
 | Kubernetes workloads | Deployments for services; short-lived Jobs for code validation | Alpha decision |
-| Shared ephemeral coordination | Redis 7.2.x Streams and expiring keys | Alpha decision; exact image digest required |
-| Runtime | One existing local runtime first | Decision required |
+| Shared ephemeral coordination | Redis Streams and expiring keys on pinned `redis:7.2.16` | OD-08 resolved; digest recorded below |
+| Runtime | Ollama for the first validation path; `llama-server` retained only as the measured comparison | OD-08-adjacent; OD-03 resolved pending the latency measurement |
 | Retrieval | SQLite full-text baseline; semantic index only when proven necessary | Candidate |
 | Code isolation | Restricted Kubernetes Job Pod with default-deny egress | Platform proof required |
 | Alpha UI | Local HTML/CSS/JavaScript served by the coordinator; desktop wrapper deferred | Alpha decision |
@@ -398,11 +398,49 @@ Do not add Helm, an operator, service mesh, Redis Cluster, another event
 platform, vector database, generic agent framework, plugin framework, or a
 second runtime adapter before a measured end-to-end path proves the need.
 
-Redis 7.2.x is selected for the alpha because it retains the BSD-3-Clause
-licence; AF-002 must choose the latest supported 7.2 patch, review its current
-security notices, and pin the container digest.
 K3s uses a CRI-compatible runtime rather than the removed Kubernetes Docker
 shim, while still running the OCI images built with Docker.
+
+### 8.1 OD-08 — resolved infrastructure pins
+
+Retrieved from upstream on **2026-09-03** for the **Ubuntu worker**
+(`linux/amd64`). Every digest below was read from the upstream registry or
+release API, not copied from a summary. Nothing here has been pulled, deployed,
+or run: these are *pins to use*, not observed runtime evidence.
+
+| Component | Pin | Digest | Licence | Provenance |
+|---|---|---|---|---|
+| K3s | `v1.36.4+k3s1` (Kubernetes 1.36, released 2026-08-27) | — (installer release, not an image) | Apache-2.0 | `stable` channel at [`update.k3s.io/v1-release/channels`](https://update.k3s.io/v1-release/channels) |
+| Redis | `redis:7.2.16` | index `sha256:74566c6910d13ae61e7ce73ebd3127438a1fe805b309b097c323142719ec8a5b`<br>`linux/amd64` `sha256:e17e3a1993da428251cbd88dbdb3de8c8d4007f840d7350eb17a2d8695fa705f` | BSD-3-Clause | Docker Hub `library/redis`; version confirmed against `src/version.h` on the upstream `7.2` branch (`REDIS_VERSION "7.2.16"`) |
+| Worker base image | `python:3.13-slim-bookworm` | index `sha256:ed86c82274b3c69b52fb5820f358f0bd7df0b603332063cb5c6e32bd220c3e6e`<br>`linux/amd64` `sha256:2f2e5a876c71a6757f55ec57f2add0225ddaf01c802a33fcc29073943f94d907` | PSF (Python) over Debian 12 packages | Docker Hub `library/python` |
+| Worker image | **not pinned yet** | Produced by the C04 build | — | A worker digest invented before that build would be fiction |
+
+Compatibility notes:
+
+- **7.2.16 is the newest 7.2 patch**, and 7.2 is the last Redis line under
+  BSD-3-Clause; 7.4 moved to RSALv2/SSPLv1. Staying on 7.2.x is a licence
+  decision, so the pin must not drift upward without a licence review.
+- The floating `redis:7.2` and `redis:7.2-bookworm` tags currently resolve to
+  the same index digest as `7.2.16`. **Deploy the digest, not the tag.**
+- The `macOS coordinator` has `kubectl` **v1.36.1**, the same minor as K3s
+  v1.36.x, so it is inside the supported one-minor skew. The Ubuntu worker's
+  own `kubectl` version is still to be reported at the C02 checkpoint.
+- Redis and the worker base image share Debian 12 (bookworm), which keeps one
+  libc and one CA bundle across the cluster workloads.
+
+**Ports are already fixed by the C01 contract, not reopened here:**
+`WORKER_PORT = 8443` and `WORKER_NODE_PORT = 30443` in
+[`backend/contracts/v1.py`](../backend/contracts/v1.py), exported through
+`export_contract()["transport"]`. C02 does not renegotiate them. What is
+outstanding is *availability and enforcement*: C02 records a successful TCP
+listener snapshot on the Ubuntu worker, retaining failures as unavailable;
+C05 verifies the actual Service ports and forwarding rules with Redis
+unreachable from the LAN. An empty listener snapshot alone proves neither
+port availability nor deployment enforcement.
+
+**Not resolved here:** the sandbox image and the built worker digest. Cluster
+provisioning and deployment remain C05 work; C04 produces the worker image.
+This section pins inputs only.
 
 ## 9. Implementation references
 

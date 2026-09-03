@@ -455,3 +455,48 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260903-005](#up-20260903-005)
 - supersedes: none
 - linked_changes: [AC-20260903-006](agentchangelog.md#ac-20260903-006)
+<a id="up-20260903-007"></a>
+## UP-20260903-007 — Reconcile device evidence and prepare the C02 human checkpoint
+- date: 2026-09-03
+- status: in-progress
+- scope: documentation, execution, hardware-inventory
+- tags: c01, devicespecifications, tasks, human-checkpoint
+- aliases: reconcile device evidence, prepare setup handoff, update inventory
+- paths: docs/devicespecifications.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Update shared documentation using supplied hardware observations and deliver one consolidated human handoff containing only missing prerequisites, without starting runtime implementation.
+- constraints: Stay within C01 evidence reconciliation. Do not start runtime implementation or execute any code. Do not fetch, pull or change Git.
+- acceptance: Shared inventory reflects supplied evidence without overclaiming. The board records the real stage and remaining checkpoint. One concise, named human handoff is ready to relay.
+- verification_authorization: No execution allowed.
+- follow_up_to: [UP-20260903-006](#up-20260903-006)
+- supersedes: none
+- linked_changes: [AC-20260903-007](agentchangelog.md#ac-20260903-007)
+
+<a id="up-20260903-008"></a>
+## UP-20260903-008 — Close C01 documentation and carry C02 to its first checkpoint
+- date: 2026-09-03
+- status: in-progress
+- scope: documentation, execution, runtime-decision, model-decision, infrastructure-pins
+- tags: c01, c02, od-03, od-05, od-06, od-08, device-based-checkpoints
+- aliases: close c01 docs, device based checkpoints, resolve od decisions, c02 setup package
+- paths: tasks.md, AGENTS.md, agent-memory/README.md, docs/devicespecifications.md, docs/architecture.md, docs/model-catalog.md, docs/evaluation.md, docs/security.md, docs/prd.md, scripts/od03_runtime_comparison.py
+- summary: Finish the C01 documentation closeout by replacing personal assignments with Claude/Codex roles and device-based human checkpoints, then resolve C02's OD-03/OD-05/OD-06/OD-08 decisions with recorded upstream sources and prepare the setup package for the macOS coordinator and Ubuntu worker.
+- constraints: Use only Claude and Codex as agent roles; identify humans by device. Keep optional machines and their incomplete GPU details off the first configuration's critical path. Preserve historical evidence and Git identities. Keep AF-001 a draft. No installs, model downloads, service starts, deployments or Git/GitHub writes. Preserve existing uncommitted changes.
+- acceptance: Active execution instructions are device-based and consistent; the four C02 decisions are recorded with provenance; the Ubuntu worker's read-only evidence commands are ready for Codex review; every claim distinguishes measured from estimated.
+- verification_authorization: Read-only local inspection on the macOS coordinator; bounded local inference against the already-running loopback Ollama server.
+- follow_up_to: [UP-20260903-007](#up-20260903-007)
+- supersedes: none
+- linked_changes: [AC-20260903-008](agentchangelog.md#ac-20260903-008)
+
+<a id="up-20260903-009"></a>
+## UP-20260903-009 — Repair the four remaining C02 review findings
+- date: 2026-09-03
+- status: in-progress
+- tags: c02, runtime-comparison, stream-parser, inventory
+- aliases: reasoning channel, missing generation timing, failed port probe, stale mac inventory
+- paths: scripts/od03_runtime_comparison.py, scripts/test_od03_parser.py, docs/devicespecifications.md, docs/evaluation.md, docs/architecture.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: The requester authorised Codex to fix the four remaining C02 parser and inventory findings directly.
+- constraints: Repository edits only; preserve existing changes and historical ledger entries; no Git writes, service starts, installs, downloads or inference runs.
+- acceptance: Count separate reasoning in TTFT and suppression evidence, reject invalid generation timing, preserve socket-probe failures, and distinguish initial Mac inventory from the later measured response.
+- verification_authorization: Prepare focused offline checks; test execution requires separate permission under AGENTS.md and CODEX.md.
+- follow_up_to: [UP-20260903-008](#up-20260903-008)
+- linked_changes: [AC-20260903-009](agentchangelog.md#ac-20260903-009)

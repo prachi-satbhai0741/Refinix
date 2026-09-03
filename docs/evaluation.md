@@ -46,7 +46,7 @@ what remains unverified and the next named action using the
   contracts.
 - Pin K3s, Redis 7.2.x, base-image, worker-image, runtime, and model evidence.
 - Start one single-node K3s cluster on the authorised Ubuntu host confirmed at
-  the human checkpoint; Prachi's device is the current candidate.
+  the human checkpoint — the **Ubuntu worker** in the first configuration.
 - Deploy Redis behind ClusterIP and the Docker-built worker behind a Kubernetes
   Service.
 - Complete one real model response from a Ready worker Pod.
@@ -201,6 +201,96 @@ Measurement rules:
 - do not claim energy, thermal, or cost improvement without comparable evidence;
 - report a slower distributed result if that is what occurred.
 
+## 5.1 OD-03 runtime comparison
+
+The concern behind OD-03 is that Ollama wraps `llama.cpp`, so it can only be
+slower than calling `llama.cpp` directly. This section settles *how much* on one
+device before a second adapter is even considered.
+
+**Method** — [`scripts/od03_runtime_comparison.py`](../scripts/od03_runtime_comparison.py),
+standard library only, no benchmark framework. It never starts a service: if the
+target server is not already listening it exits with instructions.
+
+Held identical across both runtimes:
+
+| Held constant | Value |
+|---|---|
+| Model file | the same GGUF — the Ollama blob `sha256:81fb60c7…` is a real GGUF, so `llama-server -m <blob path>` loads identical weights with no second download |
+| Request shape | a **chat** request on both sides — Ollama `/api/chat`, llama-server `/v1/chat/completions` — so the model's own chat template is applied to both. A raw completion against a templated chat is not a comparison. |
+| Prompt | one fixed user message, compiled into the script |
+| Context | `num_ctx` / `-c` 4096 |
+| Output limit | `num_predict` / `max_tokens` 128 |
+| Sampling | `temperature` 0, `seed` 42 — the run must be reproducible |
+| GPU allocation | all layers offloaded; `-ngl 999` on `llama-server` |
+| Thinking | off on both — Ollama `think: false`, llama-server `chat_template_kwargs.enable_thinking: false`. Separate reasoning output or a leaked thinking marker flags the run as non-comparable; TTFT includes the first token from either channel. |
+| Prompt cache | each runtime's **default**, untouched. Disabling it on one side only would make the warm runs measure different work. |
+
+The exact request body sent to each runtime is echoed into the result JSON, so
+a reviewer can check what was held constant rather than trust this table.
+
+**Failures cannot become evidence.** A malformed line, a streaming error object,
+a missing terminal record or a missing metric aborts the run with a non-zero
+exit; no partial result reaches a median.
+[`scripts/test_od03_parser.py`](../scripts/test_od03_parser.py) exercises those
+paths offline, including separate reasoning and absent or invalid generation
+timing — no server, no model.
+
+**Cold and warm are separated.** `--unload-first` releases the model with
+`keep_alive: 0` so the cold run is a genuine load, and the warm runs follow
+immediately with the model resident. Without this, "warm" and "cold" silently
+become the same number.
+
+### Measured — Ollama on the macOS coordinator, 2026-09-03
+
+`ollama` 0.32.14, `qwen3.5:4b-q4_K_M`, four runs through `/api/chat`.
+
+| Phase | Time to first token | Generation | Model load | Prompt eval |
+|---|---:|---:|---:|---:|
+| Cold — `cold_after_forced_unload`, **includes model load** | **2.504 s** | 37.8 tok/s | 2.300 s | 0.199 s |
+| Warm (median of 3) | **0.225 s** | 37.9 tok/s | 0.175 s | 0.048 s |
+
+All four runs returned 89 tokens / 598 characters, `done_reason: stop`, and
+**one** response SHA-256 (`c400b210dc824a26…`) — so the output was byte-identical,
+established by hash rather than inferred from counts. Thinking was suppressed on
+every run. Process RSS 3.83 → 3.90 GB. VRAM is not separately reportable on
+Apple unified memory.
+
+Generation speed is effectively identical cold and warm, so the whole 2.279 s
+time-to-first-token penalty sits before generation: **93.2 % is model load
+(2.124 s) and 6.6 % is prompt evaluation (0.151 s)**, an ~11.1× difference.
+
+An earlier run of this measurement used the untemplated `/api/generate` endpoint
+and recorded ~29.3 tok/s. It is superseded, not averaged in: it did not hold the
+chat template constant, so it is not comparable to a `llama-server` chat request.
+
+Also observed on this device: the server listens on `127.0.0.1:11434` only
+(`lsof`/`netstat`), not on a wildcard address.
+
+### Finding that changes the bounded settings
+
+`qwen3.5:4b-q4_K_M` is a **thinking model**. With thinking left on it spent the
+whole output budget in its reasoning channel and returned an **empty** visible
+answer — at `num_predict` 128 *and* at 512, both stopping on `length`. With
+`think: false` the same prompt completed in **89 tokens** and stopped naturally.
+
+A bounded output limit is therefore not sufficient on its own: `think: false`
+is required, or a C03 job would report success while returning nothing. This is
+recorded in the [bounded execution settings](model-catalog.md#bounded-execution-settings-for-the-first-path).
+
+### Still to run
+
+| Run | Device | Blocked on |
+|---|---|---|
+| `llama-server` comparison | macOS coordinator | `llama.cpp` is **not installed**; installing it is a human checkpoint |
+| Ollama measurement | Ubuntu worker | its C02 environment evidence and setup |
+| `llama-server` comparison | Ubuntu worker | the same, plus the GPU-offload split on 4 GiB of VRAM |
+| A comparable **cold** figure for `llama-server` | either device | `llama-server` loads the model at **server start**, so its first request excludes model load and is not comparable to Ollama's forced-unload cold run. The script labels that request `first_request_after_server_start` and marks `includes_model_load: false`. A comparable number needs the server's startup-to-first-success interval timed separately. |
+
+Until the `llama-server` half exists, the Ollama overhead is **unquantified**.
+The OD-03 selection stands as a recorded decision with a measured baseline for
+one runtime on one device — not as a proven comparison. Windows is not on this
+path and stays explicitly unverified.
+
 ## 6. Demonstration
 
 ### Preparation
@@ -307,7 +397,7 @@ Research only questions that materially affect feasibility:
 - pinned K3s, Kubernetes workload, Docker image, and Redis 7.2.x compatibility
   and licences;
 - Service exposure, Redis isolation, NetworkPolicy enforcement, and Pod
-  security on Prachi's Ubuntu host;
+  security on the Ubuntu worker;
 - connected and air-gapped model installation;
 - trustworthy public-egress enforcement and observation;
 - dependency and model licences.

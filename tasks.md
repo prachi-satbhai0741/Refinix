@@ -49,8 +49,9 @@ candidate regardless of how many individual components work.
 
 Claude builds; Codex reviews the current combined source and observed results.
 Anyone may implement any AF task. No agent needs a person's identity to edit
-code, and no person has exclusive ownership of a module. Names below identify
-human actions on particular devices or acceptance checks, not coding ownership.
+code, and no person has exclusive ownership of a module. The board below
+identifies human actions by **device role** — `macOS coordinator`, `Ubuntu
+worker` — or by **requester** for acceptance, never by team member.
 
 - Execute one authorised chunk at a time. Within it, build, review and fix
   confirmed findings without repeatedly asking permission for ordinary coding.
@@ -59,18 +60,20 @@ human actions on particular devices or acceptance checks, not coding ownership.
   artifact inspection, or Git publication. Do not bypass it by advancing another
   chunk. A newly discovered human dependency splits the chunk at that point.
 - Prepare the exact action and obtain Codex's review before the human performs
-  it. The human reports back through their agent or Aditya; verify the result
-  before resuming. A message saying "done" alone does not prove a runtime gate.
+  it. Whoever operates the named device returns the evidence to the requester;
+  verify the result before resuming. A message saying "done" alone does not
+  prove a runtime gate.
 - Continue only within the authorised scope after the checkpoint is cleared.
   This board is not permission to execute the entire plan. Documentation
   approval does not start runtime implementation or authorise terminal setup.
-- Humans can reassign a checkpoint to someone with the required access. Update
-  the actual names/device in the handoff; never silently operate another device.
+- A checkpoint belongs to a device, not a person. Anyone with access to that
+  device may perform it. Change the target device in the handoff rather than
+  reassigning a person; never silently operate another device.
 - Keep the shared contract, coordinator authority and task acceptance gates. No
   alternate job schema, authentication scheme, Redis namespace or manifest set.
 - Tests and machine operations retain the permissions in [AGENTS.md](AGENTS.md).
   Reuse applicable permissions already granted; do not transfer permission from
-  one person's machine/session to another's. Missing permission is a checkpoint.
+  one device or session to another. Missing permission is a checkpoint.
 - Humans publish through [member branch -> dev -> main](CONTRIBUTING.md#the-one-rule).
   Integrate reviewed work when its acceptance and human checkpoints are clear.
   Agents do not publish without authorisation.
@@ -82,12 +85,15 @@ The chunk map does not change the AF task states recorded below.
 
 ## Human checkpoint handoff
 
-Every stop must contain all of the following in the conversation, ready for
-Aditya to relay to the team. Do not create personal task documents.
+Every stop must contain all of the following in the conversation, ready for the
+requester to relay to whoever operates the device. Do not create personal task
+documents.
 
-1. **Who and where:** each person's name, device, OS, shell and working
-   directory. If everyone is needed, spell out Aditya, Yug, Sahil, Vedant,
-   Prachi and Tanvi. Explain each person's action.
+1. **Which device and where:** the device role — `macOS coordinator` or
+   `Ubuntu worker` in the first configuration — plus its OS, architecture,
+   shell and actual working directory. Identify the device, not a team member.
+   Optional machines are identified the same way and stay off the critical
+   path until a measured need selects one.
 2. **Action and reason:** the exact decision, UI steps or copy-paste commands,
    what they change, and why the current chunk cannot proceed without them.
 3. **Setup details:** for downloads/installations, approved source link,
@@ -104,9 +110,10 @@ Aditya to relay to the team. Do not create personal task documents.
 Unknown versions, unavailable artifacts or an unmade policy choice are reasons
 for a decision checkpoint, not placeholder commands for someone to execute.
 Prepare future commands against the actual implementation and current device
-inventory. Do not distribute speculative installs now. The first read-only
+inventory. Do not distribute speculative installs now. The C01 read-only
 [inventory commands](docs/devicespecifications.md#checkpoint-c01-read-only-inventory)
-are ready for C01; missing tooling must be reported rather than installed there.
+have been run and returned for all six devices; the C02 follow-up commands are
+also read-only and must report missing tooling rather than install it.
 
 ## Numbered execution tasks
 
@@ -118,41 +125,66 @@ satisfied setup action needs evidence, not a repeated installation.
 Execute C01 → C02 → C03 → C04 → C05 → C06 → C07 → C08 → C09 → C10 → C11 →
 C12 → C13. The **After** column means the previous task's reviewed work, human
 checkpoint and return-evidence checks are all clear. At **Wait**, pause until
-the named people return the required evidence. Do not skip ahead while waiting.
+the named device returns the required evidence. Do not skip ahead while waiting.
 Progress depends on these conditions, with no duration limit or delivery date.
 
-**Current scope: C01 — Contracts and prerequisites, in review and fix.** The
-three requested AF-001 contract repairs are implemented and the reviewed
-evidence-binding finding is fixed; the checks run offline and no runtime chunk
-is activated. AF-001 remains a draft; its pairing decision and consumer
-integration are outstanding. **C01's human checkpoint is open:** Aditya's
-acceptance of the reviewed contract diff, and the read-only device inventory
-from Aditya, Yug, Sahil, Vedant, Prachi and Tanvi. **C02 stays locked** until
-both return. Update this current-scope note when the requester authorises a new
-chunk; the note itself never grants permission.
+**Current scope: C02 — Environment preparation, setup and verification.** The
+requester authorised C02 and recorded that C01's contract code passed review.
+Codex reviewed the AF-001 fixes at `e7f44fb` and reported PASS with eight
+contract checks passing and all pinned dependencies matching; that test result
+is **Codex's recorded review, not a Claude run**. `backend/` is unchanged since
+`e7f44fb`, so the result is reused rather than repeated. Read-only inventory was
+supplied for all six devices and is recorded in
+[devicespecifications.md](docs/devicespecifications.md). AF-001 stays a
+**draft** until its consumer-integration gate passes at C05; OD-06 pairing is
+still open.
 
-Names use the currently documented devices: Aditya's Mac is the coordinator,
-Prachi's Ubuntu device is the candidate single-node K3s host, and Yug's Windows
-machine is the current Claude development environment. These placements need
-fresh C01 evidence. Sahil's and Vedant's GPU machines and Tanvi's machine are
-not automatic extra workers; adding one requires a measured need and a new
-named setup checkpoint. Everyone can still build any module.
+**C01's remaining closeout is this documentation pass**, which needs Codex
+review and requester acceptance before C02 can be called clear. Update this
+current-scope note when the requester authorises a new chunk; the note itself
+never grants permission.
+
+C02 decisions are now recorded with upstream provenance:
+[OD-03 runtime](docs/model-catalog.md#od-03--ollama-is-the-first-runtime),
+[OD-05 model set](docs/model-catalog.md#31-od-05--the-first-selected-model-set),
+[OD-06 pairing](docs/security.md#41-od-06--the-prototype-pairing-decision) and
+[OD-08 pins](docs/architecture.md#81-od-08--resolved-infrastructure-pins). One
+bounded real inference is measured on the macOS coordinator
+([evaluation.md §5.1](docs/evaluation.md#51-od-03-runtime-comparison)).
+
+**C02's next checkpoint is the Ubuntu worker's read-only environment evidence**
+([commands](docs/devicespecifications.md#checkpoint-c02-read-only-environment-evidence)),
+after Codex reviews this change. Nothing has been installed, deployed, pulled,
+built or downloaded, and no worker-image digest exists yet. **One service did
+start:** the coordinator's Ollama app was launched by an `ollama list` used for
+inventory — that CLI path calls `startApp` when the server is refused. The
+inventory commands no longer use it, and the model was already present.
+
+The first configuration is two devices. Every other machine, and the incomplete
+GPU output on two of them, stays **off the critical path** until a measured need
+selects it through a new device-based setup checkpoint. Any device may still
+build any module.
+
+| Device role | Documented machine | Purpose in the first configuration |
+|---|---|---|
+| **macOS coordinator** | Apple Silicon `Mac17,3`, macOS 26.6.2 (25G83), arm64, 16 GiB unified, 340 GiB free on `/` | Primary workspace and UI, canonical SQLite state, approvals, local main-engine inference |
+| **Ubuntu worker** | Ubuntu 24.04.4 LTS, x86_64, 15 GiB RAM, RTX 2050 4096 MiB (driver 580.173.02), 115 GiB free on `/` | Candidate single-node K3s host, worker image build, Redis, sandboxed code execution |
 
 | Task number and name | After | Claude builds; Codex reviews | Wait: named human action | Verify before continuing |
 |---|---|---|---|---|
-| C01 — Contracts and prerequisites | — | **AF-001** — Repair output-validator requirements, typed cancellation/interruption reasons, and citation/page payloads; update examples and focused checks. Keep the contract draft until consumers integrate. | **Aditya:** accept reviewed contract changes. **Aditya, Yug, Sahil, Vedant, Prachi, Tanvi:** report the read-only inventory for their own device. | Reviewed contract diff and authorised check results; each device's current inventory or explicit unavailability. Use it to prepare setup choices. No runtime installation here. |
-| C02 — Environment setup | C01 cleared | **AF-001–AF-004 preparation** — Prepare exact setup instructions and evidence-backed runtime/model/pairing choices (OD-03/05/06), plus K3s/Redis/base-image pins (OD-08); built-image digests follow C04. | **Aditya and Yug:** confirm the proposed choices with Codex's review. **Aditya:** Mac dependencies/main model. **Yug:** development dependencies on Windows if missing. **Prachi:** approved Ubuntu worker/build dependencies and model files. | Humans supply versions, paths, hashes and setup output. Agents verify compatibility with permitted checks. Only approved required components are installed; no cluster deployment or six-device model rollout. |
-| C03 — Local application | C02 cleared | **AF-004, local AF-003 adapter** — Implement coordinator SQLite, local inference, basic Chat/Control Center, streaming and restart reconciliation using the installed runtime. | **Aditya:** start the reviewed local commands, send a request and restart the app. **Tanvi:** inspect UI/history with Aditya; no second installation required. | Real local response and retained job/attempt history after restart; missing measurements display unavailable. Return observations and permitted runtime-check output. |
-| C04 — Worker image build | C03 cleared | **AF-003, AF-002 preparation** — Implement the worker/API and Docker build assets against the reviewed contract and pairing policy; prepare exact build and digest-inspection commands. | **Prachi:** run the reviewed image build on Ubuntu and report build output, immutable image digest, architecture and provenance. | Agents inspect the actual build result and prepare a deployment pinned to that digest. Build failure stays in C04; a Dockerfile alone is not image evidence. |
-| C05 — Cluster deployment and integration | C04 cleared | **AF-001–AF-004 integration** — Review the pinned K3s/Redis/worker manifests, limits and Service exposure using C04's image evidence. | **Prachi:** provision/apply the reviewed cluster commands. **Aditya:** perform the coordinator acceptance steps supplied for this setup. | Ready Pods, internal-only Redis, one real worker-model response, persisted coordinator metadata and shared-version consumers. Pass the C05 integration gate before C06. |
-| C06 — Distributed execution | C05 cleared | **AF-005–AF-007** — Implement Redis dispatch/leases/receipt, routing, SSE replay, cancellation, recovery, preflight and truthful fallback. | **Aditya and Prachi:** connect and explicitly pair Mac/worker, apply reviewed LAN settings, and perform the documented disconnect/cancel exercise. | Actual Mac -> Service -> Redis -> executor -> Mac completion, correct route reason, and usable canonical history after cluster loss. Pass the C06 distributed-execution gate. |
-| C07 — Workflow inputs and setup | C06 cleared | **AF-008–AF-011 preparation** — Prepare permitted scan/SOP and synthetic-code fixtures, their checks, and only the additional model/dependency setup the two workflows require. | **Yug:** supply/approve public scan/SOP provenance. **Sahil:** approve the synthetic repository and allowed validation commands. **Aditya:** select coordinator inputs. **Prachi:** install any approved missing worker workflow packages/models. | Source hashes, expected extraction/citation examples, selected repository/base and commands, plus verified installed artifacts. If another device is needed, stop and name its operator before any download. |
-| C08 — Documents workflow | C07 cleared | **AF-008–AF-009** — Implement real rendering/OCR, uncertainty, page mapping, local retrieval, cited drafting, DOCX creation and artifact checks. | **Aditya and Tanvi:** open the Word output. **Yug:** compare extracted facts and citations with the approved scan/SOP. | Openable Word output with checksum, resolvable citations and honest missing values. Fix discrepancies before proceeding to Code. |
-| C09 — Code workflow | C08 cleared | **AF-010–AF-011** — Implement bounded repository context, patch generation and restricted validation Jobs. Reuse approved images where suitable; a new image needing a build creates another checkpoint before deployment. | **Prachi:** apply reviewed sandbox configuration and run the approved host steps. **Sahil and Aditya:** inspect the patch and validation results on the approved fixture. | Applicable patch, observed approved-command result, enforced limits/network isolation and cleanup; canonical repository unchanged. Pass the C09 signature-workflow gate. |
-| C10 — Concurrent workflows and approvals | C09 cleared | **AF-012–AF-014** — Implement concurrent workflows, exact-action approvals, durable final-write recovery and evidence-backed Proof Cards. | **Aditya:** choose the output destination and exercise approve/deny/expiry. **Tanvi:** inspect both workflows and the displayed proof against the observed results. | Concurrent progress with separate attempts/artifacts; denial writes nothing; approval writes once; no inferred health, timing or network measurements. |
-| C11 — Offline evidence | C10 cleared | **AF-015** — Prepare reviewed Pod/host network controls, rollback commands and independent observation for the real concurrent run. | **Prachi:** apply Ubuntu/cluster controls. **Aditya:** apply Mac controls. **Sahil:** record the named device/interface/time window using the reviewed observation procedure. | Actual concurrent outputs plus enforcement and observation evidence for the specified scope. Preserve trusted LAN traffic and pass the C11 concurrent/offline gate; absent evidence remains unavailable. |
-| C12 — Recovery and measurements | C11 cleared | **AF-016–AF-017** — Prepare bounded failure drills and comparable standalone/distributed measurements; inspect results and repair confirmed recovery defects. | **Aditya and Prachi:** perform reviewed restart/disconnect/Pod/Redis/cluster operations. **Sahil:** record timing, resources, quality and failure outcomes. | Canonical history survives, stale attempts are fenced, no duplicate final writes, and reproducible cold/warm results on named devices. Rerun affected checks after fixes. |
-| C13 — Candidate acceptance | C12 cleared | **AF-018–AF-019** — Codex reviews the integrated source/evidence; Claude fixes remaining defects and prepares the frozen demo instructions and claim list. | **Aditya and Yug:** operate three clean-start runs and record a backup. **Prachi:** operate the cluster. **Sahil:** compare results with evidence. **Vedant:** check selected model/runtime provenance. **Tanvi:** inspect artifacts and demo clarity. **Aditya:** accept the candidate and coordinate human Git promotion. | Three successful runs on the same documented setup, backup recording, honest claims, independent review and requester acceptance. This closes the alpha, not the later finals scope. |
+| C01 — Contracts and prerequisites | — | **AF-001** — Repair output-validator requirements, typed cancellation/interruption reasons, and citation/page payloads; update examples and focused checks. Keep the contract draft until consumers integrate. | **Requester:** accept the reviewed contract changes and this documentation closeout. **Every inventoried device:** report its own read-only inventory — supplied for all six devices. | Reviewed contract diff and authorised check results; each device's current inventory or explicit unavailability. Use it to prepare setup choices. No runtime installation here. |
+| C02 — Environment setup | C01 cleared | **AF-001–AF-004 preparation** — Prepare exact setup instructions and evidence-backed runtime/model/pairing choices (OD-03/05/06), plus K3s/Redis/base-image pins (OD-08); built-image digests follow C04. | **Requester:** confirm the proposed choices after Codex's review. **macOS coordinator:** confirm the reviewed dependency/runtime/model state and run the reviewed bounded local inference check. **Ubuntu worker:** return the read-only environment evidence, then perform only the reviewed worker runtime/model setup for the selected path. | Humans supply versions, paths, hashes and setup output. Agents verify compatibility with permitted checks. Only approved required components are installed; no cluster deployment or six-device model rollout. |
+| C03 — Local application | C02 cleared | **AF-004, local AF-003 adapter** — Implement coordinator SQLite, local inference, basic Chat/Control Center, streaming and restart reconciliation using the installed runtime. | **macOS coordinator:** start the reviewed local commands, send a request, restart the app, then inspect the UI and history. No second installation is required on any other device. | Real local response and retained job/attempt history after restart; missing measurements display unavailable. Return observations and permitted runtime-check output. |
+| C04 — Worker image build | C03 cleared | **AF-003, AF-002 preparation** — Implement the worker/API and Docker build assets against the reviewed contract and pairing policy; prepare exact build and digest-inspection commands. | **Ubuntu worker:** run the reviewed image build and report build output, immutable image digest, architecture and provenance. | Agents inspect the actual build result and prepare a deployment pinned to that digest. Build failure stays in C04; a Dockerfile alone is not image evidence. |
+| C05 — Cluster deployment and integration | C04 cleared | **AF-001–AF-004 integration** — Review the pinned K3s/Redis/worker manifests, limits and Service exposure using C04's image evidence. | **Ubuntu worker:** provision and apply the reviewed cluster commands. **macOS coordinator:** perform the coordinator acceptance steps supplied for this setup. | Ready Pods, internal-only Redis, one real worker-model response, persisted coordinator metadata and shared-version consumers. Pass the C05 integration gate before C06. |
+| C06 — Distributed execution | C05 cleared | **AF-005–AF-007** — Implement Redis dispatch/leases/receipt, routing, SSE replay, cancellation, recovery, preflight and truthful fallback. | **macOS coordinator and Ubuntu worker:** connect and explicitly pair the two devices, apply the reviewed trusted-LAN settings, and perform the documented disconnect/cancel exercise. | Actual Mac -> Service -> Redis -> executor -> Mac completion, correct route reason, and usable canonical history after cluster loss. Pass the C06 distributed-execution gate. |
+| C07 — Workflow inputs and setup | C06 cleared | **AF-008–AF-011 preparation** — Prepare permitted scan/SOP and synthetic-code fixtures, their checks, and only the additional model/dependency setup the two workflows require. | **Requester:** approve the public scan/SOP provenance, the synthetic repository and the allowed validation commands. **macOS coordinator:** select the coordinator inputs. **Ubuntu worker:** install only the approved missing worker workflow packages and models. | Source hashes, expected extraction/citation examples, selected repository/base and commands, plus verified installed artifacts. If another device is needed, stop and name that device before any download. |
+| C08 — Documents workflow | C07 cleared | **AF-008–AF-009** — Implement real rendering/OCR, uncertainty, page mapping, local retrieval, cited drafting, DOCX creation and artifact checks. | **macOS coordinator:** open the Word output and compare its extracted facts and citations against the approved scan/SOP. | Openable Word output with checksum, resolvable citations and honest missing values. Fix discrepancies before proceeding to Code. |
+| C09 — Code workflow | C08 cleared | **AF-010–AF-011** — Implement bounded repository context, patch generation and restricted validation Jobs. Reuse approved images where suitable; a new image needing a build creates another checkpoint before deployment. | **Ubuntu worker:** apply the reviewed sandbox configuration and run the approved host steps. **macOS coordinator:** inspect the patch and validation results on the approved fixture. | Applicable patch, observed approved-command result, enforced limits/network isolation and cleanup; canonical repository unchanged. Pass the C09 signature-workflow gate. |
+| C10 — Concurrent workflows and approvals | C09 cleared | **AF-012–AF-014** — Implement concurrent workflows, exact-action approvals, durable final-write recovery and evidence-backed Proof Cards. | **macOS coordinator:** choose the output destination, exercise approve/deny/expiry, and inspect both workflows and the displayed proof against the observed results. | Concurrent progress with separate attempts/artifacts; denial writes nothing; approval writes once; no inferred health, timing or network measurements. |
+| C11 — Offline evidence | C10 cleared | **AF-015** — Prepare reviewed Pod/host network controls, rollback commands and independent observation for the real concurrent run. | **Ubuntu worker:** apply the host and cluster network controls. **macOS coordinator:** apply the coordinator network controls. **A separate observing device on the same LAN:** record the named device, interface and time window using the reviewed observation procedure. | Actual concurrent outputs plus enforcement and observation evidence for the specified scope. Preserve trusted LAN traffic and pass the C11 concurrent/offline gate; absent evidence remains unavailable. |
+| C12 — Recovery and measurements | C11 cleared | **AF-016–AF-017** — Prepare bounded failure drills and comparable standalone/distributed measurements; inspect results and repair confirmed recovery defects. | **macOS coordinator and Ubuntu worker:** perform the reviewed restart, disconnect, Pod, Redis and cluster operations, and record timing, resources, quality and failure outcomes. | Canonical history survives, stale attempts are fenced, no duplicate final writes, and reproducible cold/warm results on the named devices. Rerun affected checks after fixes. |
+| C13 — Candidate acceptance | C12 cleared | **AF-018–AF-019** — Codex reviews the integrated source/evidence; Claude fixes remaining defects and prepares the frozen demo instructions and claim list. | **macOS coordinator:** operate three clean-start runs, record a backup, and inspect the artifacts and demo clarity. **Ubuntu worker:** operate the cluster. **Requester:** compare the results with the recorded evidence, check the selected model/runtime provenance, accept the candidate and coordinate human Git promotion. | Three successful runs on the same documented setup, backup recording, honest claims, independent review and requester acceptance. This closes the alpha, not the later finals scope. |
 
 The AF rows below retain their dependency and acceptance meaning. For AF-001,
 C01 reviews the shared draft, C02 resolves setup/security decisions, and C03–C05
@@ -173,9 +205,9 @@ exists. Do not claim a contract freeze from schema checks alone.
 - Exercise the relevant end-to-end path at each task acceptance gate and the
   three final rehearsals. Contract tests cannot replace model, device, sandbox,
   approval or network evidence. Tests reduce risk; they do not guarantee perfection.
-- After **every build and review cycle**, explain to Aditya: **Built** (plain
-  language plus one example), **Verified** (observed checks and limits), and
-  **Next / Human action** (names, instructions, return evidence and resume
+- After **every build and review cycle**, explain to the requester: **Built**
+  (plain language plus one example), **Verified** (observed checks and limits),
+  and **Next / Human action** (device, instructions, return evidence and resume
   condition). Review reports use `PASS`, `NEEDS FIX`, or `BLOCKED`; a code-review
   pass does not clear an outstanding human or runtime gate.
 
@@ -336,5 +368,5 @@ line in [problem-statement coverage](docs/evaluation.md#11-problem-statement-cov
 Exclusion means excluded from the alpha, not abandoned: multilingual
 and voice work is FR-019 in the finals scope.
 
-Add an excluded item only after its prerequisite task passes and Aditya accepts
-the resulting risk to the frozen demo.
+Add an excluded item only after its prerequisite task passes and the requester
+accepts the resulting risk to the frozen demo.

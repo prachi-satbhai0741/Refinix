@@ -99,6 +99,75 @@ blocked.
 Pairing permits bounded compute work; it does not authorise state migration,
 general file browsing, direct model-runtime access, or unrestricted shell use.
 
+### 4.1 OD-06 — the prototype pairing decision
+
+**Prototype grade, recorded not verified.** No pairing route is implemented.
+`backend/contracts` reserves the paths and grants no trust through them, and
+nothing below has been exercised. F02 replaces this with finals-grade identity.
+
+Established mechanisms only — no bespoke cryptography, no custom handshake.
+
+**Bootstrap.** The worker generates a long-lived self-signed TLS certificate in
+its own state directory on first start. The operator reads two values off the
+worker host: the certificate's SHA-256 fingerprint, and a short-lived single-use
+pairing code. Both travel to the coordinator **out of band**, read by a human,
+never over the network. The coordinator operator enters the worker address, the
+fingerprint and the code; the coordinator then presents the code once over the
+already-pinned channel and receives a per-relationship credential in return. The
+code is single-use and expires whether or not it was used.
+
+This is deliberately *not* blind trust-on-first-use. The fingerprint is
+confirmed by a human before the first byte of credential material moves, the
+same shape as verifying an SSH host key.
+
+**TLS verification.** The coordinator does not use the system trust store for
+worker connections. The pinned self-signed certificate is loaded as the sole
+trust anchor for that relationship — in Python, `SSLContext.load_verify_locations(cadata=…)`
+with `verify_mode=CERT_REQUIRED` and `check_hostname=False`, since a LAN
+worker is reached by address rather than by a name in a public certificate. A
+fingerprint or chain mismatch **aborts the connection**. There is no downgrade,
+no "continue anyway", and no retry against an unverified endpoint; the operator
+sees that the worker identity changed.
+
+**Credential scope.** One credential per (workspace, worker node) relationship.
+It is a bearer token, valid **only** inside that pinned TLS channel, and it
+authorises only the worker job surface: submit an attempt, stream its events,
+cancel it, and read health. It does not authorise the Kubernetes API, a shell,
+filesystem browsing, direct model-runtime access, coordinator transfer, or
+state migration. **Coordinator authority is unchanged by pairing** — the worker
+executes bounded work and returns results; canonical state, approval and final
+writes stay on the coordinator.
+
+**Storage.**
+
+- Coordinator: the operating-system credential store — the macOS Keychain on
+  the coordinator. Never SQLite, never a dotfile, never the repository.
+- Worker: only a **hash** of the credential, in its state directory, mode
+  `0600`, owned by the service user. The worker can verify a presented token
+  without holding a replayable copy.
+- Neither value appears in logs, events, Proof Cards, ledgers or handoffs.
+
+**Revocation.** `DELETE /v1/pairing/{relationship_id}` from the coordinator
+deletes the worker-side hash; the worker then rejects that credential. Local
+revocation is deleting the stored hash on the worker and restarting it. Either
+route must **fence work in flight**: attempts belonging to the revoked
+relationship stop with a typed stop reason, and the coordinator keeps their
+canonical history rather than losing or duplicating it.
+
+**Failure behaviour.** Every case fails closed and visibly:
+
+| Condition | Result |
+|---|---|
+| Unknown, expired or revoked credential | Rejected with a typed reason; no partial service |
+| Certificate fingerprint mismatch | Connection aborted; no fallback; surfaced as a worker-identity change |
+| Pairing code expired or reused | Rejected; a fresh code is required |
+| Worker unreachable | Node marked unavailable, local execution resumes with a visible route reason — never a silent retry against an unverified endpoint |
+| Contract-version mismatch | Rejected with the typed incompatibility reason |
+
+**Not claimed:** that any of this is secure, tested, or implemented. It is the
+decision C02 owed, so that C04–C06 build against one recorded policy instead of
+inventing one under time pressure.
+
 ## 5. Data ownership and minimisation
 
 - Canonical chats, memory, rules, files, approvals, and artifacts remain with
