@@ -364,7 +364,187 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - linked_changes: [AC-20260902-007](agentchangelog.md#ac-20260902-007)
 
 <a id="up-20260903-001"></a>
-## UP-20260903-001 — Design the application UI and the public download site
+## UP-20260903-001 — Assign Yug the worker execution spine
+- date: 2026-09-03
+- status: done
+- scope: docs, execution-planning, ownership
+- tags: yug, claude, worker-spine, day-1, day-2, ownership
+- aliases: huge task for Yug Claude, two builders, worker runtime Redis K3s, review handoff
+- paths: docs/yug-worker-spine.md, docs/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Create a substantial implementation packet for Yug's Claude after his current contract review, with Aditya and Yug owning current implementation and Aditya/Codex reviewing the resulting changes.
+- constraints: Planning only in this turn; preserve shared contracts and daily gates; keep other members' hardware/evidence roles; use member-to-dev-to-main publication; do not transfer prior local test/install permission to another machine or session.
+- acceptance: A self-contained packet defines the worker/runtime/Redis/container/K3s outcome, allowed paths, review prerequisite, phases, acceptance commands, failure cases, permissions, and review evidence; the current sprint reflects two build owners.
+- follow_up_to: [UP-20260902-007](#up-20260902-007)
+- supersedes: none
+- linked_changes: [AC-20260903-001](agentchangelog.md#ac-20260903-001)
+
+<a id="up-20260903-002"></a>
+## UP-20260903-002 — Execute the human-checkpoint documentation plan
+- date: 2026-09-03
+- status: in-progress
+- scope: docs, execution-planning, agent-guidance
+- tags: human-checkpoints, claude, codex, setup, five-day-sprint
+- aliases: named human intervention, checkpoint chunks, remove personal packet, build review explain resume
+- paths: AGENTS.md, tasks.md, docs/README.md, docs/yug-worker-spine.md, docs/architecture.md, docs/devicespecifications.md, docs/evaluation.md, backend/contracts/README.md, CONTRIBUTING.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replace personal implementation assignments with reviewed execution chunks that pause for named human actions and resume only after their results are verified.
+- constraints: Documentation only; preserve AF task evidence and product/security gates; no runtime implementation, installs, downloads, deployments, tests or Git writes; preserve device facts and historical ledgers.
+- acceptance: One shared tasks.md names each human checkpoint, required commands/evidence, stop/resume rules and plain-language build reports; obsolete personal packet is removed and active references are consistent.
+- follow_up_to: [UP-20260903-001](#up-20260903-001)
+- supersedes: [UP-20260903-001](#up-20260903-001)
+- linked_changes: [AC-20260903-002](agentchangelog.md#ac-20260903-002)
+
+<a id="up-20260903-003"></a>
+## UP-20260903-003 — Remove calendar constraints from execution
+- date: 2026-09-03
+- status: in-progress
+- scope: docs, execution-planning
+- tags: numbered-tasks, human-checkpoints, prerequisites, calendar-independent
+- aliases: no days, task number and name, execute then wait for human, remove deadline schedule
+- paths: tasks.md, AGENTS.md, CONTRIBUTING.md, README.md, backend/README.md, backend/contracts/README.md, frontend/README.md, docs/README.md, docs/prd.md, docs/architecture.md, docs/evaluation.md, docs/devicespecifications.md, docs/sih-ppt-submission-brief.md, .github/pull_request_template.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replace implementation day labels and calendar cadence with numbered tasks, explicit prerequisites and named human stop/resume checkpoints.
+- constraints: Preserve existing uncommitted documentation, AF task state/acceptance, named human actions, evidence dates, history and runtime safety deadlines; no runtime changes, tests, installations or Git writes.
+- acceptance: Active planning references use task numbers/names with no delivery dates or day limits, and all local links and sequence dependencies remain consistent.
+- follow_up_to: [UP-20260903-002](#up-20260903-002)
+- supersedes: none
+- linked_changes: [AC-20260903-003](agentchangelog.md#ac-20260903-003)
+
+<a id="up-20260903-004"></a>
+## UP-20260903-004 — Analyse the documents and execute the board
+- date: 2026-09-03
+- status: in-progress
+- scope: backend, contracts, documents-workflow, execution
+- tags: c01, af-001, contracts, citations, documents, grounding, page-mapping
+- aliases: execute tasks.md, citation contract, cited approval note, reduced team
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/examples.json, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Analyse the planning documents and begin executing the board with only Yug and Aditya available, closing the citation gap the merged AF-001 draft left in the documents workflow.
+- constraints: Only Yug and Aditya are available, so role assignments are suspended for this change; no Git or GitHub writes; keep the contract version at 1.0 and preserve coordinator authority and offline boundaries.
+- acceptance: The contract carries a typed citation with source and page, a coordinator-side grounding guard rejects ungrounded output, and the contract check runs and passes locally.
+- verification_authorization: User instruction to execute tasks covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- follow_up_to: [UP-20260902-007](#up-20260902-007)
+- supersedes: none
+- linked_changes: [AC-20260903-004](agentchangelog.md#ac-20260903-004)
+
+<a id="up-20260903-005"></a>
+## UP-20260903-005 — Execute the renumbered C01 contract repairs
+- date: 2026-09-03
+- status: in-progress
+- scope: backend, contracts, execution
+- tags: c01, af-001, contracts, output-validators, cancellation, interruption, checkpoints
+- aliases: numbered execution tasks, chunk C01, contract repair, human checkpoint, stop reason
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Execute the C01 contract repairs defined by the renumbered execution board, then report the human checkpoint actions the board requires before C02.
+- constraints: Only Yug and Aditya are available; no Git or GitHub writes; keep contract version 1.0 and the draft status; do not activate a runtime chunk or advance past the C01 human checkpoint.
+- acceptance: Output validators match their declared kind, stopped attempts carry a typed reason, citation payloads exist, and the focused contract check runs and passes locally.
+- verification_authorization: User instruction to execute the board covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- follow_up_to: [UP-20260903-004](#up-20260903-004)
+- supersedes: none
+- linked_changes: [AC-20260903-005](agentchangelog.md#ac-20260903-005)
+
+<a id="up-20260903-006"></a>
+## UP-20260903-006 — Address the C01 review findings
+- date: 2026-09-03
+- status: in-progress
+- scope: backend, contracts, execution, review
+- tags: c01, af-001, code-review, citations, evidence-binding, retry, board-status
+- aliases: NEEDS FIX, Codex review, PR 29, proof attempt binding, current scope note
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Address Codex's two C01 review findings on merge d50ea38 so citation evidence binds to one dispatched attempt and the board reports C01's real review stage.
+- constraints: Stay inside C01; keep C02 locked and the contract at version 1.0; no Git or GitHub writes; do not claim a runtime or pinned-environment result that was not observed.
+- acceptance: The guard rejects a proof whose workspace, job, attempt or target node differs from the envelope, each with its own check, and the current-scope note states C01's review stage and open human checkpoint.
+- verification_authorization: User instruction to address the review covered running the existing offline contract check; no installation, network access, or Git write was performed.
+- follow_up_to: [UP-20260903-005](#up-20260903-005)
+- supersedes: none
+- linked_changes: [AC-20260903-006](agentchangelog.md#ac-20260903-006)
+<a id="up-20260903-007"></a>
+## UP-20260903-007 — Reconcile device evidence and prepare the C02 human checkpoint
+- date: 2026-09-03
+- status: in-progress
+- scope: documentation, execution, hardware-inventory
+- tags: c01, devicespecifications, tasks, human-checkpoint
+- aliases: reconcile device evidence, prepare setup handoff, update inventory
+- paths: docs/devicespecifications.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Update shared documentation using supplied hardware observations and deliver one consolidated human handoff containing only missing prerequisites, without starting runtime implementation.
+- constraints: Stay within C01 evidence reconciliation. Do not start runtime implementation or execute any code. Do not fetch, pull or change Git.
+- acceptance: Shared inventory reflects supplied evidence without overclaiming. The board records the real stage and remaining checkpoint. One concise, named human handoff is ready to relay.
+- verification_authorization: No execution allowed.
+- follow_up_to: [UP-20260903-006](#up-20260903-006)
+- supersedes: none
+- linked_changes: [AC-20260903-007](agentchangelog.md#ac-20260903-007)
+
+<a id="up-20260903-008"></a>
+## UP-20260903-008 — Close C01 documentation and carry C02 to its first checkpoint
+- date: 2026-09-03
+- status: in-progress
+- scope: documentation, execution, runtime-decision, model-decision, infrastructure-pins
+- tags: c01, c02, od-03, od-05, od-06, od-08, device-based-checkpoints
+- aliases: close c01 docs, device based checkpoints, resolve od decisions, c02 setup package
+- paths: tasks.md, AGENTS.md, agent-memory/README.md, docs/devicespecifications.md, docs/architecture.md, docs/model-catalog.md, docs/evaluation.md, docs/security.md, docs/prd.md, scripts/od03_runtime_comparison.py
+- summary: Finish the C01 documentation closeout by replacing personal assignments with Claude/Codex roles and device-based human checkpoints, then resolve C02's OD-03/OD-05/OD-06/OD-08 decisions with recorded upstream sources and prepare the setup package for the macOS coordinator and Ubuntu worker.
+- constraints: Use only Claude and Codex as agent roles; identify humans by device. Keep optional machines and their incomplete GPU details off the first configuration's critical path. Preserve historical evidence and Git identities. Keep AF-001 a draft. No installs, model downloads, service starts, deployments or Git/GitHub writes. Preserve existing uncommitted changes.
+- acceptance: Active execution instructions are device-based and consistent; the four C02 decisions are recorded with provenance; the Ubuntu worker's read-only evidence commands are ready for Codex review; every claim distinguishes measured from estimated.
+- verification_authorization: Read-only local inspection on the macOS coordinator; bounded local inference against the already-running loopback Ollama server.
+- follow_up_to: [UP-20260903-007](#up-20260903-007)
+- supersedes: none
+- linked_changes: [AC-20260903-008](agentchangelog.md#ac-20260903-008)
+
+<a id="up-20260903-009"></a>
+## UP-20260903-009 — Repair the four remaining C02 review findings
+- date: 2026-09-03
+- status: in-progress
+- tags: c02, runtime-comparison, stream-parser, inventory
+- aliases: reasoning channel, missing generation timing, failed port probe, stale mac inventory
+- paths: scripts/od03_runtime_comparison.py, scripts/test_od03_parser.py, docs/devicespecifications.md, docs/evaluation.md, docs/architecture.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: The requester authorised Codex to fix the four remaining C02 parser and inventory findings directly.
+- constraints: Repository edits only; preserve existing changes and historical ledger entries; no Git writes, service starts, installs, downloads or inference runs.
+- acceptance: Count separate reasoning in TTFT and suppression evidence, reject invalid generation timing, preserve socket-probe failures, and distinguish initial Mac inventory from the later measured response.
+- verification_authorization: Prepare focused offline checks; test execution requires separate permission under AGENTS.md and CODEX.md.
+- follow_up_to: [UP-20260903-008](#up-20260903-008)
+- linked_changes: [AC-20260903-009](agentchangelog.md#ac-20260903-009)
+
+<a id="up-20260903-010"></a>
+## UP-20260903-010 — Prepare C02 closeout from returned device evidence
+- date: 2026-09-03
+- status: in-progress
+- tags: c02, closeout, runtime-comparison, memory-reporting
+- aliases: ubuntu inventory, bundled engine, defer comparisons, runner rss
+- paths: tasks.md, docs/devicespecifications.md, docs/evaluation.md, docs/model-catalog.md, docs/architecture.md, docs/prd.md, scripts/od03_runtime_comparison.py, scripts/test_od03_parser.py, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: The requester resumed C02 closeout, then explicitly deferred the controlled cold-start and Ubuntu direct-engine comparisons while retaining Ollama.
+- constraints: Record user-returned measurements with their limits; repair misleading RAM reporting; preserve historical evidence; no service starts, inference, installations, downloads, deployments or Git writes; C03 requires separate authorisation after acceptance.
+- acceptance: The setup record reflects both devices, measured and deferred comparisons are distinct, and the closeout is ready for requester review.
+- verification_authorization: Reuse the requester's existing permission for offline parser checks; memory checks mock process and GPU queries and make no live calls.
+- follow_up_to: [UP-20260903-009](#up-20260903-009)
+- linked_changes: [AC-20260903-010](agentchangelog.md#ac-20260903-010)
+
+<a id="up-20260903-011"></a>
+## UP-20260903-011 — Document recommended technologies and languages for every layer
+- date: 2026-09-03
+- status: in-progress
+- tags: tech-stack, languages, frontend, architecture, documentation
+- aliases: TechStack.md, typescript react vite, python sql, language selection
+- paths: TechStack.md, README.md, docs/README.md, docs/architecture.md, frontend/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: The requester asked to update or create TechStack.md with the best-fitting language and technology for every application section after the stack critique and device-scope clarification.
+- constraints: Documentation only; preserve the existing C02 changes, checkpoints and hardware evidence; distinguish implemented, recorded, recommended and deferred choices; no installs, scaffolding, runtime commands, tests or Git writes.
+- acceptance: One discoverable stack guide covers all product surfaces and supporting layers, explains trade-offs, retains Ollama and Redis Streams, and records later device qualification without promising an unverified rollout.
+- verification_authorization: Read-only source and official-documentation research, Markdown link and whitespace inspection; no runtime testing needed for prose changes.
+- follow_up_to: [UP-20260903-010](#up-20260903-010)
+- linked_changes: [AC-20260903-011](agentchangelog.md#ac-20260903-011)
+
+<a id="up-20260903-012"></a>
+## UP-20260903-012 — Address the two C02 closeout observations
+- date: 2026-09-03
+- status: in-progress
+- tags: c02, closeout, listener, cancellation, review
+- aliases: claude review, wildcard port 8080, cancellation not exercised, techstack handoff
+- paths: tasks.md, docs/devicespecifications.md, docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: The requester resumed the C02/TechStack handoff with Claude's review and explicitly authorised the two C02 documentation fixes.
+- constraints: Preserve existing changes; keep C03 pending separate authorisation and the frontend recommendation unchanged; no tests, inference, host operations or Git writes.
+- acceptance: Track the unidentified Ubuntu listener as its own C02 open item and state that cancellation was not exercised, with its later implementation and verification gate named.
+- verification_authorization: Read-only source, documentation and diff inspection; no runtime checks for prose changes.
+- follow_up_to: [UP-20260903-011](#up-20260903-011)
+- linked_changes: [AC-20260903-012](agentchangelog.md#ac-20260903-012)
+
+<a id="up-20260903-013"></a>
+## UP-20260903-013 — Design the application UI and the public download site
 - date: 2026-09-03
 - status: in-progress
 - scope: frontend, design
@@ -377,4 +557,4 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - decisions: Control Room for application surfaces; Blueprint restricted to artifacts and the Proof Card; the public site is a separate bolder treatment; Chat built first.
 - follow_up_to: none
 - supersedes: none
-- linked_changes: [AC-20260903-001](agentchangelog.md#ac-20260903-001), [AC-20260903-002](agentchangelog.md#ac-20260903-002), [AC-20260903-003](agentchangelog.md#ac-20260903-003), [AC-20260903-004](agentchangelog.md#ac-20260903-004), [AC-20260903-005](agentchangelog.md#ac-20260903-005), [AC-20260903-006](agentchangelog.md#ac-20260903-006), [AC-20260903-007](agentchangelog.md#ac-20260903-007), [AC-20260903-008](agentchangelog.md#ac-20260903-008), [AC-20260903-009](agentchangelog.md#ac-20260903-009), [AC-20260903-010](agentchangelog.md#ac-20260903-010), [AC-20260903-011](agentchangelog.md#ac-20260903-011), [AC-20260903-012](agentchangelog.md#ac-20260903-012), [AC-20260903-013](agentchangelog.md#ac-20260903-013), [AC-20260903-014](agentchangelog.md#ac-20260903-014), [AC-20260903-015](agentchangelog.md#ac-20260903-015), [AC-20260903-016](agentchangelog.md#ac-20260903-016), [AC-20260903-017](agentchangelog.md#ac-20260903-017), [AC-20260903-018](agentchangelog.md#ac-20260903-018), [AC-20260903-019](agentchangelog.md#ac-20260903-019)
+- linked_changes: [AC-20260903-013](agentchangelog.md#ac-20260903-013), [AC-20260903-014](agentchangelog.md#ac-20260903-014), [AC-20260903-015](agentchangelog.md#ac-20260903-015), [AC-20260903-016](agentchangelog.md#ac-20260903-016), [AC-20260903-017](agentchangelog.md#ac-20260903-017), [AC-20260903-018](agentchangelog.md#ac-20260903-018), [AC-20260903-019](agentchangelog.md#ac-20260903-019), [AC-20260903-020](agentchangelog.md#ac-20260903-020), [AC-20260903-021](agentchangelog.md#ac-20260903-021), [AC-20260903-022](agentchangelog.md#ac-20260903-022), [AC-20260903-023](agentchangelog.md#ac-20260903-023), [AC-20260903-024](agentchangelog.md#ac-20260903-024), [AC-20260903-025](agentchangelog.md#ac-20260903-025), [AC-20260903-026](agentchangelog.md#ac-20260903-026), [AC-20260903-027](agentchangelog.md#ac-20260903-027), [AC-20260903-028](agentchangelog.md#ac-20260903-028), [AC-20260903-029](agentchangelog.md#ac-20260903-029), [AC-20260903-030](agentchangelog.md#ac-20260903-030), [AC-20260903-031](agentchangelog.md#ac-20260903-031)

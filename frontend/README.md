@@ -32,8 +32,11 @@ It cannot hard-code secure, blocked, healthy, or zero-traffic states.
 
 There is no package.json, source tree, or dependency set.
 
-The five-day alpha uses local HTML, CSS, and JavaScript served by the coordinator
-instead of adding a frontend build chain or desktop wrapper. Chat and Control
-Center form the first usable slice; Documents and Code reuse the same job form,
+The recorded alpha baseline uses local HTML, CSS, and JavaScript served by the
+coordinator. [TechStack.md](../TechStack.md#3-frontend-and-product-surfaces)
+proposes React + TypeScript + Vite for C03, with built assets still served
+locally; this is a recommendation, not an implemented framework change.
+
+Chat and Control Center form the first usable slice; Documents and Code reuse the same job form,
 event stream, artifact links, and truthful unavailable states. Packaging remains
 deferred until the complete demonstration path works.

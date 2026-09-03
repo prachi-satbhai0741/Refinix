@@ -47,7 +47,7 @@ pipeline, not the name of a single model.
 
 | Pack | Candidate | Intended use | Status |
 |---|---|---|---|
-| Main engine | Qwen3.5-4B Q4 candidate | General chat, planning, tool use, and native vision | Research candidate |
+| Main engine | `qwen3.5:4b-q4_K_M` | General chat, planning, tool use | **Selected for the first path — Integrity verified** on the macOS coordinator (see §3.1) |
 | Documents | PaddleOCR-VL-1.6 candidate | OCR, scans, and document layout | Research candidate |
 | Semantic knowledge | Qwen3-Embedding-0.6B candidate | Local embeddings | Research candidate |
 | Code | Qwen2.5-Coder-7B-Instruct Q4 candidate | Code generation and patch work | Research candidate |
@@ -77,6 +77,69 @@ and approval path rather than being treated as verbatim input.
 This shortlist is not an installation manifest. No candidate may enter the
 onboarding picker until its exact source, licence, version, files, hashes, and
 runtime path are reviewed.
+
+## 3.1 OD-05 — the first selected model set
+
+**The first model set is one model.** The two signature workflows have not been
+implemented, so a Documents, Code, embedding or voice model would be provisioned
+before anything could consume it. Those stay unprovisioned until C07 names the
+workflow that needs them.
+
+The macOS coordinator reused its copy from 2026-08-08. At the human C02
+checkpoint on 2026-09-03, the Ubuntu worker downloaded the same selected model
+into `/usr/share/ollama/.ollama/models` using its existing Ollama installation.
+Its returned checksum output reports `OK` for the manifest and all four blobs.
+
+| Field | Value |
+|---|---|
+| Internal ID | `af-main-qwen35-4b-q4km` |
+| Upstream identifier | `qwen3.5:4b-q4_K_M` |
+| Source | `registry.ollama.ai/library/qwen3.5`, tag `4b-q4_K_M` |
+| Manifest SHA-256 | `2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd` |
+| Format / quantisation | GGUF, `Q4_K_M` (file magic `GGUF` confirmed on the blob) |
+| Reported parameter size | `model_type` 4.7B in the image config |
+| Weights file | `sha256:81fb60c7daa80fc1123380b98970b320ae233409f0f71a72ed7b9b0d62f40490` — 3,389,971,840 B |
+| Config | `sha256:de9fed2251b37295b763727a59ca35cf5cfe5c7379bc3e2104b2ce3c145aa887` — 475 B |
+| Licence layer | `sha256:7339fa418c9ad3e8e12e74ad0fd26a9cc4be8703f9c110728a992b193be85cb2` — 11,355 B, **Apache License 2.0** |
+| Default params layer | `sha256:9371364b27a52acac9d87f88bd93c9db1174d8d6ec57f6888925cdc1788871ff` — `temperature 1, top_k 20, top_p 0.95, presence_penalty 1.5` |
+| Minimum runtime | Ollama `>= 0.17.1` (declared in the image config) |
+| Storage | Weights approximately 3.16 GiB; macOS store `~/.ollama/models`, Ubuntu store `/usr/share/ollama/.ollama/models`. Ubuntu also retains its pre-existing `qwen3:4b`. |
+| Evidence state | **Integrity verified; bounded inference and local microbenchmark observed** on both devices, 2026-09-03. Coordinator blobs were re-hashed locally; Ubuntu returned manifest/blob checks and the same manifest digest in `/api/ps`. This is a fixed-prompt smoke check, not a scored quality or application acceptance test. |
+
+### Bounded execution settings for the first path
+
+| Setting | Value | Why |
+|---|---|---|
+| **Thinking** | **`think: false`** (`chat_template_kwargs.enable_thinking: false` on `llama-server`) | **Required, not a preference.** This is a thinking model: left on, it spent the entire output budget reasoning and returned an **empty** answer at `num_predict` 128 *and* 512, both stopping on `length`. With thinking off the same prompt finished in 89 tokens on `stop`. Measured on the macOS coordinator 2026-09-03. |
+| Context | `num_ctx` 4096 | Ollama's documented default; an advertised maximum is not a supported context |
+| Output limit | `num_predict` 128 for self-test and comparison runs | Enough for a complete answer with thinking off; keeps a failing run cheap |
+| Sampling | `temperature` 0, `seed` 42 for checks | Four runs produced one response SHA-256, so a regression is visible; identity is proven by hash, not inferred from counts |
+| Idle residency | Request field `keep_alive: "10m"`; preparation request uses `"0"` | Keeps recorded warm runs resident; no persistent service-setting change was made |
+| Bind address | `127.0.0.1:11434` | Observed on the coordinator via `lsof`/`netstat` and in the Ubuntu worker's returned socket snapshot |
+
+### Estimated versus measured
+
+The weight-file size is not runtime RAM or VRAM. Observations from 2026-09-03
+are recorded in [evaluation.md §5.1](evaluation.md#51-od-03-runtime-comparison):
+
+| Device / runtime | Cold TTFT including load | Warm median TTFT | Warm generation |
+|---|---:|---:|---:|
+| macOS coordinator, Ollama 0.32.14 | 2.504 s | 0.225 s | 37.9 tok/s |
+| Ubuntu worker, Ollama 0.33.2 | 16.0149 s | 0.3369 s | 10.14 tok/s |
+| macOS coordinator, bundled engine direct | Unmeasured | 0.0502 s | 36.5 tok/s |
+
+The Ubuntu follow-up snapshot reports runner RSS **2157.4 MiB** and daemon RSS
+**54.7 MiB**, separately. Ollama reports model allocation 3,727,561,846 bytes,
+of which 2,217,780,180 bytes are GPU allocation at context 4096; this supports
+partial GPU placement, not a layer count or percentage of computation. The
+earlier benchmark's `rss_mb: 69.7` matched the daemon only and is invalid as
+runner or total runtime RAM. macOS uses unified memory, with no separately
+reported VRAM. Historical RSS snapshots are not peak or aggregate RAM evidence.
+
+All four responses were identical within each run set; Ubuntu and Mac hashes
+differ. Output quality on either device, workload concurrency, container GPU
+access and sustained performance remain unverified. The requester deferred
+controlled cold-start and Ubuntu direct-engine comparisons at C02 closeout.
 
 ## 4. Required manifest
 
@@ -175,17 +238,53 @@ installation during offline runtime.
 Use one existing local runtime wherever the target fleet permits it. Add a
 second adapter only for a measured hardware or operating-system blocker.
 
-Candidates include Ollama, llama.cpp, and MLX, but the first selection remains
-open until:
+### OD-03 — Ollama is the first runtime
 
-- the Mac and one Windows worker complete real inference;
-- the runtime exposes the required local API and streaming behaviour;
-- loopback binding is verified;
-- licence and redistribution boundaries are recorded;
-- model storage, cancellation, and health reporting are observed.
+**Decision:** the first validation path uses **Ollama** on both critical-path
+devices. One runtime, one adapter. `llama.cpp`'s `llama-server` is retained
+**only as a measurement comparison**, not as a second production adapter, and
+MLX is not adopted for the alpha.
 
-Do not create a runtime plugin framework before two proven adapters require a
-shared boundary.
+The first validation path is **macOS arm64 + Ubuntu x86_64**. Windows support is
+**explicitly unverified** and is not on this path.
+
+Recorded reasons, each traceable:
+
+| Reason | Evidence |
+|---|---|
+| Already installed on both critical-path devices | macOS coordinator **0.32.14**; Ubuntu worker client/server **0.33.2**, reported 2026-09-03 |
+| Observed loopback bind | Both device snapshots show `127.0.0.1:11434`; this does not prove zero public outbound traffic |
+| Licence | MIT (`ollama/ollama`) |
+| Already holds the selected model | Content-addressed store, integrity re-verifiable offline (§3.1) |
+| One API across both operating systems | Same HTTP surface on macOS arm64 and Linux x86_64 |
+| Native per-request timings | The measured `/api/chat` streams return `load_duration`, `prompt_eval_duration`, `eval_count`, `eval_duration` |
+
+**The latency concern is measured within a limited scope.** The macOS bundled
+engine's warm fixed-prompt TTFT was lower than the earlier Ollama baseline;
+generation was approximately 36–38 tok/s for both. This small sequential sample
+does not isolate wrapper overhead or establish a general runtime ranking.
+Two risks still matter:
+
+1. **Per-request overhead** from the extra HTTP and scheduling layer.
+2. **Silent cold reloads** — a model is unloaded after 5 minutes idle by
+   default, so an unpinned `keep_alive` turns a "warm" measurement into a cold
+   one without saying so.
+
+The [recorded comparison](evaluation.md#51-od-03-runtime-comparison) reused the
+same GGUF and the engine bundled with Ollama; it did not install or qualify a
+separate upstream llama.cpp release. On 2026-09-03 the requester retained
+Ollama and explicitly deferred controlled cold-start and Ubuntu direct-engine
+comparisons. Those results remain unmeasured, without blocking C02 acceptance.
+
+Adopt a second adapter only if that measurement, or a hard macOS/Linux blocker,
+forces it. Do not create a runtime plugin framework before two proven adapters
+require a shared boundary.
+
+| Runtime | Licence | Bind used for this path | Status |
+|---|---|---|---|
+| Ollama | MIT | `127.0.0.1:11434` | **Selected for the first path** |
+| Ollama-bundled `llama-server` | MIT | `127.0.0.1:8080` on macOS, explicitly configured | Direct Mac comparison observed; bundled Ubuntu runner observed but direct comparison deferred. Temporary Mac server stopped by requester. |
+| MLX | — | — | Not adopted for the alpha |
 
 ## 9. Hardware policy
 

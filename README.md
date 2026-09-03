@@ -21,13 +21,13 @@
 
 - [SIH Problem Statement](#sih-problem-statement-117)
 - [What Is AegisForge?](#what-is-aegisforge)
-- [Why This Problem Is Hard](#why-this-problem-is-hard)
+- [Why This Problem Statement](#why-this-problem-statement)
 - [Design Philosophy: Coordinator, Not a Cluster](#design-philosophy-coordinator-not-a-cluster)
 - [Product Surfaces and Setup](#product-surfaces-and-setup)
 - [Proposed Innovation: The Sovereign Proof Card](#proposed-innovation-the-sovereign-proof-card)
 - [Project Boundaries & Trust Model](#project-boundaries--trust-model)
 - [Repository Structure](#repository-structure)
-- [Current Status](#current-status)
+- [Current Status](docs/evaluation.md#current-status)
 - [Getting Started](#start-here)
 - [Contributing](#contributing)
 - [License](#licence)
@@ -82,7 +82,7 @@ nodes never receive canonical workspace ownership merely by joining.
 
 This is a deliberate architectural position, not an oversight — see [Design Philosophy](#design-philosophy-coordinator-not-a-cluster) below for why.
 
-> **Status:** Day 1 implementation has started with [shared contracts and passing local checks](backend/contracts/README.md). No application runtime, model bundle or executable product exists yet. This README and the linked PRD describe the intended system, its constraints, and its demonstration plan.
+> **Status:** AF-001 implementation has started with [shared contracts and passing local checks](backend/contracts/README.md). No application runtime, model bundle or executable product exists yet. This README and the linked PRD describe the intended system, its constraints, and its demonstration plan.
 
 ---
 
@@ -175,6 +175,7 @@ AegisForge/
 │   ├── model-catalog.md   # Model packs, manifests, and provisioning
 │   └── evaluation.md      # Prototype plan, acceptance, metrics, and demo
 ├── agent-memory/         # Searchable record of repository-affecting work and decisions
+├── TechStack.md          # Recommended languages and technologies for each layer
 ├── CONTRIBUTING.md       # Branch, review, and release workflow
 ├── AGENTS.md             # Repository-wide implementation rules and conventions
 └── README.md
@@ -185,7 +186,8 @@ AegisForge/
 There is nothing to install or run yet. Before contributing code:
 
 1. Start with the [documentation map](docs/README.md) and short
-   [PRD](docs/prd.md).
+   [PRD](docs/prd.md), then read [TechStack.md](TechStack.md) for the recommended
+   languages and technologies, their current status and trade-offs.
 2. Do not begin framework scaffolding ahead of an approved v1 baseline and
    measured evidence from one local inference path followed by one real
    paired-worker path.

@@ -2,14 +2,14 @@
 
 Status: active execution board; tasks advance only with recorded evidence.
 
-The internal sprint deliberately attempts every P0 outcome plus the signature
+The alpha implementation deliberately attempts every P0 outcome plus the signature
 workflow and concurrency outcomes currently labelled P1 in the PRD. This is an
 aggressive execution target, not a silent change to PRD priority labels.
 
 This file turns the [PRD](docs/prd.md) into an execution order. Product and
 security requirements remain owned by the focused documents in
-[docs/README.md](docs/README.md); this file owns only sequence, ownership, and
-integration gates.
+[docs/README.md](docs/README.md); this file owns execution chunks, named human
+checkpoints, and integration gates.
 
 ## Mission
 
@@ -26,7 +26,7 @@ Distribution means task-level orchestration, not model sharding or combined
 VRAM. No mocked inference, routing, sandbox, artifact, or network evidence may
 be presented as real.
 
-## Friday product bar
+## Product acceptance
 
 The candidate is not judged by file count, agent count, or Kubernetes objects:
 
@@ -40,150 +40,274 @@ The candidate is not judged by file count, agent count, or Kubernetes objects:
   Services, Redis queue state, deterministic routing, approval, failure
   recovery, and scoped offline evidence in one coherent story.
 
-If the Documents workflow is not real by the Day 3 gate, a second worker,
-multilingual support, voice, scaling, and visual polish are stopped. If the
+Until C09 verifies both signature workflows, a second worker, multilingual
+support, voice, scaling, and visual polish remain deferred. If the
 complete frozen path does not pass three consecutive rehearsals, it is not the
 candidate regardless of how many individual components work.
 
 ## Operating contract
 
-- The team reports access to six Antigravity seats, Claude Pro, Codex Plus,
-  free-tier Codex, OpenCode, and other assistants. This is planning capacity,
-  not evidence that any task or tool works.
-- A human owner remains accountable for every task. AI agents receive bounded
-  work packets with allowed paths, frozen contracts, an acceptance command, and
-  forbidden scope. Agent count never replaces integration or hardware proof.
-- Critical-path build work may be assigned across the team after each owner
-  proves the required local environment with the task's smallest acceptance
-  check. Until then, Aditya or Vedant remains the fallback build owner.
-- Aditya is integration owner and retains control of Git, merges, conflicts,
-  scope decisions, and demo acceptance.
-- Claude takes bounded implementation tasks and returns changed paths, exact
-  checks run, observed results, and remaining failures.
-- Codex reviews the current integrated source and observed evidence rather than
-  relying on an implementation summary. Codex changes code only when explicitly
-  authorised.
-- Team members own capability work on their branches and merge through the
-  [member branch -> `dev` -> `main` flow](CONTRIBUTING.md#the-one-rule).
-- Integrate into `dev` at least twice daily. A module is not considered working
-  until it runs through the shared coordinator contract.
-- No two agents may invent parallel versions of the job envelope, event schema,
-  authentication, Redis keys, or Kubernetes manifests. AF-001 freezes those
-  seams before downstream work merges.
-- Tests, installers, model downloads, migrations, deployments, and live-system
-  commands require the permission defined in [AGENTS.md](AGENTS.md).
+Claude builds; Codex reviews the current combined source and observed results.
+Anyone may implement any AF task. No agent needs a person's identity to edit
+code, and no person has exclusive ownership of a module. The board below
+identifies human actions by **device role** — `macOS coordinator`, `Ubuntu
+worker` — or by **requester** for acceptance, never by team member.
 
-Task states are `planned`, `in-progress`, `review`, `verified`, or `blocked`.
-Only observed acceptance evidence moves a task to `verified`.
+- Execute one authorised chunk at a time. Within it, build, review and fix
+  confirmed findings without repeatedly asking permission for ordinary coding.
+- Stop execution at the first required human action: a missing decision or
+  permission, download, installation, host command, pairing, physical operation,
+  artifact inspection, or Git publication. Do not bypass it by advancing another
+  chunk. A newly discovered human dependency splits the chunk at that point.
+- Prepare the exact action and obtain Codex's review before the human performs
+  it. Whoever operates the named device returns the evidence to the requester;
+  verify the result before resuming. A message saying "done" alone does not
+  prove a runtime gate.
+- Continue only within the authorised scope after the checkpoint is cleared.
+  This board is not permission to execute the entire plan. Documentation
+  approval does not start runtime implementation or authorise terminal setup.
+- A checkpoint belongs to a device, not a person. Anyone with access to that
+  device may perform it. Change the target device in the handoff rather than
+  reassigning a person; never silently operate another device.
+- Keep the shared contract, coordinator authority and task acceptance gates. No
+  alternate job schema, authentication scheme, Redis namespace or manifest set.
+- Tests and machine operations retain the permissions in [AGENTS.md](AGENTS.md).
+  Reuse applicable permissions already granted; do not transfer permission from
+  one device or session to another. Missing permission is a checkpoint.
+- Humans publish through [member branch -> dev -> main](CONTRIBUTING.md#the-one-rule).
+  Integrate reviewed work when its acceptance and human checkpoints are clear.
+  Agents do not publish without authorisation.
 
-## Proposed ownership
+Task states remain `planned`, `in-progress`, `review`, `verified`, or `blocked`.
+A human dependency records `blocked` plus the exact required action, not a code
+failure. Only observed acceptance and requester verification justify `verified`.
+The chunk map does not change the AF task states recorded below.
 
-Aditya may reassign work without changing the architecture.
+## Human checkpoint handoff
 
-| Owner | Role | Required output |
+Every stop must contain all of the following in the conversation, ready for the
+requester to relay to whoever operates the device. Do not create personal task
+documents.
+
+1. **Which device and where:** the device role — `macOS coordinator` or
+   `Ubuntu worker` in the first configuration — plus its OS, architecture,
+   shell and actual working directory. Identify the device, not a team member.
+   Optional machines are identified the same way and stay off the critical
+   path until a measured need selects one.
+2. **Action and reason:** the exact decision, UI steps or copy-paste commands,
+   what they change, and why the current chunk cannot proceed without them.
+3. **Setup details:** for downloads/installations, approved source link,
+   version/revision, licence, expected integrity value and verification command,
+   download/disk requirements and destination. For deployment, pin the actual
+   image digest. Give required privileges and rollback/cleanup where applicable.
+4. **Return evidence:** exact output, installed path/version/hash or artifact
+   observation needed, plus what success and failure look like. Exclude secrets,
+   personal documents, credentials and unnecessary machine identifiers.
+5. **Resume condition:** the focused check agents will perform with permission,
+   remaining human acceptance and the next eligible chunk. Do not unlock later
+   work from an unverified setup claim.
+
+Unknown versions, unavailable artifacts or an unmade policy choice are reasons
+for a decision checkpoint, not placeholder commands for someone to execute.
+Prepare future commands against the actual implementation and current device
+inventory. Do not distribute speculative installs now. The C01 read-only
+[inventory commands](docs/devicespecifications.md#checkpoint-c01-read-only-inventory)
+have been run and returned for all six devices; the C02 follow-up commands are
+also read-only and must report missing tooling rather than install it.
+
+## Numbered execution tasks
+
+The **thirteen numbered tasks** below define execution order. Building an image
+and reporting its digest must precede reviewing and applying the pinned cluster
+deployment. More human dependencies create additional stops; an already
+satisfied setup action needs evidence, not a repeated installation.
+
+Execute C01 → C02 → C03 → C04 → C05 → C06 → C07 → C08 → C09 → C10 → C11 →
+C12 → C13. The **After** column means the previous task's reviewed work, human
+checkpoint and return-evidence checks are all clear. At **Wait**, pause until
+the named device returns the required evidence. Do not skip ahead while waiting.
+Progress depends on these conditions, with no duration limit or delivery date.
+
+**Current scope: C02 — Environment preparation, setup and verification.** The
+requester authorised C02 and recorded that C01's contract code passed review.
+Codex reviewed the AF-001 fixes at `e7f44fb` and reported PASS with eight
+contract checks passing and all pinned dependencies matching; that test result
+is **Codex's recorded review, not a Claude run**. `backend/` is unchanged since
+`e7f44fb`, so the result is reused rather than repeated. Read-only inventory was
+supplied for all six devices and is recorded in
+[devicespecifications.md](docs/devicespecifications.md). AF-001 stays a
+**draft** until its consumer-integration gate passes at C05; OD-06 pairing is
+recorded but unimplemented.
+
+**C01 documentation and C02 setup are ready for requester closeout review.**
+Requester acceptance remains pending, with the targeted Ubuntu listener
+follow-up recorded below. Update this current-scope note when the requester
+authorises a new chunk; the note itself never grants permission. C03 has not
+started.
+
+C02 decisions are now recorded with upstream provenance:
+[OD-03 runtime](docs/model-catalog.md#od-03--ollama-is-the-first-runtime),
+[OD-05 model set](docs/model-catalog.md#31-od-05--the-first-selected-model-set),
+[OD-06 pairing](docs/security.md#41-od-06--the-prototype-pairing-decision) and
+[OD-08 pins](docs/architecture.md#81-od-08--resolved-infrastructure-pins). One
+bounded local inference path is measured on both critical-path devices
+([evaluation.md §5.1](docs/evaluation.md#51-od-03-runtime-comparison)).
+
+**C02 evidence returned, 2026-09-03:** the Ubuntu worker supplied versions,
+service/socket state, privileges and storage; downloaded the selected model
+into its existing Ollama store; returned five successful manifest/blob hash
+checks; and measured native Ollama inference. The macOS coordinator reused its
+installed model and Ollama-bundled `llama-server` for the direct-engine
+comparison, then reported stopping that temporary server with Ctrl+C.
+The original inventory had launched the coordinator's Ollama app through
+`ollama list`; inventory commands no longer use that path. No new runtime or
+driver installation, cluster deployment or worker-image build is recorded.
+
+**Requester decision, 2026-09-03:** retain Ollama and defer the controlled
+startup-to-first-answer comparison and the Ubuntu direct-engine comparison.
+Both remain unmeasured; they do not block C02 acceptance. Warm fixed-prompt
+measurements are not general performance or model-quality proof. Native
+inference is observed; container GPU support, pairing, application persistence
+and zero-egress evidence belong to later checkpoints.
+
+**C02 review follow-up:**
+
+- **Ubuntu wildcard listener:** identify the process and purpose of the
+  recorded `*:8080` bind. This is an open C02 setup item, separate from C05's
+  contract-port checks; resolve its exposure before enabling worker LAN access
+  or reusing that port. Recorded loopback inference remains valid.
+- **Cancellation:** not exercised in C02 and not implemented in an application.
+  C06 / AF-005–AF-007 retains the implementation and cancel exercise; streaming
+  and configured request limits do not clear that gate.
+
+**Next human action:** the Ubuntu worker operator returns the listener evidence;
+the requester reviews and accepts this closeout, then separately authorises C03.
+
+The first configuration is two devices. Every other machine, and the incomplete
+GPU output on two of them, stays **off the critical path** until a measured need
+selects it through a new device-based setup checkpoint. Any device may still
+build any module.
+
+| Device role | Documented machine | Purpose in the first configuration |
 |---|---|---|
-| Aditya | Coordinator and integration owner | Frozen contracts, SQLite authority, routing, integration, scope, and release candidate |
-| Vedant | Worker and model owner | Docker image, FastAPI worker, runtime adapter, Redis consumer, and streaming |
-| Prachi | Kubernetes and isolation owner | K3s host, manifests, Services, Redis, NetworkPolicies, sandbox Jobs, and cluster evidence |
-| Sahil | Contract and reliability owner | Contract checks, lifecycle/routing matrices, retry, cancellation, and failure drills |
-| Yug | Documents owner | Public fixtures, OCR/page mapping, retrieval grounding, and document quality evidence |
-| Tanvi | Product and demo owner | Local web UI, Control Center acceptance, Proof Card review, and demo pack |
+| **macOS coordinator** | Apple Silicon `Mac17,3`, macOS 26.6.2 (25G83), arm64, 16 GiB unified, 340 GiB free on `/` | Primary workspace and UI, canonical SQLite state, approvals, local main-engine inference |
+| **Ubuntu worker** | Ubuntu 24.04.4 LTS, x86_64, 15 GiB RAM, RTX 2050 4096 MiB (driver 580.173.02), 115 GiB free on `/` | Candidate single-node K3s host, worker image build, Redis, sandboxed code execution |
 
-The hardware mapping is a hypothesis until measured; use
-[devicespecifications.md](docs/devicespecifications.md) for current evidence.
-Prachi must close the K3s-host portion of the
-[hardware checks](docs/devicespecifications.md#still-needed-before-final-model-placement)
-before AF-002 begins. The other checks gate only the device or model assignment
-they affect; they do not block the first cluster spine.
+| Task number and name | After | Claude builds; Codex reviews | Wait: named human action | Verify before continuing |
+|---|---|---|---|---|
+| C01 — Contracts and prerequisites | — | **AF-001** — Repair output-validator requirements, typed cancellation/interruption reasons, and citation/page payloads; update examples and focused checks. Keep the contract draft until consumers integrate. | **Requester:** accept the reviewed contract changes and this documentation closeout. **Every inventoried device:** report its own read-only inventory — supplied for all six devices. | Reviewed contract diff and authorised check results; each device's current inventory or explicit unavailability. Use it to prepare setup choices. No runtime installation here. |
+| C02 — Environment setup | C01 cleared | **AF-001–AF-004 preparation** — Prepare exact setup instructions and evidence-backed runtime/model/pairing choices (OD-03/05/06), plus K3s/Redis/base-image pins (OD-08); built-image digests follow C04. | **Requester:** confirm the proposed choices after Codex's review. **macOS coordinator:** confirm the reviewed dependency/runtime/model state and run the reviewed bounded local inference check. **Ubuntu worker:** return the read-only environment evidence, then perform only the reviewed worker runtime/model setup for the selected path. | Humans supply versions, paths, hashes and setup output. Agents verify compatibility with permitted checks. Only approved required components are installed; no cluster deployment or six-device model rollout. |
+| C03 — Local application | C02 cleared | **AF-004, local AF-003 adapter** — Implement coordinator SQLite, local inference, basic Chat/Control Center, streaming and restart reconciliation using the installed runtime. | **macOS coordinator:** start the reviewed local commands, send a request, restart the app, then inspect the UI and history. No second installation is required on any other device. | Real local response and retained job/attempt history after restart; missing measurements display unavailable. Return observations and permitted runtime-check output. |
+| C04 — Worker image build | C03 cleared | **AF-003, AF-002 preparation** — Implement the worker/API and Docker build assets against the reviewed contract and pairing policy; prepare exact build and digest-inspection commands. | **Ubuntu worker:** run the reviewed image build and report build output, immutable image digest, architecture and provenance. | Agents inspect the actual build result and prepare a deployment pinned to that digest. Build failure stays in C04; a Dockerfile alone is not image evidence. |
+| C05 — Cluster deployment and integration | C04 cleared | **AF-001–AF-004 integration** — Review the pinned K3s/Redis/worker manifests, limits and Service exposure using C04's image evidence. | **Ubuntu worker:** provision and apply the reviewed cluster commands. **macOS coordinator:** perform the coordinator acceptance steps supplied for this setup. | Ready Pods, internal-only Redis, one real worker-model response, persisted coordinator metadata and shared-version consumers. Pass the C05 integration gate before C06. |
+| C06 — Distributed execution | C05 cleared | **AF-005–AF-007** — Implement Redis dispatch/leases/receipt, routing, SSE replay, cancellation, recovery, preflight and truthful fallback. | **macOS coordinator and Ubuntu worker:** connect and explicitly pair the two devices, apply the reviewed trusted-LAN settings, and perform the documented disconnect/cancel exercise. | Actual Mac -> Service -> Redis -> executor -> Mac completion, correct route reason, and usable canonical history after cluster loss. Pass the C06 distributed-execution gate. |
+| C07 — Workflow inputs and setup | C06 cleared | **AF-008–AF-011 preparation** — Prepare permitted scan/SOP and synthetic-code fixtures, their checks, and only the additional model/dependency setup the two workflows require. | **Requester:** approve the public scan/SOP provenance, the synthetic repository and the allowed validation commands. **macOS coordinator:** select the coordinator inputs. **Ubuntu worker:** install only the approved missing worker workflow packages and models. | Source hashes, expected extraction/citation examples, selected repository/base and commands, plus verified installed artifacts. If another device is needed, stop and name that device before any download. |
+| C08 — Documents workflow | C07 cleared | **AF-008–AF-009** — Implement real rendering/OCR, uncertainty, page mapping, local retrieval, cited drafting, DOCX creation and artifact checks. | **macOS coordinator:** open the Word output and compare its extracted facts and citations against the approved scan/SOP. | Openable Word output with checksum, resolvable citations and honest missing values. Fix discrepancies before proceeding to Code. |
+| C09 — Code workflow | C08 cleared | **AF-010–AF-011** — Implement bounded repository context, patch generation and restricted validation Jobs. Reuse approved images where suitable; a new image needing a build creates another checkpoint before deployment. | **Ubuntu worker:** apply the reviewed sandbox configuration and run the approved host steps. **macOS coordinator:** inspect the patch and validation results on the approved fixture. | Applicable patch, observed approved-command result, enforced limits/network isolation and cleanup; canonical repository unchanged. Pass the C09 signature-workflow gate. |
+| C10 — Concurrent workflows and approvals | C09 cleared | **AF-012–AF-014** — Implement concurrent workflows, exact-action approvals, durable final-write recovery and evidence-backed Proof Cards. | **macOS coordinator:** choose the output destination, exercise approve/deny/expiry, and inspect both workflows and the displayed proof against the observed results. | Concurrent progress with separate attempts/artifacts; denial writes nothing; approval writes once; no inferred health, timing or network measurements. |
+| C11 — Offline evidence | C10 cleared | **AF-015** — Prepare reviewed Pod/host network controls, rollback commands and independent observation for the real concurrent run. | **Ubuntu worker:** apply the host and cluster network controls. **macOS coordinator:** apply the coordinator network controls. **A separate observing device on the same LAN:** record the named device, interface and time window using the reviewed observation procedure. | Actual concurrent outputs plus enforcement and observation evidence for the specified scope. Preserve trusted LAN traffic and pass the C11 concurrent/offline gate; absent evidence remains unavailable. |
+| C12 — Recovery and measurements | C11 cleared | **AF-016–AF-017** — Prepare bounded failure drills and comparable standalone/distributed measurements; inspect results and repair confirmed recovery defects. | **macOS coordinator and Ubuntu worker:** perform the reviewed restart, disconnect, Pod, Redis and cluster operations, and record timing, resources, quality and failure outcomes. | Canonical history survives, stale attempts are fenced, no duplicate final writes, and reproducible cold/warm results on the named devices. Rerun affected checks after fixes. |
+| C13 — Candidate acceptance | C12 cleared | **AF-018–AF-019** — Codex reviews the integrated source/evidence; Claude fixes remaining defects and prepares the frozen demo instructions and claim list. | **macOS coordinator:** operate three clean-start runs, record a backup, and inspect the artifacts and demo clarity. **Ubuntu worker:** operate the cluster. **Requester:** compare the results with the recorded evidence, check the selected model/runtime provenance, accept the candidate and coordinate human Git promotion. | Three successful runs on the same documented setup, backup recording, honest claims, independent review and requester acceptance. This closes the alpha, not the later finals scope. |
 
-## Immediate work packets
+The AF rows below retain their dependency and acceptance meaning. For AF-001,
+C01 reviews the shared draft, C02 resolves setup/security decisions, and C03–C05
+prove its consumers. Dependency preparation may use that reviewed draft; neither
+AF-001 nor a dependent integration gate becomes verified before its full evidence
+exists. Do not claim a contract freeze from schema checks alone.
 
-These four packets start in parallel after Aditya publishes the AF-001 contract
-draft. Each packet has one merge owner even when several AI agents assist.
+## Verification and team explanation
 
-| Packet | Owner | Allowed initial paths | First observable result |
-|---|---|---|---|
-| Contract and coordinator | Aditya | `backend/contracts/`, coordinator source, smallest contract check | One SQLite-persisted local job emits the frozen event sequence |
-| Worker image and runtime | Vedant | worker source, `Dockerfile`, runtime adapter | One Docker-built image answers `/v1/health` and streams one real model response |
-| Kubernetes and Redis | Prachi | `infra/k3s/`, deployment instructions | K3s reports Ready worker and Redis Pods; only the worker Service is reachable from the LAN |
-| UI and acceptance | Tanvi | `frontend/`, acceptance checklist | The local browser UI shows one live job and truthful unavailable states |
+- Before building, name the smallest check that demonstrates the chunk's
+  changed behavior. Run it only with the required permission.
+- Claude supplies changed paths, exact commands, environment and observed
+  results. Codex inspects the combined diff and independently verifies the
+  material claims with proportionate authorised checks.
+- Reuse valid results tied to the same source/environment. Rerun checks affected
+  by changes; broaden only for a shared-boundary risk or a required gate. Do not
+  repeat a full suite after every edit or add CI triggers to police each chunk.
+- Exercise the relevant end-to-end path at each task acceptance gate and the
+  three final rehearsals. Contract tests cannot replace model, device, sandbox,
+  approval or network evidence. Tests reduce risk; they do not guarantee perfection.
+- After **every build and review cycle**, explain to the requester: **Built**
+  (plain language plus one example), **Verified** (observed checks and limits),
+  and **Next / Human action** (device, instructions, return evidence and resume
+  condition). Review reports use `PASS`, `NEEDS FIX`, or `BLOCKED`; a code-review
+  pass does not clear an outstanding human or runtime gate.
 
-Sahil writes contract and failure checks against the frozen envelope. Yug
-prepares the public scan, page ground truth, SOP, and expected output without
-blocking the Day 1 spine.
+## AF implementation requirements
 
-## Internal hackathon: five-day execution
+### AF-001–AF-004 — Contracts and local execution
 
-### Day 1 — Freeze contracts and prove the local spine
+| ID | State | Task | Depends on | Acceptance gate |
+|---|---|---|---|---|
+| AF-001 | in-progress | Freeze versioned node, job, attempt, event, approval, proof, HTTPS, Redis-key, and idempotency contracts | — | Coordinator, worker, UI, and manifests consume one contract version; schema examples pass the smallest contract check |
+| AF-002 | planned | Provision one pinned single-node K3s cluster on the authorised Ubuntu host and deploy pinned Redis 7.2.x behind ClusterIP | AF-001 | Kubernetes reports Ready Redis and worker placeholders; Redis is unreachable from the LAN; versions, digests, and licences are recorded |
+| AF-003 | planned | Build the smallest Docker worker image with FastAPI, one runtime adapter, the frozen Service API, and one real model | AF-001, AF-002 | A real prompt streams from a worker Pod; source, licence, revision, image digest, memory, and latency are recorded |
+| AF-004 | planned | Implement SQLite-backed coordinator state and the smallest local browser UI over one event stream | AF-001 | A local job reaches a truthful terminal state after restart; Chat and Control Center show live state while unfinished surfaces say unavailable |
 
-| ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
-|---|---|---|---|---|---|---|
-| AF-001 | in-progress | Aditya | Sahil checks lifecycle and schema cases | Freeze versioned node, job, attempt, event, approval, proof, HTTPS, Redis-key, and idempotency contracts | — | Coordinator, worker, UI, and manifests consume one contract version; schema examples pass the smallest contract check |
-| AF-002 | planned | Prachi | Vedant reviews image/runtime requirements | Provision one pinned single-node K3s cluster on Prachi's Ubuntu host and deploy pinned Redis 7.2.x behind ClusterIP | AF-001 | Kubernetes reports Ready Redis and worker placeholders; Redis is unreachable from the LAN; versions, digests, and licences are recorded |
-| AF-003 | planned | Vedant | Sahil records latency and failure output | Build the smallest Docker worker image with FastAPI, one runtime adapter, the frozen Service API, and one real model | AF-001, AF-002 | A real prompt streams from a worker Pod; source, licence, revision, image digest, memory, and latency are recorded |
-| AF-004 | planned | Aditya + Tanvi | Sahil checks state transitions | Implement SQLite-backed coordinator state and the smallest local browser UI over one event stream | AF-001 | A local job reaches a truthful terminal state after restart; Chat and Control Center show live state while unfinished surfaces say unavailable |
-
-AF-001 has a [contract draft with five passing local checks](backend/contracts/README.md).
+AF-001 has a [contract draft with eight passing local checks](backend/contracts/README.md),
+now including kind-matched output validators, typed stop reasons, and citation
+payloads with a grounding guard.
 The OD-06 pairing decision, shared consumers and requester verification remain
-open; no Day 1 application runtime gate has passed.
+open; the C05 application integration gate has not passed.
 
-Day 1 gate: the pinned Docker image runs in a Ready Kubernetes Pod, one real
+C05 gate: the pinned Docker image runs in a Ready Kubernetes Pod, one real
 response streams through the worker API, and the coordinator persists the job,
 attempt, model, device, and timing record. No workflow work starts before this
 spine passes.
 
-### Day 2 — Prove real distributed execution
+### AF-005–AF-007 — Distributed execution
 
-| ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
-|---|---|---|---|---|---|---|
-| AF-005 | planned | Vedant + Prachi | Sahil tests pending, acknowledged, expired, and reclaimed work | Connect the worker API and executor through Redis Streams, leases, cancellation, bounded retention, and cleanup | AF-002, AF-003 | One queued attempt is consumed and acknowledged; a killed consumer leaves recoverable pending work; Redis restart loses no canonical record |
-| AF-006 | planned | Aditya | Sahil executes the routing matrix | Route from the Mac coordinator to the Kubernetes Service using capability, health, queue, and explicit-target rules | AF-003–AF-005 | Mac -> authenticated Service -> Redis -> executor -> SSE response completes with visible route reason and local fallback |
-| AF-007 | planned | Tanvi | Aditya connects only the frozen event contract | Finish the usable Chat and Control Center slice with guided preflight/self-test, node health, Pod readiness, model, queue, progress, cancel, disconnect, and fallback state | AF-004–AF-006 | A fresh documented setup selects the curated manifest and reaches a real self-test; every displayed value has a source and missing evidence displays unavailable |
+| ID | State | Task | Depends on | Acceptance gate |
+|---|---|---|---|---|
+| AF-005 | planned | Connect the worker API and executor through Redis Streams, leases, cancellation, bounded retention, and cleanup | AF-002, AF-003 | One queued attempt is consumed and acknowledged; a killed consumer leaves recoverable pending work; Redis restart loses no canonical record |
+| AF-006 | planned | Route from the Mac coordinator to the Kubernetes Service using capability, health, queue, and explicit-target rules | AF-003–AF-005 | Mac -> authenticated Service -> Redis -> executor -> SSE response completes with visible route reason and local fallback |
+| AF-007 | planned | Finish the usable Chat and Control Center slice with guided preflight/self-test, node health, Pod readiness, model, queue, progress, cancel, disconnect, and fallback state | AF-004–AF-006 | A fresh documented setup selects the curated manifest and reaches a real self-test; every displayed value has a source and missing evidence displays unavailable |
 
-Day 2 gate: a real Mac -> Kubernetes Service -> Redis -> executor Pod -> Mac
+C06 gate: a real Mac -> Kubernetes Service -> Redis -> executor Pod -> Mac
 inference completes, and stopping the cluster leaves the Mac workspace and its
 canonical history usable.
 
-If this path has not passed by the end of Day 2, freeze a standalone demo
-baseline and stop infrastructure expansion. Do not add nodes, replicas, Helm,
+While C06 is unverified, preserve the standalone baseline and repair the
+existing distributed path before C07. Infrastructure expansion remains blocked. Do not add nodes, replicas, Helm,
 Ingress, another broker, or another runtime to repair an unproven single path.
 
-### Day 3 — Complete both signature workflows
+### AF-008–AF-011 — Signature workflows
 
-| ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
-|---|---|---|---|---|---|---|
-| AF-008 | planned | Yug + Vedant | Yug owns public scans, ground truth, and scores | Implement scan rendering plus local OCR/vision extraction with source hash, page mapping, and explicit uncertainty through the shared job contract | AF-003, AF-006 | The public sample scan produces structured, page-linked extraction without fabricated missing values |
-| AF-009 | planned | Aditya + Yug | Tanvi opens and reviews the Word output | Add the minimum local SOP retrieval, cited drafting, Word generation, and artifact validation path | AF-008 | `inspection_report_to_approval_note` returns an openable cited `.docx` with checksum |
-| AF-010 | planned | Vedant + Sahil | Sahil owns the synthetic repository fixture | Implement bounded repository context and patch generation inside an assigned temporary workspace | AF-003, AF-006 | `repository_request_to_validated_patch` returns an applicable patch without modifying the canonical repository |
-| AF-011 | planned | Prachi | Vedant supplies the sandbox image; Sahil checks outputs | Run each approved validation command as a short-lived restricted Kubernetes Job Pod | AF-002, AF-010 | Default-deny egress, non-root execution, limits, deadline, cleanup TTL, command output, and artifact hashes are observed; no Docker socket is mounted |
+| ID | State | Task | Depends on | Acceptance gate |
+|---|---|---|---|---|
+| AF-008 | planned | Implement scan rendering plus local OCR/vision extraction with source hash, page mapping, and explicit uncertainty through the shared job contract | AF-003, AF-006 | The public sample scan produces structured, page-linked extraction without fabricated missing values |
+| AF-009 | planned | Add the minimum local SOP retrieval, cited drafting, Word generation, and artifact validation path | AF-008 | `inspection_report_to_approval_note` returns an openable cited `.docx` with checksum |
+| AF-010 | planned | Implement bounded repository context and patch generation inside an assigned temporary workspace | AF-003, AF-006 | `repository_request_to_validated_patch` returns an applicable patch without modifying the canonical repository |
+| AF-011 | planned | Run each approved validation command as a short-lived restricted Kubernetes Job Pod | AF-002, AF-010 | Default-deny egress, non-root execution, limits, deadline, cleanup TTL, command output, and artifact hashes are observed; no Docker socket is mounted |
 
-Day 3 gate: the application produces one real Word approval note and one real
+C09 gate: the application produces one real Word approval note and one real
 validated code patch through the same Service, Redis, job, event, and approval
 contracts.
 
-### Day 4 — Run concurrently and prove sovereignty
+### AF-012–AF-015 — Concurrency, approvals and offline evidence
 
-| ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
-|---|---|---|---|---|---|---|
-| AF-012 | planned | Aditya + Prachi | Sahil executes the concurrency matrix and records timings | Run independent Documents and Code attempts concurrently through separate Redis consumers and Pods | AF-005, AF-009, AF-011 | Both jobs progress simultaneously, retain separate attempt/artifact state, and show honest queue time |
-| AF-013 | planned | Aditya | Tanvi executes the approval and denial checklist | Enforce approval before canonical writes and bind it to the exact action, target, and attempt | AF-004, AF-009, AF-011 | Denial writes nothing; retry cannot reuse a stale approval; approval performs one bounded final write |
-| AF-014 | planned | Aditya + Tanvi | Tanvi checks every value against its source | Produce per-job Proof Cards from SQLite, Redis, Kubernetes, model, validation, integrity, approval, and network evidence | AF-012, AF-013 | Every displayed value has an identified source and observation window; unavailable evidence is not inferred |
-| AF-015 | planned | Prachi | Vedant confirms runtime endpoints; Sahil records interface and time bounds | Enforce default-deny Pod egress and host public-egress blocking while retaining authenticated Service traffic | AF-011, AF-014 | The real concurrent run completes with zero observed public outbound flow in the named interval and only documented LAN/cluster flows |
+| ID | State | Task | Depends on | Acceptance gate |
+|---|---|---|---|---|
+| AF-012 | planned | Run independent Documents and Code attempts concurrently through separate Redis consumers and Pods | AF-005, AF-009, AF-011 | Both jobs progress simultaneously, retain separate attempt/artifact state, and show honest queue time |
+| AF-013 | planned | Enforce approval before canonical writes and bind it to the exact action, target, and attempt | AF-004, AF-009, AF-011 | Denial writes nothing; retry cannot reuse a stale approval; approval performs one bounded final write |
+| AF-014 | planned | Produce per-job Proof Cards from SQLite, Redis, Kubernetes, model, validation, integrity, approval, and network evidence | AF-012, AF-013 | Every displayed value has an identified source and observation window; unavailable evidence is not inferred |
+| AF-015 | planned | Enforce default-deny Pod egress and host public-egress blocking while retaining authenticated Service traffic | AF-011, AF-014 | The real concurrent run completes with zero observed public outbound flow in the named interval and only documented LAN/cluster flows |
 
-Day 4 gate: Documents and Code complete concurrently on distributed compute,
+C11 gate: Documents and Code complete concurrently on distributed compute,
 with visible Pods, Redis queue state, routing, approvals, artifacts, and scoped
 zero-egress evidence.
 
-### Day 5 — Break it, freeze it, and rehearse it
+### AF-016–AF-019 — Recovery and candidate acceptance
 
-| ID | State | Build owner | Support and evidence | Task | Depends on | Acceptance gate |
-|---|---|---|---|---|---|---|
-| AF-016 | planned | Sahil | Aditya and Vedant repair only observed blockers | Exercise cancellation, executor-Pod loss, Redis restart, cluster loss, retry, and local fallback | AF-012–AF-015 | Failure is recoverable, canonical history survives, and no duplicate final write occurs |
-| AF-017 | planned | Sahil + Yug | Every teammate runs assigned fixtures and records named-device measurements | Run the same standalone and Kubernetes fixtures; record cold/warm latency, queue time, RAM/VRAM, restarts, and output quality | AF-008–AF-016 | Results are reproducible and slower results are reported honestly |
-| AF-018 | planned | Aditya | Codex reviews the integrated source; Tanvi assembles the evidence pack | Review the integrated source, licences, evidence, demo claims, and remaining blockers | AF-017 | Every claimed feature is observed; planned or broken paths are labelled and excluded from the script |
-| AF-019 | planned | Aditya + Vedant | The full team operates assigned demo stations and rehearses handoffs | Run the frozen demo from clean start three consecutive times and record one backup demonstration | AF-018 | Three successful runs use the same documented setup and public sample inputs |
+| ID | State | Task | Depends on | Acceptance gate |
+|---|---|---|---|---|
+| AF-016 | planned | Exercise cancellation, executor-Pod loss, Redis restart, cluster loss, retry, and local fallback | AF-012–AF-015 | Failure is recoverable, canonical history survives, and no duplicate final write occurs |
+| AF-017 | planned | Run the same standalone and Kubernetes fixtures; record cold/warm latency, queue time, RAM/VRAM, restarts, and output quality | AF-008–AF-016 | Results are reproducible and slower results are reported honestly |
+| AF-018 | planned | Review the integrated source, licences, evidence, demo claims, and remaining blockers | AF-017 | Every claimed feature is observed; planned or broken paths are labelled and excluded from the script |
+| AF-019 | planned | Run the frozen demo from clean start three consecutive times and record one backup demonstration | AF-018 | Three successful runs use the same documented setup and public sample inputs |
 
-Day 5 gate: no feature work remains. Only demo-breaking fixes, evidence repair,
+C13 gate: no feature work remains. Only demo-breaking fixes, evidence repair,
 and rehearsal may enter the internal candidate.
 
 ## Internal demo order
@@ -199,38 +323,42 @@ and rehearsal may enter the internal candidate.
 8. Approve one bounded write, deny another, then terminate one executor Pod.
 9. Show recovery, both Proof Cards, and the end of the observation window.
 
-## Early-completion ladder
+## Optional work after verified tasks
 
-Finishing a calendar day early means starting the next unpassed gate, not
-starting unrelated features. Stretch work unlocks only in this order:
+Proceed to the next eligible task only when its prerequisites and human
+checkpoint are clear. C07–C09 remain required after C06. Additional scope needs
+requester approval and these prerequisites:
 
-1. **After Day 2 passes:** finish both signature workflows and their fixtures.
-2. **After Day 3 passes:** add one bounded image-understanding moment and one
+1. **After C09 passes:** add one bounded image-understanding moment and one
    calculation-with-steps inside the approval note.
-3. **After Day 4 passes:** add a second executor replica and prove Redis-backed
+2. **After C11 passes:** add a second executor replica and prove Redis-backed
    concurrency and Pod-loss recovery on the same cluster.
-4. **After three clean rehearsals:** evaluate one additional physical worker or
+3. **After C13 passes:** evaluate one additional physical worker or
    the narrow text-only part of FR-019.
 
 Do not unlock multi-node Kubernetes, voice, PPT, Excel, broad P&ID support,
-another runtime, or another broker during the five-day candidate.
+another runtime, or another broker for the alpha candidate.
 
-## After internal selection: twelve-day finals sprint
+## After internal selection: finals tasks
 
-| Day | Build owner | Support owner | Focus | Exit gate |
-|---:|---|---|---|---|
-| 1 | Aditya | Tanvi records judge feedback and the claim matrix | Triage judge feedback and freeze the finals claim set | Every accepted change maps to a PRD requirement or observed demo weakness |
-| 2 | Aditya + Vedant | Sahil owns pairing negative cases | Harden node identity, pairing credentials, compatibility checks, and revocation | Invalid, expired, and revoked workers are rejected |
-| 3 | Aditya | Sahil runs the complete fault matrix | Harden retries, cancellation, worker-loss recovery, idempotency, and cleanup | Interrupted jobs recover without duplicate final writes or retained temp data |
-| 4 | Vedant | Yug expands fixtures and scores every page | Improve OCR/vision on the fixed public scan set | Page mapping and uncertainty meet the recorded quality threshold |
-| 5 | Aditya | Yug checks citations; Tanvi reviews Word output | Improve local retrieval, citations, drafting, and Word validation | The approval note is grounded, readable, cited, and reproducible |
-| 6 | Vedant | Sahil expands synthetic coding fixtures | Improve repository context selection and patch validation | The coding fixture passes without unrestricted repository transfer |
-| 7 | Vedant | Prachi runs and records Linux boundary checks | Harden the Linux sandbox and verify its actual resource/network boundaries | Escape, network, timeout, process, and filesystem checks fail safely |
-| 8 | Aditya + Vedant | Tanvi owns setup acceptance; Sahil operates reset devices | Complete guided setup, capability detection, manifests, and offline bundle import | A reset installation reaches honest self-test status without silent downloads |
-| 9 | Aditya | Tanvi owns Control Center and Proof Card acceptance | Finish Control Center, approval UX, evidence semantics, and Proof Cards | No security or health value is hard-coded or inferred from missing evidence |
-| 10 | Aditya + Vedant | All teammates capture their device measurements | Benchmark standalone versus distributed cold/warm runs | Same fixtures produce honest performance and quality comparisons |
-| 11 | Aditya + Vedant | All teammates execute assigned failure drills | Break the complete system across supported demo machines and repair blockers | Full demo survives worker loss, bad input, denied approval, and unavailable evidence |
-| 12 | Aditya | Entire team owns rehearsal, video, and presentation stations | Freeze code, licences, artifacts, instructions, video, and presentation | Three clean rehearsals pass; no unverified capability appears in the pitch |
+This later scope is not activated by the alpha execution pass. Anyone may
+implement it. Define named human checkpoints from then-current hardware and
+requirements before starting it; do not retain permanent build assignments.
+
+| Task | Focus | Exit gate |
+|---:|---|---|
+| F01 | Triage judge feedback and freeze the finals claim set | Every accepted change maps to a PRD requirement or observed demo weakness |
+| F02 | Harden node identity, pairing credentials, compatibility checks, and revocation | Invalid, expired, and revoked workers are rejected |
+| F03 | Harden retries, cancellation, worker-loss recovery, idempotency, and cleanup | Interrupted jobs recover without duplicate final writes or retained temp data |
+| F04 | Improve OCR/vision on the fixed public scan set | Page mapping and uncertainty meet the recorded quality threshold |
+| F05 | Improve local retrieval, citations, drafting, and Word validation | The approval note is grounded, readable, cited, and reproducible |
+| F06 | Improve repository context selection and patch validation | The coding fixture passes without unrestricted repository transfer |
+| F07 | Harden the Linux sandbox and verify its actual resource/network boundaries | Escape, network, timeout, process, and filesystem checks fail safely |
+| F08 | Complete guided setup, capability detection, manifests, and offline bundle import | A reset installation reaches honest self-test status without silent downloads |
+| F09 | Finish Control Center, approval UX, evidence semantics, and Proof Cards | No security or health value is hard-coded or inferred from missing evidence |
+| F10 | Benchmark standalone versus distributed cold/warm runs | Same fixtures produce honest performance and quality comparisons |
+| F11 | Break the complete system across supported demo machines and repair blockers | Full demo survives worker loss, bad input, denied approval, and unavailable evidence |
+| F12 | Freeze code, licences, artifacts, instructions, video, and presentation | Three clean rehearsals pass; no unverified capability appears in the pitch |
 
 ## Definition of done for every implementation task
 
@@ -246,7 +374,7 @@ another runtime, or another broker during the five-day candidate.
 - Runtime evidence is labelled `prototyped` or `verified` only after it is
   observed on the named device.
 
-## Deliberately excluded from the sprint
+## Outside the alpha scope
 
 - model sharding or pooled VRAM;
 - training or fine-tuning;
@@ -260,8 +388,8 @@ another runtime, or another broker during the five-day candidate.
 
 Each exclusion that the problem statement names is recorded against its source
 line in [problem-statement coverage](docs/evaluation.md#11-problem-statement-coverage).
-Exclusion means excluded from the five-day sprint, not abandoned: multilingual
+Exclusion means excluded from the alpha, not abandoned: multilingual
 and voice work is FR-019 in the finals scope.
 
-Add an excluded item only after the current day's gate passes and Aditya accepts
-the resulting risk to the frozen demo.
+Add an excluded item only after its prerequisite task passes and the requester
+accepts the resulting risk to the frozen demo.

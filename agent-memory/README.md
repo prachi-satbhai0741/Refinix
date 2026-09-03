@@ -83,8 +83,11 @@ Verified 2026-08-31 on branch `aditya`. **Re-check before relying on any line.**
 - **Licence direction remains open** — [`docs/prd.md` OD-02](../docs/prd.md)
   tracks Apache-2.0 versus another ownership direction before substantial
   distribution.
-- **Proposed owners are not yet accepted** — [`tasks.md`](../tasks.md#proposed-ownership)
-  records build and support ownership, but each owner must still accept it.
+- **Execution is identified by device, not by person** —
+  [`tasks.md`](../tasks.md#operating-contract) assigns human checkpoints to a
+  device role (`macOS coordinator`, `Ubuntu worker`) and acceptance to the
+  requester. Ledger entries below keep the names recorded at the time; those are
+  historical evidence and are not rewritten.
 - **PRD is a draft.** `docs/prd.md` is not a v1 baseline; see
   [`docs/README.md`](../docs/README.md) for the documents deferred until it is.
 

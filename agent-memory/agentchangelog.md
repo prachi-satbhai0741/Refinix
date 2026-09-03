@@ -358,11 +358,182 @@ work. No repository file change means no changelog entry.
 - remaining: OD-06 pairing protocol, all four contract consumers, requester verification, cluster, worker image/model inference, SQLite and UI remain unverified or unimplemented; no Git writes, model downloads or deployments ran.
 
 <a id="ac-20260903-001"></a>
-## AC-20260903-001 — Add the Control Room design tokens and the Chat surface reference
+## AC-20260903-001 — Prepare Yug's worker-spine execution packet
+- date: 2026-09-03
+- agent: Codex
+- status: verified
+- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- related_prompts: [UP-20260902-007](userprompts.md#up-20260902-007)
+- tags: yug, claude, worker-spine, ownership, execution-packet, review
+- aliases: WP-YUG-001, huge task, two builders, worker runtime Redis K3s handoff
+- paths: docs/yug-worker-spine.md, docs/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Created a substantial worker execution packet for Yug's Claude and updated current-sprint build ownership to Aditya and Yug.
+- changes: Defined six phases covering the review baseline, real model adapter, authenticated worker, Redis recovery, Docker/K3s and coordinator integration, with allowed paths, permission boundaries, runnable acceptance targets, failure evidence and publication/review handoff; kept other members' operational/evidence support and provisional finals assignments.
+- verification: git diff --check passed; all 37 local Markdown file targets inspected exist; no trailing whitespace in the packet/index/board; all 19 AF IDs, states, task scopes, dependencies and acceptance gates are unchanged; current-sprint build owners are only Aditya/Yug; six packet phases are present.
+- remaining: Yug's contract review, implementation, required runtime/host permissions, model/pairing decisions and actual acceptance remain open; no runtime tests, installs, deployments, Git writes or external messages were performed.
+
+<a id="ac-20260903-002"></a>
+## AC-20260903-002 — Replace personal packets with named human checkpoints
+- date: 2026-09-03
+- agent: Codex
+- status: review
+- prompt_id: [UP-20260903-002](userprompts.md#up-20260903-002)
+- related_prompts: [UP-20260903-001](userprompts.md#up-20260903-001)
+- tags: human-checkpoints, claude, codex, setup, five-day-sprint
+- aliases: thirteen chunks, named setup operators, stop verify resume, team explanation
+- paths: AGENTS.md, tasks.md, docs/README.md, docs/yug-worker-spine.md, docs/architecture.md, docs/devicespecifications.md, docs/evaluation.md, backend/contracts/README.md, CONTRIBUTING.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replaced the personal worker packet and fixed build assignments with thirteen shared chunks ending at named human actions, including inventory commands and verification handoffs.
+- changes: Deleted docs/yug-worker-spine.md; aligned shared agent, architecture, evaluation and contribution guidance; separated image build/digest receipt from deployment and required Built/Verified/Next explanations after each cycle.
+- verification: git diff --check and static document comparisons passed; all 19 AF states/dependencies/acceptance rows, five daily gates and historical device measurements were preserved; thirteen chunks have named human actions and return evidence; no active obsolete-packet references or build-owner tables remain.
+- remaining: Requester documentation acceptance and C01 authorisation are pending; no runtime code, tests, setup commands, installers, model downloads, deployments or Git writes were executed.
+
+<a id="ac-20260903-003"></a>
+## AC-20260903-003 — Make execution depend on task prerequisites
+- date: 2026-09-03
+- agent: Codex
+- status: docs-only
+- prompt_id: [UP-20260903-003](userprompts.md#up-20260903-003)
+- related_prompts: [UP-20260903-002](userprompts.md#up-20260903-002)
+- tags: numbered-tasks, human-checkpoints, prerequisites, calendar-independent
+- aliases: C01 to C13, task name and number, wait for human, no implementation timetable
+- paths: tasks.md, AGENTS.md, CONTRIBUTING.md, README.md, backend/README.md, backend/contracts/README.md, frontend/README.md, docs/README.md, docs/prd.md, docs/architecture.md, docs/evaluation.md, docs/devicespecifications.md, docs/sih-ppt-submission-brief.md, .github/pull_request_template.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Replaced implementation schedules with named C01–C13 tasks, explicit predecessors, human waits and task-numbered acceptance gates throughout active planning documents.
+- changes: Removed delivery-day labels, Friday target and timed integration cadence; labelled later tasks F01–F12; aligned presentation/PR guidance and updated section links while retaining prior documentation changes.
+- verification: Static comparisons passed for all 19 AF rows, five acceptance requirements, 13 human-action/evidence pairs and 12 follow-up requirements; historical dates, ledger prefixes and contract source/dependency hashes were preserved; active planning text has no remaining day/sprint cadence labels and git diff --check passed.
+- remaining: Requester documentation review and C01 authorisation remain pending; no runtime implementation, runtime tests, setup operations or Git writes were performed.
+
+<a id="ac-20260903-004"></a>
+## AC-20260903-004 — Ground the documents workflow with typed citations
 - date: 2026-09-03
 - agent: Claude
 - status: partial
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-004](userprompts.md#up-20260903-004)
+- related_prompts: [UP-20260902-007](userprompts.md#up-20260902-007)
+- tags: c01, af-001, contracts, citations, documents, grounding, page-mapping
+- aliases: citations.resolve, Citation record, require_grounded_citations, cited approval note
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/examples.json, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Gave the merged AF-001 draft's citations.resolve validator a typed payload and a coordinator-side grounding guard so the documents workflow has a contract to build against.
+- changes: Added a Citation record binding a claim to a resource and 1-based page with its verbatim quote; added Proof.citations with a uniqueness guard; added require_grounded_citations rejecting mismatched jobs, missing citations and unsupplied sources; extended the synthetic Proof example and the contract check.
+- verification: Six unittest checks passed on Python 3.13.2/Windows 11 AMD64; each guard rejection branch was executed individually and returned a distinct message; schema export parsed with seven schemas and Citation resolved under Proof; examples.json parsed; git diff --check passed.
+- remaining: Ran against pydantic 2.13.4, not the pinned 2.13.5, so the pinned environment is unverified on Windows; extraction uncertainty and unresolved-field records are deferred until an extractor exists; OD-06, consumer integration and every runtime gate remain open; no Git writes ran.
+
+<a id="ac-20260903-005"></a>
+## AC-20260903-005 — Complete the C01 contract repairs
+- date: 2026-09-03
+- agent: Claude
+- status: partial
+- prompt_id: [UP-20260903-005](userprompts.md#up-20260903-005)
+- related_prompts: [UP-20260903-004](userprompts.md#up-20260903-004)
+- tags: c01, af-001, contracts, output-validators, cancellation, interruption, failure-codes
+- aliases: chunk C01, applicable validators, stopped attempt reason, cancelled_by_user
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Closed the two remaining C01 contract repairs so each output kind requires the validator that proves it and every stopped attempt records a typed reason.
+- changes: Bound OutputContract validators to the declared output kind with required/optional tables and rejected duplicate validators; added the cancelled_by_user failure code, required a typed Failure on failed, cancelled and interrupted attempts, and blocked cancelled_by_user from relabelling a crash or interruption; added two focused checks and documented both rules.
+- verification: Eight unittest checks passed on Python 3.13.2/Windows 11 AMD64; each added rejection branch was executed individually and returned a distinct correct message; every added accepted case parsed; schema export parsed at 52304 bytes with seven schemas.
+- remaining: Ran against pydantic 2.13.4, not the pinned 2.13.5; the C01 human checkpoint is open, needing Aditya's acceptance of the reviewed contract diff and read-only device inventory from all six people; extraction uncertainty records, OD-06, consumer integration and every runtime gate remain open; no Git writes ran.
+
+<a id="ac-20260903-006"></a>
+## AC-20260903-006 — Bind citation evidence to one dispatched attempt
+- date: 2026-09-03
+- agent: Claude
+- status: partial
+- prompt_id: [UP-20260903-006](userprompts.md#up-20260903-006)
+- related_prompts: [UP-20260903-005](userprompts.md#up-20260903-005)
+- tags: c01, af-001, code-review, citations, evidence-binding, retry, board-status
+- aliases: require_grounded_citations, superseded retry, proof pairing, current scope note
+- paths: backend/contracts/v1.py, backend/contracts/test_contracts.py, backend/contracts/README.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Fixed the reviewed evidence-binding defect so a superseded retry's proof can no longer clear the attempt that replaced it, and corrected the board's current-scope note.
+- changes: Replaced the guard's single job_id comparison with a workspace, job, attempt and target-node comparison naming the mismatched field; added four rejection checks covering workspace, job, superseded attempt and untargeted node; documented the binding and recorded Codex's independent pinned-dependency run; set the current-scope note to C01 in review with C02 locked.
+- verification: Reproduced all three reported acceptances before the fix and confirmed each is now rejected with its own message; eight unittest checks passed and the grounded happy path still passes on Python 3.13.2/Windows 11 AMD64 with pydantic 2.13.4; schema export unchanged at 52304 bytes.
+- remaining: Windows verification against the pinned pydantic 2.13.5 is still outstanding; Aditya's acceptance and the six device inventories keep the C01 checkpoint open and C02 locked; extraction uncertainty records, OD-06, consumer integration and every runtime gate remain open; no Git writes ran.
+
+<a id="ac-20260903-007"></a>
+## AC-20260903-007 — Reconciled device evidence and prepared setup handoff
+- prompt_id: [UP-20260903-007](userprompts.md#up-20260903-007)
+- date: 2026-09-03
+- status: in review
+- scope: documentation, execution, hardware-inventory
+- tags: c01, devicespecifications, tasks, human-checkpoint
+- aliases: reconcile device evidence, prepare setup handoff, update inventory
+- paths: docs/devicespecifications.md, tasks.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Updated docs/devicespecifications.md with new read-only inventory data from all six team members, and updated tasks.md to reflect the C01 review status and open human checkpoints.
+- changes: Clarified in devicespecifications.md that new tool paths do not prove runtime readiness or versions. Updated disk space metrics and WindowsApps aliases limitations. Retained historical GPU memory for Vedant (truncated output) and Yug (missing output). Updated tasks.md current scope to reflect inventory receipt, Codex's PASS review at e7f44fb, and explicitly kept the C01 human checkpoint open for Aditya's acceptance and missing inventory details.
+- verification: Checked documentation changes matched requirements; no code was executed and no tests were run.
+- remaining: Aditya's acceptance of the reviewed contract diff is pending. Missing inventory details (Yug's GPU, Vedant's complete GPU line, network confirmations, and specific version/service status) need to be supplied by the team. C02 remains locked. No Git writes ran.
+
+<a id="ac-20260903-008"></a>
+## AC-20260903-008 — C01 documentation closeout and C02 decisions
+- prompt_id: [UP-20260903-008](userprompts.md#up-20260903-008)
+- date: 2026-09-03
+- status: in review
+- scope: documentation, execution, runtime-decision, model-decision, infrastructure-pins
+- tags: c01, c02, od-03, od-05, od-06, od-08, device-based-checkpoints
+- aliases: close c01 docs, device based checkpoints, resolve od decisions, ollama measurement
+- paths: tasks.md, AGENTS.md, agent-memory/README.md, docs/devicespecifications.md, docs/architecture.md, docs/model-catalog.md, docs/evaluation.md, docs/security.md, docs/prd.md, scripts/od03_runtime_comparison.py
+- summary: Converted the active execution instructions to device-based human checkpoints, recorded the OD-03 runtime, OD-05 model, OD-06 pairing and OD-08 infrastructure decisions with upstream provenance, and measured a bounded local inference on the macOS coordinator.
+- changes: Replaced every personal assignment in tasks.md and AGENTS.md with `macOS coordinator`/`Ubuntu worker` roles and requester acceptance, leaving ledger names and Git identities untouched. Added a first-configuration section to devicespecifications.md that puts the four Windows machines and both incomplete GPU lines off the critical path, recorded the coordinator's measured runtimes and model provenance, and added the read-only C02 evidence commands for the Ubuntu worker. Pinned K3s v1.36.4+k3s1, redis:7.2.16 and python:3.13-slim-bookworm with registry digests and licences in architecture.md 8.1. Selected Ollama (OD-03) and a one-model set (OD-05) in model-catalog.md, recorded the prototype pairing policy in security.md 4.1, and added scripts/od03_runtime_comparison.py with its method in evaluation.md 5.1.
+- review_fixes: Codex returned NEEDS FIX with seven findings; all seven are addressed. Removed `ollama list` from both inventory blocks because fourteen Ollama subcommands carry `PreRunE: checkServerHeartbeat`, which calls `startApp` on a refused connection, and reconciled tasks.md to record that the coordinator's Ollama app was started that way. Replaced the unfiltered `systemctl cat` grep with an allowlisted `OLLAMA_*` extraction so proxy credentials and tokens cannot enter a verbatim transcript. Moved both runtimes onto templated chat endpoints with thinking disabled and prompt caching left at each default, and stopped disabling llama-server's cache one-sidedly. Labelled llama-server's first request `first_request_after_server_start` with `includes_model_load: false`. Made the parsers reject malformed lines, error objects, missing terminal records and missing metrics with a non-zero exit, and added scripts/test_od03_parser.py. Restored the C01-fixed ports WORKER_PORT 8443 and WORKER_NODE_PORT 30443 in architecture.md, leaving only host availability and deployment verification outstanding. Added response hashing and corrected the cold-penalty attribution.
+- verification: Confirmed backend/ is unchanged since e7f44fb, so Codex's eight-check PASS is reused rather than rerun; independently confirmed the coordinator venv matches all five pinned dependencies. Confirmed against ollama v0.32.14 cmd/cmd.go that fourteen subcommands start the app and the root version command does not. Ran 15 offline parser checks: all passed. Re-ran the corrected script against the already-running loopback Ollama server via /api/chat: 89 tokens / 598 characters and one response SHA-256 across four runs, cold TTFT 2.504 s including 2.300 s model load, warm median 0.225 s, ~37.9 tok/s, RSS 3.83-3.90 GB; the earlier untemplated /api/generate figures are superseded, not averaged. Cold penalty is 93.2 percent model load and 6.6 percent prompt evaluation. Confirmed the server listens on 127.0.0.1:11434 only, and re-hashed all four model blobs against their content-addressed names. Checked every internal documentation link and anchor.
+- remaining: Codex re-review and requester acceptance of this closeout; the Ubuntu worker's read-only evidence and its setup; the llama-server half of the OD-03 comparison, which needs an install checkpoint, plus a comparable cold figure timed from server start; worker and sandbox image digests at C04, and host port availability plus deployment verification for the contract's 8443/30443 at C02 and C05. AF-001 stays a draft, OD-06 is recorded but unimplemented, Windows is explicitly unverified, and no Git writes ran.
+
+<a id="ac-20260903-009"></a>
+## AC-20260903-009 — Repaired remaining C02 parser and inventory findings
+- prompt_id: [UP-20260903-009](userprompts.md#up-20260903-009)
+- date: 2026-09-03
+- status: in review
+- tags: c02, runtime-comparison, stream-parser, inventory
+- aliases: reasoning channel, missing generation timing, failed port probe, stale mac inventory
+- paths: scripts/od03_runtime_comparison.py, scripts/test_od03_parser.py, docs/devicespecifications.md, docs/evaluation.md, docs/architecture.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Fixed separate-reasoning evidence and generation-metric validation, preserved socket-probe failures, and reconciled the Mac inventory with the later recorded inference.
+- changes: TTFT now observes both llama-server channels; reasoning contributes to the suppression flag without entering the visible-response hash. Missing, nonpositive, nonfinite or incorrectly typed generation metrics are rejected. One socket snapshot covers runtime and contract ports without claiming availability from an empty result; initial Mac state is distinguished from subsequent measurement.
+- verification: The requester separately approved offline tests. On the macOS coordinator, `python3 -B scripts/test_od03_parser.py` passed all 20 tests. Four simulated runs of the documented socket probe passed for empty, occupied, failed and missing-command cases; no host socket query ran. Python and shell syntax checks and `git diff --check` passed.
+- remaining: Requester acceptance and real Ubuntu inventory/setup remain open in C02. No inference, service start, installation, download, deployment or Git write ran; earlier runtime measurements were not rerun.
+
+<a id="ac-20260903-010"></a>
+## AC-20260903-010 — Prepared C02 closeout and corrected runtime memory evidence
+- prompt_id: [UP-20260903-010](userprompts.md#up-20260903-010)
+- date: 2026-09-03
+- status: in review
+- tags: c02, closeout, runtime-comparison, memory-reporting
+- aliases: ubuntu inventory, bundled engine, defer comparisons, runner rss
+- paths: tasks.md, docs/devicespecifications.md, docs/evaluation.md, docs/model-catalog.md, docs/architecture.md, docs/prd.md, scripts/od03_runtime_comparison.py, scripts/test_od03_parser.py, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Recorded user-returned Ubuntu setup and both devices' inference evidence, retained Ollama with explicit comparison deferrals, and repaired the daemon-only RAM report.
+- changes: Added versions, model manifest identity, per-run timings, corrected memory units and provenance; documented the reused Mac bundle and reproduction commands. Memory snapshots now list exact-name process candidates with PID, parent PID, RSS and PID-matched GPU memory, without endpoint attribution or aggregation. Reconciled C02 status and C01-fixed ports; removed the incomplete direct-server launch hint in favour of the documented command.
+- verification: Reused prior offline-test permission; `python3 -B scripts/test_od03_parser.py` passed 23 tests, including three mocked memory checks. Python syntax, five shell blocks checked with syntax-only parsers, reported medians/RSS conversions and `git diff --check` passed; 165 local Markdown links/anchors had no failures. `git diff --exit-code e7f44fb -- backend` confirmed no backend changes. Device runtime results were reviewed from returned output, not rerun.
+- remaining: Requester acceptance of the closeout; C03 requires separate authorisation. Controlled cold-start and Ubuntu direct-engine comparisons are deferred by requester, not passed. No live process/socket queries, inference, service starts, installs, downloads, deployments or Git writes ran in this closeout.
+
+<a id="ac-20260903-011"></a>
+## AC-20260903-011 — Added the language and technology guide
+- prompt_id: [UP-20260903-011](userprompts.md#up-20260903-011)
+- date: 2026-09-03
+- status: in review
+- tags: tech-stack, languages, frontend, architecture, documentation
+- aliases: TechStack.md, typescript react vite, python sql, language selection
+- paths: TechStack.md, README.md, docs/README.md, docs/architecture.md, frontend/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Created a discoverable guide recommending languages and technologies for each product surface and supporting layer, with evidence states and trade-offs.
+- changes: Recommended TypeScript/React/Vite for the UI, Python for orchestration and tools, SQL/SQLite for state, and existing native inference engines; retained Ollama and Redis Streams. Distinguished the proposed UI revision from the recorded vanilla baseline, qualified OCR/document candidates and licences, and preserved conditional additional-worker scope.
+- verification: Inspected current source and official upstream documentation. A read-only check of five documents resolved all 57 local Markdown links/anchors and found no whitespace problems; `git diff --check` passed. No runtime tests were needed or run for these prose changes.
+- remaining: Requester review of the guide; adoption and dependency pinning belong to the relevant authorised implementation chunks. No scaffold, dependency installation, live command, runtime change or Git write ran; prior C02 changes were preserved.
+
+<a id="ac-20260903-012"></a>
+## AC-20260903-012 — Clarified C02 listener and cancellation gaps
+- prompt_id: [UP-20260903-012](userprompts.md#up-20260903-012)
+- date: 2026-09-03
+- status: in review
+- tags: c02, closeout, listener, cancellation, review
+- aliases: claude review, wildcard port 8080, cancellation not exercised, techstack handoff
+- paths: tasks.md, docs/devicespecifications.md, docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Made the unidentified Ubuntu listener an explicit C02 follow-up and recorded that application cancellation remains unimplemented and untested.
+- changes: Separated wildcard binding from C05 contract-port checks and untested LAN reachability; reconciled the closeout's next human action; assigned cancellation implementation and the device exercise to the existing C06 / AF-005–AF-007 gate.
+- verification: Inspected the recorded socket evidence, comparison transport and C06 task definitions; `git diff --check` passed. `git diff --exit-code e7f44fb -- backend` confirmed no backend changes. No tests, inference or live host checks ran.
+- remaining: Ubuntu listener identification and exposure review, requester acceptance and separate C03 authorisation. TechStack.md and all AF states remain unchanged; no Git writes ran.
+
+<a id="ac-20260903-013"></a>
+## AC-20260903-013 — Add the Control Room design tokens and the Chat surface reference
+- date: 2026-09-03
+- agent: Claude
+- status: partial
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: [UP-20260902-007](userprompts.md#up-20260902-007)
 - tags: ui, design-tokens, chat-surface, theming, accessibility, evidence-semantics
 - aliases: control room tokens, blueprint artifact, cyanotype dark, approval gate, execution target picker, contrast sweep
@@ -372,12 +543,12 @@ work. No repository file change means no changelog entry.
 - verification: Served the page locally and swept all 108 text-bearing elements for contrast in three theme states — system dark, explicit dark, explicit light; raised six token values and recessed the disabled target control after the first sweep failed; final minimum ratio 4.49:1 with every other element at or above 4.5:1. Confirmed the three webfonts load rather than silently falling back by measuring glyph widths against the fallback stacks. Grid resolves to 188/860/232 at 1280px with no horizontal overflow.
 - remaining: Documents, Code, Control Center and the public distribution site are unbuilt. The page is a static reference: it is not wired to the coordinator or the event stream. Fonts load from Google Fonts and must be self-hosted before any offline build. Other browsers, screen readers, keyboard traversal order and breakpoints below 1100px are unverified. No Git writes ran.
 
-<a id="ac-20260903-002"></a>
-## AC-20260903-002 — Add the public distribution site reference
+<a id="ac-20260903-014"></a>
+## AC-20260903-014 — Add the public distribution site reference
 - date: 2026-09-03
 - agent: Claude
 - status: partial
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, distribution, blueprint, theming, accessibility
 - aliases: download website, cyanotype whiteprint, p&id hero, checksum verification, pre-release state
@@ -387,12 +558,12 @@ work. No repository file change means no changelog entry.
 - verification: Swept all 93 text-bearing elements for contrast in dark and light; zero failures, minimum 7.54:1 dark and 5.19:1 light. Confirmed no horizontal overflow at 1265px client width. Fixed a hero SVG annotation clipped outside its viewBox and removed an empty text node. Confirmed the data-theme-switching hook suppresses transitions, measured as transition-duration 0s while set.
 - remaining: Documents, Code and Control Center surfaces are unbuilt. Both pages are static references not wired to the coordinator. Fonts load from Google Fonts and must be self-hosted before any offline build. Version numbers, checksums, system requirements and release artifact names on the site are placeholders and require team decisions. Other browsers, screen readers, keyboard traversal and sub-1100px breakpoints are unverified. No Git writes ran.
 
-<a id="ac-20260903-003"></a>
-## AC-20260903-003 — Rework the public site treatment after design review
+<a id="ac-20260903-015"></a>
+## AC-20260903-015 — Rework the public site treatment after design review
 - date: 2026-09-03
 - agent: Claude
 - status: partial
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, design-review, ornament, theming, accessibility
 - aliases: remove drafting grid, atmospheric ground, corinthian helmet, meander frieze, placeholder artwork
@@ -402,12 +573,12 @@ work. No repository file change means no changelog entry.
 - verification: Reference sites reviewed in-browser before reworking. Swept all 92 text-bearing elements for contrast in dark and light using the data-theme-switching hook to avoid transition races; zero failures, minimum 7.20:1 dark and 5.30:1 light. Confirmed no horizontal overflow at 1245px client width and that hero, three sections and footer occupy contiguous vertical space with no gaps. First helmet attempt drawn in profile read as an unrecognisable silhouette and was rebuilt frontally; crest and scale then corrected on a second pass.
 - remaining: The hero artwork is explicitly provisional and awaits a chosen commissioned or public-domain replacement. Documents, Code and Control Center surfaces are unbuilt. Both pages are static references not wired to the coordinator. Fonts load from Google Fonts and must be self-hosted before any offline build. Version numbers, checksums and system requirements remain placeholders. The preview pane would not paint content below the fold, so sections after the hero were verified by measurement rather than by screenshot. No Git writes ran.
 
-<a id="ac-20260903-004"></a>
-## AC-20260903-004 — Add four engraved plates and ambient motion to the public site
+<a id="ac-20260903-016"></a>
+## AC-20260903-016 — Add four engraved plates and ambient motion to the public site
 - date: 2026-09-03
 - agent: Claude
 - status: partial
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, ornament, svg, motion, accessibility
 - aliases: corinthian helmet, athenian owl, doric temple, labyrinth, ember eyes, conic ray field
@@ -417,12 +588,12 @@ work. No repository file change means no changelog entry.
 - verification: Reference sites re-examined before drawing. All four plates inspected by lifting the below-fold figures to the top of the document, since the preview pane would not paint below the fold. Swept all 92 text-bearing elements for contrast in dark and light with transitions suppressed; zero failures, minimum 7.20:1 dark and 5.30:1 light. Confirmed no horizontal overflow at 1245px and that all seven declared animations report a running playState. Three drawing defects were found and corrected on review: the bowl painted over the crest, the gorgoneion collided with the crest and read as an insect so it was replaced with a decorated brow band, and the laurel leaves pointed radially instead of lying along the ring.
 - remaining: All four plates are explicitly provisional placeholders. Documents, Code and Control Center surfaces are unbuilt. Both pages are static references not wired to the coordinator. Fonts load from Google Fonts and must be self-hosted before any offline build. Version numbers, checksums and system requirements remain placeholders. Sections below the hero were verified by measurement and by lifting elements, not by full-page screenshot. No Git writes ran.
 
-<a id="ac-20260903-005"></a>
-## AC-20260903-005 — Rebuild the public site on a glass surface system with an interactive product demo
+<a id="ac-20260903-017"></a>
+## AC-20260903-017 — Rebuild the public site on a glass surface system with an interactive product demo
 - date: 2026-09-03
 - agent: Claude
 - status: partial
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, glassmorphism, interaction, motion, accessibility
 - aliases: surface switcher, tabbed terminal, copy button, scroll reveal, theme toggle, near-black ground
@@ -432,12 +603,12 @@ work. No repository file change means no changelog entry.
 - verification: Read the reference page structure and measured its computed surface tokens before building. Swept 268 text-bearing elements for contrast in both themes with every panel unhidden; zero failures, minimum 7.20:1 dark and 5.62:1 light. Confirmed no horizontal overflow at 1265px, no console errors, and that tab switching, the copy button and the theme toggle all behave correctly in both directions. Four defects were found and fixed during review: a .hero > * rule overrode the spotlight overlay position and displaced the whole hero grid; semantic ok and danger colours were hardcoded for dark and failed at 1.92:1 in light; reveal styles applied without a scripted-document guard, so a script failure would have hidden the entire page; and IntersectionObserver-based reveal stranded 31 elements permanently invisible after an anchor jump, replaced with a scroll position check re-run on load and hashchange.
 - remaining: All four plates remain provisional placeholders. Documents, Code and Control Center application surfaces are unbuilt. Both pages are static references not wired to the coordinator. Fonts load from Google Fonts and must be self-hosted before any offline build. Version numbers, checksums, system requirements and the stats figures are placeholders requiring team decisions. Sections below the hero were verified by measurement and by lifting elements into view, since the preview pane would not paint below the fold. Other browsers, screen readers and keyboard traversal are unverified. No Git writes ran.
 
-<a id="ac-20260903-006"></a>
-## AC-20260903-006 — Place the team mark and prepare the logo asset slot
+<a id="ac-20260903-018"></a>
+## AC-20260903-018 — Place the team mark and prepare the logo asset slot
 - date: 2026-09-03
 - agent: Claude
 - status: partial
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, branding, assets, public-site, chat-surface
 - aliases: rokunin sync logo, team mark, brand token, logo placement, data uri inlining
@@ -447,12 +618,12 @@ work. No repository file change means no changelog entry.
 - verification: Confirmed the symbol renders at the intended size in brand orange on both pages and that the SVG use reference resolves; confirmed both lockup images correctly remain hidden while the file is absent; fixed the version string wrapping to two lines in the Chat header after the mark was added, verified back to one line with no horizontal overflow; confirmed the artifact build reports the two missing asset references and leaves them untouched rather than emitting broken markup.
 - remaining: The supplied logo image could not be written to disk from the conversation, so frontend/design/assets/rokunin-sync-logo.png does not exist and the placed mark is a drawn stand-in, not the real artwork. A team member must save the file at that path; the lockup then appears automatically and the artifact build inlines it. The four engraved plates also remain provisional. Documents, Code and Control Center surfaces are unbuilt. Fonts load from Google Fonts and must be self-hosted before any offline build. No Git writes ran.
 
-<a id="ac-20260903-007"></a>
-## AC-20260903-007 — Change the public site headline to "Nothing leaves the machine"
+<a id="ac-20260903-019"></a>
+## AC-20260903-019 — Change the public site headline to "Nothing leaves the machine"
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, copy
 - aliases: hero headline, nothing leaves the machine, plant wording
@@ -462,12 +633,12 @@ work. No repository file change means no changelog entry.
 - verification: Confirmed the headline wraps to three balanced lines at 1240px with text-wrap balance and stays inside its box; no new horizontal overflow attributable to the change.
 - remaining: The wording is narrower than the product behaviour it sits above. The same page advertises pairing, where the coordinator routes bounded job context to a trusted device over the LAN, so work can leave the originating machine while remaining on the premises. Flagged to the requester; the wording stands as their decision.
 
-<a id="ac-20260903-008"></a>
-## AC-20260903-008 — Replace the pointer spotlight with a grain particle field
+<a id="ac-20260903-020"></a>
+## AC-20260903-020 — Replace the pointer spotlight with a grain particle field
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, motion, canvas, performance, accessibility
 - aliases: grain field, particles, cursor interaction, spotlight removed, canvas background
@@ -477,12 +648,12 @@ work. No repository file change means no changelog entry.
 - verification: Measured the reference implementation directly before building - its particle canvas draws pure white at 0.04 alpha over about 0.84 percent of its pixels, desktop only. Tuned this field to 0.49 percent coverage at 0.047 average alpha with a 23 percent warm share, lower than the reference because it is visible at rest rather than only on movement. Confirmed pointer response by comparing a 300px region at the cursor against the far corner: 5.4x peak alpha and 3.6x average. Confirmed the field recolours in both directions across the theme toggle, that hero layout is unchanged after removing the grid guard, and that no console errors occur. Three defects were found and fixed: the field was far too sparse at first tuning, it painted nothing until the first animation frame so a hidden tab stayed blank, and the theme recolour was deferred inside a double requestAnimationFrame so it never ran where frames are throttled.
 - remaining: The four engraved plates and the team lockup remain provisional. The logo asset is still absent, so two 404 requests per page load are expected until it is added. Live pointer motion could not be observed in the preview pane because it holds the document hidden and starves requestAnimationFrame; interaction was verified by forcing synchronous repaints instead. Other browsers, screen readers and keyboard traversal are unverified. No Git writes ran.
 
-<a id="ac-20260903-009"></a>
-## AC-20260903-009 — Repalette the public site to black, silver and sky blue, and deepen the glass
+<a id="ac-20260903-021"></a>
+## AC-20260903-021 — Repalette the public site to black, silver and sky blue, and deepen the glass
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, palette, glassmorphism, accessibility
 - aliases: silver sky blue palette, amber removed, glass recipe, backdrop saturate, colour discipline
@@ -492,12 +663,12 @@ work. No repository file change means no changelog entry.
 - verification: Swept 268 text-bearing elements for contrast in both themes with every panel unhidden; zero failures, minimum 5.37:1 dark and 4.70:1 light. Confirmed the glass computes the intended gradient, blur and shadow stack in both themes, and that both themes render correctly. One regression was introduced and fixed during this change: a global sed intended to remove duplicated panel backgrounds also stripped the fill from the buttons, nav chip, theme toggle and file rows, leaving the theme toggle on the browser default grey at 2.44:1; all four were restored and re-verified.
 - remaining: The Rokunin Sync mark stays brand orange against the new blue and silver, which is a deliberate single-accent choice the requester may want revisited. The four engraved plates and the team lockup remain provisional, and the logo asset is still absent so two 404 requests per page load persist. The application surfaces keep their separate instrument palette and were not touched. No Git writes ran.
 
-<a id="ac-20260903-010"></a>
-## AC-20260903-010 — Replace the hero plate with the supplied video clip
+<a id="ac-20260903-022"></a>
+## AC-20260903-022 — Replace the hero plate with the supplied video clip
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, media, assets, repo-size, accessibility
 - aliases: hero video, hero-loop.mp4, poster frame, screen blend, helmet removed
@@ -507,12 +678,12 @@ work. No repository file change means no changelog entry.
 - verification: Confirmed the clip loads and plays with no media error, readyState 4, and that an explicit play call is not rejected. Fixed a layout defect found on first render: the clip is portrait 720x1280 and, as a flow child, its intrinsic height overrode the container aspect-ratio and stretched the hero box to 495x880; taking it out of flow restored a true 495x495 square. Confirmed both render paths - live clip visible with the still hidden, and, with the fallback forced, the still visible at the same size and blend, loaded at its natural 560x560. Confirmed both themes render correctly and that the artifact build inlines the poster while leaving the clip external.
 - remaining: The clip is a 15 MB binary committed as an ordinary Git blob and needs a decision - Git LFS, exclusion plus deploy-time delivery, or re-encoding to a fraction of the size. No encoder was available locally to re-encode it. It cannot be inlined into a single-file artifact build, so artifact previews show the still frame and only a served copy animates. The team lockup asset is still absent. Documents, Code and Control Center surfaces remain unbuilt. No Git writes ran.
 
-<a id="ac-20260903-011"></a>
-## AC-20260903-011 — Transcode the hero clip so it plays, and enlarge the hero art
+<a id="ac-20260903-023"></a>
+## AC-20260903-023 — Transcode the hero clip so it plays, and enlarge the hero art
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, media, performance, repo-size
 - aliases: hero-loop.webm, mediarecorder transcode, vp9, hero sizing, blank space
@@ -522,12 +693,12 @@ work. No repository file change means no changelog entry.
 - verification: Confirmed the page selects hero-loop.webm as currentSrc and plays it with no media error. Confirmed the artifact build inlines it, producing a 3.15 MB page against the 16 MB ceiling, where the previous build left the clip external and showed only the still. Art grew from 495 to 580 px square, 17 percent larger, and the container stays square. Two regressions were caught and fixed while sizing: the first bleed pushed 181 px of horizontal overflow, traced to the ray field scaling with the enlarged plate, and a narrower text column wrapped the call-to-action row onto two lines; after rebalancing, horizontal overflow measures zero, down from the 2 px that predated this change, and all three buttons sit on one row.
 - remaining: The 15 MB mp4 master is now unused by every current browser but still committed as an ordinary Git blob, and should be excluded, moved to LFS, or dropped. The team lockup asset is still absent. Documents, Code and Control Center surfaces remain unbuilt. No Git writes ran.
 
-<a id="ac-20260903-012"></a>
-## AC-20260903-012 — Add the intro gate, swap the hero to the deity artwork, and replace grain with a network field
+<a id="ac-20260903-024"></a>
+## AC-20260903-024 — Add the intro gate, swap the hero to the deity artwork, and replace grain with a network field
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, media, motion, assets, layout
 - aliases: intro gate, get started, glitch turbulence, deity reveal, network field, full width
@@ -537,12 +708,12 @@ work. No repository file change means no changelog entry.
 - verification: Confirmed the gate sequences base to glitching to revealing to exiting to gone, that the eyes are positioned from the artwork box rather than the viewport so they stay on the face at any size, and that the deity artwork reads on black - measured at 52 percent light pixels and mean luminance 147 over its opaque area. Swept 267 text-bearing elements for contrast in both themes; zero failures, minimum 5.37:1 dark and 4.70:1 light, with no horizontal overflow. Confirmed the artifact build inlines six assets for an 8.63 MB page against the 16 MB ceiling. Two defects were found and fixed: the intro canvas collapsed to a canvas element’s intrinsic 300x150 because the centring grid stopped inset:0 from stretching an absolutely positioned child, and the footer mark still pointed at a PNG that did not exist.
 - remaining: The 15 MB mp4 master is referenced only as a last-resort source and remains an ordinary Git blob needing exclusion, LFS or removal. Motion was verified by driving the sequence and holding states open, since the preview pane starves requestAnimationFrame while hidden. Documents, Code and Control Center surfaces remain unbuilt. No Git writes ran.
 
-<a id="ac-20260903-013"></a>
-## AC-20260903-013 — Silver mark with sheen, blindfold light rays, smoke, and intro performance work
+<a id="ac-20260903-025"></a>
+## AC-20260903-025 — Silver mark with sheen, blindfold light rays, smoke, and intro performance work
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, branding, motion, performance, media
 - aliases: silver logo, sheen sweep, light rays, blindfold, smoke, get started button, canvas throttling
@@ -552,12 +723,12 @@ work. No repository file change means no changelog entry.
 - verification: Measured both video files before changing anything - each decodes at about 57 fps with zero dropped frames, so the reported stutter was the page rather than the clip, and the work went into animation cost instead of re-encoding. Benchmarked the link drawing at 0.50 ms per frame per canvas before and 0.05 ms after, with two canvases previously running at once. Confirmed the control holds position under hover, measured identical at x 607 y 766 before and after, and that its arrow path is horizontal. Confirmed the sheen animation is attached, the beams resolve to 185 px up and 141 px down against a 4 px slit, and the smoke layers render at 686 and 845 px. Swept 267 text elements in both themes: zero failures, 5.37:1 dark and 4.70:1 light, no horizontal overflow. Artifact builds to 8.45 MB against the 16 MB ceiling.
 - remaining: The beams were first sized as a percentage of the slit and came out about 25 px long; they are now in viewport units. Bitrate hints are ignored when recording from a video element stream and the canvas route needs animation frames the preview pane does not provide, so the intro clip length remains the only reliable size control - it is a 12 s loop taken from the 31.5 s master. The 15 MB mp4 master is still an ordinary Git blob. Motion was verified by holding states open rather than by watching it run. No Git writes ran.
 
-<a id="ac-20260903-014"></a>
-## AC-20260903-014 — Fix the intro clip sizing and quality, retarget the exit, and set the wordmark in chrome
+<a id="ac-20260903-026"></a>
+## AC-20260903-026 — Fix the intro clip sizing and quality, retarget the exit, and set the wordmark in chrome
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, media, layout, branding, motion
 - aliases: intro video cropped, indefinite grid height, dvh sizing, exit right, chrome wordmark, deity glitch in
@@ -567,12 +738,12 @@ work. No repository file change means no changelog entry.
 - verification: Measured the clip before and after - 720x1280 in a 1000px viewport before, 563x1000 after, top at 0 and bottom at 1000, fully visible, height filled and aspect ratio correct to within 0.005. Confirmed the exit transform resolves to a positive x translation of 385px with a 1.041 scale onto a hero box 783px wide, and that the arrival animation is attached. Confirmed Michroma loads and the wordmark clips its gradient to text. Swept 267 text elements in both themes: zero failures, 5.37:1 dark and 4.70:1 light, no horizontal overflow. Artifact builds to 12.17 MB against the 16 MB ceiling, down from 13.42 MB before the single-inline change.
 - remaining: The supplied REFINIX wordmark image could not be written to disk from the conversation, so it is set as type; a saved PNG can replace it. Bitrate remains only loosely controllable - the recorder overshoots the hint by roughly two times and the canvas route needs animation frames the preview pane does not provide, so duration stays the practical size lever. The 15 MB mp4 master is still an ordinary Git blob. No Git writes ran.
 
-<a id="ac-20260903-015"></a>
-## AC-20260903-015 — Play the master clip untouched, fix the page network field, add lightning and a breathing hero glow
+<a id="ac-20260903-027"></a>
+## AC-20260903-027 — Play the master clip untouched, fix the page network field, add lightning and a breathing hero glow
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, public-site, media, layout, motion, canvas
 - aliases: master first source, replaced element intrinsic size, canvas 300x150, lightning, breathing glow, periodic glitch
@@ -582,12 +753,12 @@ work. No repository file change means no changelog entry.
 - verification: Confirmed the page selects hero-loop.mp4 as currentSrc. Measured the page canvas before and after - 300 by 150 with drawing confined to that corner before, filling the viewport after, with drawn content spanning to 1575 of 1585 horizontally and 996 of 1000 vertically. Confirmed the periodic tear fires via a mutation observer over a 3.6 s window, and that both breathing animations are attached. Swept 267 text elements in both themes: zero failures, 5.37:1 dark and 4.70:1 light. Caught and fixed a 68 px horizontal overflow introduced by the glow reaching past the layout; overflow is back to zero. Artifact builds to 12.17 MB against the 16 MB ceiling.
 - remaining: Artifact previews still fall back to the WebM, so only a served copy shows the master untouched. The supplied REFINIX wordmark image could not be written to disk from the conversation and remains set as type. The 15 MB master is still an ordinary Git blob. No Git writes ran.
 
-<a id="ac-20260903-016"></a>
-## AC-20260903-016 — Complete the application design: Documents, Code and Control Center
+<a id="ac-20260903-028"></a>
+## AC-20260903-028 — Complete the application design: Documents, Code and Control Center
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: [UP-20260902-007](userprompts.md#up-20260902-007)
 - tags: ui, application-surfaces, documents, code, control-center, evidence-semantics, accessibility
 - aliases: chatbot ui complete, control center, shared app shell, co3 unblock, four surfaces
@@ -597,12 +768,12 @@ work. No repository file change means no changelog entry.
 - verification: Swept every text-bearing element on all four surfaces in three theme states - system dark, explicit dark and explicit light - 668 elements in total: zero failures and no horizontal overflow on any surface, worst ratio 4.53:1. Two token defects were found and fixed during the sweep: --st-fault measured 4.03:1 in dark where it carries failed chips and diff deletions, and --signal measured 4.49:1 on the sunken rail in light. Confirmed every surface link and stylesheet reference on every page resolves with status 200.
 - remaining: First-run onboarding (workflows section 2) and the pairing exchange screens (section 8) are not built; Control Center shows pairing state and offers the controls but the invite, code exchange and confirmation screens do not exist. All four surfaces remain static references: they render fixed sample markup, are not wired to the coordinator and consume no event stream, and no value on them is a measurement. Fonts load from Google Fonts and must be self-hosted before any offline build. Screen readers, keyboard traversal order and other browsers are unverified. No Git writes ran.
 
-<a id="ac-20260903-017"></a>
-## AC-20260903-017 — Build the onboarding and pairing screens
+<a id="ac-20260903-029"></a>
+## AC-20260903-029 — Build the onboarding and pairing screens
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, application-surfaces, onboarding, pairing, evidence-semantics, accessibility
 - aliases: first run, five steps, no silent downloads, self-test, trust exchange, pairing code, workspaces not merged
@@ -612,12 +783,12 @@ work. No repository file change means no changelog entry.
 - verification: Swept every text-bearing element on all seven application pages in three theme states at a 1440 by 900 viewport, 3,054 element checks in total: zero failures, worst ratio 4.53:1, which is the same --text-dim on --surface pair everywhere. Confirmed zero horizontal overflow on all seven at 375, 768, 1024 and 1440. Two contrast defects surfaced and were fixed: --st-unknown measured 4.43:1 on the light sunken ground, and --text-faint, which passes on --surface, fell to 4.06:1 on --surface-raised, which is what the model cards and the pairing identity cards sit on - the token was darkened and the two selectors moved up to --text-dim.
 - remaining: Onboarding step 4 is drawn in its confirmed state, so there is no progress or failure view for a download that stalls. Pairing is drawn at step 3 of 5; revoke is offered from the Control Center but its confirmation is not drawn. All seven pages remain static references carrying sample data only - no figure is a measurement and the pairing code is not a credential - and none is wired to the contract in backend/contracts/v1.py. Fonts still load from Google Fonts and must be self-hosted before any offline build. Screen readers, keyboard traversal order and other browsers are unverified. A collapsed preview pane reports clientWidth 0, which makes an overflow check read as hundreds of pixels on a page that has none; overflow numbers are only trustworthy at an explicit viewport. No Git writes ran.
 
-<a id="ac-20260903-018"></a>
-## AC-20260903-018 — Retheme the application surfaces: silver, sky blue, black, scarce green, purple, and selective curves
+<a id="ac-20260903-030"></a>
+## AC-20260903-030 — Retheme the application surfaces: silver, sky blue, black, scarce green, purple, and selective curves
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, application-surfaces, palette, tokens, geometry, accessibility
 - aliases: chatbot ui retheme, silver sky blue black, purple agent provenance, radius scale, curved edges, brand silver
@@ -627,12 +798,12 @@ work. No repository file change means no changelog entry.
 - verification: Swept all seven application pages in three theme states at 1440 by 900, 3,054 element checks: zero contrast failures. The floor rose from 4.53:1 to 4.74:1 rather than costing contrast, because the new grounds are darker in dark and cooler in light while the type tiers held; Control Center, onboarding and pairing measure 5.01:1 and the install page 5.20:1. The purple was checked before it was used - 6.98:1 dark and 5.92:1 light on the grounds it lands on, at 10px where the 4.5:1 threshold applies with no large-text exemption. Confirmed zero horizontal overflow on all seven at 375, 768, 1024 and 1440, which the nav pill margin change could have broken and did not. Confirmed the pairing markers resolve to sky blue and silver rather than green and red. Confirmed site.html links only site.css and that site.css carries its own token block, so the public site is untouched by the retheme.
 - remaining: The four earlier token contrast fixes are now structural rather than patched, but --text-faint on --surface-raised remains the tightest pair in the system and is the first thing to re-measure if surfaces are lightened again. The retheme is colour and geometry only: no page gained or lost content, and all seven remain static references carrying sample data, wired to nothing. Fonts still load from Google Fonts and must be self-hosted before any offline build. Screen readers, keyboard traversal order and other browsers are unverified. No Git writes ran.
 
-<a id="ac-20260903-019"></a>
-## AC-20260903-019 — Glassmorphism and deeper curves across the application surfaces
+<a id="ac-20260903-031"></a>
+## AC-20260903-031 — Glassmorphism and deeper curves across the application surfaces
 - date: 2026-09-03
 - agent: Claude
 - status: verified
-- prompt_id: [UP-20260903-001](userprompts.md#up-20260903-001)
+- prompt_id: [UP-20260903-013](userprompts.md#up-20260903-013)
 - related_prompts: none
 - tags: ui, application-surfaces, glassmorphism, geometry, tokens, accessibility, tooling
 - aliases: glass morphism chatbot ui, oval curves, atmosphere fields, backdrop-filter, compositing contrast audit, scrim modal

@@ -112,18 +112,37 @@ class Limits(Object):
     tool_network: Literal["disabled"]
 
 
+Validator = Literal[
+    "text.nonempty", "json.schema", "document.readable",
+    "citations.resolve", "patch.applies", "sandbox.exit_zero",
+]
+# Each output kind names the validator that proves it, then what may be added.
+REQUIRED_VALIDATORS = {
+    "text": frozenset({"text.nonempty"}), "json": frozenset({"json.schema"}),
+    "docx": frozenset({"document.readable"}), "patch": frozenset({"patch.applies"}),
+}
+OPTIONAL_VALIDATORS = {
+    "text": frozenset({"citations.resolve"}), "json": frozenset({"citations.resolve"}),
+    "docx": frozenset({"citations.resolve"}), "patch": frozenset({"sandbox.exit_zero"}),
+}
+
+
 class OutputContract(Object):
     kind: Literal["text", "json", "docx", "patch"]
-    validators: Annotated[list[Literal[
-        "text.nonempty", "json.schema", "document.readable",
-        "citations.resolve", "patch.applies", "sandbox.exit_zero",
-    ]], Field(min_length=1, max_length=6)]
+    validators: Annotated[list[Validator], Field(min_length=1, max_length=6)]
     schema_ref: Digest | None
 
     @model_validator(mode="after")
-    def referenced_schema(self):
+    def applicable_validators(self):
         if ("json.schema" in self.validators) != (self.schema_ref is not None):
             raise ValueError("json.schema requires exactly one approved schema hash")
+        requested = set(self.validators)
+        if len(requested) != len(self.validators):
+            raise ValueError("each validator may be requested once")
+        if missing := REQUIRED_VALIDATORS[self.kind] - requested:
+            raise ValueError(f"{self.kind} output requires {sorted(missing)}")
+        if extra := requested - REQUIRED_VALIDATORS[self.kind] - OPTIONAL_VALIDATORS[self.kind]:
+            raise ValueError(f"{sorted(extra)} cannot validate {self.kind} output")
         return self
 
 
@@ -188,6 +207,8 @@ ATTEMPT_TRANSITIONS = {
     "queued": {"running"}, "running": {"validating"}, "validating": {"completed"},
 }
 TERMINAL_ATTEMPT_STATES = frozenset({"completed", "failed", "cancelled", "interrupted"})
+# Every way an attempt can stop without producing output owes a typed reason.
+STOPPED_ATTEMPT_STATES = TERMINAL_ATTEMPT_STATES - {"completed"}
 
 
 def require_transition(current: str, following: str, *, attempt: bool = False) -> None:
@@ -218,7 +239,7 @@ class Failure(Object):
     code: Literal[
         "invalid_request", "incompatible_contract", "unavailable", "deadline_exceeded",
         "worker_lost", "redis_lost", "validation_failed", "permission_denied",
-        "idempotency_conflict", "events_expired", "internal_error",
+        "idempotency_conflict", "events_expired", "cancelled_by_user", "internal_error",
     ]
     message: Label
     retryable: bool
@@ -255,8 +276,11 @@ class Attempt(Record):
         times = [time for time in (self.created_at, self.started_at, self.finished_at) if time is not None]
         if times != sorted(times):
             raise ValueError("attempt timestamps are out of order")
-        if (self.state == "failed") != (self.error is not None):
-            raise ValueError("failed attempts require an error; other states do not carry one")
+        if (self.state in STOPPED_ATTEMPT_STATES) != (self.error is not None):
+            raise ValueError("a stopped attempt records exactly one typed reason")
+        if (self.error is not None and self.error.code == "cancelled_by_user"
+                and self.state != "cancelled"):
+            raise ValueError("cancelled_by_user cannot explain a failure or interruption")
         return self
 
 
@@ -415,6 +439,15 @@ class PodEvidence(Object):
     observed_at: Timestamp
 
 
+class Citation(Object):
+    """One drafted claim bound to the source page it was taken from."""
+
+    citation_id: Id
+    resource_id: Id
+    page: Annotated[int, Field(ge=1)]
+    quote: Annotated[str, StringConstraints(min_length=1, max_length=2048, pattern=r"\S")]
+
+
 class Proof(Record):
     proof_id: Id
     workspace_id: Id
@@ -428,6 +461,7 @@ class Proof(Record):
     validation: Literal["passed", "failed", "unavailable"]
     validation_source: Label | None
     artifacts: Annotated[list[ResourceRef], Field(max_length=16)]
+    citations: Annotated[list[Citation], Field(max_length=64)]
     approval_id: Id | None
     network: NetworkEvidence
     recorded_at: Timestamp
@@ -436,7 +470,32 @@ class Proof(Record):
     def validation_has_source(self):
         if (self.validation != "unavailable") != (self.validation_source is not None):
             raise ValueError("validation result requires its evidence reference")
+        if len({item.citation_id for item in self.citations}) != len(self.citations):
+            raise ValueError("citation references must be unique within the proof")
         return self
+
+
+def require_grounded_citations(envelope: JobEnvelope, proof: Proof) -> None:
+    """Coordinator-side: a citation may only point at an input this attempt received."""
+    # Bind evidence to one attempt: a superseded retry's proof must not clear its successor.
+    for label, dispatched, observed in (
+        ("workspace", envelope.workspace_id, proof.workspace_id),
+        ("job", envelope.job_id, proof.job_id),
+        ("attempt", envelope.attempt_id, proof.attempt_id),
+        ("target node", envelope.target_node_id, proof.node_id),
+    ):
+        if dispatched != observed:
+            raise ValueError(f"proof and envelope describe a different {label}")
+    if "citations.resolve" not in envelope.output.validators:
+        return
+    if not proof.citations:
+        raise ValueError("citations.resolve requires at least one citation")
+    inputs = {item.resource_id for item in envelope.context + envelope.attachments}
+    for citation in proof.citations:
+        if citation.resource_id not in inputs:
+            raise ValueError("citation cites a resource the job never received")
+    # ponytail: page existence is unchecked until an extractor reports page counts;
+    # add a per-resource page bound to ResourceRef when AF-00x OCR lands.
 
 
 def parse_message(record_type: type[Record], body: bytes) -> Record:
