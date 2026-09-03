@@ -542,3 +542,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Read-only source, documentation and diff inspection; no runtime checks for prose changes.
 - follow_up_to: [UP-20260903-011](#up-20260903-011)
 - linked_changes: [AC-20260903-012](agentchangelog.md#ac-20260903-012)
+
+<a id="up-20260903-013"></a>
+## UP-20260903-013 — Design the application UI and the public download site
+- date: 2026-09-03
+- status: in-progress
+- scope: frontend, design
+- tags: ui, design-direction, chat-surface, evidence-semantics, theming, accessibility
+- aliases: two designs, chatbot UI, download website, hermes deepseek reference, control room blueprint, direction pick
+- paths: frontend/design/, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Establish a visual direction for the Refinix application surfaces and the separate public distribution site, informed by reference products, then build the surfaces part by part starting with Chat.
+- constraints: Plain HTML and CSS with no build chain; both light and dark themes; enforced, observed and unavailable must stay visually distinct; state names must come from the frozen contract; sample content must not read as measured evidence.
+- acceptance: One recorded direction with tokens, a Chat surface reference page that passes a contrast sweep in every theme state, and a stated list of surfaces still to build.
+- decisions: Control Room for application surfaces; Blueprint restricted to artifacts and the Proof Card; the public site is a separate bolder treatment; Chat built first.
+- follow_up_to: none
+- supersedes: none
+- linked_changes: [AC-20260903-013](agentchangelog.md#ac-20260903-013), [AC-20260903-014](agentchangelog.md#ac-20260903-014), [AC-20260903-015](agentchangelog.md#ac-20260903-015), [AC-20260903-016](agentchangelog.md#ac-20260903-016), [AC-20260903-017](agentchangelog.md#ac-20260903-017), [AC-20260903-018](agentchangelog.md#ac-20260903-018), [AC-20260903-019](agentchangelog.md#ac-20260903-019), [AC-20260903-020](agentchangelog.md#ac-20260903-020), [AC-20260903-021](agentchangelog.md#ac-20260903-021), [AC-20260903-022](agentchangelog.md#ac-20260903-022), [AC-20260903-023](agentchangelog.md#ac-20260903-023), [AC-20260903-024](agentchangelog.md#ac-20260903-024), [AC-20260903-025](agentchangelog.md#ac-20260903-025), [AC-20260903-026](agentchangelog.md#ac-20260903-026), [AC-20260903-027](agentchangelog.md#ac-20260903-027), [AC-20260903-028](agentchangelog.md#ac-20260903-028), [AC-20260903-029](agentchangelog.md#ac-20260903-029), [AC-20260903-030](agentchangelog.md#ac-20260903-030), [AC-20260903-031](agentchangelog.md#ac-20260903-031)

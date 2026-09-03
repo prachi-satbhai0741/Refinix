@@ -1,0 +1,274 @@
+/* Refinix design tokens — "Control Room", light and dark.
+ *
+ * Palette: near-black ground, silver type, sky blue as the live accent, one
+ * green, one purple. Discipline is borrowed from process-industry HMI practice:
+ * the normal state of the plant is grey, and colour is spent only where
+ * something is abnormal, measured, absent, or attributable. That is the same
+ * rule docs/security.md#12 places on the Control Center, so the aesthetic and
+ * the requirement agree rather than compete.
+ *
+ * Each colour has exactly one job, and the jobs do not overlap:
+ *
+ *   silver   the resting state of everything. Most of the UI is this.
+ *   sky blue live — running now, focused, selected, awaiting you.
+ *   green    scarce, and spent on two things only: --st-enforced (a named
+ *            control is active) and the completed mark on a plan, pipeline or
+ *            job lifecycle. Never decorative, and never used for "unavailable",
+ *            which is grey and hatched by rule.
+ *   purple   ONLY --agent. This came from the local model's own reasoning:
+ *            plan steps, pipeline stages, agent profiles. It is a provenance
+ *            mark, not a state claim, which is why it cannot be confused with
+ *            enforced / observed / unavailable.
+ *   amber    caution. red-clay: fault.
+ *
+ * One deliberate exception: the diff in the Code surface uses green and red for
+ * added and removed lines. That is diff notation, a convention older than this
+ * palette and one a reader already knows, so it is left alone rather than
+ * recoloured for internal tidiness.
+ *
+ * Theme resolution has three states, not two. A bare :root carries the complete
+ * light palette; the media query covers viewers on the system default; the
+ * [data-theme] blocks cover an explicit in-app choice. Never declare a colour
+ * only inside a media or [data-theme] block.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* --- surfaces: cool daylight silver, deliberately not white ------------ */
+  --bg:            #D2D9E4;
+  --surface:       #EAEEF4;
+  --surface-raised:#F3F6FA;
+  --surface-sunken:#D1D8E3;
+  --line:          #A8B3C3;
+  --line-soft:     #CBD3DE;
+
+  /* --- text ---------------------------------------------------------------
+   * Every tier is measured against the darkest ground it can land on
+   * (--surface-sunken) AND the lightest (--surface-raised), because this UI is
+   * read at 10-13px all day and cards sit on the raised tone. */
+  --text:          #0E141C;
+  --text-dim:      #3E4959;
+  --text-faint:    #4B5665;
+  --text-invert:   #F3F6FA;
+
+  /* --- signal: live. Focus, selection, running, awaiting you. ------------ */
+  --brand:         #6E7B8C;
+  --signal:        #1A5E97;
+  --signal-soft:   #DBE8F4;
+
+  /* --- agent provenance. Not a state. See the header note. --------------- */
+  --agent:         #58399B;
+  --agent-soft:    #E5DFF4;
+
+  /* --- semantic state. Not interchangeable with --signal or --agent. ----- */
+  --st-enforced:   #1A6349;  /* a named control is active — the only green */
+  --st-observed:   #3E4959;  /* an observer saw this; silver on purpose */
+  --st-unknown:    #4A5462;  /* no evidence. never green, never red */
+  --st-caution:    #7A4C04;
+  --st-fault:      #96322A;
+
+  /* --- Blueprint: the document treatment, used only for artifacts ------- */
+  --bp-ground:     #E4E9EF;
+  --bp-surface:    #F0F3F8;
+  --bp-ink:        #17384F;
+  --bp-line:       #A9B7C6;
+  --bp-dim:        #4F6377;
+  --bp-void:       rgba(23, 56, 79, .11);
+
+  /* --- type ------------------------------------------------------------- */
+  --font-ui:   'IBM Plex Sans Condensed', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-doc:  'Spectral', Georgia, 'Times New Roman', serif;
+
+  --fs-micro: 10px;
+  --fs-label: 11px;
+  --fs-sm:    12px;
+  --fs-body:  13px;
+  --fs-lg:    15px;
+  --fs-xl:    19px;
+  --tracking-label: .11em;
+
+  /* --- geometry ------------------------------------------------------------
+   * One rule decides whether a thing curves:
+   *
+   *   Things you touch or talk to curve.  Buttons, chips, bubbles, the
+   *   composer, cards, panels, dialogs, nav items — anything that responds.
+   *
+   *   Things you read as a measurement stay square.  Dense claim tables,
+   *   diffs, run output, meters, and the artifact document. A readout is an
+   *   instrument face, and rounding it makes it look like a suggestion.
+   *
+   * So --radius-data exists and is 0. It is not an oversight, and it should
+   * stay 0 — the squareness is doing work. */
+  --radius-xl:    26px;  /* dialogs and the largest panels */
+  --radius-lg:    18px;  /* panels, cards */
+  --radius:       13px;  /* buttons, composer, containers */
+  --radius-sm:     9px;  /* nav items, small controls, inline tags */
+  --radius-bubble:20px;  /* a chat turn — the most oval thing here */
+  --radius-pill: 999px;  /* state chips, stepper dots, counts */
+  --radius-data:   0px;  /* readouts and documents — square on purpose */
+
+  /* --- glass ---------------------------------------------------------------
+   * Glass only reads as glass when there is something behind it worth
+   * blurring, so --atmo-* lights the ground the app sits on. Keep those alphas
+   * low: the glass fill is translucent, so a bright field shifts the composite
+   * every panel's text is measured against.
+   *
+   * Two tiers, because blurring an already-blurred surface costs a lot and
+   * shows almost nothing:
+   *   --glass-*  top-level surfaces. Carries the backdrop blur.
+   *   --veil-*   containers nested inside those. Fill only, no blur.
+   *
+   * Verbatim output and documents take neither. See the geometry note. */
+  /* In light these must LIFT, not tint down. A dark blue at 10% over a light
+     ground darkens it, which costs contrast for dark text — the light fields
+     are therefore near-white pastels, and the ground reads cooler and brighter
+     rather than muddier. */
+  --atmo-1: rgba(206, 230, 255, .55);
+  --atmo-2: rgba(226, 214, 252, .40);
+  --atmo-3: rgba(255, 255, 255, .32);
+
+  --glass-base:  rgba(255, 255, 255, .55);
+  --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.22));
+  --glass-line:  rgba(255, 255, 255, .80);
+  --glass-edge:  rgba(120, 140, 170, .30);
+  --glass-blur:  blur(22px) saturate(140%);
+  --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .90);
+  --glass-shadow: 0 14px 34px rgba(30, 45, 70, .10);
+
+  --veil:        rgba(255, 255, 255, .42);
+  --veil-sunken: rgba(160, 178, 200, .16);
+
+  /* A modal is the one surface that must stay readable regardless of what is
+     behind it, so it gets a much higher base than ordinary glass — a .55 white
+     panel over a heavy scrim composites to mud, and the scrim itself is
+     tokenised so light does not dim to near-black. */
+  --glass-modal: rgba(255, 255, 255, .92);
+  --scrim:       rgba(38, 52, 76, .30);
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;
+  --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+
+  --rail-w: 232px;
+  --nav-w:  188px;
+
+  --dur-fast: 90ms;
+  --dur: 160ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+}
+
+/* Viewers on the system default: only prefers-color-scheme separates them.
+ * Guarded so an explicit in-app light choice still beats a dark OS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg:            #07090C;
+    --surface:       #0E1218;
+    --surface-raised:#151A22;
+    --surface-sunken:#04060A;
+    --line:          #242C38;
+    --line-soft:     #191F28;
+
+    --text:          #E8ECF2;
+    --text-dim:      #A9B5C6;
+    --text-faint:    #93A0B2;
+    --text-invert:   #07090C;
+
+    --brand:         #C4CEDC;
+    --signal:        #6DB3F2;
+    --signal-soft:   #0C1B2B;
+
+    --agent:         #B08CEC;
+    --agent-soft:    #16122A;
+
+    --st-enforced:   #57C79A;
+    --st-observed:   #A9B5C6;
+    --st-unknown:    #8E9AAB;
+    --st-caution:    #E8B96A;
+    --st-fault:      #F0908A;
+
+    /* Blueprint goes cyanotype in the dark: a real blueprint is a dark
+     * prussian ground with white lines, not inverted paper. */
+    --bp-ground:     #0B2033;
+    --bp-surface:    #10293E;
+    --bp-ink:        #DCEAF5;
+    --bp-line:       #4E82A6;
+    --bp-dim:        #9BBBD2;
+    --bp-void:       rgba(220, 234, 245, .13);
+
+    --atmo-1: rgba(109, 179, 242, .13);
+    --atmo-2: rgba(176, 140, 236, .10);
+    --atmo-3: rgba(190, 208, 232, .05);
+
+    --glass-base:  rgba(20, 26, 35, .55);
+    --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.014));
+    --glass-line:  rgba(255, 255, 255, .10);
+    --glass-edge:  rgba(255, 255, 255, .06);
+    --glass-blur:  blur(26px) saturate(150%);
+    --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .10);
+    --glass-shadow: 0 16px 42px rgba(0, 0, 0, .45);
+
+    --veil:        rgba(255, 255, 255, .035);
+    --veil-sunken: rgba(0, 0, 0, .28);
+
+    --glass-modal: rgba(16, 21, 29, .90);
+    --scrim:       rgba(0, 0, 0, .62);
+  }
+}
+
+/* Explicit in-app dark choice wins over a light OS. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg:            #07090C;
+  --surface:       #0E1218;
+  --surface-raised:#151A22;
+  --surface-sunken:#04060A;
+  --line:          #242C38;
+  --line-soft:     #191F28;
+
+  --text:          #E8ECF2;
+  --text-dim:      #A9B5C6;
+  --text-faint:    #93A0B2;
+  --text-invert:   #07090C;
+
+  --brand:         #C4CEDC;
+  --signal:        #6DB3F2;
+  --signal-soft:   #0C1B2B;
+
+  --agent:         #B08CEC;
+  --agent-soft:    #16122A;
+
+  --st-enforced:   #57C79A;
+  --st-observed:   #A9B5C6;
+  --st-unknown:    #8E9AAB;
+  --st-caution:    #E8B96A;
+  --st-fault:      #F0908A;
+
+  --bp-ground:     #0B2033;
+  --bp-surface:    #10293E;
+  --bp-ink:        #DCEAF5;
+  --bp-line:       #4E82A6;
+  --bp-dim:        #9BBBD2;
+  --bp-void:       rgba(220, 234, 245, .13);
+
+  --atmo-1: rgba(109, 179, 242, .13);
+  --atmo-2: rgba(176, 140, 236, .10);
+  --atmo-3: rgba(190, 208, 232, .05);
+
+  --glass-base:  rgba(20, 26, 35, .55);
+  --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.014));
+  --glass-line:  rgba(255, 255, 255, .10);
+  --glass-edge:  rgba(255, 255, 255, .06);
+  --glass-blur:  blur(26px) saturate(150%);
+  --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .10);
+  --glass-shadow: 0 16px 42px rgba(0, 0, 0, .45);
+
+  --veil:        rgba(255, 255, 255, .035);
+  --veil-sunken: rgba(0, 0, 0, .28);
+
+  --glass-modal: rgba(16, 21, 29, .90);
+  --scrim:       rgba(0, 0, 0, .62);
+}

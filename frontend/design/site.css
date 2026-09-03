@@ -1,0 +1,1388 @@
+/* Refinix public distribution site.
+ *
+ * Deliberately does NOT import tokens.css. The site is a different trust
+ * boundary (docs/security.md boundary 1) and a different job: it explains the
+ * product and publishes installers. It never runs inference, never touches a
+ * workspace, and shares no state with the application.
+ *
+ * Surface system: a near-black ground lit by layered radial fields, with
+ * glass panels — low-alpha white fills, hairline borders and backdrop blur.
+ * Ornament is the engraved classical plates. Accent is sky blue; the only
+ * green is the "enforced" state, and orange belongs to the team mark alone.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* declared once so a single-file build inlines the artwork once, not twice */
+  --deity: url(assets/deity.png);
+  --team-logo: url(assets/rokunin-sync-logo.png);
+
+  /* Grounds: near-black, with a cooler blue-black for raised panels. */
+  --ground:      #09090A;
+  --ground-2:    #0D1017;
+  --ground-3:    #14181F;
+
+  /* Silver, not plain white. The dim tiers carry a faint blue cast so they
+     sit with the accent instead of reading as grey. */
+  --ink:         #FFFFFF;
+  --ink-2:       #E6E8EA;
+  --ink-dim:     #A8B0BC;
+  --ink-faint:   #81858C;
+
+  --glass:       rgba(255, 255, 255, .045);
+  --glass-2:     rgba(255, 255, 255, .075);
+  --glass-blur:  rgba(13, 16, 23, .62);
+  --edge:        rgba(255, 255, 255, .10);
+  --edge-2:      rgba(255, 255, 255, .16);
+  --edge-hi:     rgba(255, 255, 255, .28);
+
+  /* Sky blue carries every accent. */
+  --accent:      #7FB6E8;
+  --accent-deep: #4D7FD6;
+  --accent-soft: rgba(127, 182, 232, .14);
+  --ember:       #9CCBF2;
+  --on-accent:   #09090A;
+
+  /* Brand orange is reserved for the Rokunin Sync mark and nothing else. */
+  --brand:       #F08A24;
+  /* The one green on the page: the "enforced" state, and only that. */
+  --ok:          #74C79C;
+  --danger:      #E28274;
+
+  --aura-1:      rgba(46, 108, 178, .52);
+  --aura-2:      rgba(96, 150, 200, .20);
+  --aura-3:      rgba(34, 70, 124, .34);
+  --ray:         rgba(198, 218, 236, .44);
+
+  --font-display: 'Spectral', Georgia, 'Times New Roman', serif;
+  --font-ui:      'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data:    'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --max: 1560px;
+  --gutter: clamp(20px, 3.4vw, 64px);
+  --sec: clamp(76px, 9vw, 148px);
+  --r-card: 12px;
+  --r-panel: 14px;
+  --r-pill: 100px;
+  --hair: .8px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --ground:      #EEF1F5;
+  --ground-2:    #F7F9FB;
+  --ground-3:    #FFFFFF;
+
+  --ink:         #0C1119;
+  --ink-2:       #26313F;
+  --ink-dim:     #4A5665;
+  --ink-faint:   #5E6A78;
+
+  --glass:       rgba(255, 255, 255, .62);
+  --glass-2:     rgba(255, 255, 255, .82);
+  --glass-blur:  rgba(247, 249, 251, .68);
+  --edge:        rgba(12, 17, 25, .12);
+  --edge-2:      rgba(12, 17, 25, .18);
+  --edge-hi:     rgba(12, 17, 25, .28);
+
+  --accent:      #2C6FA8;
+  --accent-deep: #1F5488;
+  --accent-soft: rgba(44, 111, 168, .10);
+  --ember:       #3B7FB8;
+  --on-accent:   #FFFFFF;
+
+  --brand:       #C96A0E;
+  --ok:          #1E6B4F;
+  --danger:      #A33528;
+
+  --aura-1:      rgba(120, 168, 210, .34);
+  --aura-2:      rgba(168, 196, 220, .24);
+  --aura-3:      rgba(140, 172, 206, .24);
+  --ray:         rgba(62, 88, 116, .45);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::selection { background: var(--accent); color: var(--on-accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+/* ============================================================= atmosphere */
+
+/* z-index:-1 rather than 0. A position:fixed element is promoted to its own
+   compositing layer, and at z-index:0 it can paint over sibling content that
+   sits above it in the stacking order. Negative keeps it behind reliably. */
+.atmos {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(62vw 52vw at 74% -4%, var(--aura-1), transparent 60%),
+    radial-gradient(46vw 40vw at 8% 26%,  var(--aura-2), transparent 64%),
+    radial-gradient(60vw 50vw at 46% 92%, var(--aura-3), transparent 62%);
+}
+/* Grain field. A canvas of low-alpha particles drifting on a slow rotation —
+   the sync mark's motion, at ambient scale. Particles brighten and scatter
+   away from the pointer. Sits above the gradient wash, below all content. */
+/* Explicit 100% sizing, not just inset:0. A canvas is a replaced element, so
+   an absolutely-positioned one with width:auto resolves to its *intrinsic*
+   300x150 rather than stretching to its insets — which left the whole field
+   crammed into the top-left corner. */
+.grain {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  display: block;
+}
+/* Particle colours as tokens so the canvas can follow the theme. */
+:root { --grain-ink: 214, 222, 232; --grain-brand: 127, 182, 232; }
+:root[data-theme="light"] { --grain-ink: 38, 49, 63; --grain-brand: 44, 111, 168; }
+
+.page { position: relative; z-index: 1; }
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); }
+
+/* ============================================================== utilities */
+
+/* Glass recipe. Four things together sell it, and dropping any one of them
+   flattens the result: a top-to-bottom gradient fill so the surface catches
+   light unevenly, saturation lift on the backdrop so colour behind it stays
+   alive through the blur, a one-pixel inset highlight along the top edge, and
+   an outer shadow that separates the panel from the ground. */
+.glass,
+.card,
+.term,
+.demo,
+.stat,
+.build,
+.notice {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .022));
+  border: var(--hair) solid var(--edge);
+  border-radius: var(--r-card);
+  backdrop-filter: blur(34px) saturate(165%);
+  -webkit-backdrop-filter: blur(34px) saturate(165%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .12),
+    inset 0 -1px 0 rgba(255, 255, 255, .03),
+    0 18px 44px rgba(0, 0, 0, .40);
+}
+:root[data-theme="light"] .glass,
+:root[data-theme="light"] .card,
+:root[data-theme="light"] .term,
+:root[data-theme="light"] .demo,
+:root[data-theme="light"] .stat,
+:root[data-theme="light"] .build,
+:root[data-theme="light"] .notice {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .86), rgba(255, 255, 255, .58));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .90),
+    0 14px 34px rgba(18, 34, 56, .10);
+}
+
+.eyebrow {
+  font-family: var(--font-data);
+  font-size: 11px;
+  letter-spacing: .19em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 20px;
+}
+.eyebrow b { color: var(--accent); font-weight: 500; }
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 22px;
+}
+.label::before {
+  content: "";
+  width: 22px;
+  height: var(--hair);
+  background: var(--accent);
+}
+
+/* Scroll reveal. Hidden only once the inline bootstrap has marked the document
+   as scripted — without that guard, a JS failure would leave the whole page
+   invisible rather than merely unanimated. */
+.js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.7,.3,1); }
+.js .reveal.in { opacity: 1; transform: none; }
+.js .reveal.d1 { transition-delay: .07s } .js .reveal.d2 { transition-delay: .14s }
+.js .reveal.d3 { transition-delay: .21s } .js .reveal.d4 { transition-delay: .28s }
+
+/* ==================================================================== nav */
+
+.nav-shell {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--glass-blur);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border-bottom: var(--hair) solid var(--edge);
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 2vw, 26px);
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 14px var(--gutter);
+  flex-wrap: wrap;
+}
+.nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: .005em;
+  color: var(--ink);
+  text-decoration: none;
+  margin-right: auto;
+}
+/* Rokunin Sync symbol. Inline SVG stand-in until the real asset lands —
+   see assets/README.md. Sized in em so it tracks whatever it sits beside. */
+.mark {
+  width: 1.32em;
+  height: 1.32em;
+  flex: none;
+  color: var(--brand);
+  display: block;
+}
+
+/* The full ROKUNIN SYNC lockup is the *team* mark, so it appears in credits
+   rather than in the nav. Hidden until the file actually loads, so a missing
+   asset degrades to the text credit instead of a broken image. */
+.team-logo {
+  width: 100%;
+  max-width: 180px;
+  aspect-ratio: 1064 / 773;
+  background: var(--team-logo) left center / contain no-repeat;
+  margin-bottom: 14px;
+}
+.closing .team-logo { margin: 0 auto 18px; max-width: 148px; }
+
+.chip {
+  font-family: var(--font-data);
+  font-size: 9.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  border: var(--hair) solid var(--edge-2);
+  color: var(--ink-dim);
+  background: var(--glass);
+}
+.nav-links { display: flex; gap: clamp(8px, 1.6vw, 20px); align-items: center; flex-wrap: wrap; }
+.nav-links a {
+  font-size: 14.5px;
+  color: var(--ink-dim);
+  text-decoration: none;
+  padding: 6px 2px;
+  transition: color 160ms ease;
+}
+.nav-links a:hover { color: var(--ink); }
+
+/* ================================================================ buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-ui);
+  font-size: 14.5px;
+  font-weight: 500;
+  padding: 11px 22px;
+  border-radius: var(--r-pill);
+  border: var(--hair) solid var(--edge-2);
+  background: var(--glass);
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition: background 200ms ease, border-color 200ms ease, transform 200ms ease;
+}
+.btn:hover { background: var(--glass-2); border-color: var(--edge-hi); transform: translateY(-1px); }
+.btn-primary {
+  background: var(--ink);
+  color: var(--ground);
+  border-color: var(--ink);
+  font-weight: 600;
+}
+.btn-primary:hover { background: var(--ink); opacity: .88; transform: translateY(-1px); }
+.btn svg { width: 15px; height: 15px; flex: none; }
+.btn[aria-disabled="true"] {
+  color: var(--ink-faint);
+  border-style: dashed;
+  cursor: not-allowed;
+  background: transparent;
+}
+.btn[aria-disabled="true"]:hover { transform: none; background: transparent; border-color: var(--edge-2); }
+
+/* ================================================================== hero */
+
+.hero {
+  position: relative;
+  padding: clamp(34px, 5vw, 72px) 0 var(--sec);
+  display: grid;
+  /* The art carries the right side, so give it the larger share. */
+  grid-template-columns: minmax(0, .97fr) minmax(0, 1.03fr);
+  gap: clamp(20px, 3vw, 44px);
+  align-items: center;
+}
+.hero > * { position: relative; z-index: 1; }
+
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.9rem, 1rem + 7.4vw, 6.2rem);
+  line-height: .96;
+  letter-spacing: -.03em;
+  font-weight: 700;
+  margin: 0 0 26px;
+  max-width: 11ch;
+  text-wrap: balance;
+}
+.hero .lede {
+  font-size: clamp(1rem, .94rem + .34vw, 1.18rem);
+  color: var(--ink-dim);
+  max-width: 46ch;
+  margin: 0 0 32px;
+}
+.hero .lede strong { color: var(--ink); font-weight: 600; }
+.cta-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 30px; }
+
+/* ============================================================== terminal */
+
+.term {
+  border-radius: var(--r-panel);
+  border: var(--hair) solid var(--edge);
+  overflow: hidden;
+  max-width: 560px;
+}
+.term-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 8px 0;
+  border-bottom: var(--hair) solid var(--edge);
+}
+.term-tab {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink-faint);
+  background: none;
+  border: 0;
+  padding: 8px 14px;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+.term-tab:hover { color: var(--ink-2); }
+.term-tab[aria-selected="true"] { color: var(--ink); background: var(--glass-2); }
+.term-copy {
+  margin-left: auto;
+  margin-bottom: 6px;
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: none;
+  border: var(--hair) solid var(--edge);
+  border-radius: var(--r-pill);
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+.term-copy:hover { color: var(--ink); border-color: var(--edge-hi); }
+.term-copy.done { color: var(--accent); border-color: var(--accent); }
+.term-body { padding: 16px 18px; }
+.term pre {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--ink-2);
+  overflow-x: auto;
+}
+.term .cmt { color: var(--ink-faint); }
+.term .pr { color: var(--accent); }
+.term-panel[hidden] { display: none; }
+
+/* ============================================================== the plates */
+
+.plate { position: relative; margin: 0; }
+.plate svg { width: 100%; height: auto; display: block; position: relative; z-index: 1; }
+
+/* ============================================================ intro gate ===
+   A full-screen entry: the clip plays at native size, the team mark sits top
+   left, and a glass control sits bottom centre. The clip is portrait, so the
+   space either side is filled by the network field rather than left blank. */
+
+.intro {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: #000;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  transition: opacity .9s ease;
+}
+.intro[hidden] { display: none; }
+.intro.gone { opacity: 0; pointer-events: none; }
+
+/* The clip: full viewport height, native aspect, centred.
+   Sized in viewport units, NOT height:100%. `.intro` centres its children, so
+   a centred item has an indefinite block size and a percentage height falls
+   back to the media's intrinsic height — which made a 1280px-tall clip
+   overflow a shorter window and cut the top and bottom off. */
+.intro-video {
+  position: relative;
+  z-index: 1;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  max-width: 100vw;
+  width: auto;
+  display: block;
+  object-fit: contain;
+}
+/* The side field sits behind the clip and fills the gutters. Explicit 100%
+   sizing, not just inset:0 — .intro centres its items, and a centred
+   absolutely-positioned canvas collapses to its intrinsic 300x150 instead of
+   stretching. */
+.intro .net {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  display: block;
+}
+
+/* REFINIX wordmark, set in brushed chrome.
+   Built from type rather than an image: the supplied wordmark could not be
+   written to disk from the conversation, and type stays sharp at any size.
+   Swap in a PNG here when one is saved — see assets/README.md.
+   The gradient runs light-to-dark-to-light with a hard tonal break just below
+   the midline, which is what reads as a bevelled metal edge. */
+.intro-mark {
+  position: absolute;
+  z-index: 3;
+  top: clamp(16px, 2.6vw, 38px);
+  left: clamp(16px, 2.6vw, 38px);
+  pointer-events: none;
+  isolation: isolate;
+}
+.wordmark {
+  font-family: 'Michroma', 'DM Sans', sans-serif;
+  font-size: clamp(21px, 2.5vw, 42px);
+  letter-spacing: .055em;
+  line-height: 1;
+  margin: 0;
+  background: linear-gradient(180deg,
+    #FFFFFF 0%, #E6ECF0 12%, #B9C2C9 26%, #7C858D 40%,
+    #4A525A 49%, #262C32 51%,
+    #6E777F 60%, #B6BFC6 74%, #F4F7F9 88%, #A9B2BA 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(255,255,255,.28)) drop-shadow(0 3px 10px rgba(0,0,0,.85));
+}
+/* the sheen, masked to the letterforms themselves */
+.intro-mark::after {
+  content: "REFINIX";
+  position: absolute;
+  inset: 0;
+  font-family: 'Michroma', 'DM Sans', sans-serif;
+  font-size: clamp(21px, 2.5vw, 42px);
+  letter-spacing: .055em;
+  line-height: 1;
+  background: linear-gradient(105deg,
+    transparent 38%,
+    rgba(255, 255, 255, .25) 46%,
+    rgba(255, 255, 255, 1) 50%,
+    rgba(200, 232, 255, .7) 54%,
+    transparent 62%);
+  background-size: 280% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sheen 4.5s cubic-bezier(.5,0,.4,1) infinite;
+  pointer-events: none;
+}
+@keyframes sheen {
+  0%, 62% { background-position: 150% 0; }
+  100%    { background-position: -50% 0; }
+}
+
+/* The control. Held in place on hover and press — the position is set by
+   `translate`, and nothing in the hover or active state touches it, so it
+   cannot drift sideways. Only the surface and the arrow respond. */
+.enter {
+  position: absolute;
+  z-index: 3;
+  bottom: clamp(30px, 6vh, 72px);
+  left: 50%;
+  translate: -50% 0;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  padding: 15px 22px 15px 30px;
+  border-radius: var(--r-pill);
+  border: 1px solid rgba(255, 255, 255, .28);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, .06));
+  backdrop-filter: blur(30px) saturate(190%);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .45),
+    inset 0 -1px 0 rgba(255, 255, 255, .10),
+    0 18px 50px rgba(0, 0, 0, .55);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 15.5px;
+  font-weight: 500;
+  letter-spacing: .015em;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background .3s ease, border-color .3s ease, box-shadow .3s ease;
+}
+/* a highlight that crosses the glass on hover, instead of any movement */
+.enter::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 40%, rgba(255,255,255,.22) 50%, transparent 60%);
+  background-size: 260% 100%;
+  background-position: 150% 0;
+  transition: background-position .7s ease;
+  pointer-events: none;
+}
+.enter:hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .10));
+  border-color: rgba(255, 255, 255, .5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .6),
+    0 22px 60px rgba(0, 0, 0, .6);
+}
+.enter:hover::before { background-position: -60% 0; }
+.enter:active { background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.05)); }
+
+/* the arrow sits in its own round well and points sideways */
+.enter .go {
+  width: 30px; height: 30px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, .14);
+  border: 1px solid rgba(255, 255, 255, .3);
+  transition: background .3s ease;
+}
+.enter:hover .go { background: rgba(255, 255, 255, .26); }
+.enter svg { width: 15px; height: 15px; animation: nudgeX 1.9s ease-in-out infinite; }
+@keyframes nudgeX { 0%, 100% { transform: translateX(0) } 50% { transform: translateX(4px) } }
+
+/* --- the glitch, then the reveal ---------------------------------------- */
+
+.intro.glitching .intro-video {
+  filter: url(#turb) saturate(1.5) contrast(1.25);
+  animation: tear .16s steps(2, end) infinite;
+}
+@keyframes tear {
+  0%   { clip-path: inset(0 0 0 0);      transform: translate(0) }
+  25%  { clip-path: inset(12% 0 46% 0);  transform: translate(-14px) }
+  50%  { clip-path: inset(58% 0 8% 0);   transform: translate(11px) }
+  75%  { clip-path: inset(32% 0 30% 0);  transform: translate(-7px) }
+  100% { clip-path: inset(0 0 0 0);      transform: translate(0) }
+}
+
+/* The artwork is ~52% light ink on transparent, so it carries on black — but
+   it is pushed harder here so it lands as a presence, not a watermark. */
+.deity-reveal {
+  position: absolute;
+  z-index: 2;
+  /* viewport units for the same reason as the clip — a percentage height has
+     no definite basis inside a centring grid */
+  height: 92vh;
+  height: 92dvh;
+  max-width: 96vw;
+  aspect-ratio: 1040 / 1272;
+  background: var(--deity) center / contain no-repeat;
+  opacity: 0;
+  filter:
+    drop-shadow(0 0 40px rgba(127, 182, 232, .38))
+    drop-shadow(0 0 90px rgba(60, 140, 220, .22))
+    brightness(1.35) contrast(1.4);
+  transition: opacity .5s ease;
+  pointer-events: none;
+}
+/* It arrives the same way the clip left — torn and displaced — rather than
+   simply fading up. */
+.intro.revealing .deity-reveal {
+  opacity: 1;
+  animation: arrive .62s steps(3, end) 1;
+}
+@keyframes arrive {
+  0%   { filter: url(#turb) brightness(2.2) contrast(2); clip-path: inset(0 0 62% 0); transform: translateX(-22px) }
+  22%  { filter: url(#turb) brightness(1.7) contrast(1.7); clip-path: inset(40% 0 12% 0); transform: translateX(16px) }
+  48%  { filter: brightness(1.5) contrast(1.5); clip-path: inset(8% 0 44% 0); transform: translateX(-9px) }
+  72%  { filter: brightness(1.35) contrast(1.4); clip-path: inset(0 0 0 0); transform: translateX(4px) }
+  100% { clip-path: inset(0 0 0 0); transform: none }
+}
+
+/* Then it travels to the right and settles exactly onto the hero artwork.
+   The transform is measured at run time from the hero element's own box, so
+   it lands in place rather than at a guessed offset. */
+.intro.exiting .deity-reveal {
+  transition: transform 1.15s cubic-bezier(.55,0,.2,1), opacity 1.15s ease .25s;
+  opacity: 0;
+}
+
+/* the eyes: two sky-blue points over the blindfold, blinking */
+/* The figure is blindfolded, so the light does not read as eyes — it escapes
+   from behind the cloth. Each element is one slit: a hot core at the cloth
+   line, with a beam driven up and a beam driven down from it. The beams are
+   cones with a soft top, which is what stops them looking like flat bars. */
+.eye {
+  position: absolute;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  /* the slit itself */
+  background: linear-gradient(90deg, transparent, #EAF7FF 18%, #FFFFFF 50%, #EAF7FF 82%, transparent);
+  border-radius: 2px;
+  box-shadow:
+    0 0 10px 2px rgba(170, 225, 255, .95),
+    0 0 30px 8px rgba(90, 180, 255, .55);
+}
+/* the two beams */
+/* Sized in viewport units, not as a percentage of the slit — the slit is only
+   a few pixels tall, so a percentage height gave beams barely longer than the
+   cloth itself. */
+.eye::before,
+.eye::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 640%;
+  translate: -50% 0;
+  background: linear-gradient(to top,
+    rgba(205, 240, 255, .85) 0%,
+    rgba(150, 215, 255, .45) 22%,
+    rgba(120, 195, 255, .20) 52%,
+    rgba(110, 185, 255, .06) 78%,
+    transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.5) 45%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.5) 45%, transparent 100%);
+  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+  filter: blur(4px);
+  pointer-events: none;
+}
+.eye::before { bottom: 50%; height: 21vh; }              /* driven upward */
+.eye::after  { top: 50%; height: 16vh; rotate: 180deg; } /* and downward */
+
+.intro.revealing .eye { animation: slit 3.2s ease-in-out infinite; }
+.intro.revealing .eye::before { animation: beam 2.1s ease-in-out infinite; }
+.intro.revealing .eye::after  { animation: beam 2.1s ease-in-out infinite .35s; }
+@keyframes slit {
+  0%, 100% { opacity: .82 }
+  14%      { opacity: 1 }
+  47%      { opacity: 1 }
+  50%      { opacity: .15 }   /* the blink, through the cloth */
+  53%      { opacity: 1 }
+  78%      { opacity: .9 }
+  81%      { opacity: .3 }
+  84%      { opacity: 1 }
+}
+@keyframes beam {
+  0%, 100% { opacity: .55; transform: scaleY(.92) }
+  50%      { opacity: 1;   transform: scaleY(1.12) }
+}
+.intro.exiting .eye { opacity: 0; transition: opacity .4s ease; }
+
+/* --- lightning, as the figure arrives ------------------------------------ */
+/* A full-bleed flash with a hard rise and a slow fall — a storm strike is
+   asymmetric, and an even fade reads as a fade, not a flash. Two overlapping
+   bursts give the double-strike a real one has. */
+.bolt {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 50% 34%, rgba(214, 240, 255, .92), transparent 70%),
+    linear-gradient(180deg, rgba(150, 205, 255, .5), transparent 55%);
+  mix-blend-mode: screen;
+}
+.intro.revealing .bolt { animation: strike 2.1s ease-out 1 both; }
+.intro.revealing .bolt.b { animation: strike 2.1s ease-out .42s 1 both; }
+@keyframes strike {
+  0%   { opacity: 0 }
+  2%   { opacity: 1 }
+  5%   { opacity: .15 }
+  8%   { opacity: .95 }
+  13%  { opacity: .06 }
+  17%  { opacity: .6 }
+  30%  { opacity: .04 }
+  46%  { opacity: .22 }
+  100% { opacity: 0 }
+}
+
+/* --- smoke around the figure, during the hold ---------------------------- */
+
+.smoke {
+  position: absolute;
+  z-index: 1;
+  left: 50%; top: 50%;
+  width: 78vh; height: 78vh;
+  translate: -50% -50%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.1s ease;
+  background:
+    radial-gradient(closest-side at 38% 62%, rgba(150, 200, 240, .17), transparent 70%),
+    radial-gradient(closest-side at 64% 44%, rgba(120, 175, 225, .14), transparent 72%),
+    radial-gradient(closest-side at 50% 78%, rgba(175, 215, 245, .13), transparent 68%);
+  filter: blur(28px);
+}
+.smoke.b {
+  width: 96vh; height: 96vh;
+  background:
+    radial-gradient(closest-side at 60% 35%, rgba(120, 180, 230, .13), transparent 70%),
+    radial-gradient(closest-side at 33% 55%, rgba(160, 205, 240, .11), transparent 74%);
+  filter: blur(40px);
+}
+.intro.revealing .smoke { opacity: 1; animation: drift 13s ease-in-out infinite; }
+.intro.revealing .smoke.b { animation: drift 17s ease-in-out infinite reverse; }
+@keyframes drift {
+  0%   { transform: translate(-2%, 1%) scale(1)    rotate(0deg) }
+  33%  { transform: translate(3%, -2%) scale(1.07) rotate(4deg) }
+  66%  { transform: translate(-1%, 2%) scale(1.03) rotate(-3deg) }
+  100% { transform: translate(-2%, 1%) scale(1)    rotate(0deg) }
+}
+.intro.exiting .smoke { opacity: 0; }
+
+/* ------------------------------------------------------- hero deity art ---
+   Line art on transparent ground: the white strokes carry it on the dark
+   theme, so it is left as drawn. The light theme inverts it instead. */
+
+/* A field that breathes behind the line work — sky blue and silver crossing
+   at different periods, so the two never settle into a single pulse. */
+.hero-plate { position: relative; }
+.hero-plate::before {
+  content: "";
+  position: absolute;
+  inset: -5% -2%;
+  z-index: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side at 50% 44%, rgba(127, 182, 232, .30), transparent 72%),
+    radial-gradient(closest-side at 42% 62%, rgba(214, 226, 238, .18), transparent 70%);
+  filter: blur(54px);
+  animation: breathe-blue 7.5s ease-in-out infinite;
+  pointer-events: none;
+}
+.hero-plate::after {
+  content: "";
+  position: absolute;
+  inset: 4% 2%;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(closest-side at 56% 40%, rgba(232, 238, 244, .22), transparent 66%);
+  filter: blur(34px);
+  animation: breathe-silver 11s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes breathe-blue {
+  0%, 100% { opacity: .45; transform: scale(.96) }
+  50%      { opacity: 1;   transform: scale(1.06) }
+}
+@keyframes breathe-silver {
+  0%, 100% { opacity: .8;  transform: scale(1.04) }
+  50%      { opacity: .3;  transform: scale(.94) }
+}
+
+.hero-art {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 1040 / 1272;
+  background: var(--deity) center / contain no-repeat;
+  display: block;
+  filter: drop-shadow(0 0 40px rgba(127, 182, 232, .18)) contrast(1.12);
+}
+:root[data-theme="light"] .hero-art { filter: invert(1) contrast(1.15); }
+
+/* A short tear every few seconds, so the figure stays alive on the page.
+   Driven by a class the script toggles rather than an infinite animation, so
+   the quiet gap between bursts costs nothing. */
+.hero-art.tear { animation: hero-tear .5s steps(3, end) 1; }
+@keyframes hero-tear {
+  0%   { clip-path: inset(0 0 0 0);     transform: translateX(0) }
+  16%  { clip-path: inset(14% 0 52% 0); transform: translateX(-11px) }
+  33%  { clip-path: inset(56% 0 16% 0); transform: translateX(9px) }
+  50%  { clip-path: inset(30% 0 34% 0); transform: translateX(-6px); filter: url(#turb) brightness(1.5) }
+  70%  { clip-path: inset(6% 0 8% 0);   transform: translateX(3px) }
+  100% { clip-path: inset(0 0 0 0);     transform: translateX(0) }
+}
+
+/* ---------------------------------------------------------- hero video ---
+   The clip is a bright figure on black. Rather than sit it in a hard-edged
+   box, `screen` blending drops its black ground straight out against the
+   page, and a radial mask feathers the edges so it reads as light in the
+   layout rather than as a pasted rectangle. */
+.hero-media {
+  position: relative;
+  z-index: 1;
+  aspect-ratio: 1 / 1;
+}
+/* Absolute, not a flow child. The clip is portrait 720x1280, and in flow its
+   intrinsic height wins over the container's aspect-ratio and stretches the
+   box to 9:16. Taking it out of flow lets the square hold and lets object-fit
+   do the cropping. */
+.hero-media video,
+.hero-media .hero-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 50%;
+  mix-blend-mode: screen;
+  opacity: .92;
+  /* Hold the frame solid further out before feathering — an early fade is
+     what reads as dead space around the circle. */
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 63%, rgba(0,0,0,.6) 82%, transparent 96%);
+  mask-image: radial-gradient(circle at 50% 50%, #000 63%, rgba(0,0,0,.6) 82%, transparent 96%);
+}
+/* A light ground has nothing for `screen` to reveal, so the clip is inverted
+   and multiplied instead — same effect, opposite direction. */
+:root[data-theme="light"] .hero-media video,
+:root[data-theme="light"] .hero-media .hero-fallback {
+  mix-blend-mode: multiply;
+  filter: invert(1) hue-rotate(180deg) saturate(.85);
+  opacity: .78;
+}
+/* Let the art bleed past its column toward the page edge, so it fills the
+   right side instead of sitting in a padded box. Contained by the body's
+   overflow-x. */
+.plate-hero { width: 108%; margin-left: -4%; }
+
+/* a thin ring, so the circle reads as deliberate rather than as a crop */
+.hero-media::after {
+  content: "";
+  position: absolute;
+  inset: 2%;
+  border-radius: 50%;
+  border: var(--hair) solid var(--edge);
+  box-shadow: inset 0 0 60px rgba(127, 182, 232, .10);
+  pointer-events: none;
+}
+/* A still frame taken from the clip itself is the fallback — a single-file
+   build cannot carry a 15 MB video, and this keeps the same image rather than
+   substituting different artwork. Hidden until the clip is known unavailable,
+   so the two never both paint. */
+.hero-media .hero-fallback { display: none; }
+.hero-media[data-fallback] video { display: none; }
+.hero-media[data-fallback] .hero-fallback { display: block; }
+
+/* Dense burin rays: a repeating conic gradient gives ~100 spokes for one
+   declaration; the mask keeps them to an annulus so the centre stays clean. */
+.rays {
+  position: absolute;
+  left: 50%; top: 44%;
+  width: 112%; aspect-ratio: 1;
+  translate: -50% -50%;
+  z-index: 0;
+  pointer-events: none;
+  background: repeating-conic-gradient(from 0deg at 50% 50%,
+    var(--ray) 0deg .26deg, transparent .26deg 3.6deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 27%, #000 38%, #000 60%, transparent 76%);
+  mask-image: radial-gradient(circle at 50% 50%, transparent 27%, #000 38%, #000 60%, transparent 76%);
+  opacity: .5;
+  animation: turn 240s linear infinite;
+}
+@keyframes turn { to { rotate: 360deg; } }
+
+.plate .todo {
+  position: absolute;
+  right: 0; bottom: 2%;
+  z-index: 2;
+  width: 88px; height: 88px;
+  border-radius: 50%;
+  border: var(--hair) dashed var(--accent);
+  color: var(--accent);
+  background: var(--glass-blur);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font-family: var(--font-data);
+  font-size: 8.5px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  padding: 6px;
+}
+
+.ember { fill: var(--ember); animation: breathe 3.4s ease-in-out infinite; }
+.ember-halo { fill: var(--ember); opacity: .22; animation: flare 3.4s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }
+@keyframes flare   { 0%, 100% { opacity: .10 } 50% { opacity: .34 } }
+.lid { transform-box: fill-box; transform-origin: center; animation: blink 7.5s ease-in-out infinite; }
+.owl-eye { transform-box: fill-box; transform-origin: center; animation: blink 6.2s ease-in-out infinite; }
+@keyframes blink { 0%, 92%, 100% { transform: scaleY(1) } 95% { transform: scaleY(.06) } }
+.glimmer { animation: crawl 9s linear infinite; }
+@keyframes crawl { to { stroke-dashoffset: -160 } }
+
+/* ================================================================ section */
+
+.sec { padding: var(--sec) 0; }
+.sec-h {
+  font-family: var(--font-display);
+  font-size: clamp(1.85rem, 1rem + 2.7vw, 3.15rem);
+  line-height: 1.06;
+  letter-spacing: -.024em;
+  font-weight: 700;
+  margin: 0 0 20px;
+  max-width: 20ch;
+  text-wrap: balance;
+}
+.sec-lede { color: var(--ink-dim); max-width: 58ch; margin: 0 0 52px; font-size: 1.04rem; }
+.sec-lede strong { color: var(--ink); font-weight: 600; }
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+  gap: clamp(28px, 5vw, 68px);
+  align-items: center;
+}
+
+/* --- the formula band ---------------------------------------------------- */
+
+.formula {
+  border-top: var(--hair) solid var(--edge);
+  border-bottom: var(--hair) solid var(--edge);
+  padding: clamp(34px, 5vw, 60px) 0;
+  text-align: center;
+}
+.formula p {
+  font-family: var(--font-data);
+  font-size: clamp(.85rem, .7rem + .7vw, 1.15rem);
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0;
+}
+.formula b { color: var(--ink); font-weight: 500; }
+.formula .plus { color: var(--accent); }
+
+/* --- glass card rows ----------------------------------------------------- */
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr)); gap: 16px; }
+.card {
+  border: var(--hair) solid var(--edge);
+  border-radius: var(--r-card);
+  padding: 26px 24px 28px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 240ms ease, background 240ms ease, transform 240ms ease;
+}
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(240px 160px at 50% 0%, rgba(127, 182, 232, .13), transparent 70%);
+  opacity: 0;
+  transition: opacity 300ms ease;
+  pointer-events: none;
+}
+.card:hover { border-color: var(--edge-hi); background: var(--glass-2); transform: translateY(-3px); }
+.card:hover::after { opacity: 1; }
+.card-n {
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: .16em;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 16px;
+}
+.card h3 { font-size: 1.12rem; margin: 0 0 10px; font-weight: 600; letter-spacing: -.01em; }
+.card p { margin: 0; color: var(--ink-dim); font-size: 14.5px; }
+
+/* --- the statement ------------------------------------------------------- */
+
+.statement {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1rem + 3.6vw, 4rem);
+  line-height: 1.08;
+  letter-spacing: -.028em;
+  font-weight: 700;
+  margin: 0;
+  max-width: 18ch;
+}
+.statement span { color: var(--ink-faint); display: block; }
+
+/* --- the claim trio ------------------------------------------------------ */
+
+.claims { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: clamp(24px, 3vw, 44px); }
+.claim { padding-top: 22px; border-top: var(--hair) solid var(--edge-2); }
+.claim-tag {
+  font-family: var(--font-data);
+  font-size: 10px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: block;
+  margin-bottom: 14px;
+}
+.claim h3 { font-family: var(--font-display); font-size: 1.3rem; margin: 0 0 10px; font-weight: 700; letter-spacing: -.012em; }
+.claim p { margin: 0; color: var(--ink-dim); font-size: 14.5px; }
+.claim-unknown { border-top-style: dashed; }
+.claim-unknown .claim-tag { color: var(--accent); }
+
+/* ====================================================== the surface switch */
+
+.demo {
+  border-radius: var(--r-panel);
+  border: var(--hair) solid var(--edge);
+  overflow: hidden;
+}
+.demo-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: var(--hair) solid var(--edge);
+  flex-wrap: wrap;
+}
+.demo-bar .dots { display: flex; gap: 6px; }
+.demo-bar .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--edge-hi); display: block; }
+.demo-name { font-family: var(--font-data); font-size: 11px; color: var(--ink-faint); letter-spacing: .06em; }
+.demo-tabs { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.demo-tab {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  background: none;
+  border: var(--hair) solid transparent;
+  border-radius: var(--r-pill);
+  padding: 5px 13px;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+.demo-tab:hover { color: var(--ink-2); }
+.demo-tab[aria-selected="true"] { color: var(--ink); background: var(--glass-2); border-color: var(--edge); }
+
+.demo-body { padding: clamp(18px, 3vw, 30px); min-height: 300px; }
+.demo-panel[hidden] { display: none; }
+.demo-panel { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 22px; }
+.demo-lead { font-size: 14.5px; color: var(--ink-dim); margin: 0 0 16px; }
+.demo-lead b { color: var(--ink); font-weight: 600; }
+
+.mini { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.mini li {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.mini .tick { font-family: var(--font-data); font-size: 10px; color: var(--accent); }
+.mini .done .tick { color: var(--ok); }
+.mini .cap { font-family: var(--font-data); font-size: 10px; color: var(--ink-faint); }
+
+.mini-file {
+  background: var(--glass);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: var(--hair) solid var(--edge);
+  border-radius: 8px;
+  font-family: var(--font-data);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  margin-top: 14px;
+}
+.mini-file .sz { margin-left: auto; color: var(--ink-faint); }
+
+.demo-side { display: flex; flex-direction: column; gap: 10px; border-left: var(--hair) solid var(--edge); padding-left: 20px; }
+.demo-side h4 {
+  font-family: var(--font-data);
+  font-size: 9.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 2px;
+  font-weight: 400;
+}
+.kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; align-items: baseline; }
+.kv span { color: var(--ink-faint); }
+.kv b { font-family: var(--font-data); font-size: 11px; font-weight: 400; color: var(--ink-2); text-align: right; }
+
+.pillbar { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 16px; }
+.pillbar .p {
+  font-family: var(--font-data);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  border: var(--hair) solid var(--edge);
+  color: var(--ink-faint);
+}
+.pillbar .p.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+/* evidence rows inside the demo */
+.ev { list-style: none; margin: 0; padding: 0; }
+.ev li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: var(--hair) solid var(--edge);
+  font-size: 13.5px;
+}
+.ev li:last-child { border-bottom: 0; }
+.ev .src { font-family: var(--font-data); font-size: 10px; color: var(--ink-faint); display: block; }
+.ev .n { font-family: var(--font-data); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.tag {
+  font-family: var(--font-data);
+  font-size: 9.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  border: var(--hair) solid currentColor;
+  white-space: nowrap;
+}
+.t-enf { color: var(--ok) }
+.t-obs { color: var(--ink-faint) }
+.t-unk { color: var(--accent); border-style: dashed }
+.ev .unk .n { color: var(--ink-faint) }
+
+/* diff view */
+.diff { font-family: var(--font-data); font-size: 12px; line-height: 1.8; margin: 0; }
+.diff .add { color: var(--ok) }
+.diff .del { color: var(--danger) }
+.diff .ctx { color: var(--ink-faint) }
+
+/* --- capability rows ------------------------------------------------------ */
+
+.caps { display: flex; flex-direction: column; }
+.cap-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, .8fr) minmax(0, 1.3fr);
+  gap: clamp(14px, 3vw, 42px);
+  padding: 34px 0;
+  border-top: var(--hair) solid var(--edge);
+  align-items: baseline;
+  transition: background 240ms ease;
+}
+.cap-row:last-child { border-bottom: var(--hair) solid var(--edge); }
+.cap-row:hover { background: rgba(255,255,255,.015); }
+.cap-n { font-family: var(--font-data); font-size: 11px; letter-spacing: .16em; color: var(--accent); }
+.cap-row h3 {
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, .95rem + 1vw, 1.7rem);
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: -.018em;
+  line-height: 1.16;
+}
+.cap-row p { margin: 0; color: var(--ink-dim); font-size: 15px; }
+.cap-row code { font-family: var(--font-data); font-size: 12.5px; color: var(--ink-2); }
+
+/* --- stats band ----------------------------------------------------------- */
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+.stat {
+  border: var(--hair) solid var(--edge);
+  border-radius: var(--r-card);
+  padding: 24px 22px;
+}
+.stat b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 1.2rem + 1.7vw, 2.7rem);
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+.stat span { color: var(--ink-dim); font-size: 13.5px; display: block; }
+.stat em { font-style: normal; color: var(--ink-faint); font-size: 11.5px; font-family: var(--font-data); display: block; margin-top: 8px; }
+
+/* --- get started ---------------------------------------------------------- */
+
+.starts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.start { display: flex; flex-direction: column; gap: 12px; }
+.start h3 { font-size: 1.15rem; margin: 0; font-weight: 600; }
+.start p { margin: 0; color: var(--ink-dim); font-size: 14.5px; }
+
+/* --- builds --------------------------------------------------------------- */
+
+.builds { display: grid; grid-template-columns: repeat(auto-fit, minmax(222px, 1fr)); gap: 16px; margin-bottom: 34px; }
+.build {
+  border: var(--hair) solid var(--edge);
+  border-radius: var(--r-card);
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 240ms ease, transform 240ms ease;
+}
+.build:hover { border-color: var(--edge-hi); transform: translateY(-3px); }
+.build h3 { margin: 0 0 6px; font-size: 1.1rem; font-weight: 600; }
+.build .req { font-family: var(--font-data); font-size: 11px; color: var(--ink-faint); }
+.build .btn { margin-top: 16px; justify-content: center; font-size: 13px; padding: 9px 14px; }
+
+.notice {
+  border: var(--hair) solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--r-card);
+  padding: 18px 22px;
+  color: var(--ink-2);
+  font-size: 14.5px;
+  max-width: 68ch;
+  margin: 0 0 40px;
+}
+.notice b { color: var(--ink); font-weight: 600; }
+
+/* --- closing -------------------------------------------------------------- */
+
+.closing { text-align: center; padding: var(--sec) 0; }
+.closing .sec-h { margin-inline: auto; }
+.closing .sec-lede { margin-inline: auto; margin-bottom: 34px; }
+.closing .cta-row { justify-content: center; }
+
+/* --- footer --------------------------------------------------------------- */
+
+.foot { border-top: var(--hair) solid var(--edge); padding: 52px 0 60px; }
+.foot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 32px; margin-bottom: 42px; }
+.foot h4 {
+  font-family: var(--font-data);
+  font-size: 10px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 14px;
+  font-weight: 400;
+}
+.foot ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.foot a { color: var(--ink-2); text-decoration: none; font-size: 14.5px; transition: color 160ms ease; }
+.foot a:hover { color: var(--accent); }
+.foot dd { margin: 0 0 9px; font-size: 14.5px; color: var(--ink-2); }
+.foot-base {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border-top: var(--hair) solid var(--edge);
+  padding-top: 22px;
+}
+
+/* --- sample marker -------------------------------------------------------- */
+
+.sample-strip {
+  position: relative;
+  z-index: 41;
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--on-accent);
+  background: var(--accent);
+  padding: 8px var(--gutter);
+  text-align: center;
+}
+
+/* theme toggle */
+.theme-btn {
+  background: var(--glass);
+  border: var(--hair) solid var(--edge-2);
+  color: var(--ink-dim);
+  border-radius: var(--r-pill);
+  padding: 6px 14px;
+  font-family: var(--font-data);
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+.theme-btn:hover { color: var(--ink); border-color: var(--edge-hi); }
+
+/* --- responsive ----------------------------------------------------------- */
+
+@media (max-width: 980px) {
+  .hero { grid-template-columns: 1fr; }
+  .plate-hero { order: -1; max-width: 440px; margin-inline: auto; }
+  .split { grid-template-columns: 1fr; }
+  .split .plate { max-width: 330px; margin-inline: auto; }
+  .demo-panel { grid-template-columns: 1fr; }
+  .demo-side { border-left: 0; border-top: var(--hair) solid var(--edge); padding-left: 0; padding-top: 18px; }
+  .cap-row { grid-template-columns: 40px 1fr; }
+  .cap-row p { grid-column: 2; }
+}
+@media (max-width: 560px) {
+  .cap-row { grid-template-columns: 1fr; }
+  .cap-row p { grid-column: 1; }
+  .plate .todo { width: 70px; height: 70px; font-size: 7.5px; }
+  .nav-links { display: none; }
+}
+
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after { transition: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+  .ember { opacity: .85 }
+  .ember-halo { opacity: .22 }
+  /* The grain script bails out under reduced motion, so the canvas is empty;
+     hiding it makes that explicit. */
+  .grain { display: none }
+}

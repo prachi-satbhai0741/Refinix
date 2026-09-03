@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pair a device — Refinix</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="control.css">
+<link rel="stylesheet" href="pairing.css">
+</head>
+<body>
+
+<!--
+  Refinix pairing exchange — static design reference.
+
+  Draws docs/workflows.md section 8. Reached from the Control Center, so it is
+  drawn as a dialog over it. Sample content only; nothing here is a
+  measurement, and the code shown is not a real credential.
+-->
+
+<div class="app" aria-hidden="true">
+  <nav class="nav">
+    <div class="nav-brand">
+      <svg class="mark" viewBox="0 0 120 120" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="9">
+          <path d="M107,67 A48,48 0 0 1 64,108"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(120 60 60)"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(240 60 60)"/>
+        </g>
+        <g fill="currentColor">
+          <path d="M47,111 L66,119 L63,96 Z"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(120 60 60)"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(240 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(120 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(240 60 60)"/>
+        </g>
+      </svg>
+      <b>Refinix</b><span>v0.1-alpha</span>
+    </div>
+    <div class="surfaces">
+      <a class="surface-link" href="chat.html">Chat <span class="k">1</span></a>
+      <a class="surface-link" href="documents.html">Documents <span class="k">2</span></a>
+      <a class="surface-link" href="code.html">Code <span class="k">3</span></a>
+      <a class="surface-link" href="control.html" aria-current="page">Control Center <span class="k">4</span></a>
+    </div>
+    <div class="nav-list"></div>
+    <div class="nav-foot">
+      <div class="node-line"><span class="lbl">This device</span><b>node-01</b></div>
+    </div>
+  </nav>
+  <main class="main">
+    <header class="main-head"><h1>Control Center</h1></header>
+    <div class="body"></div>
+  </main>
+  <aside class="rail"></aside>
+</div>
+
+<!-- ================================================================ dialog -->
+<div class="scrim">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pair-h">
+    <div class="dialog-h">
+      <h2 id="pair-h">Pair a device</h2>
+      <em>step 3 of 5 &middot; confirm the relationship</em>
+      <div class="head-spacer"></div>
+      <span class="sample">Sample data</span>
+      <button class="btn" type="button">Close</button>
+    </div>
+
+    <div class="dialog-b">
+
+      <!-- steps 1 and 2: the invite, and both identities -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Check both devices show the same thing</h2>
+          <em>the code is short-lived and single-use</em>
+        </div>
+
+        <div class="code-box">
+          <div>
+            <span class="lbl">Pairing code</span>
+            <div class="code-val">4K7&nbsp;Q2M</div>
+          </div>
+          <div class="qr" role="img" aria-label="Pairing QR code"></div>
+          <p class="code-meta">
+            Expires in 4:52. Valid for one device. Entering it does not by itself
+            establish trust &mdash; a person still confirms on both sides.
+          </p>
+        </div>
+
+        <div class="sides" style="margin-top: var(--sp-4)">
+          <article class="side">
+            <h3>node-01 &mdash; this device</h3>
+            <span class="role">Inviting &middot; keeps its workspace</span>
+            <dl>
+              <dt>Workspace</dt><dd>default</dd>
+              <dt>Device key</dt><dd>ed25519:9f3a&hellip;c204</dd>
+              <dt>Host</dt><dd>Windows 11 &middot; 8 cores</dd>
+              <dt>Runtime</dt><dd>local &middot; v0.1-alpha</dd>
+              <dt>Contract</dt><dd>v1.0</dd>
+            </dl>
+          </article>
+
+          <div class="link-glyph" aria-hidden="true">&harr;</div>
+
+          <article class="side">
+            <h3>node-04 &mdash; joining</h3>
+            <span class="role">Advertised &middot; keeps its own workspace</span>
+            <dl>
+              <dt>Workspace</dt><dd>default (its own)</dd>
+              <dt>Device key</dt><dd>ed25519:71bd&hellip;8e19</dd>
+              <dt>Host</dt><dd>Ubuntu 24.04 &middot; 16 cores</dd>
+              <dt>Runtime</dt><dd>local &middot; v0.1-alpha</dd>
+              <dt>Contract</dt><dd>v1.0</dd>
+            </dl>
+          </article>
+        </div>
+
+        <p class="lbl" style="margin-top: var(--sp-3)">
+          Both fingerprints must match what the other device is showing. If they differ,
+          stop &mdash; something is between you.
+        </p>
+      </section>
+
+      <!-- what accepting does and does not do -->
+      <section class="block">
+        <div class="block-h">
+          <h2>What pairing does</h2>
+          <em>and, just as importantly, what it does not</em>
+        </div>
+        <ul class="terms">
+          <li><span class="yes">[+]</span>
+            <span><b>node-04 receives a unique, revocable credential</b>
+              <small>Issued to this pairing only. Revoking it invalidates that credential and nothing else.</small></span></li>
+          <li><span class="yes">[+]</span>
+            <span><b>It advertises verified hardware, runtime, model, health and capability data</b>
+              <small>The coordinator routes bounded jobs on that evidence while trust remains active.</small></span></li>
+          <li><span class="yes">[+]</span>
+            <span><b>The coordinator may send it bounded job context</b>
+              <small>Only what a step needs. It writes inside an assigned temporary workspace and nowhere else.</small></span></li>
+          <li><span class="no">[&minus;]</span>
+            <span><b>It does not merge or replace either workspace</b>
+              <small>Chats, memory, files, rules and artifacts stay where they are, on both sides.</small></span></li>
+          <li><span class="no">[&minus;]</span>
+            <span><b>It does not become the owner of this workspace</b>
+              <small>Canonical writes stay with the coordinator that owns the workspace.</small></span></li>
+          <li><span class="no">[&minus;]</span>
+            <span><b>It does not gain a permanent role</b>
+              <small>Coordinator, worker and server are runtime responsibilities. Disconnecting returns both installs to ordinary local operation with no data migration.</small></span></li>
+        </ul>
+      </section>
+
+      <!-- what it says it can do, pending verification -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Advertised by node-04</h2>
+          <em>claimed now &middot; verified on first successful job</em>
+        </div>
+        <ul class="rows">
+          <li style="grid-template-columns:1fr auto auto">
+            <span class="k"><b>Capabilities</b><span class="src">code.generate, code.validate, text.generate</span></span>
+            <span class="n">3</span><span class="chip chip-observed">Advertised</span></li>
+          <li style="grid-template-columns:1fr auto auto">
+            <span class="k"><b>Sandbox with networking disabled</b><span class="src">reported by the node, not yet exercised here</span></span>
+            <span class="n">yes</span><span class="chip chip-observed">Advertised</span></li>
+          <li style="grid-template-columns:1fr auto auto">
+            <span class="k"><b>Heartbeat</b><span class="src">observed on the trusted LAN</span></span>
+            <span class="n">1 s ago</span><span class="chip chip-observed">Observed</span></li>
+          <li class="unk" style="grid-template-columns:1fr auto auto">
+            <span class="k"><b>Measured throughput</b><span class="src">no job has run on this node yet</span></span>
+            <span class="n">&mdash;</span><span class="chip chip-unknown">Unavailable</span></li>
+        </ul>
+      </section>
+
+    </div>
+
+    <div class="dialog-f">
+      <span class="lbl">Discovery found this device. Discovery alone establishes no trust.</span>
+      <div class="head-spacer"></div>
+      <button class="btn" type="button">Cancel</button>
+      <button class="btn btn-primary" type="button">Confirm and pair</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

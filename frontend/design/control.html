@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control Center — Refinix</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="control.css">
+</head>
+<body>
+
+<!--
+  Refinix Control Center — static design reference.
+
+  Covers the eight groups docs/workflows.md section 10 requires. Every claim
+  names its enforcing layer or its observer; a claim with neither is drawn as
+  unavailable. Nothing here is hard-coded healthy, secure, blocked or zero.
+  Sample content only; nothing on this page is a measurement.
+-->
+
+<div class="app">
+
+  <!-- ============================================================== nav -->
+  <nav class="nav" aria-label="Surfaces and sections">
+    <div class="nav-brand">
+      <svg class="mark" viewBox="0 0 120 120" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="9">
+          <path d="M107,67 A48,48 0 0 1 64,108"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(120 60 60)"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(240 60 60)"/>
+        </g>
+        <g fill="currentColor">
+          <path d="M47,111 L66,119 L63,96 Z"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(120 60 60)"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(240 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(120 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(240 60 60)"/>
+        </g>
+      </svg>
+      <b>Refinix</b>
+      <span>v0.1-alpha</span>
+    </div>
+
+    <div class="surfaces">
+      <a class="surface-link" href="chat.html">Chat <span class="k">1</span></a>
+      <a class="surface-link" href="documents.html">Documents <span class="k">2</span></a>
+      <a class="surface-link" href="code.html">Code <span class="k">3</span></a>
+      <a class="surface-link" href="control.html" aria-current="page">Control Center <span class="k">4</span></a>
+    </div>
+
+    <div class="nav-list">
+      <p class="lbl nav-list-h">Sections</p>
+      <a class="nav-item" href="#installation">Installation</a>
+      <a class="nav-item" href="#profiles">Agent profiles</a>
+      <a class="nav-item" href="#jobs">Jobs</a>
+      <a class="nav-item" href="#devices">Paired devices</a>
+      <a class="nav-item" href="#resources">Resource usage</a>
+      <a class="nav-item" href="#network">Network evidence</a>
+      <a class="nav-item" href="#audit">Audit and retention</a>
+    </div>
+
+    <div class="nav-foot">
+      <div class="node-line"><span class="lbl">This device</span><b>node-01</b></div>
+      <div class="node-line"><span class="lbl">Runtime</span><span class="chip chip-enforced">Offline</span></div>
+    </div>
+  </nav>
+
+  <!-- ============================================================= main -->
+  <main class="main">
+    <header class="main-head">
+      <h1>Control Center</h1>
+      <div class="head-spacer"></div>
+      <span class="sample">Sample data</span>
+      <button class="btn" type="button" id="theme">Light</button>
+    </header>
+
+    <div class="body">
+      <div class="grid">
+
+        <!-- 6. connected setup vs offline runtime — first, because it frames
+                everything else on the page -->
+        <section class="block span-2" id="runtime">
+          <div class="panel">
+            <div class="panel-h">
+              <h2>Runtime state</h2>
+              <em>offline runtime must not download, update, report analytics or call a cloud model</em>
+            </div>
+            <div class="panel-b">
+              <ul class="rows">
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Mode</b><span class="src">no connected-setup flow has been opened this session</span></span>
+                  <span class="n">offline</span>
+                  <span class="chip chip-enforced">Enforced</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Model downloads</b><span class="src">installer &middot; only during explicit connected setup</span></span>
+                  <span class="n">blocked</span>
+                  <span class="chip chip-enforced">Enforced</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Telemetry, analytics, crash upload</b><span class="src">build flag &middot; compiled out</span></span>
+                  <span class="n">absent</span>
+                  <span class="chip chip-enforced">Enforced</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Background update check</b><span class="src">scheduler &middot; no task registered</span></span>
+                  <span class="n">none</span>
+                  <span class="chip chip-enforced">Enforced</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 1. hardware, runtime, model, storage -->
+        <section class="block" id="installation">
+          <div class="panel">
+            <div class="panel-h"><h2>Installation</h2><em>this device</em></div>
+            <div class="panel-b">
+              <ul class="rows">
+                <li style="grid-template-columns:1fr auto"><span class="k"><b>Operating system</b><span class="src">reported by host</span></span><span class="n">Windows 11</span></li>
+                <li style="grid-template-columns:1fr auto"><span class="k"><b>CPU</b><span class="src">reported by host</span></span><span class="n">8 cores</span></li>
+                <li style="grid-template-columns:1fr auto"><span class="k"><b>Memory</b><span class="src">reported by host</span></span><span class="n">32 GiB</span></li>
+                <li style="grid-template-columns:1fr auto"><span class="k"><b>GPU</b><span class="src">runtime probe</span></span><span class="n">NVIDIA, 8 GiB</span></li>
+                <li style="grid-template-columns:1fr auto"><span class="k"><b>Free storage</b><span class="src">reported by host</span></span><span class="n">214 GiB</span></li>
+                <li style="grid-template-columns:1fr auto"><span class="k"><b>Local runtime</b><span class="src">detected at first run</span></span><span class="n">installed</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- models -->
+        <section class="block">
+          <div class="panel">
+            <div class="panel-h"><h2>Models</h2><em>source, licence and hash recorded per catalogue</em><div class="head-spacer"></div><a class="btn" href="onboarding.html">Change setup</a></div>
+            <div class="panel-b">
+              <ul class="rows">
+                <li style="grid-template-columns:1fr auto"><span class="k"><b>Main engine</b><span class="src">manifest verified &middot; sha256:5c1a&hellip;77e0</span></span><span class="chip chip-enforced">Installed</span></li>
+                <li style="grid-template-columns:1fr auto"><span class="k"><b>Vision / OCR</b><span class="src">resident on node-02</span></span><span class="chip chip-observed">Remote</span></li>
+                <li style="grid-template-columns:1fr auto"><span class="k"><b>Embedding</b><span class="src">manifest verified &middot; sha256:b204&hellip;3ac9</span></span><span class="chip chip-enforced">Installed</span></li>
+                <li class="unk" style="grid-template-columns:1fr auto"><span class="k"><b>Code specialist</b><span class="src">capability not enabled on this install</span></span><span class="chip chip-unknown">Not installed</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. agent profiles and self-test -->
+        <section class="block span-2" id="profiles">
+          <div class="panel">
+            <div class="panel-h">
+              <h2>Agent profiles and self-test</h2>
+              <em>a profile is a model plus instructions, tools, workflow, policy and validator</em>
+              <div class="head-spacer"></div>
+              <a class="btn" href="onboarding-install.html">Re-run self-test</a>
+            </div>
+            <div class="panel-b">
+              <ul class="rows">
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Chat &mdash; general local agent</b><span class="src">last self-test 09:14 &middot; 1 real completion</span></span>
+                  <span class="n">ok</span><span class="chip chip-enforced">Passed</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Documents &mdash; extract, retrieve, generate</b><span class="src">last self-test 09:14 &middot; ocr + vision reachable</span></span>
+                  <span class="n">ok</span><span class="chip chip-enforced">Passed</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Code &mdash; patch and validate</b><span class="src">last self-test 09:15 &middot; sandbox started, network refused</span></span>
+                  <span class="n">ok</span><span class="chip chip-enforced">Passed</span></li>
+                <li class="unk" style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Semantic retrieval quality</b><span class="src">no evaluation set registered on this install</span></span>
+                  <span class="n">&mdash;</span><span class="chip chip-unknown">Unavailable</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. jobs -->
+        <section class="block span-2" id="jobs">
+          <div class="panel">
+            <div class="panel-h">
+              <h2>Jobs</h2>
+              <em>states are the JobState literals from the frozen contract</em>
+              <div class="head-spacer"></div>
+              <span class="lbl">1 running &middot; 1 queued &middot; 1 awaiting approval &middot; 1 failed</span>
+            </div>
+            <div class="panel-b">
+              <ul class="jobs">
+                <li><span class="id">7a02c1</span><span class="what">SR-4471 inspection report to approval note</span>
+                    <span class="on">node-02</span><span class="chip chip-running">running</span></li>
+                <li><span class="id">b83e40</span><span class="what">plant-tools &mdash; raise on an empty tag file</span>
+                    <span class="on">node-03</span><span class="chip chip-caution">awaiting_approval</span></li>
+                <li><span class="id">e51d77</span><span class="what">Vendor quote comparison</span>
+                    <span class="on">&mdash;</span><span class="chip chip-observed">queued</span></li>
+                <li><span class="id">2f9a08</span><span class="what">Weld log digitisation</span>
+                    <span class="on">node-02</span><span class="chip chip-fault">failed</span></li>
+                <li><span class="id">91c4b2</span><span class="what">SOP-114 clause lookup</span>
+                    <span class="on">node-01</span><span class="chip chip-enforced">completed</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. paired devices -->
+        <section class="block span-2" id="devices">
+          <div class="panel">
+            <div class="panel-h">
+              <h2>Paired devices</h2>
+              <em>pairing is explicit, reversible, and never merges workspaces</em>
+              <div class="head-spacer"></div>
+              <a class="btn" href="pairing.html">Pair a device</a>
+            </div>
+            <div class="panel-b">
+              <div class="dev">
+                <span class="dev-name">node-02 &mdash; workstation</span>
+                <span class="chip chip-enforced">Trusted</span>
+                <span class="dev-meta">heartbeat 2 s ago &middot; queue depth 1 &middot; credential issued 09:02, revocable</span>
+                <div class="dev-caps">
+                  <span class="cap-tag">document.extract</span>
+                  <span class="cap-tag">knowledge.retrieve</span>
+                  <span class="cap-tag">text.generate</span>
+                </div>
+                <div class="dev-actions">
+                  <button class="btn" type="button">Disconnect</button>
+                  <button class="btn btn-deny" type="button">Revoke</button>
+                </div>
+              </div>
+
+              <div class="dev">
+                <span class="dev-name">node-03 &mdash; sandbox host</span>
+                <span class="chip chip-enforced">Trusted</span>
+                <span class="dev-meta">heartbeat 4 s ago &middot; queue depth 0 &middot; credential issued 09:02, revocable</span>
+                <div class="dev-caps">
+                  <span class="cap-tag">code.generate</span>
+                  <span class="cap-tag">code.validate</span>
+                </div>
+                <div class="dev-actions">
+                  <button class="btn" type="button">Disconnect</button>
+                  <button class="btn btn-deny" type="button">Revoke</button>
+                </div>
+              </div>
+
+              <div class="dev">
+                <span class="dev-name">node-04 &mdash; discovered on the LAN</span>
+                <span class="chip chip-unknown">Not paired</span>
+                <span class="dev-meta">discovery advertises a candidate only &mdash; it establishes no trust and exposes no runtime</span>
+                <div class="dev-actions">
+                  <a class="btn" href="pairing.html">Review and pair</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. resource usage — only where the OS reports it reliably -->
+        <section class="block" id="resources">
+          <div class="panel">
+            <div class="panel-h"><h2>Resource usage</h2><em>shown only where the host reports it reliably</em></div>
+            <div class="panel-b">
+              <ul class="rows">
+                <li style="grid-template-columns:1fr auto">
+                  <span class="k"><b>CPU</b><span class="src">host counter</span>
+                    <span class="meter"><i style="width:38%"></i></span></span>
+                  <span class="n">38%</span></li>
+                <li style="grid-template-columns:1fr auto">
+                  <span class="k"><b>Memory</b><span class="src">host counter</span>
+                    <span class="meter"><i style="width:61%"></i></span></span>
+                  <span class="n">61%</span></li>
+                <li style="grid-template-columns:1fr auto">
+                  <span class="k"><b>Disk free</b><span class="src">host counter</span>
+                    <span class="meter"><i style="width:23%"></i></span></span>
+                  <span class="n">214 GiB</span></li>
+                <li class="unk" style="grid-template-columns:1fr auto">
+                  <span class="k"><b>GPU utilisation</b>
+                    <span class="src">host does not expose a reliable counter for this adapter</span></span>
+                  <span class="chip chip-unknown">Unavailable</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. network evidence -->
+        <section class="block" id="network">
+          <div class="panel">
+            <div class="panel-h"><h2>Network evidence</h2><em>interval 14:32 &ndash; 15:02 &middot; 30 min</em></div>
+            <div class="panel-b">
+              <ul class="rows">
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Public egress policy</b><span class="src">enforcer: host firewall ruleset</span></span>
+                  <span class="n">active</span><span class="chip chip-enforced">Enforced</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Public outbound flows</b><span class="src">observer: coordinator &middot; iface eth0, wlan0</span></span>
+                  <span class="n">0</span><span class="chip chip-observed">Observed</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>External AI or API calls</b><span class="src">observer: coordinator &middot; iface eth0, wlan0</span></span>
+                  <span class="n">0</span><span class="chip chip-observed">Observed</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Blocked attempts</b><span class="src">enforcer: host firewall counters</span></span>
+                  <span class="n">3</span><span class="chip chip-enforced">Enforced</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Trusted LAN connections</b><span class="src">observer: coordinator &middot; not public egress</span></span>
+                  <span class="n">2</span><span class="chip chip-observed">Observed</span></li>
+                <li class="unk" style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Kernel packet capture</b><span class="src">no observer installed on this host</span></span>
+                  <span class="n">&mdash;</span><span class="chip chip-unknown">Unavailable</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. audit, retention, cleanup, export -->
+        <section class="block span-2" id="audit">
+          <div class="panel">
+            <div class="panel-h">
+              <h2>Audit, retention and export</h2>
+              <em>append-only event stream &middot; canonical state stays with this workspace</em>
+              <div class="head-spacer"></div>
+              <button class="btn" type="button">Export evidence bundle</button>
+            </div>
+            <div class="panel-b">
+              <ul class="rows">
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Recorded events</b><span class="src">append-only &middot; since install</span></span>
+                  <span class="n">18,402</span><span class="chip chip-observed">Observed</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Approvals recorded</b><span class="src">action, target, decision, actor, timestamp</span></span>
+                  <span class="n">37</span><span class="chip chip-observed">Observed</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Temporary workspaces</b><span class="src">worker-assigned &middot; removed on job terminal state</span></span>
+                  <span class="n">0 stale</span><span class="chip chip-enforced">Enforced</span></li>
+                <li style="grid-template-columns:1fr auto auto">
+                  <span class="k"><b>Retention window</b><span class="src">policy &middot; events and artifacts</span></span>
+                  <span class="n">90 days</span><span class="chip chip-enforced">Enforced</span></li>
+              </ul>
+              <div class="retention" style="margin-top: var(--sp-3)">
+                <button class="btn" type="button">Clean temporary workspaces</button>
+                <button class="btn" type="button">Export audit log</button>
+                <button class="btn btn-deny" type="button">Purge beyond retention</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- ============================================================= rail -->
+  <aside class="rail" aria-label="Sovereignty proof">
+    <section class="rail-sec">
+      <span class="lbl">Proof card</span>
+      <div class="proof-card">
+        <h3>Sovereignty proof</h3>
+        <span class="win">node-01 &middot; 14:32 &ndash; 15:02 IST &middot; 30 min</span>
+        <dl>
+          <dt>Egress policy</dt><dd>enforced</dd>
+          <dt>Public outbound</dt><dd>0 observed</dd>
+          <dt>External AI calls</dt><dd>0 observed</dd>
+          <dt>Blocked attempts</dt><dd>3</dd>
+          <dt>Trusted LAN</dt><dd>2</dd>
+        </dl>
+        <dl class="void">
+          <dt>Packet capture</dt><dd>unavailable</dd>
+        </dl>
+        <button class="btn" type="button">Export card</button>
+      </div>
+      <p class="lbl" style="margin: var(--sp-3) 0 0">
+        A card states what was enforced and what was observed, and leaves the
+        rest visibly blank. It is not a pass mark.
+      </p>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Recent events</span>
+      <ul class="events">
+        <li><time>15:08:38</time><span class="kind">approval.required</span></li>
+        <li><time>15:08:20</time><span class="kind">artifact.created</span></li>
+        <li><time>15:02:00</time><span class="kind">proof.updated</span></li>
+        <li><time>14:53:40</time><span class="kind">job.state</span></li>
+        <li><time>14:52:16</time><span class="kind">attempt.state</span></li>
+      </ul>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Workspace</span>
+      <dl class="kv">
+        <div><dt>Owner</dt><dd>node-01</dd></div>
+        <div><dt>Canonical writes</dt><dd>coordinator only</dd></div>
+        <div><dt>Paired workers</dt><dd>2</dd></div>
+        <div><dt>Contract</dt><dd>v1.0</dd></div>
+      </dl>
+    </section>
+  </aside>
+</div>
+
+<script>
+  /* Theme toggle. Transitions are suppressed across the swap: animating a
+     colour through a token change reads as lag, and on a throttled tab the
+     transition may not tick at all, stranding the previous theme's colour. */
+  (function () {
+    var root = document.documentElement;
+    var btn = document.getElementById('theme');
+    var isLight = function () { return root.getAttribute('data-theme') === 'light'; };
+    btn.textContent = isLight() ? 'Dark' : 'Light';
+    btn.addEventListener('click', function () {
+      var toLight = !isLight();
+      root.setAttribute('data-theme-switching', '');
+      root.setAttribute('data-theme', toLight ? 'light' : 'dark');
+      btn.textContent = toLight ? 'Dark' : 'Light';
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { root.removeAttribute('data-theme-switching'); });
+      });
+    });
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up — Refinix</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="onboarding.css">
+</head>
+<body>
+
+<!--
+  Refinix first-run onboarding, steps 1-3 — static design reference.
+  Steps 4 and 5 are onboarding-install.html.
+
+  Draws docs/workflows.md section 2. Sample content only; every figure shown
+  here would come from a real probe, and none of it is a measurement.
+-->
+
+<div class="setup">
+
+  <!-- ========================================================== stepper -->
+  <aside class="steps-rail">
+    <div class="setup-brand">
+      <svg class="mark" viewBox="0 0 120 120" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="9">
+          <path d="M107,67 A48,48 0 0 1 64,108"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(120 60 60)"/>
+          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(240 60 60)"/>
+        </g>
+        <g fill="currentColor">
+          <path d="M47,111 L66,119 L63,96 Z"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(120 60 60)"/>
+          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(240 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(120 60 60)"/>
+          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(240 60 60)"/>
+        </g>
+      </svg>
+      <b>Refinix</b>
+      <span>set up</span>
+    </div>
+
+    <ol class="steps">
+      <li class="done"><span class="n">&times;</span>
+        <span class="t">Local installation<small>node-01 &middot; workspace created</small></span></li>
+      <li class="done"><span class="n">&times;</span>
+        <span class="t">Main engine<small>selected</small></span></li>
+      <li class="now"><span class="n">3</span>
+        <span class="t">Capabilities<small>choose what this install can do</small></span></li>
+      <li class="todo"><span class="n">4</span>
+        <span class="t">Review and install<small>nothing is fetched before you confirm</small></span></li>
+      <li class="todo"><span class="n">5</span>
+        <span class="t">Self-test<small>a real local test, not a claim</small></span></li>
+    </ol>
+
+    <p class="rail-note">
+      You are never asked to be a coordinator, worker or server. Those are
+      runtime responsibilities, not an identity chosen at install.
+    </p>
+  </aside>
+
+  <!-- ============================================================= pane -->
+  <main class="pane">
+    <header class="pane-head">
+      <h1>What should this installation be able to do?</h1>
+      <p>
+        Chat is part of the baseline and is always available. Each capability you
+        enable creates a dependency plan, and a dependency cannot be skipped
+        while still reporting the capability as enabled. Where an installed model
+        already satisfies a profile, nothing extra is downloaded.
+      </p>
+    </header>
+
+    <div class="pane-body">
+
+      <!-- step 1, reported rather than asked -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Step 1 &mdash; established automatically</h2>
+          <em>no choice was required, and none is permanent</em>
+          <div class="head-spacer"></div>
+          <span class="sample">Sample data</span>
+        </div>
+        <ul class="rows">
+          <li style="grid-template-columns:1fr auto auto">
+            <span class="k"><b>Local node identity</b><span class="src">generated on this device</span></span>
+            <span class="n">node-01</span><span class="chip chip-enforced">Created</span></li>
+          <li style="grid-template-columns:1fr auto auto">
+            <span class="k"><b>Local workspace</b><span class="src">empty &middot; owned by this installation</span></span>
+            <span class="n">default</span><span class="chip chip-enforced">Created</span></li>
+          <li style="grid-template-columns:1fr auto auto">
+            <span class="k"><b>Application data</b><span class="src">platform-native location</span></span>
+            <span class="n">%LOCALAPPDATA%\Refinix</span><span class="chip chip-observed">Set</span></li>
+          <li style="grid-template-columns:1fr auto auto">
+            <span class="k"><b>Local services</b><span class="src">bound to loopback only, confirmed at step 5</span></span>
+            <span class="n">127.0.0.1</span><span class="chip chip-enforced">Loopback</span></li>
+          <li style="grid-template-columns:1fr auto auto">
+            <span class="k"><b>Detected hardware</b><span class="src">8 cores &middot; 32 GiB &middot; NVIDIA 8 GiB &middot; 214 GiB free</span></span>
+            <span class="n">probed</span><span class="chip chip-observed">Reported</span></li>
+        </ul>
+      </section>
+
+      <!-- step 2, the choice already made -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Step 2 &mdash; main engine</h2>
+          <em>required for an interactive installation</em>
+        </div>
+        <div class="picker">
+          <button class="pick" type="button" aria-pressed="true">
+            <span class="pick-h"><b>Recommended</b><span class="lbl">Selected</span></span>
+            <span class="pick-id">open-weight-8b-instruct &middot; q4_k_m &middot; v1.4</span>
+            <dl class="spec">
+              <dt>Source</dt><dd>curated catalogue</dd>
+              <dt>Licence</dt><dd>Apache-2.0</dd>
+              <dt>Download</dt><dd>4.6 GB</dd>
+              <dt>Installed</dt><dd>4.9 GB</dd>
+              <dt>Quantisation</dt><dd>q4_k_m</dd>
+              <dt>Expected RAM</dt><dd>7 GiB</dd>
+              <dt>Expected VRAM</dt><dd>5 GiB</dd>
+              <dt>Runtime / OS</dt><dd>local &middot; win, linux, mac</dd>
+            </dl>
+            <span class="chip chip-observed">Fit: measured on this device</span>
+          </button>
+
+          <button class="pick" type="button" aria-pressed="false">
+            <span class="pick-h"><b>Fast</b></span>
+            <span class="pick-id">open-weight-3b-instruct &middot; q4_0 &middot; v1.2</span>
+            <dl class="spec">
+              <dt>Source</dt><dd>curated catalogue</dd>
+              <dt>Licence</dt><dd>Apache-2.0</dd>
+              <dt>Download</dt><dd>1.9 GB</dd>
+              <dt>Installed</dt><dd>2.1 GB</dd>
+              <dt>Quantisation</dt><dd>q4_0</dd>
+              <dt>Expected RAM</dt><dd>4 GiB</dd>
+              <dt>Expected VRAM</dt><dd>3 GiB</dd>
+              <dt>Runtime / OS</dt><dd>local &middot; win, linux, mac</dd>
+            </dl>
+            <span class="chip chip-unknown">Fit: reported, not measured here</span>
+          </button>
+
+          <button class="pick" type="button" aria-pressed="false">
+            <span class="pick-h"><b>Quality</b></span>
+            <span class="pick-id">open-weight-14b-instruct &middot; q5_k_m &middot; v1.1</span>
+            <dl class="spec">
+              <dt>Source</dt><dd>curated catalogue</dd>
+              <dt>Licence</dt><dd>Apache-2.0</dd>
+              <dt>Download</dt><dd>9.8 GB</dd>
+              <dt>Installed</dt><dd>10.4 GB</dd>
+              <dt>Quantisation</dt><dd>q5_k_m</dd>
+              <dt>Expected RAM</dt><dd>16 GiB</dd>
+              <dt>Expected VRAM</dt><dd>11 GiB</dd>
+              <dt>Runtime / OS</dt><dd>local &middot; win, linux</dd>
+            </dl>
+            <span class="chip chip-unknown">Exceeds this device's 8 GiB VRAM</span>
+          </button>
+
+          <button class="pick" type="button" aria-pressed="false">
+            <span class="pick-h"><b>Advanced</b></span>
+            <span class="pick-id">choose an exact approved model and runtime</span>
+            <dl class="spec">
+              <dt>Source</dt><dd>approved list or bundle</dd>
+              <dt>Licence</dt><dd>shown per model</dd>
+              <dt>Evidence</dt><dd>shown per model</dd>
+            </dl>
+            <span class="chip chip-observed">Nothing is preselected</span>
+          </button>
+        </div>
+        <p class="lbl" style="margin-top: var(--sp-3)">
+          Fast and Quality are guidance, not guarantees. Each card states whether its
+          figures were measured on this device, reported by the catalogue, or unverified.
+        </p>
+      </section>
+
+      <!-- step 3, the current step -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Step 3 &mdash; capabilities</h2>
+          <em>enabling one creates a dependency plan you cannot skip</em>
+        </div>
+        <div class="caps-list">
+
+          <div class="cap-row locked on">
+            <span class="cap-box">&times;</span>
+            <div>
+              <h3>Chat</h3>
+              <p>General local agent over your own knowledge. Part of the interactive
+                 baseline and cannot be turned off.</p>
+              <ul class="deps">
+                <li class="satisfied">main engine &mdash; already selected</li>
+              </ul>
+            </div>
+            <span class="chip chip-enforced">Baseline</span>
+          </div>
+
+          <div class="cap-row on">
+            <span class="cap-box">&times;</span>
+            <div>
+              <h3>Documents</h3>
+              <p>Scans, handwriting, drawings and photographs through on-device OCR and
+                 vision, with citations back to the page.</p>
+              <ul class="deps">
+                <li>vision / OCR model &mdash; 2.2 GB</li>
+                <li class="satisfied">document generator &mdash; bundled</li>
+                <li class="satisfied">validator &mdash; bundled</li>
+              </ul>
+            </div>
+            <span class="chip chip-caution">1 download</span>
+          </div>
+
+          <div class="cap-row on">
+            <span class="cap-box">&times;</span>
+            <div>
+              <h3>Semantic local knowledge</h3>
+              <p>Retrieval across your own manuals and correspondence. Basic local search
+                 works without this; semantic retrieval needs an embedding model.</p>
+              <ul class="deps">
+                <li>embedding model &mdash; 0.4 GB</li>
+              </ul>
+            </div>
+            <span class="chip chip-caution">1 download</span>
+          </div>
+
+          <div class="cap-row">
+            <span class="cap-box"></span>
+            <div>
+              <h3>Code</h3>
+              <p>Bounded repository context and patches validated in a sandbox with
+                 networking disabled.</p>
+              <ul class="deps">
+                <li class="satisfied">main engine satisfies this profile &mdash; no extra download</li>
+                <li class="satisfied">sandbox runtime &mdash; present</li>
+              </ul>
+            </div>
+            <span class="chip chip-observed">No download</span>
+          </div>
+
+          <div class="cap-row locked">
+            <span class="cap-box"></span>
+            <div>
+              <h3>Voice</h3>
+              <p>Not available in this build.</p>
+              <ul class="deps"><li>later optional pack</li></ul>
+            </div>
+            <span class="chip chip-unknown">Unavailable</span>
+          </div>
+
+        </div>
+      </section>
+
+    </div>
+
+    <footer class="pane-foot">
+      <span class="lbl">2 downloads planned &middot; 2.6 GB</span>
+      <div class="head-spacer"></div>
+      <button class="btn" type="button">Back</button>
+      <a class="btn btn-primary" href="onboarding-install.html">Review the plan</a>
+    </footer>
+  </main>
+</div>
+
+</body>
+</html>
