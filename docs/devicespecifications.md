@@ -23,12 +23,13 @@ The first configuration uses two of the six inventoried machines:
 | **macOS coordinator** | MacBook Air `Mac17,3`, macOS 26.6.2 (25G83), arm64 | Primary workspace and UI, canonical state, approvals, local main-engine inference |
 | **Ubuntu worker** | HP Victus, Ubuntu 24.04.4 LTS, x86_64 | Candidate single-node K3s host, worker image build, Redis, sandboxed code execution |
 
-**Everything else in this document is off the critical path.** The four Windows
-machines, the truncated `RTX 5…` GPU line, the missing `nvidia-smi` output, and
-the whole capability-pack mapping below are inventory and hypothesis. None of
-them blocks the first configuration, and none may be selected without a measured
-need and a new device-based setup checkpoint. Windows support is **explicitly
-unverified** for the first validation path.
+The four Windows machines remain **off the critical path**. Add an execution
+device only for a measured need with a new device-based setup checkpoint;
+Windows execution support remains unverified. OCR belongs to C08 on the
+Mac/Ubuntu configuration, not to a separate required device. Any Windows
+machine may still build any module. The retained
+[qualification script](../scripts/qualify-ocr-worker.ps1) is deferred; it is
+not a C07 prerequisite. See [tasks.md](../tasks.md#numbered-execution-tasks).
 
 > **Reading VRAM correctly.** `systeminfo`, `Get-ComputerInfo`, and
 > `Win32_VideoController.AdapterRAM` report GPU memory through a 32-bit field
@@ -268,10 +269,10 @@ dates. Do not treat a planned placement as runtime proof.
 returned for both devices. The requester selected Wi-Fi and confirmed the
 Ubuntu worker's availability, trusted-LAN participation and passworded sudo.
 Controlled cold-start and Ubuntu direct-engine comparisons were explicitly
-deferred on 2026-09-03; Ollama remains selected. The targeted C02 follow-up is
-identification of the Ubuntu `*:8080` listener; requester acceptance of the
-reviewed closeout remains pending. The listener does not invalidate the recorded
-loopback inference, but its exposure is unresolved. Apple GPU-core count remains
+deferred on 2026-09-03; Ollama remains selected. C01/C02 were accepted on
+2026-09-04. The Ubuntu `*:8080` listener was identified as Jenkins and stays
+untouched. Its exposure review remains open before worker LAN access; it does
+not invalidate the recorded loopback inference. Apple GPU-core count remains
 an inventory gap without blocking the observed native path. Actual LAN
 connectivity and pairing are later gates.
 

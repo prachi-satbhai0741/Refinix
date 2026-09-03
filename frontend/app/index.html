@@ -1,0 +1,109 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat — AegisForge</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/overrides.css">
+<!-- No external font or script. The running application makes no network
+     request outside 127.0.0.1. -->
+<div class="scrim" id="scrim"></div>
+<div class="app">
+  <nav class="nav" id="nav">
+    <div class="nav-brand">AegisForge</div>
+
+    <div class="surfaces">
+      <a class="surface-link" aria-current="page" href="/"><span class="k">C</span>Chat</a>
+      <a class="surface-link is-disabled" aria-disabled="true" title="Implemented at C08"><span class="k">D</span>Documents</a>
+      <a class="surface-link is-disabled" aria-disabled="true" title="Implemented at C09"><span class="k">K</span>Code</a>
+      <a class="surface-link" href="/control.html"><span class="k">M</span>Control Center</a>
+    </div>
+
+    <div class="nav-list">
+      <p class="lbl nav-list-h">Conversations</p>
+      <label class="visually-hidden" for="chat-search">Search conversations</label>
+      <input class="chat-search" id="chat-search" type="search"
+             placeholder="Search conversations" autocomplete="off">
+      <p class="lbl search-state" id="search-state" hidden></p>
+      <div id="chat-list"></div>
+      <button class="nav-item" id="new-chat">+ New conversation</button>
+    </div>
+
+    <div class="nav-foot">
+      <div class="node-line"><span class="lbl">Node</span> <span id="foot-node">—</span></div>
+      <div class="node-line"><span class="lbl">Runtime</span> <span id="foot-runtime">—</span></div>
+      <div class="node-line"><span class="lbl">Bind</span> <span class="chip chip-observed" id="foot-bind">—</span></div>
+    </div>
+  </nav>
+
+  <main class="main">
+    <header class="main-head">
+      <button class="nav-toggle" id="nav-toggle" aria-expanded="false"
+              aria-controls="nav">Menu</button>
+      <span class="chip chip-unknown" id="job-chip">no job</span>
+      <div class="head-spacer"></div>
+      <span class="lbl" id="head-model">—</span>
+      <button class="btn" id="cancel-btn" hidden>Stop</button>
+      <button class="rail-toggle" id="rail-toggle" aria-expanded="false"
+              aria-controls="rail">Details</button>
+    </header>
+
+    <div id="notices" role="status" aria-live="polite"></div>
+
+    <div class="thread" id="thread">
+      <article class="turn turn-agent">
+        <div class="prose">
+          <p>Local chat runs on this device through the installed runtime. Documents
+             and Code are unavailable until their workflows are implemented.</p>
+          <p class="lbl">Nothing on this screen is sample data. A value with no
+             observation shows as unavailable.</p>
+        </div>
+      </article>
+    </div>
+
+    <button class="jump-latest" id="jump-latest" hidden>Jump to latest</button>
+
+    <form class="composer" id="composer">
+      <div class="composer-box">
+        <label class="lbl" for="input">Request</label>
+        <textarea class="composer-input" id="input" rows="3"
+                  placeholder="Ask something. Enter sends, Shift+Enter for a new line."></textarea>
+        <div class="composer-bar">
+          <span class="lbl" id="send-hint">Runs locally on this coordinator</span>
+          <button class="btn btn-primary" type="submit" id="send">Send</button>
+        </div>
+      </div>
+    </form>
+  </main>
+
+  <aside class="rail" id="rail">
+    <section class="rail-sec">
+      <span class="lbl">Job lifecycle</span>
+      <ol class="life" id="life"></ol>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Attempt</span>
+      <dl class="kv" id="attempt-kv">
+        <div><dt>state</dt><dd class="unavailable">no attempt yet</dd></div>
+      </dl>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Events</span>
+      <ul class="events" id="events"></ul>
+    </section>
+
+    <section class="rail-sec">
+      <details class="quiet">
+        <summary class="lbl">Evidence — 4 unavailable</summary>
+        <div class="proof-row unavailable"><span class="chip chip-unknown">unavailable</span> Paired workers — C06</div>
+        <div class="proof-row unavailable"><span class="chip chip-unknown">unavailable</span> Cluster — C05</div>
+        <div class="proof-row unavailable"><span class="chip chip-unknown">unavailable</span> Approvals — C10</div>
+        <div class="proof-row unavailable"><span class="chip chip-unknown">unavailable</span> Egress evidence — C11</div>
+        <p class="lbl">Not failures. The chunks that produce their evidence
+           have not run.</p>
+      </details>
+    </section>
+  </aside>
+</div>
+<script type="module" src="/app.js"></script>

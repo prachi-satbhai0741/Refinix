@@ -1,0 +1,99 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control Center — AegisForge</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/overrides.css">
+<div class="scrim" id="scrim"></div>
+<div class="app">
+  <nav class="nav" id="nav">
+    <div class="nav-brand">AegisForge</div>
+    <div class="surfaces">
+      <a class="surface-link" href="/"><span class="k">C</span>Chat</a>
+      <a class="surface-link is-disabled" aria-disabled="true" title="Implemented at C08"><span class="k">D</span>Documents</a>
+      <a class="surface-link is-disabled" aria-disabled="true" title="Implemented at C09"><span class="k">K</span>Code</a>
+      <a class="surface-link" aria-current="page" href="/control.html"><span class="k">M</span>Control Center</a>
+    </div>
+    <div class="nav-list">
+      <p class="lbl nav-list-h">Sections</p>
+      <a class="nav-item" href="#runtime">Runtime</a>
+      <a class="nav-item" href="#models">Models</a>
+      <a class="nav-item" href="#jobs">Jobs</a>
+      <a class="nav-item" href="#surfaces">Surfaces</a>
+      <a class="nav-item" href="#not-observed">Not observed</a>
+    </div>
+    <div class="nav-foot">
+      <div class="node-line"><span class="lbl">Node</span> <span id="foot-node">—</span></div>
+      <div class="node-line"><span class="lbl">Bind</span> <span class="chip chip-observed" id="foot-bind">—</span></div>
+    </div>
+  </nav>
+
+  <main class="main">
+    <header class="main-head">
+      <button class="nav-toggle" id="nav-toggle" aria-expanded="false"
+              aria-controls="nav">Menu</button>
+      <div class="head-spacer"></div>
+      <span class="lbl" id="refreshed">—</span>
+      <button class="btn" id="refresh">Refresh</button>
+    </header>
+
+    <div class="body">
+      <div class="grid">
+        <section class="block span-2" id="runtime">
+          <div class="block-h"><h2>Runtime</h2><em>observed on this device</em></div>
+          <dl class="kv" id="kv-runtime"></dl>
+        </section>
+
+        <section class="block span-2" id="context">
+          <div class="block-h"><h2>Conversation limits</h2><em>what the model receives</em></div>
+          <dl class="kv" id="kv-context"></dl>
+          <p class="lbl">Your saved conversation is never shortened. When a
+             request will not fit, older complete exchanges are left out of that
+             one request and the reply says so.</p>
+        </section>
+
+        <section class="block" id="models">
+          <div class="block-h"><h2>Models</h2><em>reported by the runtime</em></div>
+          <dl class="kv" id="kv-models"></dl>
+        </section>
+
+        <section class="block">
+          <div class="block-h"><h2>Contract</h2><em>shared boundary</em></div>
+          <dl class="kv" id="kv-contract"></dl>
+        </section>
+
+        <section class="block span-2" id="jobs">
+          <div class="block-h"><h2>Jobs</h2><em>canonical coordinator state</em></div>
+          <dl class="kv" id="kv-jobs"></dl>
+          <ul class="events" id="job-list"></ul>
+        </section>
+
+        <section class="block span-2" id="surfaces">
+          <div class="block-h"><h2>Surfaces</h2><em>what this build actually does</em></div>
+          <dl class="kv" id="kv-surfaces"></dl>
+        </section>
+
+        <section class="block span-2" id="not-observed">
+          <div class="block-h"><h2>Not observed</h2><em>no evidence exists yet</em></div>
+          <dl class="kv" id="kv-unavailable"></dl>
+          <p class="lbl">Each row names the chunk that produces its evidence. None of
+             these is inferred from configuration, and none is displayed as healthy.</p>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <aside class="rail" id="rail">
+    <section class="rail-sec">
+      <span class="lbl">Self-test</span>
+      <p class="lbl">The only self-test this build can honestly run is a real local
+         request on the Chat surface. Its result is the job record, not a badge.</p>
+      <div class="proof-row unavailable"><span class="chip chip-unknown">unavailable</span> Automated self-test — C07</div>
+    </section>
+    <section class="rail-sec">
+      <span class="lbl">Restart reconciliation</span>
+      <dl class="kv" id="kv-restart"></dl>
+    </section>
+  </aside>
+</div>
+<script type="module" src="/app.js"></script>

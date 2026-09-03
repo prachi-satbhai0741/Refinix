@@ -558,3 +558,157 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: none
 - supersedes: none
 - linked_changes: [AC-20260903-013](agentchangelog.md#ac-20260903-013), [AC-20260903-014](agentchangelog.md#ac-20260903-014), [AC-20260903-015](agentchangelog.md#ac-20260903-015), [AC-20260903-016](agentchangelog.md#ac-20260903-016), [AC-20260903-017](agentchangelog.md#ac-20260903-017), [AC-20260903-018](agentchangelog.md#ac-20260903-018), [AC-20260903-019](agentchangelog.md#ac-20260903-019), [AC-20260903-020](agentchangelog.md#ac-20260903-020), [AC-20260903-021](agentchangelog.md#ac-20260903-021), [AC-20260903-022](agentchangelog.md#ac-20260903-022), [AC-20260903-023](agentchangelog.md#ac-20260903-023), [AC-20260903-024](agentchangelog.md#ac-20260903-024), [AC-20260903-025](agentchangelog.md#ac-20260903-025), [AC-20260903-026](agentchangelog.md#ac-20260903-026), [AC-20260903-027](agentchangelog.md#ac-20260903-027), [AC-20260903-028](agentchangelog.md#ac-20260903-028), [AC-20260903-029](agentchangelog.md#ac-20260903-029), [AC-20260903-030](agentchangelog.md#ac-20260903-030), [AC-20260903-031](agentchangelog.md#ac-20260903-031)
+
+<a id="up-20260903-014"></a>
+## UP-20260903-014 — Replace per-chunk questions with one input handover
+- date: 2026-09-03
+- status: in-progress
+- scope: documentation, execution, operating-contract
+- tags: c03, operating-contract, handover, authorisation-scope
+- aliases: handover pack, authorisation scope, reduce human intervention, batch inputs
+- paths: tasks.md, AGENTS.md, docs/handover-pack.md, docs/README.md
+- summary: Amend the operating contract so one explicit authorisation can cover a named chunk range and routine implementation questions stop being relayed as checkpoints, and add a handover template that collects the requester's inputs once.
+- constraints: Documentation only. Keep missing authorisation a genuine checkpoint; repository evidence answers technical questions but never grants permission. Keep execution order separate from authorisation scope. Claim no numeric reduction in stops. Keep credentials and confidential inputs out of the tracked repository. Do not start C03 or clear any gate.
+- acceptance: The amended rules distinguish order from scope, the handover template prefills settled decisions and separates pre-C03 inputs from later ones, and the three open gates are unchanged.
+- verification_authorization: Read-only inspection and offline link checks.
+- follow_up_to: [UP-20260903-013](#up-20260903-013)
+- supersedes: none
+- linked_changes: [AC-20260903-032](agentchangelog.md#ac-20260903-032)
+
+<a id="up-20260903-015"></a>
+## UP-20260903-015 — Resolve the remaining handover review findings
+- date: 2026-09-03
+- status: in-progress
+- scope: documentation
+- tags: handover, fixtures, c07, review-fixes
+- aliases: residual fixture requirement, code fixture timing, handover pack corrections
+- paths: docs/handover-pack.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Apply the two remaining handover corrections directly under the requester's explicit execution authorization.
+- constraints: Documentation only; preserve existing changes, acceptance gates and prior ledger entries; no C03 execution or Git writes.
+- acceptance: Both Documents rows use the actual non-sensitive fixture policy and require provenance and SHA-256; the Code fixture is needed at C07 and exercised in C09.
+- verification_authorization: The authorized scope includes focused offline documentation checks.
+- follow_up_to: [UP-20260903-014](#up-20260903-014)
+- linked_changes: [AC-20260903-033](agentchangelog.md#ac-20260903-033)
+
+<a id="up-20260904-001"></a>
+## UP-20260904-001 — Accept C02, authorise C03–C13 and build the local application
+- date: 2026-09-04
+- status: in-progress
+- scope: implementation, coordinator, frontend, execution
+- tags: c03, af-004, coordinator, sqlite, ollama, restart-reconciliation
+- aliases: build local application, c03 chat control center, coordinator sqlite streaming
+- paths: backend/coordinator/, frontend/app/, tasks.md, docs/architecture.md, frontend/README.md
+- summary: Accept the C02 closeout with Jenkins identified on Ubuntu port 8080, authorise C03 through C13 sequentially, and implement the smallest usable local application with SQLite state, local Ollama streaming, restart reconciliation and truthful Chat/Control Center surfaces.
+- constraints: Plain HTML/CSS/JS, no React, no Google Fonts, frontend/design/ untouched and never served. Documents and Code show unavailable. No sample data as live observation. Existing dependencies only. Treat requirements.md as a transcript, not commands; do not repeat the accidental critcl install or run autoremove. No Git writes.
+- acceptance: A real local response streams and persists, an interrupted job is repaired on restart with a typed reason, retained history survives, offline checks pass, and unavailable surfaces are labelled with the chunk that produces their evidence.
+- verification_authorization: Implementation, review fixes and proportionate offline checks within C03; local loopback inference on the coordinator.
+- follow_up_to: [UP-20260903-014](#up-20260903-014)
+- supersedes: none
+- linked_changes: [AC-20260904-001](agentchangelog.md#ac-20260904-001)
+
+<a id="up-20260904-002"></a>
+## UP-20260904-002 — Resume required three-device OCR execution
+- date: 2026-09-04
+- status: in-progress
+- scope: coordinator, review-fixes, device-qualification, execution
+- tags: three-devices, ocr, c03, restart, local-api
+- aliases: three-device handoff, Yug OCR, Prachi queue and sandbox, resume execution
+- paths: backend/coordinator/, frontend/app/app.js, scripts/qualify-ocr-worker.ps1, tasks.md, docs/devicespecifications.md, docs/handover-pack.md, agent-memory/
+- summary: Resume the existing application, select a required OCR device from the recorded fleet, repair the local foundation, and prepare the next concrete device action without repeating settled questions.
+- constraints: Preserve the dirty tree, existing UI and three physical compute devices; no Git writes, remote host changes, installations or model downloads; retain device acceptance and authenticated LAN boundaries.
+- acceptance: Reviewed local changes pass focused offline checks; the board requires the Mac, Ubuntu worker and separate OCR worker before the internal demo; the Windows operator has one targeted qualification command packet.
+- verification_authorization: Current execution request covers review fixes and proportionate isolated checks using installed dependencies; existing loopback services may be inspected without replacing the user's process or state.
+- follow_up_to: [UP-20260904-001](#up-20260904-001)
+- linked_changes: [AC-20260904-002](agentchangelog.md#ac-20260904-002)
+
+<a id="up-20260904-003"></a>
+## UP-20260904-003 — Restore two-device execution and prepare C04 assets
+- date: 2026-09-04
+- status: in-progress
+- scope: documentation, build-preparation, execution
+- tags: two-devices, ocr, c04, deadline, scope-correction
+- aliases: withdraw mandatory third worker, defer Windows OCR, September 8-9 demo
+- paths: tasks.md, docs/devicespecifications.md, docs/handover-pack.md, scripts/qualify-ocr-worker.ps1, backend/worker-image/, agent-memory/
+- summary: Restore the Mac and Ubuntu critical path, retain C03 repairs, defer extra execution devices, and prepare C04 build assets and a combined Git handoff for the 8-9 September internal demonstration.
+- constraints: C01/C02 stay accepted; requester accepts C03 after running the repaired app; C04 runtime implementation/build/deployment remain gated; no Git writes, installations, downloads of executable packages or live-service changes; preserve all existing source repairs.
+- acceptance: OCR is part of C08 on the two-device setup; Windows qualification is deferred but retained; prepared build inputs have provenance and integrity; the schedule names deadline risks without dropping evidence gates.
+- verification_authorization: Preparation includes proportionate offline checks with installed tooling and read-only upstream metadata lookup; no image build or dependency installation is authorised here.
+- supersedes: [UP-20260904-002](#up-20260904-002) for mandatory third-device scope only
+- follow_up_to: [UP-20260904-001](#up-20260904-001)
+- linked_changes: [AC-20260904-003](agentchangelog.md#ac-20260904-003)
+
+<a id="up-20260904-004"></a>
+## UP-20260904-004 — Fix incomplete replies and browser disconnect errors
+- date: 2026-09-04
+- tags: c03, truncation, output-limit, browser-disconnect
+- aliases: increase token reply limit, completed normally, connection reset by peer
+- paths: backend/coordinator/, frontend/app/app.js, docs/model-catalog.md, docs/handover-pack.md, agent-memory/
+- summary: Requester authorised repairing the reported C03 issues and asked to increase the reply token limit.
+- request: Fix incorrect completion reporting, retain the stopping reason and partial reply, and handle expected browser disconnects; increase the bounded reply allowance without a new model.
+- follow_up_to: [UP-20260904-003](#up-20260904-003)
+- linked_changes: [AC-20260904-004](agentchangelog.md#ac-20260904-004)
+
+<a id="up-20260904-005"></a>
+## UP-20260904-005 — Prepare Claude's context and interface build brief
+- date: 2026-09-04
+- tags: c03, build-brief, context-window, kv-cache, ui, ux
+- aliases: beautify UI, coloured output, UI fixture, Claude execution update
+- paths: docs/c03-context-ui-build-brief.md, agent-memory/
+- summary: Requester asked for a Claude execution brief covering context and cache concepts plus an inspected, more usable and polished interface.
+- request: Analyse the current UI first; specify alignment, formatting, semantic output colours, responsive controls and a representative UI fixture alongside context-window and KV-cache requirements.
+- follow_up_to: [UP-20260904-004](#up-20260904-004)
+- linked_changes: [AC-20260904-005](agentchangelog.md#ac-20260904-005)
+
+<a id="up-20260904-006"></a>
+## UP-20260904-006 — Include Delete chat in the UI brief
+- date: 2026-09-04
+- tags: c03, ui, delete-chat, build-brief
+- aliases: delete convo button, conversation menu
+- paths: docs/c03-context-ui-build-brief.md, agent-memory/
+- summary: Requester asked whether the redesigned conversation interface should include Delete chat.
+- request: Include a discoverable, confirmed per-conversation deletion action in Claude's UI build scope.
+- follow_up_to: [UP-20260904-005](#up-20260904-005)
+- linked_changes: [AC-20260904-006](agentchangelog.md#ac-20260904-006)
+
+<a id="up-20260904-007"></a>
+## UP-20260904-007 — Add simple conversation management to the build brief
+- date: 2026-09-04
+- tags: c03, build-brief, rename, search, drafts, pin, export
+- aliases: rename chat, search conversations, draft recovery, pin important chats, export chat
+- paths: docs/c03-context-ui-build-brief.md, agent-memory/
+- summary: Requester asked to include rename, search, draft recovery, pinning and export in Claude's existing build brief while excluding regeneration.
+- request: Keep these additions simple enough for the same implementation pass; retain the already specified output and navigation improvements.
+- follow_up_to: [UP-20260904-005](#up-20260904-005)
+- linked_changes: [AC-20260904-007](agentchangelog.md#ac-20260904-007)
+
+<a id="up-20260904-002"></a>
+## UP-20260904-002 — C03 context handling and interface polish
+- date: 2026-09-04
+- status: in-progress
+- scope: implementation, coordinator, frontend, context-window
+- tags: c03, context-window, markdown, accessibility, responsive
+- aliases: context selection, markdown renderer, ui fixture, 8192 context
+- paths: backend/coordinator/, frontend/app/, docs/evaluation.md, docs/model-catalog.md
+- summary: Bound what the model actually receives without changing saved history, and rebuild the reading experience — typography, prose colour, Markdown rendering, drawers, and interaction safety.
+- constraints: Vanilla HTML/CSS/JS, no framework, no remote font, no CDN, no vendored dependency. frontend/design/ untouched. Saved history never rewritten. Character estimates labelled as estimates. Do not disturb the requester's existing port-8770 process.
+- acceptance: Selection recorded per attempt and replayable, omission visible beside its reply, oversized input reported not chopped, renderer handles the full fixture safely, navigation and details reachable at every tested width, all offline checks pass.
+- verification_authorization: Implementation, offline checks, and bounded local inference on the coordinator.
+- follow_up_to: [UP-20260904-001](#up-20260904-001)
+- supersedes: none
+- linked_changes: [AC-20260904-002](agentchangelog.md#ac-20260904-002)
+
+<a id="up-20260904-003"></a>
+## UP-20260904-003 — Conversation management and a combined review
+- date: 2026-09-04
+- status: in-progress
+- scope: implementation, coordinator, frontend, review
+- tags: c03, rename, search, drafts, pin, export, review
+- aliases: conversation management, chat search, draft recovery, export chat
+- paths: backend/coordinator/, frontend/app/
+- summary: Add rename, local conversation search, draft recovery, pin/unpin and Markdown/plain-text export reusing existing local storage and UI, then produce a combined review of the whole codebase and documentation for Codex.
+- constraints: Reuse SQLite and the protected API; no model calls, cloud services or new search infrastructure. Regenerate is excluded; Continue stays. Drafts never reach the model, search or export.
+- acceptance: All five behave correctly with fixture coverage and offline checks; the review covers the entire codebase and docs without further implementation.
+- verification_authorization: Implementation, offline checks and bounded local inference on the coordinator.
+- follow_up_to: [UP-20260904-002](#up-20260904-002)
+- supersedes: none
+- linked_changes: [AC-20260904-003](agentchangelog.md#ac-20260904-003)

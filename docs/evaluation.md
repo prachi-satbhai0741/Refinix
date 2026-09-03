@@ -451,6 +451,40 @@ GPU access, trusted-LAN pairing and zero-egress operation are not established
 by the native runtime checks above. C03 begins only after closeout acceptance
 and its own authorisation.
 
+## 5.2 Context window sizing — macOS coordinator, 2026-09-04
+
+Request-local settings only; no service or install was changed. Same installed
+model, synthetic near-boundary input with a fact planted at the start.
+
+| Setting | Prompt tokens | Cold TTFT | Warm TTFT | Resident bytes | Early fact retrieved |
+|---|---:|---:|---:|---:|---|
+| `num_ctx` 4096 | 919 | 3.796 s | 0.196 s | 3,144,910,109 | yes |
+| `num_ctx` 8192 | 919 | 3.409 s | 0.198 s | 3,375,617,800 | yes |
+| `num_ctx` 8192, larger input | 3052 | 4.543 s | 0.203 s | 3,375,617,800 | yes |
+
+**8192 adopted for the macOS coordinator.** It costs about **220 MiB** more
+resident memory, warm time-to-first-token is unchanged, and a fact at the start
+of a 3052-token prompt was still answerable. The Ubuntu worker keeps 4096 until
+it is measured at its own device checkpoint; the Mac repair was not held for it.
+
+### Context selection observed end to end
+
+A seven-turn synthetic conversation on the coordinator drove the selector past
+its budget. Estimated input rose 35 → 1690 → 3376 → 5063 → 5132 of a
+5168-token budget, then omission began: 4 messages omitted at turn 6, 6 at
+turn 7, each with a visible notice. Saved history stayed at 16 messages
+throughout — nothing was trimmed from storage.
+
+When the turn carrying a planted fact had been omitted, the model answered
+**"I no longer have it"** rather than inventing the value. That is the intended
+behaviour: omission is visible and its consequence is honest.
+
+**Estimate versus measurement.** The pre-flight estimate is characters ÷ 3.0
+and is deliberately pessimistic: at turn 6 it predicted 5053 tokens where the
+runtime reported **2832**. Roughly 1.8× conservative, so fewer messages are
+included than strictly necessary. Runtime-reported prompt and output counts are
+recorded separately as the measured values.
+
 ## 6. Demonstration
 
 ### Preparation

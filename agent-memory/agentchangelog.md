@@ -812,3 +812,155 @@ work. No repository file change means no changelog entry.
 - changes: Enlarged the radius scale - 26px for dialogs and the largest panels, 18px for panels and cards, 13px for buttons and containers, 9px for nav items and tags, and a dedicated 20px for a chat turn, which is now the most oval thing in the app and tightens the corner on the side it is anchored to. Added a glass system. Glass only reads as glass when there is something behind it worth blurring, so the app now sits on three soft radial fields over the flat ground; without them every panel is flat translucent grey. The same distinction that governs curves governs glass: glass on the frame and on containers, opaque on verbatim output and on documents. The nav, rail, header, composer, panels, cards and dialogs are glass; the diff, the stdout and stderr panes, the meters, the artifact and the Proof Card are not, because those are read literally and refracted ground behind 11px monospace costs legibility for nothing. Two tiers for cost rather than looks: glass tokens carry the backdrop blur and belong to top-level surfaces, veil tokens are fill only for containers already sitting on a blurred parent, because blurring an already-blurred surface is expensive and shows almost nothing with a dozen panels on screen. Two structural changes were forced. The gap-of-1px-over-an-opaque-parent divider trick, used for the Documents sources and the onboarding plan totals, needs that parent opaque, which blocks everything behind it - both became separated cards with real gaps, which reads better anyway. And the light-mode atmosphere had to be rebuilt: dark tints at 10 percent over a light ground darken it, costing contrast for dark text, so the light fields are now near-white pastels that lift, and the light ground was deepened to D2D9E4 because near-white glass on a near-white ground collapses into a single tone and the panels stopped reading as panels.
 - verification: Rewrote the contrast auditor, because glass broke the old one in a way that would have hidden failures rather than reported them: it walked up the ancestor chain until it found a background with alpha above .55 and used that, and with glass that colour is never what is on screen. The new auditor alpha-composites every layer from the root down including the strongest rgba stop of each gradient, and computes each ratio twice - once with gradient layers and once without, taking the lower - because a white-ish overlay lowers contrast for light text and raises it for dark text, so neither case is universally the worst. That found two genuine failures. The pairing dialog measured 3.48:1 in light, where a .55 white modal over a 62 percent black scrim composites to a muddy mid-tone; --glass-modal and --scrim are now their own tokens and it measures 6.33:1. The unavailable hatch measured 4.46:1 where --text-faint crosses --line-soft, which the old walk never saw because it stopped at the opaque row beneath; --line-soft was lightened in light so the hatch reads as a drawing mark rather than a bar. After both fixes: all seven pages, three theme states, 3,054 element checks, zero failures, floor 4.60:1. Confirmed zero horizontal overflow on all seven at 375, 768, 1024 and 1440, which the two layout changes could have broken and did not. Confirmed at runtime that none of the new tokens - glass-base, scrim, radius-bubble - resolve on site.html and that its ground is unchanged at rgb(9,9,10), so the public site is untouched.
 - remaining: The glass floor of 4.60:1 is slightly below the 4.74:1 the palette pass reached; that is the honest number under a strictly compositing measurement rather than a regression in the design. backdrop-filter is applied to top-level surfaces only, but no frame-rate measurement was taken - the preview pane starves animation frames, so glass performance on a low-end GPU is unverified and is the first thing to check on real hardware. Browsers without backdrop-filter degrade to the flat translucent fill, which is legible but not glass; this was not tested anywhere but Chromium. All seven pages remain static references carrying sample data, wired to nothing. Fonts still load from Google Fonts. No Git writes ran.
+
+<a id="ac-20260903-032"></a>
+## AC-20260903-032 — Handover model and authorisation-scope amendment
+- prompt_id: [UP-20260903-014](userprompts.md#up-20260903-014)
+- date: 2026-09-03
+- status: in review
+- scope: documentation, execution, operating-contract
+- tags: c03, operating-contract, handover, authorisation-scope
+- aliases: handover pack, authorisation scope, reduce human intervention
+- paths: tasks.md, AGENTS.md, docs/handover-pack.md, docs/README.md
+- summary: Separated execution order from authorisation scope in the operating contract, stopped routine implementation questions being relayed as checkpoints, and added a one-time requester handover template.
+- changes: Rewrote three operating-contract bullets in tasks.md so authorisation may cover a named chunk range while work still proceeds one chunk at a time after each acceptance gate clears, routine implementation questions resolved from repository evidence and upstream documentation are explicitly not checkpoints, and execution stops for exactly three things including missing authorisation. Recorded that repository evidence can answer a technical question but never grants permission, and that a supplied input removes the question but never the gate. Aligned the AGENTS.md human-checkpoint bullet. Added docs/handover-pack.md with settled decisions prefilled, pre-C03 items separated from C07-C13 items, an authorisation-sentence template, an agents-prepare-the-fixture option for the code demo, and confidential inputs directed to the git-ignored private/handover/. Linked it from docs/README.md.
+- review_fixes: Codex returned NEEDS FIX with four findings; all four are addressed. Restored missing authorisation as a checkpoint in both the introduction and the copyable authorisation template, with a note not to delete that clause when copying. Gave provisioning constraints and device operating windows their real earliest-needed chunks, C04 and C05, instead of filing them under C11-C13, and added an earliest-needed column to the remaining rows. Removed an invented claim that scans and SOPs must be publicly redistributable: security.md section 11 actually requires synthetic or explicitly approved non-sensitive fixtures, and C07 separately requires source hashes and provenance. Corrected the contract row from frozen to reviewed draft, not frozen, integration pending C05. Also recorded that ignore rules are a safety net rather than a guarantee, since git add -f bypasses them.
+- verification: Confirmed private/handover/, scans/, secrets/ and .env are ignored using git check-ignore, while recording that a forced add bypasses ignore rules. Prefilled values were read from the current source rather than retyped: the OD-08 pins from architecture.md, the model tag from model-catalog.md and ports 8443/30443 from backend/contracts/v1.py. Checked every internal Markdown link and anchor across the repository and git diff --check.
+- remaining: Codex review of the combined diff, then requester acceptance. The three C03 gates are unchanged and uncleared: the Ubuntu *:8080 identification, C02 acceptance, and explicit C03 authorisation. No handover inputs have been supplied yet, no code was written and no Git writes ran.
+
+<a id="ac-20260903-033"></a>
+## AC-20260903-033 — Resolve the remaining handover review findings
+- prompt_id: [UP-20260903-015](userprompts.md#up-20260903-015)
+- date: 2026-09-03
+- status: in review
+- scope: documentation
+- tags: handover, fixtures, c07, review-fixes
+- aliases: residual fixture requirement, code fixture timing, handover pack corrections
+- paths: docs/handover-pack.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Removed the residual public-redistribution requirement and moved Code-fixture preparation to its C07 approval checkpoint.
+- changes: Both Documents rows now use the repository's synthetic-or-approved-non-sensitive fixture policy and require provenance and SHA-256; the Code-fixture heading now says it is needed at C07 and exercised in C09.
+- verification: `git diff --check` passed; the handover file has no trailing whitespace; focused searches confirmed both fixture rows, the C07/C09 heading and their agreement with security.md and tasks.md.
+- remaining: Requester verification and Git publication remain human actions. C03 was not started and its three gates remain uncleared.
+
+<a id="ac-20260904-001"></a>
+## AC-20260904-001 — C03 local application implemented
+- prompt_id: [UP-20260904-001](userprompts.md#up-20260904-001)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, coordinator, frontend, execution
+- tags: c03, af-004, coordinator, sqlite, ollama, restart-reconciliation
+- aliases: build local application, c03 chat control center, coordinator sqlite streaming
+- paths: backend/coordinator/, frontend/app/, tasks.md, docs/architecture.md, frontend/README.md, agent-memory/
+- summary: Implemented the smallest usable local application — contract-validated SQLite state, local Ollama streaming, restart reconciliation, cancellation, and Chat plus a minimum Control Center on plain HTML/CSS/JS.
+- changes: Added backend/coordinator with db.py, runtime.py, server.py, __main__.py, README.md and 12 offline checks. Every Job, Attempt and Event is constructed and validated through backend.contracts.v1 before it is written, and state changes go through require_transition, so an illegal transition raises instead of persisting. Added frontend/app with application-owned HTML, CSS and JavaScript reusing the design's class vocabulary; the stylesheet is derived from the design tokens with no external font, and frontend/design/ is untouched and never served or linked. Documents and Code render unavailable, and workers, cluster, approvals, Proof Cards and egress each name the chunk that produces their evidence. Recorded the standard-library deviation from the FastAPI direction in architecture.md, since FastAPI is not installed and adding it is a setup checkpoint; FastAPI remains the C04 worker-API direction. Updated the board with the Jenkins identification, the two Ubuntu Docker endpoints and the different-subnet finding.
+- verification: Ran on the macOS coordinator against the loopback Ollama server. A real request returned "The capital of France is Paris." with the full contract-legal sequence of 18 events and runtime 3503 ms. SIGKILL during generation then restart repaired the job: job and attempt both interrupted with a typed internal_error reason, 320 characters of partial output and all conversation history retained, events continuing at sequence 69 without a gap. Cancellation produced cancelled_by_user, kept 334 partial characters and wrote no assistant message. lsof showed 127.0.0.1:8770 only. In the browser both surfaces rendered real observed values, streaming worked through the UI, the Enter key submitted, zero elements were clipped and all six resource requests went to loopback. 12 coordinator checks and the 8 existing contract checks pass.
+- acceptance_fixes: The requester's acceptance run found two defects, both fixed. Ctrl+C did not stop the coordinator: the SSE handler looped with no exit path, so server_close() waited on a thread that never returned. A stopping event with a one-second poll releases it, and block_on_close is disabled; isolating the variable showed block_on_close alone was not the cause, so the initial diagnosis was corrected. The interface was too busy: model output now renders as Markdown built from DOM nodes rather than showing raw asterisks and hashes, output deltas collapse from one row per token into a single rolling counter, the evidence panel became a collapsed disclosure, and event labels no longer wrap mid-word. Recorded events now replay when a conversation loads, so the rail no longer looks as though nothing happened.
+- remaining: Codex review and the macOS coordinator acceptance run — real prompt, streaming response, restart, retained history. Browser observation of loopback requests is not zero-egress evidence, which needs C11 controls and independent observation. No worker, pairing, cluster, Documents, Code, approvals or Proof Cards exist. AF-001 stays a draft until C05. The Ubuntu 8080 wildcard exposure review and the different-subnet routing question remain open. No Git writes ran.
+
+<a id="ac-20260904-002"></a>
+## AC-20260904-002 — Repair C03 and require the third OCR device
+- prompt_id: [UP-20260904-002](userprompts.md#up-20260904-002)
+- date: 2026-09-04
+- status: in review
+- scope: coordinator, review-fixes, device-qualification, execution
+- tags: three-devices, ocr, c03, concurrency, restart, local-api
+- aliases: Yug OCR worker, event replay, local boundary, persisted node identity
+- paths: backend/coordinator/, frontend/app/app.js, scripts/qualify-ocr-worker.ps1, tasks.md, docs/devicespecifications.md, docs/handover-pack.md, agent-memory/
+- summary: Repaired C03 and changed the execution board to require a separate Windows OCR worker before the internal demo.
+- changes: Serialized SQLite access, repaired every unfinished job after a crash, persisted node identity, rejected overlapping chat requests, closed the late-cancel write race, bounded and same-origin checked local HTTP, disabled Ollama proxies/redirects, and recovered UI output/events missed before POST or during reconnect. Selected the inventoried Windows HP Victus for OCR, required qualification at C07 and real remote OCR at C08, and added one later read-only PowerShell packet.
+- verification: 29 coordinator/contract checks passed; JavaScript syntax and diff whitespace checks passed. An isolated browser run returned `local check passed` from loopback Ollama in 583 ms, rendered the lifecycle, stopped, restarted with the same node ID, and restored the prompt and answer. The existing port-8770 process and state were untouched.
+- remaining: Restart and accept the repaired source on the macOS coordinator, then implement/build C04 on Ubuntu. Windows qualification, OCR setup, pairing and real OCR remain C07-C08 gates. No Git writes ran.
+
+<a id="ac-20260904-003"></a>
+## AC-20260904-003 — Restore two-device scope and prepare C04 image inputs
+- prompt_id: [UP-20260904-003](userprompts.md#up-20260904-003)
+- date: 2026-09-04
+- status: in review
+- scope: documentation, build-preparation, execution
+- tags: two-devices, ocr, c04, deadline, scope-correction
+- aliases: deferred Windows qualification, September 8-9 demo, worker-base image inputs
+- paths: tasks.md, docs/devicespecifications.md, docs/handover-pack.md, scripts/qualify-ocr-worker.ps1, backend/worker-image/, agent-memory/
+- summary: Restored the two-device critical path, retained the C03 repairs, and prepared pinned Linux image inputs and a combined Git handoff.
+- changes: Removed mandatory Windows execution and C07 qualification; restored C08 OCR to Mac/Ubuntu; marked the retained PowerShell packet deferred. Recorded 8-9 September as the internal demo window with sequential targets and slip risks. Added a digest-pinned Python base, thirteen hash-pinned wheels, provenance, restrictive Docker context and gated Ubuntu commands. The preparation image exports contracts; the worker API remains unimplemented.
+- verification: Re-read and hash-matched the pinned Docker Hub base manifest; checked PyPI versions, licences, wheel hashes and dependency closure for Python 3.13/Linux against existing contract pins. Offline validation passed for all build paths and all 12 C03 source hashes remained unchanged; no application tests were rerun for this documentation/build-input change.
+- remaining: Requester C03 acceptance, then C04 worker implementation, actual image build and manifest-digest evidence. No image, wheel, installer or model was downloaded; registry metadata only. No service or Git writes ran.
+
+<a id="ac-20260904-004"></a>
+## AC-20260904-004 — Repair reply limits and browser disconnect handling
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- tags: c03, truncation, output-limit, browser-disconnect, migration
+- aliases: completed normally, 2048 tokens, incomplete reply, connection reset by peer
+- paths: backend/coordinator/db.py, backend/coordinator/runtime.py, backend/coordinator/server.py, backend/coordinator/test_coordinator.py, backend/coordinator/README.md, frontend/app/app.js, docs/model-catalog.md, docs/handover-pack.md, tasks.md, agent-memory/
+- summary: Raised C03 replies to 2048 tokens and made capped output, stopping evidence and expected browser disconnects truthful.
+- changes: Added nullable attempt metrics with an additive history-preserving upgrade; only stop completes, length fails validation with retained annotated text usable for continuation, and unknown reasons stay unverified. The HTTP connection boundary handles reset/broken-pipe exceptions while SSE always unsubscribes and other errors remain visible. Updated the model settings and manual handoff.
+- verification: 33 coordinator/contract checks, JavaScript syntax and diff whitespace passed. A temporary Mac instance produced a real 664-token reply ending in stop in 22735 ms, displayed limit 2048, and retained text/metrics and node identity after restart. The browser rendered a separate synthetic length fixture with its incomplete notice. The temporary instance and tab were closed.
+- remaining: Restart and accept the repaired normal Mac app before C04. Existing port-8770 process/history were untouched; real response content was not quality-validated. No installs, model downloads or Git writes ran.
+
+<a id="ac-20260904-005"></a>
+## AC-20260904-005 — Prepare inspected context and UI execution brief
+- prompt_id: [UP-20260904-005](userprompts.md#up-20260904-005)
+- date: 2026-09-04
+- status: prepared
+- tags: c03, build-brief, context-window, kv-cache, ui, ux
+- aliases: Claude build update, semantic output colours, synthetic UI fixture
+- paths: docs/c03-context-ui-build-brief.md, docs/handover-pack.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Prepared Claude's requested build brief after inspecting live Chat, Control Center and current context/rendering source.
+- changes: Specified bounded context selection and overflow evidence, distinct history/cache/residency concepts, conditional Mac context measurement, typography/alignment/responsive fixes, semantic colours, safe Markdown, interaction repairs, a synthetic fixture payload and acceptance checks.
+- verification: Read live browser state and screenshots; confirmed active-selector mismatch, hidden responsive controls, renderer limits, forced scrolling and draft-clearing behavior from source. The live process reported 512 output tokens while source specifies 2048. Checked brief whitespace, code fences, required scope and referenced implementation paths; diff whitespace passed.
+- remaining: Claude implements and verifies the brief, followed by Codex review and requester C03 acceptance. No application code, live history, runtime configuration or Git state was changed; no application tests were run for this documentation deliverable.
+
+<a id="ac-20260904-006"></a>
+## AC-20260904-006 — Add Delete chat to Claude's UI scope
+- prompt_id: [UP-20260904-006](userprompts.md#up-20260904-006)
+- date: 2026-09-04
+- status: prepared
+- tags: c03, ui, delete-chat, build-brief
+- aliases: delete convo, confirmed deletion, conversation menu
+- paths: docs/c03-context-ui-build-brief.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added confirmed per-conversation deletion, backend concurrency requirements and fixture coverage to the execution brief.
+- changes: Specified an accessible menu, titled confirmation, unfinished-work guard, atomic scoped record deletion, failure/empty states and disposable-data checks.
+- verification: Reviewed current retention/deletion guidance; brief whitespace, code fences and deletion requirements checked; diff whitespace passed.
+- remaining: Claude implementation and verification. No application code or user chat data changed; no application tests or Git writes ran.
+
+<a id="ac-20260904-007"></a>
+## AC-20260904-007 — Add five conversation-management features to the brief
+- prompt_id: [UP-20260904-007](userprompts.md#up-20260904-007)
+- date: 2026-09-04
+- status: prepared
+- tags: c03, build-brief, rename, search, drafts, pin, export
+- aliases: simple chat management, exclude regeneration, one build pass
+- paths: docs/c03-context-ui-build-brief.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Extended Claude's existing execution brief with rename, local search, draft recovery, pinning and export, explicitly excluding regeneration.
+- changes: Defined small local implementations, persistence and deletion interactions, fixture states and focused verification; retained Continue as a separate follow-up action.
+- verification: Checked the current chat schema/read paths, all five requested requirements, the regeneration exclusion, Markdown fixture fences and whitespace; diff whitespace passed.
+- remaining: Claude implementation and verification. Only documentation changed; no application tests, live data changes or Git writes ran.
+
+<a id="ac-20260904-002"></a>
+## AC-20260904-002 — Context selection, Markdown renderer and interface rebuild
+- prompt_id: [UP-20260904-002](userprompts.md#up-20260904-002)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, coordinator, frontend, context-window
+- tags: c03, context-window, markdown, accessibility, responsive
+- aliases: context selection, markdown renderer, ui fixture, 8192 context
+- paths: backend/coordinator/context.py, backend/coordinator/test_context.py, backend/coordinator/{db,runtime,server,test_coordinator}.py, frontend/app/, docs/evaluation.md, docs/model-catalog.md
+- summary: Added bounded context selection with recorded per-attempt metadata, adopted a measured 8192 window on the Mac, replaced the ad-hoc Markdown handling with a real tokenizer, and rebuilt typography, drawers and interaction safety.
+- changes: New context.py selects a bounded request from saved history in complete exchanges, never orphaning an assistant reply, keeping the newest message intact, and reporting rather than chopping an oversized one. The selection persists on the attempt through a new selection_json column with an additive migration, so a reopened job shows the policy that ran then. Adopted num_ctx 8192 on the coordinator from measurement. Captured runtime-reported prompt tokens separately from the character estimate. Added markdown.js, a block-then-inline tokenizer built entirely from DOM nodes: raw HTML stays inert, javascript and data URLs are shown but never clickable, safe links carry noopener/noreferrer/nofollow and display their host, and code blocks carry a language label and a copy button that copies literal source. Rebuilt overrides.css with a 76ch reading column, 16px prose, semantic prose colours separate from operational state colours, and drawers so navigation and details stay reachable below 1180px and 760px. Fixed the aria-current mismatch, preserved drafts on failed submission, blocked duplicate sends, guarded IME composition, and made streaming follow the bottom only when the reader is already there with a Jump to latest control otherwise. Added fixture.html/fixture.js as a labelled synthetic fixture covering rich content and eight deterministic states.
+- verification: 46 offline checks pass, including 12 new context checks covering budget arithmetic, oldest-first omission, orphan prevention, exact boundary, dense scripts, oversized newest input and replayable metadata. Measured 4096 against 8192 on the coordinator: +220 MiB resident, warm TTFT 0.196 s to 0.203 s, early fact retrieved at 3052 prompt tokens. A seven-turn real conversation drove estimated input to 5132 of 5168 then into omission at turns 6 and 7; saved history stayed 16 messages and the model said it no longer had an omitted fact instead of inventing one. In the browser at 1440, 1024 and 390 px: no horizontal overflow, no clipped controls, navigation and details reachable at every width, drawer opens on click and closes on Escape, zero external requests, and the fixture confirmed inert raw HTML, blocked unsafe schemes, 3 code blocks, 2 tables, 4 nested lists and an unfinished fence.
+- remaining: Codex review and the macOS coordinator acceptance run. Two defects were found and fixed during this work: a base display rule ordered after its media query left the menu control unreachable at 390 px, and a closing script tag inside an inline fixture literal terminated the script and executed an alert, which is why the fixture is now a module file. The character estimate runs about 1.8x conservative against measured prompt counts. Ubuntu keeps 4096 until its own measurement. Browser request checks are not the C11 zero-egress gate. No Git writes ran; the requester's port-8770 process was left untouched.
+
+<a id="ac-20260904-003"></a>
+## AC-20260904-003 — Conversation management added
+- prompt_id: [UP-20260904-003](userprompts.md#up-20260904-003)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, coordinator, frontend
+- tags: c03, rename, search, drafts, pin, export, delete
+- aliases: conversation management, chat search, draft recovery, export chat
+- paths: backend/coordinator/db.py, backend/coordinator/server.py, backend/coordinator/test_conversations.py, frontend/app/
+- summary: Added rename, literal local search, draft recovery, pin/unpin, Markdown and plain-text export, and delete, reusing SQLite state and the protected API.
+- changes: Added a pinned column and a drafts table with additive migrations, plus rename_chat, set_pinned, delete_chat, search, get_draft, set_draft, clear_draft_if_matches and export_chat. Search escapes LIKE wildcards so % and _ are literal, is parameterised, covers every saved chat rather than the sidebar page, and excludes drafts. Drafts are workspace-owned, never reach the model, search or export; a submit clears only the version that was sent and a delayed save cannot resurrect a deleted chat. Export builds a saved snapshot with speaker labels, notes for length-stopped and context-limited replies, a sanitised filename and no mutation. Added six routes and a per-row accessible menu with rename in place, pin indicator, both export choices and a title-confirmed delete with Cancel focused. Chats now sort pinned first, then most recent.
+- verification: 73 offline checks pass, 27 of them new: rename trimming and rejection, literal % and _ search, Unicode and case-insensitive search, reach beyond the sidebar page, draft isolation and submit-version clearing, resurrection prevention, pin persistence and ordering, cascade delete, and export scope, formatting, filename safety and non-mutation. In the browser: search for 100% matched exactly one chat, clearing restored the list, the row menu exposed five actions with focus landing on Rename, pinning showed its mark, rename prefilled and saved on Enter, and a draft survived both a chat switch and a full page reload. A real export contained the saved exchange and excluded the draft.
+- remaining: Codex review. The delete confirmation uses a native modal dialog which hangs the automation harness, so its Cancel-focused behaviour was verified by construction rather than by an automated click; a human should confirm it. Regenerate remains excluded by design.
