@@ -203,30 +203,31 @@ Measurement rules:
 
 ## 5.1 OD-03 runtime comparison
 
-The concern behind OD-03 is that Ollama wraps `llama.cpp`, so it can only be
-slower than calling `llama.cpp` directly. This section settles *how much* on one
-device before a second adapter is even considered.
+OD-03 asks whether a direct engine provides enough benefit to justify another
+adapter. The recorded macOS comparison uses **Ollama's bundled `llama-server`**,
+not a separately installed upstream llama.cpp release. It measures one fixed
+prompt and does not isolate wrapper overhead or rank runtimes generally.
 
 **Method** — [`scripts/od03_runtime_comparison.py`](../scripts/od03_runtime_comparison.py),
 standard library only, no benchmark framework. It never starts a service: if the
 target server is not already listening it exits with instructions.
 
-Held identical across both runtimes:
+Requested settings for the macOS comparison:
 
-| Held constant | Value |
+| Setting | Value |
 |---|---|
 | Model file | the same GGUF — the Ollama blob `sha256:81fb60c7…` is a real GGUF, so `llama-server -m <blob path>` loads identical weights with no second download |
 | Request shape | a **chat** request on both sides — Ollama `/api/chat`, llama-server `/v1/chat/completions` — so the model's own chat template is applied to both. A raw completion against a templated chat is not a comparison. |
 | Prompt | one fixed user message, compiled into the script |
 | Context | `num_ctx` / `-c` 4096 |
 | Output limit | `num_predict` / `max_tokens` 128 |
-| Sampling | `temperature` 0, `seed` 42 — the run must be reproducible |
-| GPU allocation | all layers offloaded; `-ngl 999` on `llama-server` |
+| Sampling | `temperature` 0, `seed` 42; direct-server launch also sets `top_k` 20, `top_p` 0.95, `min_p` 0, `presence_penalty` 1.5 to match the selected model's settings |
+| GPU allocation | macOS direct-server launch requests `--n-gpu-layers all`; Ollama chooses placement. Ubuntu's separately recorded partial GPU allocation is not held equal to the Mac. |
 | Thinking | off on both — Ollama `think: false`, llama-server `chat_template_kwargs.enable_thinking: false`. Separate reasoning output or a leaked thinking marker flags the run as non-comparable; TTFT includes the first token from either channel. |
 | Prompt cache | each runtime's **default**, untouched. Disabling it on one side only would make the warm runs measure different work. |
 
-The exact request body sent to each runtime is echoed into the result JSON, so
-a reviewer can check what was held constant rather than trust this table.
+The exact request body is echoed into the result JSON. Server launch settings
+are recorded below because they cannot be inferred from that body alone.
 
 **Failures cannot become evidence.** A malformed line, a streaming error object,
 a missing terminal record or a missing metric aborts the run with a non-zero
@@ -235,10 +236,25 @@ exit; no partial result reaches a median.
 paths offline, including separate reasoning and absent or invalid generation
 timing — no server, no model.
 
-**Cold and warm are separated.** `--unload-first` releases the model with
-`keep_alive: 0` so the cold run is a genuine load, and the warm runs follow
-immediately with the model resident. Without this, "warm" and "cold" silently
-become the same number.
+**Cold and warm are separated.** `--unload-first` makes a preparation inference
+with `keep_alive: 0`, waits three seconds, then records one cold and three warm
+requests with `keep_alive: "10m"`. The preparation request is not in the four
+recorded runs. A forced model reload is not a cold operating-system disk cache.
+For the direct server, model loading occurs before requests; its first-request
+TTFT excludes model load and cannot be compared to Ollama's cold figure.
+
+**Cancellation was not exercised in C02.** The recorded requests demonstrate
+streaming with configured context and output limits; they do not demonstrate
+user cancellation, runtime work stopping after a disconnect, or a persisted
+cancelled attempt. The script's transport timeout is not cancellation evidence.
+Application cancellation is unimplemented; C06 / AF-005–AF-007 owns its
+implementation and the device cancel exercise in [tasks.md](../tasks.md#numbered-execution-tasks).
+
+**Provenance:** the earlier coordinator Ollama measurement is retained from
+the C02 execution record. The Ubuntu inventory, checksums, inference JSON and
+follow-up memory output, plus the Mac direct-engine startup log and inference
+JSON, were returned by the requester on 2026-09-03. Closeout reviewed those
+outputs without repeating inference or querying either live service.
 
 ### Measured — Ollama on the macOS coordinator, 2026-09-03
 
@@ -252,8 +268,10 @@ become the same number.
 All four runs returned 89 tokens / 598 characters, `done_reason: stop`, and
 **one** response SHA-256 (`c400b210dc824a26…`) — so the output was byte-identical,
 established by hash rather than inferred from counts. Thinking was suppressed on
-every run. Process RSS 3.83 → 3.90 GB. VRAM is not separately reportable on
-Apple unified memory.
+every run. The historical report called its RSS samples 3.83 → 3.90 GB; the old
+collector actually selected the largest name-matched process and divided KiB
+by 1024. Those samples are not aggregate or peak RAM and are excluded from
+memory comparisons. VRAM is not separately reported on Apple unified memory.
 
 Generation speed is effectively identical cold and warm, so the whole 2.279 s
 time-to-first-token penalty sits before generation: **93.2 % is model load
@@ -266,6 +284,148 @@ chat template constant, so it is not comparable to a `llama-server` chat request
 Also observed on this device: the server listens on `127.0.0.1:11434` only
 (`lsof`/`netstat`), not on a wildcard address.
 
+### Measured — Ollama on the Ubuntu worker, 2026-09-03
+
+Ollama **0.33.2**, Ubuntu 24.04.4 LTS / Linux `7.0.0-30-generic`, x86_64,
+Python **3.12.3**, RTX 2050 4096 MiB. JSON timestamp
+`2026-09-03T09:39:24Z`; model and settings match the catalogue entry.
+
+| Recorded request | TTFT (s) | Generation (tok/s) | Load (s) | Prompt eval (s) | Generation duration (s) | Total (s) |
+|---|---:|---:|---:|---:|---:|---:|
+| Cold after forced unload, includes load | 16.0149 | 10.16 | 14.6906 | 1.3155 | 8.7597 | 24.7737 |
+| Warm 1 | 0.5012 | 10.28 | 0.0029 | 0.3151 | 8.6534 | 9.1532 |
+| Warm 2 | 0.3267 | 10.14 | 0.0025 | 0.3168 | 8.7742 | 9.1000 |
+| Warm 3 | 0.3369 | 9.84 | 0.0022 | 0.3266 | 9.0451 | 9.3808 |
+| Warm median | **0.3369** | **10.14** | — | — | — | — |
+
+All four returned 89 tokens / 605 characters, no reported thinking output,
+nonempty visible output and `done_reason: stop`. All share SHA-256
+`6264a0c46c55fc537bba65a00f2bbace642b6b98fe3938c7e3e0c3024858aab9`.
+The raw response text was not supplied for quality scoring. This hash differs
+from the Mac output; determinism is observed within each run set only.
+
+The follow-up `/api/ps` reported the catalogue manifest digest, context 4096,
+model allocation **3,727,561,846 bytes** and GPU allocation
+**2,217,780,180 bytes**. These are runtime allocation fields, not process RSS
+or an offloaded-layer count. The accompanying process snapshot was:
+
+| Process | PID / parent PID | RSS from `ps` (KiB) | RSS (MiB) |
+|---|---|---:|---:|
+| Ollama daemon | 2052 / 1 | 56,004 | 54.7 |
+| Model runner (`llama-server`) | 17155 / 2052 | 2,209,224 | 2157.4 |
+
+The benchmark's older `rss_mb: 69.7` measured only a daemon candidate and is
+**invalid as runner or total RAM**. Its NVIDIA sample reported the runner at
+2948 MiB, taken at a different time from `/api/ps`; do not equate these memory
+categories or add them. The repaired collector emits `processes` with PID,
+parent PID, name, `rss_mib` and PID-matched `vram_mib`. It lists all matching
+runtime candidates, does not attribute them to an endpoint or sum shared
+memory, and leaves unavailable metrics null. It replaces the misleading
+top-level `rss_mb` and raw-string `vram_mb` fields for future runs.
+
+### Measured — bundled engine on the macOS coordinator, 2026-09-03
+
+macOS **26.6.2**, arm64, Python **3.14.6**. The installed binary is
+`/Applications/Ollama.app/Contents/Resources/llama-server`, from Ollama
+**0.32.14**. Its version output reports **0.1.0-dev**, build **1**, commit
+**7e4c0a968**, AppleClang 21.0.0.21000099 / Darwin arm64; binary SHA-256 is
+`05b7f7f8a4047f3012ce094b6e78a39a9c737a0b221524a148021c210447b85d`.
+This fingerprints the installed MIT-licensed bundle, not an independently
+verified upstream release. No runtime download, build or local modification
+was needed; the model's Apache-2.0 provenance remains in the catalogue.
+
+JSON timestamp `2026-09-03T09:57:13Z`:
+
+| Recorded request | TTFT (s) | Generation (tok/s) | Prompt (ms) | Generation (ms) | Cached prompt tokens |
+|---|---:|---:|---:|---:|---:|
+| First after server start, **excludes load** | 0.1824 | 36.67 | 173.503 | 2399.867 | 0 |
+| Warm 1 | 0.0988 | 36.50 | 58.744 | 2411.145 | 24 |
+| Warm 2 | 0.0502 | 36.61 | 48.646 | 2403.832 | 24 |
+| Warm 3 | 0.0495 | 36.43 | 48.131 | 2415.372 | 24 |
+| Warm median | **0.0502** | **36.50** | — | — | — |
+
+Each response has 89 completion tokens, 28 prompt tokens, 598 visible
+characters, zero reported reasoning and no thinking markers. All four share
+SHA-256 `c400b210dc824a2699b26f8a815e7e3d65bdd8a4de91d163421a1da7f9d5c5ba`.
+The earlier Mac Ollama record retained that prefix and matching counts; full
+cross-runtime identity is not independently established by the prefix alone.
+Legacy process samples were 3213.5 and 3368.2 MiB, not aggregate or peak RAM.
+
+The startup log showed readiness at elapsed **1.301843 s**, but the first
+request arrived at **44.377747 s** after a manual terminal switch. There is no
+controlled startup-to-first-answer result; neither adding readiness to request
+TTFT nor including the operator's delay would establish one. The log also
+records Ollama-format qwen35 compatibility fixes, disabled mmap for transformed
+tensors, token metadata overrides and unused tensors. Successful requests
+demonstrate this bounded path, not general model correctness.
+
+Warm direct-engine TTFT was lower than the earlier Mac Ollama median by
+174.8 ms, while generation stayed roughly 36–38 tok/s. Warm direct requests
+cached 24 of 28 prompt tokens, so this is repeated-prompt latency, not latency
+for new prompts. Different runtime implementations, versions across devices
+and a small sequential sample limit broader conclusions.
+
+### Reproduce the recorded path at an authorised human checkpoint
+
+These are retained reproduction instructions, **not a request to rerun C02**.
+The requester stopped the temporary Mac server with Ctrl+C. The deferred
+comparisons require a future approved measurement if they become necessary.
+
+**Ubuntu worker — bash, `~/SIH/AegisForge`**, with existing loopback Ollama and
+the catalogue model already hash-checked:
+
+```bash
+cd ~/SIH/AegisForge &&
+NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
+python3 -B scripts/od03_runtime_comparison.py \
+  --target ollama --model qwen3.5:4b-q4_K_M --unload-first
+```
+
+**macOS coordinator — zsh, `/Users/adityatadge/Documents/GitHub/AegisForge`.**
+For that device's Ollama baseline:
+
+```zsh
+cd /Users/adityatadge/Documents/GitHub/AegisForge &&
+NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
+python3 -B scripts/od03_runtime_comparison.py \
+  --target ollama --model qwen3.5:4b-q4_K_M --unload-first
+```
+
+To reproduce the direct-engine run, first check
+`lsof -nP -iTCP:8080 -sTCP:LISTEN`; proceed only
+if the command succeeds with no listener or exits 1 with no output. Any
+listener or other error requires inspection. Do not terminate another process.
+In one terminal, release Ollama's model, then launch the installed bundle:
+
+```zsh
+curl -q --noproxy '*' --fail --silent --show-error --max-time 30 \
+  http://127.0.0.1:11434/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3.5:4b-q4_K_M","keep_alive":0,"stream":false}' &&
+/Applications/Ollama.app/Contents/Resources/llama-server \
+  --model "$HOME/.ollama/models/blobs/sha256-81fb60c7daa80fc1123380b98970b320ae233409f0f71a72ed7b9b0d62f40490" \
+  --host 127.0.0.1 --port 8080 \
+  --cors-origins localhost --no-cors-credentials \
+  --ctx-size 4096 --parallel 1 --n-gpu-layers all \
+  --temp 0 --seed 42 --top-k 20 --top-p 0.95 --min-p 0 \
+  --presence-penalty 1.5 --reasoning off \
+  --sse-ping-interval -1 --perf --offline --no-ui
+```
+
+Wait for the listening message. In a second terminal:
+
+```zsh
+cd /Users/adityatadge/Documents/GitHub/AegisForge &&
+NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
+python3 -B scripts/od03_runtime_comparison.py --target llama-server
+```
+
+Return startup/version output and the full JSON, including errors. Four
+successful recorded requests should have nonempty visible output, suppressed
+thinking and valid timings. Stop the temporary server with Ctrl+C afterward;
+Ollama loads its model again on the next authorised request. These flags are
+for this measured bundle, not unverified Ubuntu or upstream builds.
+
 ### Finding that changes the bounded settings
 
 `qwen3.5:4b-q4_K_M` is a **thinking model**. With thinking left on it spent the
@@ -277,19 +437,19 @@ A bounded output limit is therefore not sufficient on its own: `think: false`
 is required, or a C03 job would report success while returning nothing. This is
 recorded in the [bounded execution settings](model-catalog.md#bounded-execution-settings-for-the-first-path).
 
-### Still to run
+### Deferred by requester at C02 closeout, 2026-09-03
 
-| Run | Device | Blocked on |
+| Run | Device | Evidence still missing |
 |---|---|---|
-| `llama-server` comparison | macOS coordinator | `llama.cpp` is **not installed**; installing it is a human checkpoint |
-| Ollama measurement | Ubuntu worker | its C02 environment evidence and setup |
-| `llama-server` comparison | Ubuntu worker | the same, plus the GPU-offload split on 4 GiB of VRAM |
-| A comparable **cold** figure for `llama-server` | either device | `llama-server` loads the model at **server start**, so its first request excludes model load and is not comparable to Ollama's forced-unload cold run. The script labels that request `first_request_after_server_start` and marks `includes_model_load: false`. A comparable number needs the server's startup-to-first-success interval timed separately. |
+| Direct-engine comparison | Ubuntu worker | Direct-launch compatibility, controlled allocation and timing; its bundled runner exists, but was not tested independently. Port 8080 was occupied in inventory. |
+| Comparable cold-start figure | macOS coordinator / Ubuntu worker | Controlled server-start-to-first-answer timing, including model loading, without a manual gap |
 
-Until the `llama-server` half exists, the Ollama overhead is **unquantified**.
-The OD-03 selection stands as a recorded decision with a measured baseline for
-one runtime on one device — not as a proven comparison. Windows is not on this
-path and stays explicitly unverified.
+**Ollama remains selected.** These explicit deferrals do not block C02
+acceptance and do not become successful measurements. A separate upstream
+llama.cpp release, Windows, output quality, application persistence, container
+GPU access, trusted-LAN pairing and zero-egress operation are not established
+by the native runtime checks above. C03 begins only after closeout acceptance
+and its own authorisation.
 
 ## 6. Demonstration
 

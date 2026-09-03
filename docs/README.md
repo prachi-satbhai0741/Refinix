@@ -52,6 +52,7 @@ requirements.
 ## Repository-level documents
 
 - [../README.md](../README.md) — project entry point
+- [../TechStack.md](../TechStack.md) — recommended languages and technologies by layer, with current/proposed status and trade-offs
 - [../tasks.md](../tasks.md) — shared execution chunks, named human checkpoints, stop/resume instructions and acceptance gates
 - [../AGENTS.md](../AGENTS.md) — shared coding-agent rules
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — branch, review, and release workflow

@@ -284,7 +284,7 @@ Detailed measurement rules and the demo sequence are in
 | OD-05 | Select the main, document, coding, and embedding models from measured evidence | **Main engine resolved C02** — `qwen3.5:4b-q4_K_M`; the rest stay unprovisioned until C07 |
 | OD-06 | Define prototype pairing credentials versus finals-grade pairing | **Recorded C02, unimplemented** — see [security.md §4.1](security.md#41-od-06--the-prototype-pairing-decision) |
 | OD-07 | Decide whether semantic retrieval is enabled by default after footprint testing | Before onboarding is frozen |
-| OD-08 | Pin the K3s release, Redis 7.2 patch and image digest, worker/sandbox image digests, and Service port | **Partly resolved C02** — K3s, Redis and base image pinned in [architecture.md §8.1](architecture.md#81-od-08--resolved-infrastructure-pins); worker/sandbox digests follow C04, Service port follows C05 |
+| OD-08 | Pin the K3s release, Redis 7.2 patch and image digest, worker/sandbox image digests, and Service port | **Partly resolved C02** — K3s, Redis and base image pinned in [architecture.md §8.1](architecture.md#81-od-08--resolved-infrastructure-pins); worker/sandbox digests follow C04; ports 8443/30443 fixed by C01, deployment enforcement follows C05 |
 
 ## 12. Canonical document map
 

@@ -175,6 +175,7 @@ AegisForge/
 │   ├── model-catalog.md   # Model packs, manifests, and provisioning
 │   └── evaluation.md      # Prototype plan, acceptance, metrics, and demo
 ├── agent-memory/         # Searchable record of repository-affecting work and decisions
+├── TechStack.md          # Recommended languages and technologies for each layer
 ├── CONTRIBUTING.md       # Branch, review, and release workflow
 ├── AGENTS.md             # Repository-wide implementation rules and conventions
 └── README.md
@@ -185,7 +186,8 @@ AegisForge/
 There is nothing to install or run yet. Before contributing code:
 
 1. Start with the [documentation map](docs/README.md) and short
-   [PRD](docs/prd.md).
+   [PRD](docs/prd.md), then read [TechStack.md](TechStack.md) for the recommended
+   languages and technologies, their current status and trade-offs.
 2. Do not begin framework scaffolding ahead of an approved v1 baseline and
    measured evidence from one local inference path followed by one real
    paired-worker path.

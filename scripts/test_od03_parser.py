@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline checks for the OD-03 stream parsers.
+"""Offline checks for the OD-03 stream parsers and memory reporting.
 
 No server, no network, no model. Runs anywhere Python does:
 
@@ -12,13 +12,16 @@ rejected rather than quietly dropped.
 
 import json
 import pathlib
+import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from od03_runtime_comparison import (  # noqa: E402
     StreamError,
+    memory_snapshot,
     parse_ollama_stream,
     parse_openai_stream,
 )
@@ -194,6 +197,43 @@ class TestOpenAIParser(unittest.TestCase):
         ))
         self.assertFalse(r["thinking_suppressed"])
         self.assertEqual(r["thinking_markers_found"], ["<think>", "</think>"])
+
+
+class TestMemorySnapshot(unittest.TestCase):
+    def test_ubuntu_runner_is_reported_separately_from_daemon(self):
+        ps = "PID PPID RSS COMMAND\n2052 1 56004 ollama\n17155 2052 2209224 llama-server\n99 1 999999 unrelated-ollama\n"
+        gpu = "17155, 2948\n99, 1000\n"
+        with patch("od03_runtime_comparison.subprocess.run", side_effect=[
+            subprocess.CompletedProcess([], 0, ps),
+            subprocess.CompletedProcess([], 0, gpu),
+        ]):
+            result = memory_snapshot("ollama")
+        self.assertEqual(result["processes"], [
+            {"pid": 2052, "ppid": 1, "name": "ollama", "rss_mib": 54.7, "vram_mib": None},
+            {"pid": 17155, "ppid": 2052, "name": "llama-server", "rss_mib": 2157.4, "vram_mib": 2948.0},
+        ])
+        self.assertNotIn("rss_mb", result)
+
+    def test_macos_full_paths_and_multiple_candidates_remain_visible(self):
+        ps = ("PID PPID RSS COMMAND\n1 0 50000 /usr/local/bin/ollama\n"
+              "2 1 102400 /Applications/Ollama.app/Contents/Resources/llama-server\n"
+              "3 4 204800 /opt/homebrew/bin/llama-server\n")
+        with patch("od03_runtime_comparison.subprocess.run", side_effect=[
+            subprocess.CompletedProcess([], 0, ps), FileNotFoundError(),
+        ]):
+            result = memory_snapshot("llama-server")
+        self.assertEqual([p["pid"] for p in result["processes"]], [2, 3])
+        self.assertEqual([p["rss_mib"] for p in result["processes"]], [100.0, 200.0])
+        self.assertIn("not attributed", result["scope"])
+        self.assertIn("no nvidia-smi", result["note"])
+
+    def test_failed_process_queries_are_unavailable(self):
+        with patch("od03_runtime_comparison.subprocess.run",
+                   side_effect=subprocess.CalledProcessError(1, "probe")):
+            result = memory_snapshot("ollama")
+        self.assertEqual(result["processes"], [])
+        self.assertIn("rss unavailable", result["note"])
+        self.assertIn("vram unavailable", result["note"])
 
 
 if __name__ == "__main__":
