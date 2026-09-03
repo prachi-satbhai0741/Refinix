@@ -278,25 +278,45 @@ def _reachable(url: str) -> bool:
 
 
 def memory_snapshot(process_match: str) -> dict:
-    out = {"rss_mb": None, "vram_mb": None, "note": ""}
+    # ponytail: list all runtime-name candidates; require a server PID if future
+    # comparisons need attribution while multiple runtime instances are active.
+    names = {"ollama", "llama-server"} if process_match == "ollama" else {process_match}
+    out = {"processes": [], "scope": "all matching runtime processes; not "
+           "attributed to the HTTP endpoint or summed", "note": ""}
     try:
-        ps = subprocess.run(["ps", "-Ao", "rss,comm"],
+        ps = subprocess.run(["ps", "-Ao", "pid,ppid,rss,comm"], check=True,
                             capture_output=True, text=True, timeout=10)
-        rss = [int(l.split()[0]) for l in ps.stdout.splitlines()[1:]
-               if process_match in l.lower()]
-        if rss:
-            out["rss_mb"] = round(max(rss) / 1024, 1)
+        for line in ps.stdout.splitlines()[1:]:
+            pid, ppid, rss, command = line.split(None, 3)
+            name = command.rsplit("/", 1)[-1].lower()
+            if name in names:
+                out["processes"].append({
+                    "pid": int(pid), "ppid": int(ppid), "name": name,
+                    "rss_mib": round(int(rss) / 1024, 1), "vram_mib": None,
+                })
+        if not out["processes"]:
+            out["note"] = "no matching runtime process observed"
     except Exception as exc:
+        out["processes"] = []
         out["note"] = f"rss unavailable: {exc}"
     try:
         smi = subprocess.run(
-            ["nvidia-smi", "--query-compute-apps=process_name,used_memory",
-             "--format=csv,noheader"], capture_output=True, text=True, timeout=10)
-        if smi.returncode == 0 and smi.stdout.strip():
-            out["vram_mb"] = smi.stdout.strip()
+            ["nvidia-smi", "--query-compute-apps=pid,used_memory",
+             "--format=csv,noheader,nounits"], check=True,
+            capture_output=True, text=True, timeout=10)
+        by_pid = {p["pid"]: p for p in out["processes"]}
+        for line in smi.stdout.splitlines():
+            pid, used = line.split(",", 1)
+            if int(pid) in by_pid:
+                value = float(used)
+                if not math.isfinite(value) or value < 0:
+                    raise ValueError("invalid GPU memory value")
+                by_pid[int(pid)]["vram_mib"] = value
     except FileNotFoundError:
         out["note"] = (out["note"] + " no nvidia-smi (expected on macOS)").strip()
     except Exception as exc:
+        for process in out["processes"]:
+            process["vram_mib"] = None
         out["note"] = (out["note"] + f" vram unavailable: {exc}").strip()
     return out
 
@@ -326,14 +346,13 @@ def main() -> int:
         run = lambda ka=None: parse_openai_stream(                # noqa: E731
             _post_stream(f"{LLAMA_URL}/v1/chat/completions", llama_body()))
         start_hint = (
-            "llama-server -m ~/.ollama/models/blobs/"
-            "sha256-81fb60c7daa80fc1123380b98970b320ae233409f0f71a72ed7b9b0d62f40490 "
-            f"-c {NUM_CTX} -ngl 999 --host 127.0.0.1 --port 8080"
+            "Use the reviewed device-specific launch in docs/evaluation.md "
+            "section 5.1 (including sampling and loopback/CORS settings)."
         )
 
     if not _reachable(url):
         print(f"{args.target} is not listening on {url}.", file=sys.stderr)
-        print("This script does not start services. Start it yourself with:",
+        print("This script does not start services. Human checkpoint:",
               file=sys.stderr)
         print(f"    {start_hint}", file=sys.stderr)
         return 2

@@ -500,3 +500,45 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Prepare focused offline checks; test execution requires separate permission under AGENTS.md and CODEX.md.
 - follow_up_to: [UP-20260903-008](#up-20260903-008)
 - linked_changes: [AC-20260903-009](agentchangelog.md#ac-20260903-009)
+
+<a id="up-20260903-010"></a>
+## UP-20260903-010 — Prepare C02 closeout from returned device evidence
+- date: 2026-09-03
+- status: in-progress
+- tags: c02, closeout, runtime-comparison, memory-reporting
+- aliases: ubuntu inventory, bundled engine, defer comparisons, runner rss
+- paths: tasks.md, docs/devicespecifications.md, docs/evaluation.md, docs/model-catalog.md, docs/architecture.md, docs/prd.md, scripts/od03_runtime_comparison.py, scripts/test_od03_parser.py, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: The requester resumed C02 closeout, then explicitly deferred the controlled cold-start and Ubuntu direct-engine comparisons while retaining Ollama.
+- constraints: Record user-returned measurements with their limits; repair misleading RAM reporting; preserve historical evidence; no service starts, inference, installations, downloads, deployments or Git writes; C03 requires separate authorisation after acceptance.
+- acceptance: The setup record reflects both devices, measured and deferred comparisons are distinct, and the closeout is ready for requester review.
+- verification_authorization: Reuse the requester's existing permission for offline parser checks; memory checks mock process and GPU queries and make no live calls.
+- follow_up_to: [UP-20260903-009](#up-20260903-009)
+- linked_changes: [AC-20260903-010](agentchangelog.md#ac-20260903-010)
+
+<a id="up-20260903-011"></a>
+## UP-20260903-011 — Document recommended technologies and languages for every layer
+- date: 2026-09-03
+- status: in-progress
+- tags: tech-stack, languages, frontend, architecture, documentation
+- aliases: TechStack.md, typescript react vite, python sql, language selection
+- paths: TechStack.md, README.md, docs/README.md, docs/architecture.md, frontend/README.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: The requester asked to update or create TechStack.md with the best-fitting language and technology for every application section after the stack critique and device-scope clarification.
+- constraints: Documentation only; preserve the existing C02 changes, checkpoints and hardware evidence; distinguish implemented, recorded, recommended and deferred choices; no installs, scaffolding, runtime commands, tests or Git writes.
+- acceptance: One discoverable stack guide covers all product surfaces and supporting layers, explains trade-offs, retains Ollama and Redis Streams, and records later device qualification without promising an unverified rollout.
+- verification_authorization: Read-only source and official-documentation research, Markdown link and whitespace inspection; no runtime testing needed for prose changes.
+- follow_up_to: [UP-20260903-010](#up-20260903-010)
+- linked_changes: [AC-20260903-011](agentchangelog.md#ac-20260903-011)
+
+<a id="up-20260903-012"></a>
+## UP-20260903-012 — Address the two C02 closeout observations
+- date: 2026-09-03
+- status: in-progress
+- tags: c02, closeout, listener, cancellation, review
+- aliases: claude review, wildcard port 8080, cancellation not exercised, techstack handoff
+- paths: tasks.md, docs/devicespecifications.md, docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: The requester resumed the C02/TechStack handoff with Claude's review and explicitly authorised the two C02 documentation fixes.
+- constraints: Preserve existing changes; keep C03 pending separate authorisation and the frontend recommendation unchanged; no tests, inference, host operations or Git writes.
+- acceptance: Track the unidentified Ubuntu listener as its own C02 open item and state that cancellation was not exercised, with its later implementation and verification gate named.
+- verification_authorization: Read-only source, documentation and diff inspection; no runtime checks for prose changes.
+- follow_up_to: [UP-20260903-011](#up-20260903-011)
+- linked_changes: [AC-20260903-012](agentchangelog.md#ac-20260903-012)

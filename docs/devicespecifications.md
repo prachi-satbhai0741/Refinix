@@ -6,7 +6,7 @@ fleet actually is; [model-catalog.md](model-catalog.md) owns model and pack
 policy.
 
 - **Collected:** 2026-09-01; Vedant's device re-measured 2026-09-02; all six devices supplied read-only inventory on 2026-09-03 (dates to be confirmed).
-- **Status:** All six people supplied inventory, though with incomplete fields. Only values marked *measured* have local command evidence. The newly supplied tool paths do not prove tool versions, running services, downloaded models, working GPU inference, or Kubernetes readiness.
+- **Status:** All six people supplied inventory, though with incomplete fields. Later C02 output records versions, native inference and model integrity for the macOS coordinator and Ubuntu worker. Tool paths alone on other devices do not prove readiness; no Kubernetes runtime gate has passed.
 - **Rule:** treat every capability and model note below as a **hypothesis** until
   benchmarked on the actual device under
   [evaluation.md](evaluation.md#5-measurement-plan).
@@ -83,6 +83,12 @@ adapters for at least the Mac and Vedant.
   stopped; no `k3s`, `llama-cli` or `llama-server` on `PATH`. The inventory's
   `ollama list` subsequently launched the app; the later measurement observed
   its server listening on `127.0.0.1:11434`.
+- **Later C02 direct-engine check:** the installed Ollama bundle contains
+  `/Applications/Ollama.app/Contents/Resources/llama-server`, despite no binary
+  on `PATH`. Its version is `0.1.0-dev`, build 1, commit `7e4c0a968`.
+  The requester ran the bounded comparison and reported stopping the temporary
+  server with Ctrl+C; no additional runtime was installed. See
+  [the binary fingerprint and results](evaluation.md#measured--bundled-engine-on-the-macos-coordinator-2026-09-03).
 - **Installed model** _(measured 2026-09-03)_: one artifact in
   `~/.ollama/models` — `qwen3.5:4b-q4_K_M`, GGUF, `Q4_K_M`, `model_type` 4.7B,
   Apache-2.0 licence layer, 3,389,971,840 B weights (3.2 GB store total),
@@ -91,7 +97,8 @@ adapters for at least the Mac and Vedant.
   Integrity verified. Bounded `/api/chat` inference was subsequently measured
   on this device on 2026-09-03; see
   [the recorded timings and response hash](evaluation.md#51-od-03-runtime-comparison).
-  Output quality and Ubuntu inference remain unverified.
+  Output quality remains unverified; Ubuntu's later native inference is
+  recorded in its device entry below.
 - **Planning note:** This is the planned **primary workspace + UI** for the
   alpha, not a permanent installation role. The dynamic node model is in
   [architecture.md](architecture.md#2-installation-and-runtime-responsibilities).
@@ -158,13 +165,52 @@ adapters for at least the Mac and Vedant.
 
 ### Prachi — HP Victus 15-fa1xxx (Linux)
 - **CPU:** Intel Core i5-13420H — 8 cores / 12 threads (Raptor Lake)
-- **RAM:** 15 GiB total, 9.5 GiB available _(measured)_
+- **RAM:** 15 GiB total; 8.8 GiB available in the later C02 snapshot
+  (9.5 GiB in the earlier snapshot); 4 GiB swap, unused _(measured)_
 - **GPU (discrete):** NVIDIA GeForce RTX 2050, **4096 MiB VRAM** _(measured via `nvidia-smi`)_, driver **580.173.02**. (Supersedes the old "NVIDIA driver not loaded" note. A responding host driver still does not establish GPU access inside Kubernetes; that requires separate configuration and verification).
 - **GPU (integrated):** Intel UHD (i915), drives the display
 - **Storage:** /: **115G free**, 118G used / 246G total _(measured)_
-- **OS:** Ubuntu 24.04.4 LTS, GNOME 46
-- **Network:** Wi-Fi (Intel) + Realtek Gigabit Ethernet;
-- **Installed runtimes:** paths for Python3, Docker, kubectl (snap), Ollama, and nvidia-smi found. Docker network interfaces already present _(historical)_.
+- **OS:** Ubuntu 24.04.4 LTS, GNOME 46; kernel `7.0.0-30-generic`, x86_64
+- **Network:** Wi-Fi selected; `wlo1` UP, `eno1` DOWN. The requester confirmed
+  availability and intended membership of the trusted LAN; actual connectivity
+  and pairing remain untested.
+- **Directory / privileges:** `~/SIH/AegisForge` (`/home/prachi/SIH/AegisForge`),
+  bash; account belongs to `sudo`, `docker` and `ollama` groups. The requester
+  reports that sudo requires a password; no privilege change was made.
+- **Python:** `/usr/bin/python3` **3.12.3**, `/usr/bin/pip3`. System-interpreter
+  metadata reports `typing-extensions==4.10.0`; Pydantic, pydantic-core,
+  annotated-types and typing-inspection are not installed there. This is not a
+  repository-venv check; no host dependency install is needed for the stdlib
+  measurement. Worker dependencies belong to the pinned C04 image.
+- **Docker:** `/usr/local/bin/docker` **29.6.1**, build `8900f1d`; local daemon
+  active/enabled, root:docker socket accessible. Local `info`: **29.6.1**,
+  **overlayfs**, cgroup **2**, **x86_64**. Existing Docker networks remain in use.
+- **Ollama:** `/usr/local/bin/ollama`, client/server **0.33.2**, active and
+  listening on `127.0.0.1:11434`. No allowlisted service settings were returned;
+  that is not proof the unit has no other settings. Existing `qwen3:4b` occupied
+  a 2.4G store before the selected `qwen3.5:4b-q4_K_M` was downloaded. Both use
+  `/usr/share/ollama/.ollama/models`. The returned manifest and four blob checks
+  all reported `OK`; the manifest digest matches the
+  [catalogue](model-catalog.md#31-od-05--the-first-selected-model-set).
+- **Native inference:** four recorded requests completed; cold TTFT **16.0149 s**,
+  warm median **0.3369 s**, **10.14 tok/s**. Benchmark GPU output names the runner
+  `/usr/local/lib/ollama/llama-server`; follow-up `ps` reports runner RSS
+  **2157.4 MiB** and daemon RSS **54.7 MiB**. This corrects the script's misleading
+  `rss_mb: 69.7`. See [timings and memory limits](evaluation.md#measured--ollama-on-the-ubuntu-worker-2026-09-03).
+- **Kubernetes / GPU containers:** `/snap/bin/kubectl` **v1.36.3**, kustomize
+  **v5.8.1**; no `k3s` on PATH, service inactive. Driver package
+  `nvidia-driver-580-open` **580.173.02-0ubuntu0.24.04.1**, GPU compute capability
+  **8.6**. No `nvidia-ctk` or NVIDIA container package was detected. Native
+  inference works; GPU access in a container and cluster readiness are unverified.
+- **Ports:** snapshot showed `127.0.0.1:11434`; no TCP listener observed on
+  contract ports **8443/30443**. A future bind and Kubernetes forwarding still
+  require the C05 check.
+- **C02 open item — wildcard listener:** the same snapshot showed `*:8080`,
+  with no identified owner or purpose. This is a non-loopback bind; actual LAN
+  reachability was not tested. The Ubuntu worker operator must identify the
+  process and intended exposure before enabling worker LAN access or reusing
+  port 8080 for a direct-engine comparison. Do not stop an unidentified service.
+  This item is separate from C05's contract-port and forwarding checks.
 - **Planning note:** The only Linux box, making it the **alpha single-node K3s host and sandboxed code-execution worker** under
   [security.md](security.md#8-filesystem-and-sandbox).
   The mentor-aligned baseline uses Docker to build pinned images and K3s to run
@@ -218,28 +264,25 @@ These are human actions, not permanent coding assignments. The
 execution stops and resumes. Existing measurements above keep their original
 dates. Do not treat a planned placement as runtime proof.
 
-**On the critical path (C02):**
-
-1. **Ubuntu worker:** return the read-only environment evidence in
-   [Checkpoint C02](#checkpoint-c02-read-only-environment-evidence) — actual
-   interpreter and dependency versions, local Docker endpoint and daemon status,
-   existing inference-runtime version, model files and their storage location,
-   available privileges and free space. Do not start a stopped service to
-   complete this.
-2. **macOS coordinator:** already measured above. Outstanding: confirm
-   availability and the intended trusted-LAN connection, and the Apple GPU-core
-   count if a Metal measurement needs it.
-3. **Both critical-path devices:** confirm they will be on the same trusted LAN
-   and state which link (Wi-Fi or USB-Ethernet) is intended.
+**C02 closeout:** environment evidence and bounded native inference have been
+returned for both devices. The requester selected Wi-Fi and confirmed the
+Ubuntu worker's availability, trusted-LAN participation and passworded sudo.
+Controlled cold-start and Ubuntu direct-engine comparisons were explicitly
+deferred on 2026-09-03; Ollama remains selected. The targeted C02 follow-up is
+identification of the Ubuntu `*:8080` listener; requester acceptance of the
+reviewed closeout remains pending. The listener does not invalidate the recorded
+loopback inference, but its exposure is unresolved. Apple GPU-core count remains
+an inventory gap without blocking the observed native path. Actual LAN
+connectivity and pairing are later gates.
 
 **Off the critical path — do not action unless a measured need selects the
 device:**
 
-4. Windows machines: no model download or inference installation is assigned.
-   The truncated `RTX 5…` GPU line and the missing `nvidia-smi` output are
-   recorded gaps, not blockers. If evidence later selects one of these machines,
-   the next handoff names that device and supplies the exact approved
-   instructions, including a storage destination where free space is tight.
+Windows machines: no model download or inference installation is assigned.
+The truncated `RTX 5…` GPU line and the missing `nvidia-smi` output are
+recorded gaps, not blockers. If evidence later selects one of these machines,
+the next handoff names that device and supplies the exact approved
+instructions, including a storage destination where free space is tight.
 
 Note: Ollama appearing on four machines is inventory, not a runtime-selection
 decision. The Ubuntu worker's NVIDIA driver responds, so no driver reinstall is
@@ -372,7 +415,9 @@ refuses, that output *is* the evidence — do not install anything to complete i
 
 ```sh
 # 1. Identity, privileges and capacity
+pwd
 id; groups; uname -srmo
+cat /etc/os-release
 free -h
 df -h / /var /home 2>/dev/null
 
@@ -392,14 +437,15 @@ PY
 # 3. Docker — endpoint and daemon status, without starting it
 command -v docker
 docker --version
-docker context ls
 systemctl is-active docker; systemctl is-enabled docker
 ls -l /var/run/docker.sock 2>/dev/null || echo "no /var/run/docker.sock"
-docker info --format '{{.ServerVersion}} {{.Driver}} {{.CgroupVersion}} {{.Architecture}}' 2>&1 | head -3
+env -u DOCKER_HOST -u DOCKER_CONTEXT \
+  docker --host unix:///var/run/docker.sock info \
+  --format '{{.ServerVersion}} {{.Driver}} {{.CgroupVersion}} {{.Architecture}}'
 
 # 4. Inference runtime — version, server, models and their real location
 command -v ollama llama-cli llama-server
-ollama --version 2>&1              # safe: the root command has no server heartbeat
+OLLAMA_HOST=http://127.0.0.1:11434 ollama --version  # no startup heartbeat
 systemctl is-active ollama 2>/dev/null || echo "no ollama unit"
 
 # Allowlisted settings only. Never print whole Environment= or ExecStart= lines:
@@ -420,7 +466,8 @@ else
   echo "ss probe failed; listener state unavailable."
 fi
 # Model inventory from disk, never from `ollama list` (it starts a stopped server).
-curl -sS --max-time 3 http://127.0.0.1:11434/api/version || echo "no server to query"
+curl -q --noproxy '*' --fail --silent --show-error --max-time 3 \
+  http://127.0.0.1:11434/api/version || echo "no server to query"
 for d in "$HOME/.ollama/models" /usr/share/ollama/.ollama/models /var/lib/ollama/models; do
   [ -d "$d" ] && { echo "== $d"; du -sh "$d"; find "$d/manifests" -type f 2>/dev/null; }
 done
@@ -438,7 +485,7 @@ command -v nvidia-ctk
 dpkg -l 2>/dev/null | grep -iE 'nvidia-container|nvidia-driver-[0-9]' | awk '{print $2, $3}'
 
 # 7. Link presence only — do not paste IP addresses
-ip -brief link show
+ip -brief link show | awk '{print $1, $2}'
 ```
 
 ### What the Ubuntu worker returns

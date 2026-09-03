@@ -388,11 +388,17 @@ The alpha baseline minimises prototype risk:
 | Kubernetes distribution | Single-node K3s on the Ubuntu worker, pinned to `v1.36.4+k3s1` | OD-08 resolved; runtime proof required |
 | Kubernetes workloads | Deployments for services; short-lived Jobs for code validation | Alpha decision |
 | Shared ephemeral coordination | Redis Streams and expiring keys on pinned `redis:7.2.16` | OD-08 resolved; digest recorded below |
-| Runtime | Ollama for the first validation path; `llama-server` retained only as the measured comparison | OD-08-adjacent; OD-03 resolved pending the latency measurement |
+| Runtime | Ollama for the first validation path; bundled `llama-server` retained only as a comparison | OD-03 retained after Mac warm comparison; controlled cold and Ubuntu direct-engine comparisons deferred by requester |
 | Retrieval | SQLite full-text baseline; semantic index only when proven necessary | Candidate |
 | Code isolation | Restricted Kubernetes Job Pod with default-deny egress | Platform proof required |
 | Alpha UI | Local HTML/CSS/JavaScript served by the coordinator; desktop wrapper deferred | Alpha decision |
 | Checksums | Standard SHA-256 | Settled |
+
+[TechStack.md](../TechStack.md) maps each layer to recommended languages and
+libraries. It proposes React + TypeScript + Vite for C03 in place of the recorded
+vanilla UI baseline; that revision has not been implemented. Record adoption
+alongside the C03 implementation rather than treating a recommendation as a
+completed framework migration.
 
 Do not add Helm, an operator, service mesh, Redis Cluster, another event
 platform, vector database, generic agent framework, plugin framework, or a
@@ -422,9 +428,9 @@ Compatibility notes:
   decision, so the pin must not drift upward without a licence review.
 - The floating `redis:7.2` and `redis:7.2-bookworm` tags currently resolve to
   the same index digest as `7.2.16`. **Deploy the digest, not the tag.**
-- The `macOS coordinator` has `kubectl` **v1.36.1**, the same minor as K3s
-  v1.36.x, so it is inside the supported one-minor skew. The Ubuntu worker's
-  own `kubectl` version is still to be reported at the C02 checkpoint.
+- The `macOS coordinator` has `kubectl` **v1.36.1** and the Ubuntu worker
+  reported **v1.36.3** at C02, the same minor as the pinned K3s v1.36.x.
+  This is client-version evidence; no cluster was contacted or provisioned.
 - Redis and the worker base image share Debian 12 (bookworm), which keeps one
   libc and one CA bundle across the cluster workloads.
 
@@ -432,11 +438,12 @@ Compatibility notes:
 `WORKER_PORT = 8443` and `WORKER_NODE_PORT = 30443` in
 [`backend/contracts/v1.py`](../backend/contracts/v1.py), exported through
 `export_contract()["transport"]`. C02 does not renegotiate them. What is
-outstanding is *availability and enforcement*: C02 records a successful TCP
-listener snapshot on the Ubuntu worker, retaining failures as unavailable;
-C05 verifies the actual Service ports and forwarding rules with Redis
-unreachable from the LAN. An empty listener snapshot alone proves neither
-port availability nor deployment enforcement.
+outstanding is deployment enforcement: the Ubuntu worker's returned C02 TCP
+snapshot showed `127.0.0.1:11434` and `*:8080`, with no listener observed on
+8443/30443. Port 8080 was already occupied; do not reuse it there without a
+fresh ownership check. C05 must recheck availability and verify actual Service
+ports and forwarding rules with Redis unreachable from the LAN. The absence
+of a listener proves neither a future bind nor deployment enforcement.
 
 **Not resolved here:** the sandbox image and the built worker digest. Cluster
 provisioning and deployment remain C05 work; C04 produces the worker image.

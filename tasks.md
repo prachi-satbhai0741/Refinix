@@ -137,28 +137,51 @@ is **Codex's recorded review, not a Claude run**. `backend/` is unchanged since
 supplied for all six devices and is recorded in
 [devicespecifications.md](docs/devicespecifications.md). AF-001 stays a
 **draft** until its consumer-integration gate passes at C05; OD-06 pairing is
-still open.
+recorded but unimplemented.
 
-**C01's remaining closeout is this documentation pass**, which needs Codex
-review and requester acceptance before C02 can be called clear. Update this
-current-scope note when the requester authorises a new chunk; the note itself
-never grants permission.
+**C01 documentation and C02 setup are ready for requester closeout review.**
+Requester acceptance remains pending, with the targeted Ubuntu listener
+follow-up recorded below. Update this current-scope note when the requester
+authorises a new chunk; the note itself never grants permission. C03 has not
+started.
 
 C02 decisions are now recorded with upstream provenance:
 [OD-03 runtime](docs/model-catalog.md#od-03--ollama-is-the-first-runtime),
 [OD-05 model set](docs/model-catalog.md#31-od-05--the-first-selected-model-set),
 [OD-06 pairing](docs/security.md#41-od-06--the-prototype-pairing-decision) and
 [OD-08 pins](docs/architecture.md#81-od-08--resolved-infrastructure-pins). One
-bounded real inference is measured on the macOS coordinator
+bounded local inference path is measured on both critical-path devices
 ([evaluation.md §5.1](docs/evaluation.md#51-od-03-runtime-comparison)).
 
-**C02's next checkpoint is the Ubuntu worker's read-only environment evidence**
-([commands](docs/devicespecifications.md#checkpoint-c02-read-only-environment-evidence)),
-after Codex reviews this change. Nothing has been installed, deployed, pulled,
-built or downloaded, and no worker-image digest exists yet. **One service did
-start:** the coordinator's Ollama app was launched by an `ollama list` used for
-inventory — that CLI path calls `startApp` when the server is refused. The
-inventory commands no longer use it, and the model was already present.
+**C02 evidence returned, 2026-09-03:** the Ubuntu worker supplied versions,
+service/socket state, privileges and storage; downloaded the selected model
+into its existing Ollama store; returned five successful manifest/blob hash
+checks; and measured native Ollama inference. The macOS coordinator reused its
+installed model and Ollama-bundled `llama-server` for the direct-engine
+comparison, then reported stopping that temporary server with Ctrl+C.
+The original inventory had launched the coordinator's Ollama app through
+`ollama list`; inventory commands no longer use that path. No new runtime or
+driver installation, cluster deployment or worker-image build is recorded.
+
+**Requester decision, 2026-09-03:** retain Ollama and defer the controlled
+startup-to-first-answer comparison and the Ubuntu direct-engine comparison.
+Both remain unmeasured; they do not block C02 acceptance. Warm fixed-prompt
+measurements are not general performance or model-quality proof. Native
+inference is observed; container GPU support, pairing, application persistence
+and zero-egress evidence belong to later checkpoints.
+
+**C02 review follow-up:**
+
+- **Ubuntu wildcard listener:** identify the process and purpose of the
+  recorded `*:8080` bind. This is an open C02 setup item, separate from C05's
+  contract-port checks; resolve its exposure before enabling worker LAN access
+  or reusing that port. Recorded loopback inference remains valid.
+- **Cancellation:** not exercised in C02 and not implemented in an application.
+  C06 / AF-005–AF-007 retains the implementation and cancel exercise; streaming
+  and configured request limits do not clear that gate.
+
+**Next human action:** the Ubuntu worker operator returns the listener evidence;
+the requester reviews and accepts this closeout, then separately authorises C03.
 
 The first configuration is two devices. Every other machine, and the incomplete
 GPU output on two of them, stays **off the critical path** until a measured need
