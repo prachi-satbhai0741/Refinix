@@ -30,7 +30,16 @@ It cannot hard-code secure, blocked, healthy, or zero-traffic states.
 
 ## Status: no scaffolding yet
 
-There is no package.json, source tree, or dependency set.
+`frontend/app/` is the **application-owned** C03 UI: plain HTML, CSS and
+JavaScript served by the coordinator, with no package.json, build step or
+dependency set. Its stylesheet is derived from the design tokens but loads **no
+external font**, so the running application makes no network request outside
+loopback. Text renders wider than the design because the fallback `system-ui` is
+not condensed; that is expected, while clipped labels or unusable controls are
+functional defects.
+
+`frontend/design/` remains the design track's own reference area and is not
+served, linked or redirected into by the application.
 
 The recorded alpha baseline uses local HTML, CSS, and JavaScript served by the
 coordinator. [TechStack.md](../TechStack.md#3-frontend-and-product-surfaces)

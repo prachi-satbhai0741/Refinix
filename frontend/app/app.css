@@ -1,0 +1,1111 @@
+/* Application-owned styles for the C03 coordinator UI.
+ *
+ * Derived from frontend/design/tokens.css and app.css, which remain the
+ * design track's untouched reference area. This copy is owned by the
+ * application: it loads no external font, so the running product makes no
+ * network request of any kind. The font stacks already carry system
+ * fallbacks, so removing the Google Fonts link needs no other change.
+ * Text renders wider than the design because system-ui is not condensed;
+ * that is expected. Clipped labels or unusable controls are defects.
+ */
+
+/* Refinix design tokens — "Control Room", light and dark.
+ *
+ * Palette: near-black ground, silver type, sky blue as the live accent, one
+ * green, one purple. Discipline is borrowed from process-industry HMI practice:
+ * the normal state of the plant is grey, and colour is spent only where
+ * something is abnormal, measured, absent, or attributable. That is the same
+ * rule docs/security.md#12 places on the Control Center, so the aesthetic and
+ * the requirement agree rather than compete.
+ *
+ * Each colour has exactly one job, and the jobs do not overlap:
+ *
+ *   silver   the resting state of everything. Most of the UI is this.
+ *   sky blue live — running now, focused, selected, awaiting you.
+ *   green    scarce, and spent on two things only: --st-enforced (a named
+ *            control is active) and the completed mark on a plan, pipeline or
+ *            job lifecycle. Never decorative, and never used for "unavailable",
+ *            which is grey and hatched by rule.
+ *   purple   ONLY --agent. This came from the local model's own reasoning:
+ *            plan steps, pipeline stages, agent profiles. It is a provenance
+ *            mark, not a state claim, which is why it cannot be confused with
+ *            enforced / observed / unavailable.
+ *   amber    caution. red-clay: fault.
+ *
+ * One deliberate exception: the diff in the Code surface uses green and red for
+ * added and removed lines. That is diff notation, a convention older than this
+ * palette and one a reader already knows, so it is left alone rather than
+ * recoloured for internal tidiness.
+ *
+ * Theme resolution has three states, not two. A bare :root carries the complete
+ * light palette; the media query covers viewers on the system default; the
+ * [data-theme] blocks cover an explicit in-app choice. Never declare a colour
+ * only inside a media or [data-theme] block.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* --- surfaces: cool daylight silver, deliberately not white ------------ */
+  --bg:            #D2D9E4;
+  --surface:       #EAEEF4;
+  --surface-raised:#F3F6FA;
+  --surface-sunken:#D1D8E3;
+  --line:          #A8B3C3;
+  --line-soft:     #CBD3DE;
+
+  /* --- text ---------------------------------------------------------------
+   * Every tier is measured against the darkest ground it can land on
+   * (--surface-sunken) AND the lightest (--surface-raised), because this UI is
+   * read at 10-13px all day and cards sit on the raised tone. */
+  --text:          #0E141C;
+  --text-dim:      #3E4959;
+  --text-faint:    #4B5665;
+  --text-invert:   #F3F6FA;
+
+  /* --- signal: live. Focus, selection, running, awaiting you. ------------ */
+  --brand:         #6E7B8C;
+  --signal:        #1A5E97;
+  --signal-soft:   #DBE8F4;
+
+  /* --- agent provenance. Not a state. See the header note. --------------- */
+  --agent:         #58399B;
+  --agent-soft:    #E5DFF4;
+
+  /* --- semantic state. Not interchangeable with --signal or --agent. ----- */
+  --st-enforced:   #1A6349;  /* a named control is active — the only green */
+  --st-observed:   #3E4959;  /* an observer saw this; silver on purpose */
+  --st-unknown:    #4A5462;  /* no evidence. never green, never red */
+  --st-caution:    #7A4C04;
+  --st-fault:      #96322A;
+
+  /* --- Blueprint: the document treatment, used only for artifacts ------- */
+  --bp-ground:     #E4E9EF;
+  --bp-surface:    #F0F3F8;
+  --bp-ink:        #17384F;
+  --bp-line:       #A9B7C6;
+  --bp-dim:        #4F6377;
+  --bp-void:       rgba(23, 56, 79, .11);
+
+  /* --- type ------------------------------------------------------------- */
+  --font-ui:   'IBM Plex Sans Condensed', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-doc:  'Spectral', Georgia, 'Times New Roman', serif;
+
+  --fs-micro: 10px;
+  --fs-label: 11px;
+  --fs-sm:    12px;
+  --fs-body:  13px;
+  --fs-lg:    15px;
+  --fs-xl:    19px;
+  --tracking-label: .11em;
+
+  /* --- geometry ------------------------------------------------------------
+   * One rule decides whether a thing curves:
+   *
+   *   Things you touch or talk to curve.  Buttons, chips, bubbles, the
+   *   composer, cards, panels, dialogs, nav items — anything that responds.
+   *
+   *   Things you read as a measurement stay square.  Dense claim tables,
+   *   diffs, run output, meters, and the artifact document. A readout is an
+   *   instrument face, and rounding it makes it look like a suggestion.
+   *
+   * So --radius-data exists and is 0. It is not an oversight, and it should
+   * stay 0 — the squareness is doing work. */
+  --radius-xl:    26px;  /* dialogs and the largest panels */
+  --radius-lg:    18px;  /* panels, cards */
+  --radius:       13px;  /* buttons, composer, containers */
+  --radius-sm:     9px;  /* nav items, small controls, inline tags */
+  --radius-bubble:20px;  /* a chat turn — the most oval thing here */
+  --radius-pill: 999px;  /* state chips, stepper dots, counts */
+  --radius-data:   0px;  /* readouts and documents — square on purpose */
+
+  /* --- glass ---------------------------------------------------------------
+   * Glass only reads as glass when there is something behind it worth
+   * blurring, so --atmo-* lights the ground the app sits on. Keep those alphas
+   * low: the glass fill is translucent, so a bright field shifts the composite
+   * every panel's text is measured against.
+   *
+   * Two tiers, because blurring an already-blurred surface costs a lot and
+   * shows almost nothing:
+   *   --glass-*  top-level surfaces. Carries the backdrop blur.
+   *   --veil-*   containers nested inside those. Fill only, no blur.
+   *
+   * Verbatim output and documents take neither. See the geometry note. */
+  /* In light these must LIFT, not tint down. A dark blue at 10% over a light
+     ground darkens it, which costs contrast for dark text — the light fields
+     are therefore near-white pastels, and the ground reads cooler and brighter
+     rather than muddier. */
+  --atmo-1: rgba(206, 230, 255, .55);
+  --atmo-2: rgba(226, 214, 252, .40);
+  --atmo-3: rgba(255, 255, 255, .32);
+
+  --glass-base:  rgba(255, 255, 255, .55);
+  --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.22));
+  --glass-line:  rgba(255, 255, 255, .80);
+  --glass-edge:  rgba(120, 140, 170, .30);
+  --glass-blur:  blur(22px) saturate(140%);
+  --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .90);
+  --glass-shadow: 0 14px 34px rgba(30, 45, 70, .10);
+
+  --veil:        rgba(255, 255, 255, .42);
+  --veil-sunken: rgba(160, 178, 200, .16);
+
+  /* A modal is the one surface that must stay readable regardless of what is
+     behind it, so it gets a much higher base than ordinary glass — a .55 white
+     panel over a heavy scrim composites to mud, and the scrim itself is
+     tokenised so light does not dim to near-black. */
+  --glass-modal: rgba(255, 255, 255, .92);
+  --scrim:       rgba(38, 52, 76, .30);
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;
+  --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+
+  --rail-w: 232px;
+  --nav-w:  188px;
+
+  --dur-fast: 90ms;
+  --dur: 160ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+}
+
+/* Viewers on the system default: only prefers-color-scheme separates them.
+ * Guarded so an explicit in-app light choice still beats a dark OS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg:            #07090C;
+    --surface:       #0E1218;
+    --surface-raised:#151A22;
+    --surface-sunken:#04060A;
+    --line:          #242C38;
+    --line-soft:     #191F28;
+
+    --text:          #E8ECF2;
+    --text-dim:      #A9B5C6;
+    --text-faint:    #93A0B2;
+    --text-invert:   #07090C;
+
+    --brand:         #C4CEDC;
+    --signal:        #6DB3F2;
+    --signal-soft:   #0C1B2B;
+
+    --agent:         #B08CEC;
+    --agent-soft:    #16122A;
+
+    --st-enforced:   #57C79A;
+    --st-observed:   #A9B5C6;
+    --st-unknown:    #8E9AAB;
+    --st-caution:    #E8B96A;
+    --st-fault:      #F0908A;
+
+    /* Blueprint goes cyanotype in the dark: a real blueprint is a dark
+     * prussian ground with white lines, not inverted paper. */
+    --bp-ground:     #0B2033;
+    --bp-surface:    #10293E;
+    --bp-ink:        #DCEAF5;
+    --bp-line:       #4E82A6;
+    --bp-dim:        #9BBBD2;
+    --bp-void:       rgba(220, 234, 245, .13);
+
+    --atmo-1: rgba(109, 179, 242, .13);
+    --atmo-2: rgba(176, 140, 236, .10);
+    --atmo-3: rgba(190, 208, 232, .05);
+
+    --glass-base:  rgba(20, 26, 35, .55);
+    --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.014));
+    --glass-line:  rgba(255, 255, 255, .10);
+    --glass-edge:  rgba(255, 255, 255, .06);
+    --glass-blur:  blur(26px) saturate(150%);
+    --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .10);
+    --glass-shadow: 0 16px 42px rgba(0, 0, 0, .45);
+
+    --veil:        rgba(255, 255, 255, .035);
+    --veil-sunken: rgba(0, 0, 0, .28);
+
+    --glass-modal: rgba(16, 21, 29, .90);
+    --scrim:       rgba(0, 0, 0, .62);
+  }
+}
+
+/* Explicit in-app dark choice wins over a light OS. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg:            #07090C;
+  --surface:       #0E1218;
+  --surface-raised:#151A22;
+  --surface-sunken:#04060A;
+  --line:          #242C38;
+  --line-soft:     #191F28;
+
+  --text:          #E8ECF2;
+  --text-dim:      #A9B5C6;
+  --text-faint:    #93A0B2;
+  --text-invert:   #07090C;
+
+  --brand:         #C4CEDC;
+  --signal:        #6DB3F2;
+  --signal-soft:   #0C1B2B;
+
+  --agent:         #B08CEC;
+  --agent-soft:    #16122A;
+
+  --st-enforced:   #57C79A;
+  --st-observed:   #A9B5C6;
+  --st-unknown:    #8E9AAB;
+  --st-caution:    #E8B96A;
+  --st-fault:      #F0908A;
+
+  --bp-ground:     #0B2033;
+  --bp-surface:    #10293E;
+  --bp-ink:        #DCEAF5;
+  --bp-line:       #4E82A6;
+  --bp-dim:        #9BBBD2;
+  --bp-void:       rgba(220, 234, 245, .13);
+
+  --atmo-1: rgba(109, 179, 242, .13);
+  --atmo-2: rgba(176, 140, 236, .10);
+  --atmo-3: rgba(190, 208, 232, .05);
+
+  --glass-base:  rgba(20, 26, 35, .55);
+  --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.014));
+  --glass-line:  rgba(255, 255, 255, .10);
+  --glass-edge:  rgba(255, 255, 255, .06);
+  --glass-blur:  blur(26px) saturate(150%);
+  --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .10);
+  --glass-shadow: 0 16px 42px rgba(0, 0, 0, .45);
+
+  --veil:        rgba(255, 255, 255, .035);
+  --veil-sunken: rgba(0, 0, 0, .28);
+
+  --glass-modal: rgba(16, 21, 29, .90);
+  --scrim:       rgba(0, 0, 0, .62);
+}
+
+/* Refinix — shared application shell.
+ *
+ * Everything common to Chat, Documents, Code and Control Center lives here:
+ * the three-column frame, the surface nav, the inspector rail, and the state
+ * vocabulary. Surface files carry only what is unique to that surface.
+ *
+ * Load order is always: tokens.css, app.css, <surface>.css
+ *
+ * Vocabulary follows backend/contracts/v1.py exactly. Job states are the
+ * JobState literals, event rows are Event.data.kind values, approval cards
+ * carry an Approval.action, and evidence rows carry the enforced / observed /
+ * unavailable distinction from docs/security.md section 12. Nothing here
+ * invents a state the coordinator cannot emit.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  /* Three soft fields over the flat ground. Without these the glass has
+     nothing to refract and every panel reads as flat translucent grey. The
+     alphas are deliberately low — see the note in tokens.css. */
+  background:
+    radial-gradient(58% 48% at 16% -4%,  var(--atmo-1), transparent 70%),
+    radial-gradient(48% 44% at 96% 18%,  var(--atmo-2), transparent 72%),
+    radial-gradient(72% 58% at 46% 106%, var(--atmo-3), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+/* Uppercase micro-label. Used for every machine-side label in the UI. */
+.lbl {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ==================================================================== glass === */
+/* Applied to the frame and to containers, never to verbatim output or to a
+   document. A diff, a stdout pane, an artifact and the Proof Card stay opaque:
+   they are things you read literally, and refracted ground behind small
+   monospace text costs legibility for nothing.
+ *
+ * Two tiers on purpose. .glass carries the backdrop blur and belongs to
+ * top-level surfaces; .veil is fill only, for containers already sitting on a
+ * blurred parent. Blurring an already-blurred surface is expensive and shows
+ * almost nothing, and this app can have a dozen panels on screen at once. */
+
+.nav, .rail, .main-head,
+.composer, .gate, .panel, .dialog,
+.bubble, .pick, .side, .code-box {
+  background: var(--glass-fill), var(--glass-base);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-color: var(--glass-edge);
+}
+
+.rows, .pipe, .findings, .fileset,
+.tests, .terms, .checks,
+.cap-row, .confirm, .targets, .source, .plan-total > div {
+  background: var(--veil);
+  border-color: var(--glass-edge);
+}
+
+/* Panels lift off the ground; nested containers do not, or the page turns into
+   a pile of shadows. */
+.panel, .dialog, .gate, .pick, .side, .code-box {
+  box-shadow: var(--glass-hi), var(--glass-shadow);
+}
+.nav, .rail, .main-head, .composer, .bubble { box-shadow: var(--glass-hi); }
+
+/* Rows inside a veiled container carry no fill of their own — the container is
+   the surface, the rows are just ruled lines across it. */
+.rows > li, .pipe > li, .findings > li,
+.fileset > li, .tests > li, .terms > li { background: transparent; }
+
+/* ============================================================== app frame === */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--nav-w) 1fr var(--rail-w);
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------------ nav --- */
+
+.nav {
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.nav-brand {
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+/* Rokunin Sync symbol — stand-in until the real asset lands, see
+   assets/README.md. --brand is a product mark, not a state signal, so it is
+   kept as its own token even though it now resolves to silver. Give it a
+   colour here and nowhere else if the team wants the mark to stand out. */
+.nav-brand .mark { width: 18px; height: 18px; flex: none; color: var(--brand); }
+.nav-brand b {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.nav-brand span {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.surfaces {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.surface-link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 1px var(--sp-2);
+  padding: 7px var(--sp-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.surface-link:hover { color: var(--text); background: var(--veil); }
+/* The active marker is an inset shadow, not a border: a 2px left border on a
+   rounded box bows around the corner instead of reading as a straight bar. */
+.surface-link[aria-current="page"] {
+  color: var(--text);
+  background: var(--veil);
+  box-shadow: inset 2px 0 0 var(--signal);
+}
+.surface-link .k {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  margin-left: auto;
+}
+
+/* the nav's scrolling middle: threads, documents, repositories */
+.nav-list { flex: 1; overflow-y: auto; padding: var(--sp-3) 0; min-height: 0; }
+.nav-list-h { padding: 0 var(--sp-4) var(--sp-2); }
+.nav-item {
+  display: block;
+  width: calc(100% - var(--sp-4));
+  text-align: left;
+  margin: 1px var(--sp-2);
+  padding: 6px var(--sp-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-item:hover { color: var(--text); background: var(--veil); }
+.nav-item[aria-current="true"] {
+  color: var(--text);
+  background: var(--veil);
+  box-shadow: inset 2px 0 0 var(--line);
+}
+.nav-item small {
+  display: block;
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+.nav-foot {
+  border-top: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.node-line { display: flex; justify-content: space-between; gap: var(--sp-2); align-items: center; }
+.node-line b { font-family: var(--font-data); font-size: var(--fs-label); font-weight: 400; }
+
+/* ----------------------------------------------------------------- main --- */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+}
+.main-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.main-head h1 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.head-spacer { flex: 1; }
+
+/* the scrolling body of a surface */
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  min-height: 0;
+}
+
+/* a titled block inside a surface body */
+.block { margin-bottom: var(--sp-6); }
+.block:last-child { margin-bottom: 0; }
+.block-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  flex-wrap: wrap;
+}
+.block-h h2 { margin: 0; font-size: var(--fs-body); font-weight: 600; letter-spacing: .01em; }
+.block-h em { font-style: normal; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--text-faint); }
+
+/* Sample-content marker. Every surface is a design reference, and nothing on
+   it is a measurement — say so on the page rather than only in a doc. */
+.sample {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-pill);
+  padding: 2px 9px;
+}
+
+/* ============================================================ right rail === */
+
+.rail {
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rail-sec { padding: var(--sp-4); border-bottom: 1px solid var(--line); }
+.rail-sec > .lbl { display: block; margin-bottom: var(--sp-3); }
+
+/* lifecycle stepper — the JobState literals, in transition order */
+.life { list-style: none; margin: 0; padding: 0; }
+.life li {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: var(--sp-3);
+  align-items: start;
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  padding-bottom: var(--sp-2);
+  position: relative;
+}
+.life li::before {
+  content: "";
+  position: absolute;
+  left: 5px; top: 14px; bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+.life li:last-child::before { display: none; }
+.life .dot {
+  width: 9px; height: 9px;
+  margin-top: 4px;
+  border: 1px solid var(--st-observed);
+  border-radius: var(--radius-pill);
+  background: var(--veil-sunken);
+  z-index: 1;
+}
+.life .st-done .dot { background: var(--st-enforced); border-color: var(--st-enforced); }
+.life .st-now  .dot { background: var(--signal); border-color: var(--signal); }
+.life .st-now  { color: var(--signal); }
+.life .st-todo { color: var(--text-faint); }
+.life time { display: block; color: var(--text-faint); font-size: var(--fs-micro); }
+
+/* event log — Event.data.kind values */
+.events { list-style: none; margin: 0; padding: 0; }
+.events li {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: var(--sp-2);
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.events li:last-child { border-bottom: 0; }
+.events time { color: var(--text-faint); }
+.events .kind { color: var(--text); overflow-wrap: anywhere; }
+
+/* key/value readout — routing decisions, limits, counts */
+.kv { display: flex; flex-direction: column; gap: var(--sp-2); }
+.kv div { display: flex; justify-content: space-between; gap: var(--sp-3); align-items: baseline; }
+.kv dt { color: var(--text-dim); font-size: var(--fs-sm); }
+.kv dd {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================ state chips === */
+/* A chip states which kind of claim this is. Enforced and observed are not
+   synonyms and never share a colour; unavailable is grey by rule. */
+
+.chip {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.chip-enforced { color: var(--st-enforced); }
+.chip-observed { color: var(--st-observed); }
+.chip-unknown  { color: var(--st-unknown); border-style: dashed; }
+.chip-caution  { color: var(--st-caution); }
+.chip-fault    { color: var(--st-fault); }
+.chip-running  { color: var(--signal); }
+
+/* An unavailable fact is struck with the drawing hatch, so it can never be
+   misread as a healthy zero. */
+.unavailable {
+  background: repeating-linear-gradient(-45deg, transparent 0 5px, var(--line-soft) 5px 6px);
+  color: var(--st-unknown);
+}
+
+.proof-row { display: flex; justify-content: space-between; gap: var(--sp-2); align-items: center; padding: 3px 0; }
+.proof-row span { font-size: var(--fs-sm); color: var(--text-dim); }
+
+/* ================================================================ buttons === */
+
+.btn {
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 7px 15px;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius);
+  background: var(--veil);
+  color: var(--text);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.btn:hover { border-color: var(--text-dim); background: var(--veil-sunken); }
+.btn-primary { border-color: var(--st-enforced); color: var(--st-enforced); }
+.btn-primary:hover { background: var(--st-enforced); color: var(--text-invert); border-color: var(--st-enforced); }
+.btn-deny:hover { border-color: var(--st-fault); color: var(--st-fault); background: transparent; }
+.btn:disabled { color: var(--text-faint); border-color: var(--line-soft); cursor: not-allowed; }
+.btn:disabled:hover { background: var(--veil); border-color: var(--line-soft); }
+
+/* ========================================================== approval gate === */
+/* Emitted as an approval.required event. Its action is one of the
+   Approval.action literals; the digest is action_sha256. */
+
+.gate {
+  border: 1px solid var(--signal);
+  border-radius: var(--radius-xl);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: 72ch;
+}
+.gate-h { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.gate-h b { font-size: var(--fs-body); font-weight: 600; }
+.gate-h .lbl { color: var(--signal); }
+.gate-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 5px var(--sp-4);
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+}
+.gate-facts dt { color: var(--text-dim); }
+.gate-facts dd { margin: 0; overflow-wrap: anywhere; }
+.gate-actions { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.gate-expiry { margin-left: auto; }
+
+/* ======================================================= artifact document === */
+/* The one place the document treatment is allowed. An artifact is a document,
+   so it is drawn as one; in dark mode it becomes a cyanotype rather than
+   inverted paper. */
+
+/* Opaque and square, deliberately. An artifact is a document: paper in light,
+   cyanotype in dark. Glass would make it look like another panel. */
+.artifact {
+  background: var(--bp-surface);
+  border: 1px solid var(--bp-line);
+  border-radius: var(--radius-data);
+  color: var(--bp-ink);
+  font-family: var(--font-doc);
+  padding: var(--sp-3) var(--sp-4);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-2) var(--sp-4);
+  align-items: center;
+  max-width: 62ch;
+}
+.artifact-name { font-size: var(--fs-lg); font-weight: 600; line-height: 1.25; }
+.artifact-sub {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--bp-dim);
+  margin-top: 2px;
+}
+.artifact-open {
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border: 1px solid var(--bp-line);
+  border-radius: var(--radius-sm);
+  padding: 5px 11px;
+  color: var(--bp-ink);
+  transition: background var(--dur-fast) var(--ease);
+}
+.artifact-open:hover { background: var(--bp-void); }
+/* unsigned / uncertified draft carries the drawing hatch, never a colour */
+.artifact-draft {
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 5px, var(--bp-void) 5px 6px),
+    var(--bp-surface);
+}
+
+/* ================================================================== tables === */
+/* Dense readouts: jobs, devices, models, evidence. Every row that makes a
+   claim carries the layer or observer it came from. */
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.rows > li {
+  display: grid;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: 9px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.rows > li:last-child { border-bottom: 0; }
+.rows .k { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rows .k b { font-weight: 500; font-size: var(--fs-sm); }
+.rows .src { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--text-faint); }
+.rows .n {
+  font-family: var(--font-data);
+  font-size: var(--fs-lg);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rows .unk .n { color: var(--st-unknown); }
+.rows .unk .k b { color: var(--text-dim); }
+
+/* ---------------------------------------------------------- responsive --- */
+
+@media (max-width: 1180px) {
+  .app { grid-template-columns: var(--nav-w) 1fr; }
+  .rail { display: none; }
+}
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; }
+  .nav { display: none; }
+  .body { padding: var(--sp-4); }
+}
+
+/* A theme swap must not animate. Transitioning colour across a token change
+   reads as lag, and on a throttled tab the transition may not tick at all,
+   leaving the previous theme's colour on screen. The Control Center toggle
+   sets this attribute for one frame around the swap. */
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after { transition: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Refinix — Chat surface.
+ * Load after tokens.css and app.css; only Chat-specific rules live here.
+ */
+
+/* ------------------------------------------------------------- thread --- */
+
+.thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-height: 0;
+}
+.turn { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 74ch; }
+.turn-user { align-self: flex-end; align-items: flex-end; max-width: 58ch; }
+
+.bubble {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-bubble);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-body);
+}
+/* A turn is anchored to one side, so the corner on that side is tightened —
+   the shape points back at whoever said it. */
+.turn-user  .bubble { border-radius: var(--radius-bubble) 7px var(--radius-bubble) var(--radius-bubble); }
+.turn-agent .bubble { border-radius: 7px var(--radius-bubble) var(--radius-bubble) var(--radius-bubble); }
+.turn-agent .prose { font-size: var(--fs-body); }
+.turn-agent .prose p { margin: 0 0 var(--sp-3); }
+.turn-agent .prose p:last-child { margin: 0; }
+
+.turn-meta { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* streaming caret for an output.delta that has not terminated */
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  background: var(--signal);
+  border-radius: 2px;
+  vertical-align: -2px;
+  margin-left: 2px;
+  animation: blink 1.05s steps(2, start) infinite;
+}
+@keyframes blink { to { visibility: hidden; } }
+
+/* --------------------------------------------------------- plan steps --- */
+
+/* Purple rail: this list is the model's own plan, not a system claim. That is
+   the whole job of --agent — provenance, never state. */
+.plan {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  border-left: 2px solid var(--agent);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+.plan li {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: var(--sp-2);
+  align-items: baseline;
+  padding: 5px 0 5px var(--sp-3);
+  position: relative;
+}
+.plan .mark { font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: -.02em; }
+/* the capability that ran the step — the model's own doing, so it is purple
+   wherever it appears, here and in the Documents pipeline */
+.plan .cap {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--agent);
+  white-space: nowrap;
+}
+.step-done .mark { color: var(--st-enforced); }
+.step-run  .mark { color: var(--signal); }
+.step-idle .mark,
+.step-idle .txt { color: var(--text-faint); }
+
+/* ----------------------------------------------------------- composer --- */
+
+.composer {
+  border-top: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+}
+.composer-box {
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-lg);
+  background: var(--veil);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.composer-box:focus-within { box-shadow: 0 0 0 3px var(--signal-soft); }
+.composer-box:focus-within { border-color: var(--signal); }
+.composer-input {
+  width: 100%;
+  min-height: 46px;
+  max-height: 180px;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  padding: var(--sp-3);
+  display: block;
+}
+.composer-input::placeholder { color: var(--text-faint); }
+.composer-input:focus { outline: none; }
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+/* execution target: Auto | this device | trusted devices | a named node.
+   Shared with Documents and Code — every surface starts a job the same way. */
+.targets {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.target {
+  font-size: var(--fs-label);
+  padding: 4px 10px;
+  color: var(--text-dim);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.target:last-child { border-right: 0; }
+.target:hover { color: var(--text); background: var(--veil-sunken); }
+.target[aria-pressed="true"] { color: var(--signal); background: var(--signal-soft); }
+/* An unpaired node stays visible and legible — it is information, not noise.
+   Recessed onto the sunken ground, struck through, and never colour-coded. */
+.target:disabled {
+  color: var(--text-faint);
+  background: var(--veil-sunken);
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.target:disabled:hover { background: var(--veil-sunken); color: var(--text-faint); }
+
+.composer-send { margin-left: auto; }
+
+@media (max-width: 760px) {
+  .thread { padding: var(--sp-4); }
+  .composer { padding: var(--sp-3) var(--sp-4); }
+}
+@media (prefers-reduced-motion: reduce) { .caret { visibility: visible; } }
+
+/* Refinix — Control Center.
+ * Load after tokens.css and app.css.
+ *
+ * Covers the eight groups docs/workflows.md section 10 requires. The binding
+ * constraint from docs/security.md section 12: this surface must not use
+ * hard-coded healthy, secure, blocked or zero-traffic values. So every row
+ * that makes a claim states the layer that enforces it or the observer that
+ * saw it, and a row with neither renders as unavailable — hatched, grey, and
+ * impossible to mistake for a healthy zero.
+ */
+
+/* the dashboard is a two-column flow of panels, not one long column */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--sp-5);
+  align-items: start;
+}
+.grid .block { margin-bottom: 0; }
+.span-2 { grid-column: 1 / -1; }
+
+/* ------------------------------------------------------------- panels --- */
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.panel-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: 9px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--veil-sunken);
+  flex-wrap: wrap;
+}
+.panel-h h2 { margin: 0; font-size: var(--fs-sm); font-weight: 600; }
+.panel-h em {
+  font-style: normal;
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+.panel-h .head-spacer { flex: 1; }
+.panel-b { padding: var(--sp-3); }
+.panel .rows { border: 0; }
+.panel .rows > li { padding: 8px 0; background: transparent; }
+.panel .rows > li:last-child { border-bottom: 0; }
+
+/* ------------------------------------------------------------- device --- */
+
+.dev {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.dev:last-child { border-bottom: 0; }
+.dev-name { font-size: var(--fs-sm); font-weight: 600; }
+.dev-meta {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  grid-column: 1 / -1;
+}
+.dev-caps { display: flex; flex-wrap: wrap; gap: 5px; grid-column: 1 / -1; }
+.cap-tag {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  border: 1px solid var(--glass-edge);
+  background: var(--veil);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  color: var(--text-dim);
+}
+.dev-actions { grid-column: 1 / -1; display: flex; gap: var(--sp-2); margin-top: 2px; }
+
+/* --------------------------------------------------------------- jobs --- */
+
+.jobs { list-style: none; margin: 0; padding: 0; }
+.jobs > li {
+  display: grid;
+  grid-template-columns: 70px 1fr auto auto;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-sm);
+}
+.jobs > li:last-child { border-bottom: 0; }
+.jobs .id { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--text-faint); }
+.jobs .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jobs .on { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--text-faint); }
+
+/* --------------------------------------------------------- proof card --- */
+/* The exportable record. Drawn in the document treatment because that is what
+   it is: a signed sheet, not a dashboard tile. */
+
+/* the exportable sheet stays square — it is a document, not a tile */
+.proof-card {
+  background: var(--bp-surface);
+  border: 1px solid var(--bp-line);
+  border-radius: var(--radius-data);
+  color: var(--bp-ink);
+  font-family: var(--font-doc);
+  padding: var(--sp-4);
+}
+.proof-card h3 { margin: 0 0 2px; font-size: var(--fs-lg); font-weight: 700; }
+.proof-card .win {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--bp-dim);
+  display: block;
+  margin-bottom: var(--sp-3);
+}
+.proof-card dl {
+  margin: 0 0 var(--sp-3);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px var(--sp-3);
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+}
+.proof-card dt { color: var(--bp-dim); }
+.proof-card dd { margin: 0; text-align: right; }
+.proof-card .void {
+  background: repeating-linear-gradient(-45deg, transparent 0 5px, var(--bp-void) 5px 6px);
+}
+.proof-card .btn { border-color: var(--bp-line); color: var(--bp-ink); }
+.proof-card .btn:hover { background: var(--bp-void); border-color: var(--bp-ink); }
+
+/* ------------------------------------------------------------- meters --- */
+/* A meter is only drawn when the operating system reports the figure
+   reliably. Where it does not, the row says so instead of showing an empty
+   bar, which would read as zero usage. */
+
+/* square and opaque, like every other readout: a meter is a measurement, and
+   a translucent bar over a lit ground is not a number you can trust */
+.meter { height: 4px; background: var(--surface-sunken); border: 1px solid var(--line); margin-top: 5px; }
+.meter i { display: block; height: 100%; background: var(--st-observed); }
+.meter.warn i { background: var(--signal); }
+
+.retention { display: flex; flex-wrap: wrap; gap: var(--sp-2); }

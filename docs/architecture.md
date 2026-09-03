@@ -381,7 +381,7 @@ The alpha baseline minimises prototype risk:
 
 | Area | Direction | Status |
 |---|---|---|
-| Local service and worker API | Python with FastAPI | Alpha decision |
+| Local service and worker API | Python with FastAPI for the **worker API** (C04, installed in the pinned image). The **C03 coordinator** uses the standard library — `http.server`, `sqlite3`, `urllib` — because FastAPI is not installed and adding it is a setup checkpoint, not implementation | Alpha decision; coordinator deviation recorded at C03 |
 | One-way job streaming | Server-Sent Events | Alpha decision |
 | Coordinator state | SQLite | Alpha decision |
 | Container image build | Docker from pinned base `python:3.13-slim-bookworm` | OD-08 resolved; built worker digest follows C04 |
