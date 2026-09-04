@@ -1,6 +1,6 @@
 {
   "recorded_on": "2026-09-04",
-  "status": "build inputs prepared; no image built",
+  "status": "worker API implemented and corrected after Codex review. Verification build run on the macOS coordinator for linux/amd64 under emulation; the Ubuntu build produces the digest C05 pins.",
   "target": {
     "os": "linux",
     "architecture": "amd64",
@@ -195,5 +195,48 @@
     }
   ],
   "package_wheel_bytes": 3250094,
-  "material_upstream_changes": "None; packaging only. No FastAPI or Uvicorn optional extras."
+  "material_upstream_changes": "None; packaging only. No FastAPI or Uvicorn optional extras.",
+  "verification_build": {
+    "device": "macOS coordinator, arm64, emulated linux/amd64",
+    "recorded_on": "2026-09-04",
+    "build_flags": "--provenance=false --sbom=false (single unambiguous manifest)",
+    "manifest_digest": "sha256:82d723e60ac2610ba7722d61fe6ba700c9eed43a8ebad16f9e7e8db1130374a0",
+    "config_digest": "sha256:24041a3fdac168e5ab26cc9fbc6b0f5ba86ff9eac2f645c03d9559e03f3de434",
+    "archive_sha256": "sha256:50a6c9c76fe6ebc5ba6a2f46a49586830ef5659728522f29a821a0dbbd4a3b22",
+    "archive_bytes": 49528832,
+    "layers": 11,
+    "user": "10001:10001",
+    "checks_in_image": "37 passed with --network=none (8 contract, 10 runtime, 19 worker behaviour)",
+    "streaming": "first output event at 2.73s of a 15.98s generation, 417 deltas",
+    "note": "Historical 37-check Mac build, reported by Claude; these digests do not identify the later fail-closed 52-check source. Never pushed; not the Ubuntu deployment artifact."
+  },
+  "reported_follow_up": {
+    "recorded_on": "2026-09-04",
+    "reported_by": "Claude via requester",
+    "checks_in_image_reported": 52,
+    "check_breakdown": {
+      "contracts": 8,
+      "runtime": 10,
+      "worker": 34
+    },
+    "source_count_checked_by_codex": true,
+    "container_run_reproduced_by_codex": false,
+    "artifact_digests": null
+  },
+  "oci_export_builder": {
+    "version": "v0.33.0",
+    "image": "docker.io/moby/buildkit:v0.33.0@sha256:a461e7f0ce921972028acfbed628d45663d83e67ac1230722c2b34cf72760a0d",
+    "platform": "linux/amd64",
+    "license": "Apache-2.0",
+    "source": "https://github.com/moby/buildkit/releases/tag/v0.33.0",
+    "license_url": "https://github.com/moby/buildkit/blob/v0.33.0/LICENSE",
+    "manifest_url": "https://registry-1.docker.io/v2/moby/buildkit/manifests/sha256:a461e7f0ce921972028acfbed628d45663d83e67ac1230722c2b34cf72760a0d",
+    "compressed_layers_bytes": 112271581,
+    "verification": "Manifest bytes SHA-256 checked and config reports linux/amd64; metadata only, image not downloaded or run by Codex.",
+    "driver": "docker-container",
+    "exporter": "type=oci",
+    "storage_allowance_bytes": 2147483648,
+    "memory_bytes": 2147483648,
+    "cpus": 2
+  }
 }

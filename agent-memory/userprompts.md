@@ -747,3 +747,30 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve the two-device sequence, existing changes and human deployment gates; no Git writes.
 - follow_up_to: [UP-20260904-009](#up-20260904-009)
 - linked_changes: [AC-20260904-010](agentchangelog.md#ac-20260904-010)
+
+<a id="up-20260904-004"></a>
+## UP-20260904-004 — Execute C04: worker API and image build
+- date: 2026-09-04
+- status: in-progress
+- scope: implementation, worker, container-image
+- tags: c04, af-003, worker-api, docker, image-digest
+- aliases: worker image build, worker api, c04 execution
+- paths: backend/worker/, backend/worker-image/, docs/c04-ubuntu-build-handoff.md, tasks.md
+- summary: With C03 accepted and Ubuntu-to-Mac connectivity confirmed, implement the worker API against the frozen contract, complete the Docker build assets, and return the Ubuntu build handoff for Codex review.
+- constraints: Build assets and implementation only; no cluster deployment, no host changes on Ubuntu, no Git writes. Pairing stays unimplemented per OD-06. The Ubuntu build produces the digest C05 pins.
+- acceptance: The image builds and the worker API serves the reserved contract routes with real inference, and the Ubuntu operator has exact reviewed build and digest-inspection commands.
+- verification_authorization: Implementation, offline checks, local container build and bounded local inference on the coordinator.
+- follow_up_to: [UP-20260904-003](#up-20260904-003)
+- supersedes: none
+- linked_changes: [AC-20260904-005](agentchangelog.md#ac-20260904-005)
+
+<a id="up-20260904-011"></a>
+## UP-20260904-011 — Execute the remaining C04 export corrections
+- date: 2026-09-04
+- tags: c04, export, buildkit, review-fixes
+- aliases: solve them yourself, explicit OCI export, stale test count
+- paths: docs/c04-ubuntu-build-handoff.md, backend/worker-image/, scripts/image-digests.py, agent-memory/
+- summary: Requester authorised Codex to fix the remaining OCI export instructions and stale check count directly.
+- constraints: Edit existing files, keep the response concise, preserve worker code and other changes; no Git writes or Ubuntu host actions.
+- follow_up_to: [UP-20260904-010](#up-20260904-010)
+- linked_changes: [AC-20260904-011](agentchangelog.md#ac-20260904-011)

@@ -12,3 +12,9 @@
 !backend/worker-image/Dockerfile.dockerignore
 !backend/worker-image/requirements.lock
 !backend/worker-image/provenance.json
+!backend/worker/
+!backend/worker/__init__.py
+!backend/worker/app.py
+!backend/worker/runtime.py
+!backend/worker/test_worker_runtime.py
+!backend/worker/test_worker_app.py
