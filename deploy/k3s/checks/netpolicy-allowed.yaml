@@ -1,0 +1,84 @@
+# Isolation check, ALLOWED half.
+#
+# Labelled app: aegisforge-worker, so the NetworkPolicy must let it reach Redis.
+# It carries the full restricted Pod Security context — without that, admission
+# rejects the Pod before any connection is attempted, and a "failure" would say
+# nothing about the network at all.
+#
+# Expect: RESULT=allowed-reached-redis, exit 0.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: netcheck-allowed
+  namespace: aegisforge
+  labels:
+    app: aegisforge-worker          # the label the policy selects on
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10002
+    runAsGroup: 10002
+    fsGroup: 10002              # so the group-readable Secret is actually readable
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probe
+      image: redis@sha256:e17e3a1993da428251cbd88dbdb3de8c8d4007f840d7350eb17a2d8695fa705f
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -u
+          # Separate every failure mode, so a network refusal is never confused
+          # with DNS, a wrong password, protected mode, or missing tooling.
+          command -v redis-cli >/dev/null || { echo "RESULT=tooling-missing"; exit 3; }
+          command -v timeout   >/dev/null || { echo "RESULT=tooling-missing (timeout)"; exit 3; }
+          getent hosts redis >/dev/null 2>&1 || { echo "RESULT=dns-failed"; exit 4; }
+
+          # An unreadable or empty credential must be reported as such, never
+          # mistaken for the network blocking the connection.
+          [ -r /etc/redis-secret/password ] || { echo "RESULT=credential-unreadable"; exit 11; }
+          auth=$(cat /etc/redis-secret/password)
+          [ -n "$auth" ] || { echo "RESULT=credential-empty"; exit 11; }
+
+          # redis-cli 7.2 has NO -t option; `timeout` bounds the call instead,
+          # with -k so a hung client is terminated rather than left running,
+          # and REDISCLI_AUTH keeps the password out of the process arguments.
+          out=$(REDISCLI_AUTH="$auth" timeout -k 2 5 redis-cli -h redis ping 2>&1)
+          status=$?
+
+          # Exit status is classified, not just output: empty output alone does
+          # not prove blocking.
+          if [ "$status" -eq 124 ]; then
+            echo "RESULT=timeout-or-blocked (timeout exit 124)"; exit 7
+          fi
+          case "$out" in
+            PONG*)                echo "RESULT=allowed-reached-redis"; exit 0 ;;
+            *NOAUTH*|*WRONGPASS*) echo "RESULT=auth-failed ($out)"; exit 5 ;;
+            *DENIED*)             echo "RESULT=redis-protected-mode ($out)"; exit 6 ;;
+            *"Connection refused"*) echo "RESULT=refused ($out)"; exit 9 ;;
+            "")                   echo "RESULT=empty-output status=$status"; exit 10 ;;
+            *)                    echo "RESULT=other status=$status ($out)"; exit 8 ;;
+          esac
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits:   {cpu: 200m, memory: 64Mi}
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: credential
+          mountPath: /etc/redis-secret
+          readOnly: true
+  volumes:
+    - name: tmp
+      emptyDir: {}
+    - name: credential
+      secret:
+        secretName: redis-credential
+        defaultMode: 0440

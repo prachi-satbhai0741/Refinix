@@ -1,0 +1,29 @@
+# Worker → model runtime egress. APPLY ONLY AFTER the runtime address decision
+# in docs/c05-ubuntu-deployment-handoff.md, and confirm the CIDR first.
+#
+# Ollama binds host loopback by default, which no Pod can reach. The reviewed
+# arrangement binds it to the CNI bridge instead of the LAN, so Pods on this
+# node can reach it and nothing off the node can. Confirm the bridge address
+# with `ip -4 addr show cni0` before applying; K3s flannel usually gives
+# 10.42.0.1, but a /32 for the observed address is what belongs here.
+#
+# This is deliberately a separate file: the default deployment grants no runtime
+# egress at all, so forgetting this step fails visibly rather than silently
+# opening a wider path.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-egress-runtime
+  namespace: aegisforge
+spec:
+  podSelector:
+    matchLabels:
+      app: aegisforge-worker
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.42.0.1/32      # the node's cni0 address — verify, do not assume
+      ports:
+        - protocol: TCP
+          port: 11434
