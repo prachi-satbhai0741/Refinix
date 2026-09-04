@@ -43,7 +43,7 @@ and nothing actually loads it now that the WebM exists. Options, best first:
 3. Keep it as an ordinary blob — the current state, and the costliest.
 
 
-## Drop the team logo here
+## The team logo
 
 Save the Rokunin Sync logo as:
 
@@ -82,23 +82,68 @@ visitor downloading Refinix should see Refinix, not the team that built it.
 The circular arrow **symbol** is name-neutral, so it works in both roles. It
 currently stands in as the Refinix mark in the nav.
 
-## How the swap works
+## The Refinix lockups are drawn, not stored
 
-`site.html` and `chat.html` currently draw the symbol as inline SVG
-(`#rk-mark`), so the pages are complete without any binary asset. That is a
-**stand-in**, drawn from the supplied logo — it is not the real artwork.
+Two REFINIX lockups were supplied as rasters on a black square: **horizontal**
+(mark then wordmark) and **stacked** (mark over wordmark). Neither is in this
+directory, and that is deliberate rather than an omission.
 
-To swap in the real files:
+A black-square raster is the one form the pages cannot use. The site has a light
+theme, and a baked-in black block shows there as a rectangle — the same reason
+this file already warns against the black-square version of the team logo. So
+`site.html` draws both lockups instead:
 
-1. Save the PNGs at the paths above.
-2. In `site.html`, replace the `<svg class="mark">…</svg>` in `.nav-brand` with
-   `<img class="mark" src="assets/rokunin-sync-mark.png" alt="">`.
-3. In the footer credit and closing signature, the `<img class="team-logo">`
-   elements already point at `rokunin-sync-logo.png` and are hidden until the
-   file loads, so they appear on their own.
+| Piece | Where | How |
+|---|---|---|
+| Mark | `#rfx-mark` symbol in `site.html` | inline SVG, brushed-steel gradients |
+| Wordmark | `.wordmark` in `site.css` | Michroma with the same ramp clipped to the text |
+| Horizontal | `.lockup-h` | nav |
+| Stacked | `.lockup-v` | intro gate, closing signature |
+
+The drawn version scales cleanly, recolours for the light theme, costs no
+bytes, and needs no binary in Git. `#rk-mark` remains as an alias of
+`#rfx-mark`, because `chat.html` and the application surfaces reference the
+symbol by that name.
+
+### If you do want the rasters used
+
+Save them at these paths and they take over with no code change:
+
+```
+frontend/design/assets/refinix-lockup-h.png
+frontend/design/assets/refinix-lockup-v.png
+```
+
+Each lockup carries an `<img>` with `onerror="this.remove()"` above the drawn
+version, and `:has()` hides the drawn version only while that image is actually
+present. Export them with a **transparent** background, not the black square —
+otherwise the light theme gets the rectangle this whole section is about.
+Roughly 1200px on the long edge is plenty; neither is rendered above 220px.
+
+The same applies to the team mark: `rokunin-sync-mark.png` (symbol alone) and
+`rokunin-sync-logo.png` (full lockup) are picked up by the footer credit and
+closing signature, which stay hidden until the file loads.
 
 Single-file artifact builds inline anything under `assets/` as a `data:` URI
 automatically, because published artifact pages cannot load external images.
+
+## The sun ornament
+
+`sun.png` — 736x736 RGBA, supplied artwork with the background already
+removed. It sits in the band of empty page to the right of the Surfaces
+heading, positioned absolutely so it costs no layout height. In normal flow
+it made the page 203px taller, which defeats the point of an ornament whose
+job is to fill a gap.
+
+**The transparency is not optional.** The original was chrome on a white
+ground, and no blend mode rescues a white ground on a black page: `multiply`
+takes the whole thing to black, `screen` keeps the white. Any replacement
+needs a real alpha channel — check the corner pixels rather than trusting
+your eyes, since a viewer draws transparent and white identically.
+
+It is dark chrome, so the dark theme lifts it slightly or the shadowed half
+of every ray merges into the page; the light theme darkens it instead, where
+the highlights are what disappear.
 
 ## Licensing
 
