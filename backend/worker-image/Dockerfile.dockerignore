@@ -1,0 +1,20 @@
+# Deny by default, including .git, .env, scans, models, local state and venvs.
+**
+!backend/
+!backend/contracts/
+!backend/contracts/__init__.py
+!backend/contracts/__main__.py
+!backend/contracts/v1.py
+!backend/contracts/test_contracts.py
+!backend/contracts/examples.json
+!backend/worker-image/
+!backend/worker-image/Dockerfile
+!backend/worker-image/Dockerfile.dockerignore
+!backend/worker-image/requirements.lock
+!backend/worker-image/provenance.json
+!backend/worker/
+!backend/worker/__init__.py
+!backend/worker/app.py
+!backend/worker/runtime.py
+!backend/worker/test_worker_runtime.py
+!backend/worker/test_worker_app.py

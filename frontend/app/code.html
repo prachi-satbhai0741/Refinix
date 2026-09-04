@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code — Refinix</title>
+<link rel="icon" href="/assets/refinix-mark.png">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/overrides.css">
+<link rel="stylesheet" href="/refinix.css">
+<div class="scrim" id="scrim"></div>
+<div class="app app-plain">
+  <nav class="nav" id="nav">
+    <div class="brand">
+      <img class="brand-logo" src="/assets/refinix-wordmark.png" alt="Refinix">
+    </div>
+    <div class="surfaces">
+      <a class="surface-link" href="/">Chat</a>
+      <a class="surface-link" aria-current="page" href="/code.html">Code</a>
+    </div>
+    <div class="nav-list">
+      <p class="lbl nav-list-h">Sections</p>
+      <a class="nav-item" href="#status">Availability</a>
+      <a class="nav-item" href="#access">Access modes</a>
+    </div>
+    <div class="nav-foot">
+      <a class="nav-secondary" href="/control.html">Settings</a>
+      <p class="ready-line" id="ready-line">Checking this computer…</p>
+    </div>
+  </nav>
+
+  <main class="main">
+    <header class="main-head">
+      <button class="nav-toggle" id="nav-toggle" aria-expanded="false"
+              aria-controls="nav">Menu</button>
+      <h1 class="head-title">Code</h1>
+      <span class="chip chip-unknown">not available yet</span>
+      <div class="head-spacer"></div>
+    </header>
+
+    <div class="body">
+      <div class="cards">
+        <section class="card span-2" id="status">
+          <h2>Working in a project folder</h2>
+          <p class="card-lead">Code will let Refinix read a project on this
+             computer and propose changes to it.</p>
+          <p><strong>It does not do that yet.</strong> Nothing on this computer
+             can be read or edited from this screen, and no folder has been
+             connected. Chat is the working surface today.</p>
+          <p class="lbl">This screen exists so the destination is real and its
+             state is honest, not so the feature can be implied.</p>
+        </section>
+
+        <section class="card span-2" id="access">
+          <h2>Access modes</h2>
+          <p class="card-lead">When Code arrives, you will choose how much it may
+             do on its own. These are the planned modes, written down so the
+             decision is visible early.</p>
+          <ul class="mode-list">
+            <li>
+              <span class="mode-name">Partial access</span>
+              <span class="mode-body">Safe, bounded actions happen automatically.
+                Anything that changes a file asks you first.</span>
+            </li>
+            <li>
+              <span class="mode-name">Full access</span>
+              <span class="mode-body">Workspace edits and project commands happen
+                automatically. Destructive actions, installations and Git writes
+                still ask you.</span>
+            </li>
+            <li>
+              <span class="mode-name">Ask before actions</span>
+              <span class="mode-body">Nothing happens until you approve it.</span>
+            </li>
+          </ul>
+          <p class="warn-line">There is deliberately no selector here. A control
+             that looked like it set a permission would imply an enforcement
+             that does not exist yet, and choosing a mode would change nothing.
+             The selector arrives with the enforcement that backs it.</p>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+<script type="module" src="/app.js"></script>

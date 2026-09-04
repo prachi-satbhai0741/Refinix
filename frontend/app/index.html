@@ -1,0 +1,126 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refinix</title>
+<link rel="icon" href="/assets/refinix-mark.png">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/overrides.css">
+<link rel="stylesheet" href="/refinix.css">
+<!-- No external font or script. The running application makes no network
+     request outside 127.0.0.1. -->
+<div class="scrim" id="scrim"></div>
+<div class="app">
+  <nav class="nav" id="nav">
+    <div class="brand">
+      <img class="brand-logo" src="/assets/refinix-wordmark.png" alt="Refinix">
+    </div>
+
+    <div class="surfaces">
+      <a class="surface-link" aria-current="page" href="/">Chat</a>
+      <a class="surface-link" href="/code.html">Code</a>
+    </div>
+
+    <div class="nav-list">
+      <p class="lbl nav-list-h">Conversations</p>
+      <label class="visually-hidden" for="chat-search">Search conversations</label>
+      <input class="chat-search" id="chat-search" type="search"
+             placeholder="Search conversations" autocomplete="off">
+      <p class="lbl search-state" id="search-state" hidden></p>
+      <div id="chat-list"></div>
+      <button class="nav-item" id="new-chat">+ New conversation</button>
+    </div>
+
+    <div class="nav-foot">
+      <a class="nav-secondary" href="/control.html">Settings</a>
+      <p class="ready-line" id="ready-line">Checking this computer…</p>
+    </div>
+  </nav>
+
+  <main class="main">
+    <header class="main-head">
+      <button class="nav-toggle" id="nav-toggle" aria-expanded="false"
+              aria-controls="nav">Menu</button>
+      <h1 class="head-title" id="head-title">Chat</h1>
+      <span class="chip chip-unknown" id="job-chip">no job</span>
+      <div class="head-spacer"></div>
+      <button class="rail-toggle" id="rail-toggle" aria-expanded="false"
+              aria-controls="rail">Details</button>
+    </header>
+
+    <div id="notices" role="status" aria-live="polite"></div>
+
+    <div class="thread" id="thread">
+      <article class="turn turn-agent">
+        <div class="prose">
+          <p>Refinix runs on this computer. Ask a question below to start.</p>
+        </div>
+      </article>
+    </div>
+
+    <button class="jump-latest" id="jump-latest" hidden>Jump to latest</button>
+
+    <form class="composer" id="composer">
+      <div class="composer-box" id="composer-box">
+        <div class="drop-hint" id="drop-hint" hidden>Drop files to attach them</div>
+
+        <ul class="attachments" id="attachments" hidden
+            aria-label="Files attached to this request"></ul>
+
+        <div class="composer-line">
+          <span class="skill-chip" id="skill-chip" hidden>
+            <span class="skill-icon" id="skill-icon" aria-hidden="true"></span>
+            <button class="skill-name" type="button" id="skill-name"
+                    aria-describedby="skill-status"></button>
+            <button class="skill-remove" type="button" id="skill-remove"
+                    aria-label="Remove the selected skill">&#215;</button>
+          </span>
+          <label class="visually-hidden" for="input">Your request</label>
+          <textarea class="composer-input" id="input" rows="2"
+                    placeholder="Ask, or describe the task. Enter sends, Shift+Enter for a new line."></textarea>
+        </div>
+
+        <p class="skill-status" id="skill-status" hidden></p>
+
+        <div class="composer-bar">
+          <button class="round-btn" type="button" id="plus-btn"
+                  aria-haspopup="menu" aria-expanded="false"
+                  aria-label="Add files or choose a skill">+</button>
+          <input class="visually-hidden" type="file" id="file-input" multiple>
+          <span class="lbl" id="send-hint">Runs on this computer</span>
+          <div class="head-spacer"></div>
+          <button class="btn btn-stop" type="button" id="cancel-btn" hidden>Stop</button>
+          <button class="btn btn-primary" type="submit" id="send">Send</button>
+        </div>
+      </div>
+    </form>
+  </main>
+
+  <aside class="rail" id="rail">
+    <section class="rail-sec">
+      <span class="lbl">Advanced — job lifecycle</span>
+      <ol class="life" id="life"></ol>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Attempt</span>
+      <dl class="kv" id="attempt-kv">
+        <div><dt>state</dt><dd class="unavailable">no attempt yet</dd></div>
+      </dl>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Events</span>
+      <ul class="events" id="events"></ul>
+    </section>
+
+    <section class="rail-sec">
+      <details class="quiet">
+        <summary class="lbl">Not observed yet</summary>
+        <dl class="kv" id="kv-unavailable"></dl>
+        <p class="lbl">Not failures. The work that produces this evidence has
+           not run.</p>
+      </details>
+    </section>
+  </aside>
+</div>
+<script type="module" src="/app.js"></script>

@@ -70,10 +70,11 @@ The current requirement interpretation, open design decisions, and demonstration
 **AegisForge** is the name of this repository. **Refinix** is the current
 working name for the product and its underlying architecture.
 
-Refinix is one installable application with dedicated **Chat**,
-**Documents**, and **Code** surfaces over a shared local agent harness. A
-**Control Center** manages models, jobs, approvals, paired compute, health, and
-sovereignty evidence.
+Refinix is one installable application with dedicated **Chat** and **Code**
+surfaces over a shared local agent harness. **Settings**, reached from secondary
+navigation, manages models, jobs, approvals, paired compute, health, and
+sovereignty evidence. Document work is a capability inside Chat rather than a
+separate top-level surface.
 
 Every installation creates a local workspace and remains useful on its own.
 Pairing is an optional, reversible relationship: the workspace coordinator may
@@ -82,7 +83,7 @@ nodes never receive canonical workspace ownership merely by joining.
 
 This is a deliberate architectural position, not an oversight — see [Design Philosophy](#design-philosophy-coordinator-not-a-cluster) below for why.
 
-> **Status:** AF-001 implementation has started with [shared contracts and passing local checks](backend/contracts/README.md). No application runtime, model bundle or executable product exists yet. This README and the linked PRD describe the intended system, its constraints, and its demonstration plan.
+> **Status:** A **local application runs** — Chat and graphical Settings over SQLite state and one local model, built on the [shared contracts](backend/contracts/README.md), inside a native desktop shell ([desktop/](desktop/README.md)). Files can be attached to a request and are stored and listed, but **nothing reads them**. There is **no worker, cluster, document understanding, Code workflow, access-mode enforcement, approval path, model bundle or installer** in this desktop execution; those surfaces report themselves unavailable. The macOS bundle was **built and opened on 2026-09-04**, including a standalone startup check with source access denied; the requester confirmed Chat, Stop, quitting and retained stopped history. See [backend/coordinator](backend/coordinator/README.md) and [desktop](desktop/README.md) to run it. This README and the linked PRD describe the wider intended system, its constraints, and its demonstration plan.
 
 ---
 
@@ -120,10 +121,9 @@ role.
 
 | Surface | Purpose |
 |---|---|
-| Chat | General local agent and local knowledge |
-| Documents | OCR/vision, retrieval, citations, and generated artifacts |
+| Chat | General local agent and local knowledge; document work arrives here as a selectable skill with attachments |
 | Code | Repository context, isolated execution, validation, and patches |
-| Control Center | Models, devices, jobs, approvals, health, and sovereignty evidence |
+| Settings | Models, devices, jobs, approvals, health, and sovereignty evidence — secondary navigation |
 
 For each task the user may choose Auto, this device, trusted devices, or a
 specific paired target. Independent jobs can run concurrently where hardware
@@ -165,8 +165,14 @@ These constraints are treated as non-negotiable design requirements, not aspirat
 
 ```text
 AegisForge/
-├── backend/              # Planned coordinator, worker, router, and runtime boundary
-├── frontend/             # Planned desktop workspace and public-site boundary
+├── backend/
+│   ├── contracts/         # Shared job, attempt, event and approval contract (draft)
+│   ├── coordinator/       # The running local application: state, runtime, API, UI server
+│   └── worker-image/      # C04 build inputs; no image built yet
+├── desktop/               # Native window, startup lifecycle, icons and macOS packaging
+├── frontend/
+│   ├── app/               # The application interface actually served by the coordinator
+│   └── design/            # Design track's visual reference; not served by the app
 ├── docs/
 │   ├── prd.md             # Short product contract and priorities
 │   ├── architecture.md    # Harness, nodes, state, jobs, and local data
@@ -183,7 +189,26 @@ AegisForge/
 
 ## Start Here
 
-There is nothing to install or run yet. Before contributing code:
+On the configured macOS coordinator, double-click `desktop/dist/Refinix.app`,
+or run:
+
+```bash
+open /Users/adityatadge/Documents/GitHub/AegisForge/desktop/dist/Refinix.app
+```
+
+The native app uses the installed Ollama model `qwen3.5:4b-q4_K_M` and starts
+Ollama when needed. Keep its Dock icon for later launches. Setup on another
+machine requires the [desktop setup handoff](desktop/README.md#setup-handoff).
+For a source run, `desktop/.venv/bin/python -m desktop` opens the native window;
+`./.venv/bin/python -m desktop --no-window` starts local services using the
+existing backend dependencies, including Pydantic. `python3 -m backend.coordinator`
+still starts the coordinator on its own, unchanged.
+
+Details, including what the application deliberately does **not** do, are in
+[backend/coordinator/README.md](backend/coordinator/README.md) and
+[desktop/README.md](desktop/README.md).
+
+Before contributing code:
 
 1. Start with the [documentation map](docs/README.md) and short
    [PRD](docs/prd.md), then read [TechStack.md](TechStack.md) for the recommended

@@ -1,0 +1,14 @@
+# Bridge-side listener that forwards to Ollama's untouched loopback listener.
+# Requires the guard, so the socket cannot listen without its restriction.
+[Unit]
+Description=AegisForge forwarder to the local Ollama loopback listener
+Requires=aegisforge-ollama-guard.service
+After=aegisforge-ollama-guard.service
+
+[Socket]
+# Replaced with the observed bridge address at install time.
+ListenStream=BRIDGE_ADDRESS:11434
+BindIPv6Only=ipv6-only
+
+[Install]
+WantedBy=sockets.target

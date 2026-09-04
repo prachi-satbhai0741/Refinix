@@ -115,8 +115,13 @@ ledgers, and archiving. Writing rules:
   in [tasks.md](tasks.md#numbered-execution-tasks). Anyone may implement any
   module; a device named for a setup action is not an exclusive code owner.
 - Build, review and fix within the authorised scope without repeated permission
-  requests for ordinary coding. Stop at a required human action or missing
-  permission; do not skip to another chunk or perform that action by assumption.
+  requests for ordinary coding. Resolve routine implementation questions from
+  repository evidence, the established requirements and authoritative upstream
+  documentation rather than relaying them as checkpoints; the scope also covers
+  review fixes and proportionate offline checks on existing dependencies and
+  isolated test data. Stop at a required human action or missing permission —
+  repository evidence answers technical questions but never grants permission —
+  and do not skip to another chunk or perform that action by assumption.
 - Before stopping, prepare a reviewable handoff identifying the **device role**
   — for example `macOS coordinator` or `Ubuntu worker` — rather than a team
   member, with its OS, architecture, shell, actual directory, exact commands or

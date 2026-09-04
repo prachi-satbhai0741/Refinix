@@ -1,0 +1,120 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI fixture (synthetic) — Refinix</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/overrides.css">
+<style>
+  .fixture-banner {
+    position: sticky; top: 0; z-index: 10;
+    background: #7a3b12; color: #fff;
+    padding: .5em 1em; font-size: .9em;
+  }
+  .fixture-case { border-top: 1px solid var(--prose-rule); padding: 1.2em 0; }
+  .fixture-case > h2.case-title {
+    font-size: .78em; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--prose-muted); margin: 0 0 .6em;
+  }
+  .fixture-body { padding: 0 1.5rem 4rem; }
+</style>
+
+<div class="fixture-banner">
+  <strong>SYNTHETIC UI FIXTURE.</strong>
+  Every value below is invented for layout testing. No inspection, measurement,
+  citation, job or device state here is real. Not reachable from the application.
+</div>
+
+<div class="fixture-body">
+  <h1>Renderer and state fixture</h1>
+  <p class="lbl">Uses the same renderer, stylesheet and components as the
+     application. Open directly at <code>/fixture.html</code>.</p>
+  <div id="cases"></div>
+</div>
+
+<script type="module" src="/fixture.js"></script> and <img src=x onerror=alert(1)> and <b>not bold</b>.'],
+  ['Unsafe links blocked', '[javascript scheme](javascript:alert(1)) and [data scheme](data:text/html,<script>1</script>) and [safe](https://example.com/ok)'],
+  ['Nested lists', '- top\n  - second\n    - third\n- back to top\n\n1. one\n   1. one-a\n   2. one-b'],
+  ['Emphasis and strikethrough', '**bold** _italic_ ~~struck~~ `inline code` and __also bold__'],
+];
+
+const STATES = [
+  ['Idle', () => chip('no job', 'chip-unknown')],
+  ['Streaming', () => chip('running', 'chip-running')],
+  ['Stopped by user', () => chip('cancelled', 'chip-fault')],
+  ['Incomplete (hit reply limit)', () => notice(
+      'The reply stopped at the 2048-token limit.', 'warn',
+      'Synthetic state. The partial text is saved and can be continued.')],
+  ['Context omission', () => selection({
+      omitted_count: 6, included_ids: ['a','b','c','d'],
+      estimated_input_tokens: 4980, input_budget_tokens: 5168,
+      context_window: 8192, output_allowance: 2048,
+      counting_method: 'estimate: characters / 3.0',
+      note: '6 earlier messages were left out of this reply. They remain in your chat.' })],
+  ['Oversized input', () => notice(
+      'That message is too large to send.', 'error',
+      'Synthetic state. About 30009 tokens against a 5168-token budget. Shorten or split it.')],
+  ['Reconnecting', () => notice('Reconnecting to the coordinator…', 'warn',
+      'Synthetic state. The conversation is safe; it is stored on this device.')],
+  ['Runtime unavailable', () => notice('The local model runtime is not answering.', 'error',
+      'Synthetic state. Nothing was sent anywhere else.')],
+];
+
+function chip(text, cls) {
+  const el = document.createElement('span');
+  el.className = `chip ${cls}`;
+  el.textContent = text;
+  return el;
+}
+function notice(text, kind, why) {
+  const el = document.createElement('div');
+  el.className = 'app-notice';
+  el.dataset.kind = kind;
+  el.append(text);
+  const s = document.createElement('span');
+  s.className = 'why'; s.textContent = why;
+  el.append(s);
+  return el;
+}
+function selection(sel) {
+  const el = document.createElement('details');
+  el.className = 'context-notice';
+  el.open = true;
+  const sum = document.createElement('summary');
+  sum.textContent = sel.note;
+  const dl = document.createElement('dl');
+  for (const [k, v] of [
+    ['Left out of this request', `${sel.omitted_count} message(s) — still saved in this chat`],
+    ['Sent to the model', `${sel.included_ids.length} message(s)`],
+    ['Estimated size', `${sel.estimated_input_tokens} of ${sel.input_budget_tokens} tokens`],
+    ['Context window', `${sel.context_window} tokens`],
+    ['How size was counted', sel.counting_method],
+  ]) {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    dl.append(dt, dd);
+  }
+  el.append(sum, dl);
+  return el;
+}
+
+const host = document.getElementById('cases');
+for (const [title, source] of CASES) {
+  const sec = document.createElement('section');
+  sec.className = 'fixture-case';
+  const h = document.createElement('h2');
+  h.className = 'case-title'; h.textContent = title;
+  const body = document.createElement('div');
+  body.className = 'prose';
+  renderMarkdown(body, source);
+  sec.append(h, body);
+  host.append(sec);
+}
+for (const [title, build] of STATES) {
+  const sec = document.createElement('section');
+  sec.className = 'fixture-case';
+  const h = document.createElement('h2');
+  h.className = 'case-title'; h.textContent = `State — ${title}`;
+  sec.append(h, build());
+  host.append(sec);
+}
+</script>

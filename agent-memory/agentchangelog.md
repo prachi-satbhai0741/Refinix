@@ -814,7 +814,36 @@ work. No repository file change means no changelog entry.
 - remaining: The glass floor of 4.60:1 is slightly below the 4.74:1 the palette pass reached; that is the honest number under a strictly compositing measurement rather than a regression in the design. backdrop-filter is applied to top-level surfaces only, but no frame-rate measurement was taken - the preview pane starves animation frames, so glass performance on a low-end GPU is unverified and is the first thing to check on real hardware. Browsers without backdrop-filter degrade to the flat translucent fill, which is legible but not glass; this was not tested anywhere but Chromium. All seven pages remain static references carrying sample data, wired to nothing. Fonts still load from Google Fonts. No Git writes ran.
 
 <a id="ac-20260903-032"></a>
-## AC-20260903-032 — Unify the intro screen, retime the reveal, and make the page glitch pixel-based
+## AC-20260903-032 — Handover model and authorisation-scope amendment
+- prompt_id: [UP-20260903-014](userprompts.md#up-20260903-014)
+- date: 2026-09-03
+- status: in review
+- scope: documentation, execution, operating-contract
+- tags: c03, operating-contract, handover, authorisation-scope
+- aliases: handover pack, authorisation scope, reduce human intervention
+- paths: tasks.md, AGENTS.md, docs/handover-pack.md, docs/README.md
+- summary: Separated execution order from authorisation scope in the operating contract, stopped routine implementation questions being relayed as checkpoints, and added a one-time requester handover template.
+- changes: Rewrote three operating-contract bullets in tasks.md so authorisation may cover a named chunk range while work still proceeds one chunk at a time after each acceptance gate clears, routine implementation questions resolved from repository evidence and upstream documentation are explicitly not checkpoints, and execution stops for exactly three things including missing authorisation. Recorded that repository evidence can answer a technical question but never grants permission, and that a supplied input removes the question but never the gate. Aligned the AGENTS.md human-checkpoint bullet. Added docs/handover-pack.md with settled decisions prefilled, pre-C03 items separated from C07-C13 items, an authorisation-sentence template, an agents-prepare-the-fixture option for the code demo, and confidential inputs directed to the git-ignored private/handover/. Linked it from docs/README.md.
+- review_fixes: Codex returned NEEDS FIX with four findings; all four are addressed. Restored missing authorisation as a checkpoint in both the introduction and the copyable authorisation template, with a note not to delete that clause when copying. Gave provisioning constraints and device operating windows their real earliest-needed chunks, C04 and C05, instead of filing them under C11-C13, and added an earliest-needed column to the remaining rows. Removed an invented claim that scans and SOPs must be publicly redistributable: security.md section 11 actually requires synthetic or explicitly approved non-sensitive fixtures, and C07 separately requires source hashes and provenance. Corrected the contract row from frozen to reviewed draft, not frozen, integration pending C05. Also recorded that ignore rules are a safety net rather than a guarantee, since git add -f bypasses them.
+- verification: Confirmed private/handover/, scans/, secrets/ and .env are ignored using git check-ignore, while recording that a forced add bypasses ignore rules. Prefilled values were read from the current source rather than retyped: the OD-08 pins from architecture.md, the model tag from model-catalog.md and ports 8443/30443 from backend/contracts/v1.py. Checked every internal Markdown link and anchor across the repository and git diff --check.
+- remaining: Codex review of the combined diff, then requester acceptance. The three C03 gates are unchanged and uncleared: the Ubuntu *:8080 identification, C02 acceptance, and explicit C03 authorisation. No handover inputs have been supplied yet, no code was written and no Git writes ran.
+
+<a id="ac-20260903-033"></a>
+## AC-20260903-033 — Resolve the remaining handover review findings
+- prompt_id: [UP-20260903-015](userprompts.md#up-20260903-015)
+- date: 2026-09-03
+- status: in review
+- scope: documentation
+- tags: handover, fixtures, c07, review-fixes
+- aliases: residual fixture requirement, code fixture timing, handover pack corrections
+- paths: docs/handover-pack.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Removed the residual public-redistribution requirement and moved Code-fixture preparation to its C07 approval checkpoint.
+- changes: Both Documents rows now use the repository's synthetic-or-approved-non-sensitive fixture policy and require provenance and SHA-256; the Code-fixture heading now says it is needed at C07 and exercised in C09.
+- verification: `git diff --check` passed; the handover file has no trailing whitespace; focused searches confirmed both fixture rows, the C07/C09 heading and their agreement with security.md and tasks.md.
+- remaining: Requester verification and Git publication remain human actions. C03 was not started and its three gates remain uncleared.
+
+<a id="ac-20260903-034"></a>
+## AC-20260903-034 — Unify the intro screen, retime the reveal, and make the page glitch pixel-based
 - date: 2026-09-03
 - agent: Claude
 - status: verified
@@ -828,8 +857,8 @@ work. No repository file change means no changelog entry.
 - verification: Instrumented the sequence with a mutation observer and 60ms opacity sampling: video glitch 0 to 1005ms, figure holds 1005 to 2308ms which is 1303ms against the 1300ms target, rays alive 1020 to 2282ms then animation none and opacity 0 at the first sample after the exit begins, both lightning strikes complete by 1801ms well inside the hold. Confirmed the ambient canvas is fed - 2161 of 2880 pixels carrying frame colour, the 720x1280 master playing, and no canvas tainting. Confirmed the periodic burst fires on schedule by polling at 50ms over 8 seconds, after a mutation-observer check gave a false negative. Confirmed the light-theme variant resolves to pixjolt-light with the inversion retained. Swept the site with the compositing auditor in both themes, 184 elements each: this found two pre-existing failures the older ancestor-walk auditor could not see - --accent at 4.14:1 on a light glass panel and --ink-faint at 4.18:1 on the artifact's raised ground, neither related to this work - and after raising both tokens the site measures zero failures, 4.87:1 light and 5.03:1 dark, with no horizontal overflow and no console errors.
 - remaining: The ambient wash samples on a 100ms timer rather than requestVideoFrameCallback, so on a stalled decode it repeats the last frame rather than stopping; harmless, but rVFC would be tidier where supported. Frame rate during the burst was not measured - the preview pane starves animation frames - so the filter's cost on a low-end GPU is unverified, and the block glitch is a heavier filter than the tear it replaced. Only Chromium was tested; a browser without SVG filter support drops to an unfiltered jitter. The clip and the artwork remain placeholders. No Git writes ran.
 
-<a id="ac-20260903-033"></a>
-## AC-20260903-033 — Remove the sample strip, close the page rhythm, and apply the reviewed copy edits
+<a id="ac-20260903-035"></a>
+## AC-20260903-035 — Remove the sample strip, close the page rhythm, and apply the reviewed copy edits
 - date: 2026-09-03
 - agent: Claude
 - status: verified
@@ -843,8 +872,8 @@ work. No repository file change means no changelog entry.
 - verification: Checked the three factual claims the review flagged rather than taking them on trust, and two failed. The site said the sandbox runs with networking switched off; security.md line 227 says networking disabled, so the site was aligned to the document's wording. The Chat mockup showed Attempt 1 of 3, but workflows.md line 268 says only bounded retry options and the contract carries retryable and retry_of with no maximum anywhere - the ceiling was invented, so the number came out rather than inventing a matching policy in the docs. The third held: refinix verify --manifest renders at 412px inside a 522px box and is not truncated. The 8 GB VRAM figure is the top of the fleet in devicespecifications.md and Q4 quantisation is confirmed in model-catalog.md, though the fleet's top VRAM is recorded there as historical rather than reconfirmed, and 6 GB is the highest currently measured. Swept the site in both themes after the changes, 195 elements each: zero contrast failures, 4.87:1 light and 5.03:1 dark. Confirmed no page-level horizontal overflow at 768, 1024, 1440 and 1920, and at the narrowest width the pane will emulate: the one element extending past the viewport is a span inside a terminal block with overflow-x auto, and document.body.scrollWidth minus the layout viewport is zero, so it scrolls inside its own box as intended.
 - remaining: The pane reports clientWidth 400 while innerWidth is 470 at narrow settings and refuses to emulate below that, so true mobile widths are still unverified by direct measurement. It also will not paint below the fold, so the tightened rhythm was confirmed by measuring landmark-to-landmark gaps rather than by looking at the scrolled page. The band's removal moves all pre-release signalling below the fold except the nav chip; if the download-section disclosure is ever softened, the strip should come back. No Git writes ran.
 
-<a id="ac-20260903-034"></a>
-## AC-20260903-034 — Fit the hero to one screen, reorder the page, set the formula in a pixel face, and wire two brand lockups
+<a id="ac-20260903-036"></a>
+## AC-20260903-036 — Fit the hero to one screen, reorder the page, set the formula in a pixel face, and wire two brand lockups
 - date: 2026-09-03
 - agent: Claude
 - status: partial
@@ -858,8 +887,8 @@ work. No repository file change means no changelog entry.
 - verification: Measured the hero at 1440x900 before and after: 1023px tall against an 836px window with the terminal card's bottom at 967 and the figure 873px tall, versus 836px, the figure fully visible from 120 to 880, and the terminal card ending at 838. Confirmed the same fit at 1366x768, 1536x864 and 1920x1080. Confirmed Pixelify Sans actually loads rather than silently falling back. Confirmed the section order renders as hero, formula, get, statement, surfaces, work, proof, stats, closing. Swept both themes, 195 elements each: zero contrast failures, 4.87:1 light and 5.03:1 dark. Apparent horizontal overflow of 11px at 1024 and 41px at 768 was checked directly and is the vertical scrollbar skewing clientWidth again - zero elements extend past the layout viewport and document.body.scrollWidth minus the viewport is negative at both.
 - remaining: STATUS PARTIAL because the two supplied logo images could not be written to disk from the conversation, which is the same limitation hit with the wordmark earlier. The markup, sizing and fallback are all in place and reference assets/refinix-lockup-h.png and assets/refinix-lockup-v.png; until those files exist each img removes itself on error and a :has() rule reveals the type wordmark underneath, so the page renders correctly but still shows the old type lockup rather than the supplied artwork. The owner needs to save both attachments to those paths. Pixelify Sans is the closest modern pixel face on Google Fonts; Silkscreen is the nearer match to Minecraft's own bitmap and is already the first fallback if a swap is wanted. The evidence rule section landed after the four the owner listed because they did not place it; it is a one-block move if that is wrong. No Git writes ran.
 
-<a id="ac-20260903-035"></a>
-## AC-20260903-035 — Remove the download section, extend the evidence rule in a pixel face, and replace the owl with a supplied clip
+<a id="ac-20260903-037"></a>
+## AC-20260903-037 — Remove the download section, extend the evidence rule in a pixel face, and replace the owl with a supplied clip
 - date: 2026-09-03
 - agent: Claude
 - status: verified
@@ -872,3 +901,356 @@ work. No repository file change means no changelog entry.
 - changes: Removed the Get started section entirely, and handled two things it took with it rather than letting them break. The No public release yet paragraph was the page's only substantive pre-release statement once the top strip went, and it lived inside that section - it now opens the closing section, reworded, because the old text pointed at builds below that no longer exist. Four links pointed at the removed id (nav, hero CTA, closing CTA, footer), so the closing section took id="get" and all four still resolve, landing on the section that states no build exists. The section that now leads the middle took its top padding back. Extended the evidence rule with two paragraphs drawn from security.md section 12 rather than invented, leaving the existing opening untouched because it is the strongest paragraph on the page. Set the whole section - label, heading, body and all three claim cards - in Pixelify Sans, with sizes larger and line-height looser than the rest of the page, because a pixel face has a small x-height and at the page's normal scale reads markedly harder than the prose around it. Replaced the drawn Athenian owl with the supplied motion clip, copied into assets byte-for-byte with no transcode, paused while off screen by an IntersectionObserver because the page can have two clips alive at once and decoding both is what costs frames, and given controls rather than autoplay under prefers-reduced-motion.
 - verification: Confirmed the copied clip is byte-identical to the source with cmp, so there is no transcode and no generation of loss; it reports 720x720, readyState 4 and 16.67s, plays from evidence-loop.mp4 and its currentTime advances. Confirmed zero dead anchors on the page after the section removal, that the closing section carries id="get", and that the notice moved rather than vanished. Confirmed the claim cards actually took the pixel face after the first selector attempt targeted .card rather than the real .claim class and silently missed. Swept both themes, 161 elements each: zero contrast failures, 4.87:1 light and 5.03:1 dark. Zero elements past the layout viewport at 768, 1024, 1366 and 1440, and the hero's terminal card still lands above the fold at 1366x768. Document height fell from 7310px to 6085px.
 - remaining: The evidence rule is now the one section on the site set in a display face at body sizes; it passes contrast, but it is the first place to look if a legibility complaint arrives, and reverting is a single selector block. The clip's own frame rate was not measured - no ffprobe on this machine and the preview pane starves animation frames - so smoothness on real hardware is unverified, though nothing in the pipeline re-encodes it. The two brand lockup images are still not on disk, so the nav and intro still show the type fallback. No Git writes ran.
+
+<a id="ac-20260904-001"></a>
+## AC-20260904-001 — C03 local application implemented
+- prompt_id: [UP-20260904-001](userprompts.md#up-20260904-001)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, coordinator, frontend, execution
+- tags: c03, af-004, coordinator, sqlite, ollama, restart-reconciliation
+- aliases: build local application, c03 chat control center, coordinator sqlite streaming
+- paths: backend/coordinator/, frontend/app/, tasks.md, docs/architecture.md, frontend/README.md, agent-memory/
+- summary: Implemented the smallest usable local application — contract-validated SQLite state, local Ollama streaming, restart reconciliation, cancellation, and Chat plus a minimum Control Center on plain HTML/CSS/JS.
+- changes: Added backend/coordinator with db.py, runtime.py, server.py, __main__.py, README.md and 12 offline checks. Every Job, Attempt and Event is constructed and validated through backend.contracts.v1 before it is written, and state changes go through require_transition, so an illegal transition raises instead of persisting. Added frontend/app with application-owned HTML, CSS and JavaScript reusing the design's class vocabulary; the stylesheet is derived from the design tokens with no external font, and frontend/design/ is untouched and never served or linked. Documents and Code render unavailable, and workers, cluster, approvals, Proof Cards and egress each name the chunk that produces their evidence. Recorded the standard-library deviation from the FastAPI direction in architecture.md, since FastAPI is not installed and adding it is a setup checkpoint; FastAPI remains the C04 worker-API direction. Updated the board with the Jenkins identification, the two Ubuntu Docker endpoints and the different-subnet finding.
+- verification: Ran on the macOS coordinator against the loopback Ollama server. A real request returned "The capital of France is Paris." with the full contract-legal sequence of 18 events and runtime 3503 ms. SIGKILL during generation then restart repaired the job: job and attempt both interrupted with a typed internal_error reason, 320 characters of partial output and all conversation history retained, events continuing at sequence 69 without a gap. Cancellation produced cancelled_by_user, kept 334 partial characters and wrote no assistant message. lsof showed 127.0.0.1:8770 only. In the browser both surfaces rendered real observed values, streaming worked through the UI, the Enter key submitted, zero elements were clipped and all six resource requests went to loopback. 12 coordinator checks and the 8 existing contract checks pass.
+- acceptance_fixes: The requester's acceptance run found two defects, both fixed. Ctrl+C did not stop the coordinator: the SSE handler looped with no exit path, so server_close() waited on a thread that never returned. A stopping event with a one-second poll releases it, and block_on_close is disabled; isolating the variable showed block_on_close alone was not the cause, so the initial diagnosis was corrected. The interface was too busy: model output now renders as Markdown built from DOM nodes rather than showing raw asterisks and hashes, output deltas collapse from one row per token into a single rolling counter, the evidence panel became a collapsed disclosure, and event labels no longer wrap mid-word. Recorded events now replay when a conversation loads, so the rail no longer looks as though nothing happened.
+- remaining: Codex review and the macOS coordinator acceptance run — real prompt, streaming response, restart, retained history. Browser observation of loopback requests is not zero-egress evidence, which needs C11 controls and independent observation. No worker, pairing, cluster, Documents, Code, approvals or Proof Cards exist. AF-001 stays a draft until C05. The Ubuntu 8080 wildcard exposure review and the different-subnet routing question remain open. No Git writes ran.
+
+<a id="ac-20260904-002"></a>
+## AC-20260904-002 — Repair C03 and require the third OCR device
+- prompt_id: [UP-20260904-002](userprompts.md#up-20260904-002)
+- date: 2026-09-04
+- status: in review
+- scope: coordinator, review-fixes, device-qualification, execution
+- tags: three-devices, ocr, c03, concurrency, restart, local-api
+- aliases: Yug OCR worker, event replay, local boundary, persisted node identity
+- paths: backend/coordinator/, frontend/app/app.js, scripts/qualify-ocr-worker.ps1, tasks.md, docs/devicespecifications.md, docs/handover-pack.md, agent-memory/
+- summary: Repaired C03 and changed the execution board to require a separate Windows OCR worker before the internal demo.
+- changes: Serialized SQLite access, repaired every unfinished job after a crash, persisted node identity, rejected overlapping chat requests, closed the late-cancel write race, bounded and same-origin checked local HTTP, disabled Ollama proxies/redirects, and recovered UI output/events missed before POST or during reconnect. Selected the inventoried Windows HP Victus for OCR, required qualification at C07 and real remote OCR at C08, and added one later read-only PowerShell packet.
+- verification: 29 coordinator/contract checks passed; JavaScript syntax and diff whitespace checks passed. An isolated browser run returned `local check passed` from loopback Ollama in 583 ms, rendered the lifecycle, stopped, restarted with the same node ID, and restored the prompt and answer. The existing port-8770 process and state were untouched.
+- remaining: Restart and accept the repaired source on the macOS coordinator, then implement/build C04 on Ubuntu. Windows qualification, OCR setup, pairing and real OCR remain C07-C08 gates. No Git writes ran.
+
+<a id="ac-20260904-003"></a>
+## AC-20260904-003 — Restore two-device scope and prepare C04 image inputs
+- prompt_id: [UP-20260904-003](userprompts.md#up-20260904-003)
+- date: 2026-09-04
+- status: in review
+- scope: documentation, build-preparation, execution
+- tags: two-devices, ocr, c04, deadline, scope-correction
+- aliases: deferred Windows qualification, September 8-9 demo, worker-base image inputs
+- paths: tasks.md, docs/devicespecifications.md, docs/handover-pack.md, scripts/qualify-ocr-worker.ps1, backend/worker-image/, agent-memory/
+- summary: Restored the two-device critical path, retained the C03 repairs, and prepared pinned Linux image inputs and a combined Git handoff.
+- changes: Removed mandatory Windows execution and C07 qualification; restored C08 OCR to Mac/Ubuntu; marked the retained PowerShell packet deferred. Recorded 8-9 September as the internal demo window with sequential targets and slip risks. Added a digest-pinned Python base, thirteen hash-pinned wheels, provenance, restrictive Docker context and gated Ubuntu commands. The preparation image exports contracts; the worker API remains unimplemented.
+- verification: Re-read and hash-matched the pinned Docker Hub base manifest; checked PyPI versions, licences, wheel hashes and dependency closure for Python 3.13/Linux against existing contract pins. Offline validation passed for all build paths and all 12 C03 source hashes remained unchanged; no application tests were rerun for this documentation/build-input change.
+- remaining: Requester C03 acceptance, then C04 worker implementation, actual image build and manifest-digest evidence. No image, wheel, installer or model was downloaded; registry metadata only. No service or Git writes ran.
+
+<a id="ac-20260904-004"></a>
+## AC-20260904-004 — Repair reply limits and browser disconnect handling
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- tags: c03, truncation, output-limit, browser-disconnect, migration
+- aliases: completed normally, 2048 tokens, incomplete reply, connection reset by peer
+- paths: backend/coordinator/db.py, backend/coordinator/runtime.py, backend/coordinator/server.py, backend/coordinator/test_coordinator.py, backend/coordinator/README.md, frontend/app/app.js, docs/model-catalog.md, docs/handover-pack.md, tasks.md, agent-memory/
+- summary: Raised C03 replies to 2048 tokens and made capped output, stopping evidence and expected browser disconnects truthful.
+- changes: Added nullable attempt metrics with an additive history-preserving upgrade; only stop completes, length fails validation with retained annotated text usable for continuation, and unknown reasons stay unverified. The HTTP connection boundary handles reset/broken-pipe exceptions while SSE always unsubscribes and other errors remain visible. Updated the model settings and manual handoff.
+- verification: 33 coordinator/contract checks, JavaScript syntax and diff whitespace passed. A temporary Mac instance produced a real 664-token reply ending in stop in 22735 ms, displayed limit 2048, and retained text/metrics and node identity after restart. The browser rendered a separate synthetic length fixture with its incomplete notice. The temporary instance and tab were closed.
+- remaining: Restart and accept the repaired normal Mac app before C04. Existing port-8770 process/history were untouched; real response content was not quality-validated. No installs, model downloads or Git writes ran.
+
+<a id="ac-20260904-005"></a>
+## AC-20260904-005 — Prepare inspected context and UI execution brief
+- prompt_id: [UP-20260904-005](userprompts.md#up-20260904-005)
+- date: 2026-09-04
+- status: prepared
+- tags: c03, build-brief, context-window, kv-cache, ui, ux
+- aliases: Claude build update, semantic output colours, synthetic UI fixture
+- paths: docs/c03-context-ui-build-brief.md, docs/handover-pack.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Prepared Claude's requested build brief after inspecting live Chat, Control Center and current context/rendering source.
+- changes: Specified bounded context selection and overflow evidence, distinct history/cache/residency concepts, conditional Mac context measurement, typography/alignment/responsive fixes, semantic colours, safe Markdown, interaction repairs, a synthetic fixture payload and acceptance checks.
+- verification: Read live browser state and screenshots; confirmed active-selector mismatch, hidden responsive controls, renderer limits, forced scrolling and draft-clearing behavior from source. The live process reported 512 output tokens while source specifies 2048. Checked brief whitespace, code fences, required scope and referenced implementation paths; diff whitespace passed.
+- remaining: Claude implements and verifies the brief, followed by Codex review and requester C03 acceptance. No application code, live history, runtime configuration or Git state was changed; no application tests were run for this documentation deliverable.
+
+<a id="ac-20260904-006"></a>
+## AC-20260904-006 — Add Delete chat to Claude's UI scope
+- prompt_id: [UP-20260904-006](userprompts.md#up-20260904-006)
+- date: 2026-09-04
+- status: prepared
+- tags: c03, ui, delete-chat, build-brief
+- aliases: delete convo, confirmed deletion, conversation menu
+- paths: docs/c03-context-ui-build-brief.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added confirmed per-conversation deletion, backend concurrency requirements and fixture coverage to the execution brief.
+- changes: Specified an accessible menu, titled confirmation, unfinished-work guard, atomic scoped record deletion, failure/empty states and disposable-data checks.
+- verification: Reviewed current retention/deletion guidance; brief whitespace, code fences and deletion requirements checked; diff whitespace passed.
+- remaining: Claude implementation and verification. No application code or user chat data changed; no application tests or Git writes ran.
+
+<a id="ac-20260904-007"></a>
+## AC-20260904-007 — Add five conversation-management features to the brief
+- prompt_id: [UP-20260904-007](userprompts.md#up-20260904-007)
+- date: 2026-09-04
+- status: prepared
+- tags: c03, build-brief, rename, search, drafts, pin, export
+- aliases: simple chat management, exclude regeneration, one build pass
+- paths: docs/c03-context-ui-build-brief.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Extended Claude's existing execution brief with rename, local search, draft recovery, pinning and export, explicitly excluding regeneration.
+- changes: Defined small local implementations, persistence and deletion interactions, fixture states and focused verification; retained Continue as a separate follow-up action.
+- verification: Checked the current chat schema/read paths, all five requested requirements, the regeneration exclusion, Markdown fixture fences and whitespace; diff whitespace passed.
+- remaining: Claude implementation and verification. Only documentation changed; no application tests, live data changes or Git writes ran.
+
+<a id="ac-20260904-002"></a>
+## AC-20260904-002 — Context selection, Markdown renderer and interface rebuild
+- prompt_id: [UP-20260904-002](userprompts.md#up-20260904-002)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, coordinator, frontend, context-window
+- tags: c03, context-window, markdown, accessibility, responsive
+- aliases: context selection, markdown renderer, ui fixture, 8192 context
+- paths: backend/coordinator/context.py, backend/coordinator/test_context.py, backend/coordinator/{db,runtime,server,test_coordinator}.py, frontend/app/, docs/evaluation.md, docs/model-catalog.md
+- summary: Added bounded context selection with recorded per-attempt metadata, adopted a measured 8192 window on the Mac, replaced the ad-hoc Markdown handling with a real tokenizer, and rebuilt typography, drawers and interaction safety.
+- changes: New context.py selects a bounded request from saved history in complete exchanges, never orphaning an assistant reply, keeping the newest message intact, and reporting rather than chopping an oversized one. The selection persists on the attempt through a new selection_json column with an additive migration, so a reopened job shows the policy that ran then. Adopted num_ctx 8192 on the coordinator from measurement. Captured runtime-reported prompt tokens separately from the character estimate. Added markdown.js, a block-then-inline tokenizer built entirely from DOM nodes: raw HTML stays inert, javascript and data URLs are shown but never clickable, safe links carry noopener/noreferrer/nofollow and display their host, and code blocks carry a language label and a copy button that copies literal source. Rebuilt overrides.css with a 76ch reading column, 16px prose, semantic prose colours separate from operational state colours, and drawers so navigation and details stay reachable below 1180px and 760px. Fixed the aria-current mismatch, preserved drafts on failed submission, blocked duplicate sends, guarded IME composition, and made streaming follow the bottom only when the reader is already there with a Jump to latest control otherwise. Added fixture.html/fixture.js as a labelled synthetic fixture covering rich content and eight deterministic states.
+- verification: 46 offline checks pass, including 12 new context checks covering budget arithmetic, oldest-first omission, orphan prevention, exact boundary, dense scripts, oversized newest input and replayable metadata. Measured 4096 against 8192 on the coordinator: +220 MiB resident, warm TTFT 0.196 s to 0.203 s, early fact retrieved at 3052 prompt tokens. A seven-turn real conversation drove estimated input to 5132 of 5168 then into omission at turns 6 and 7; saved history stayed 16 messages and the model said it no longer had an omitted fact instead of inventing one. In the browser at 1440, 1024 and 390 px: no horizontal overflow, no clipped controls, navigation and details reachable at every width, drawer opens on click and closes on Escape, zero external requests, and the fixture confirmed inert raw HTML, blocked unsafe schemes, 3 code blocks, 2 tables, 4 nested lists and an unfinished fence.
+- remaining: Codex review and the macOS coordinator acceptance run. Two defects were found and fixed during this work: a base display rule ordered after its media query left the menu control unreachable at 390 px, and a closing script tag inside an inline fixture literal terminated the script and executed an alert, which is why the fixture is now a module file. The character estimate runs about 1.8x conservative against measured prompt counts. Ubuntu keeps 4096 until its own measurement. Browser request checks are not the C11 zero-egress gate. No Git writes ran; the requester's port-8770 process was left untouched.
+
+<a id="ac-20260904-003"></a>
+## AC-20260904-003 — Conversation management added
+- prompt_id: [UP-20260904-003](userprompts.md#up-20260904-003)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, coordinator, frontend
+- tags: c03, rename, search, drafts, pin, export, delete
+- aliases: conversation management, chat search, draft recovery, export chat
+- paths: backend/coordinator/db.py, backend/coordinator/server.py, backend/coordinator/test_conversations.py, frontend/app/
+- summary: Added rename, literal local search, draft recovery, pin/unpin, Markdown and plain-text export, and delete, reusing SQLite state and the protected API.
+- changes: Added a pinned column and a drafts table with additive migrations, plus rename_chat, set_pinned, delete_chat, search, get_draft, set_draft, clear_draft_if_matches and export_chat. Search escapes LIKE wildcards so % and _ are literal, is parameterised, covers every saved chat rather than the sidebar page, and excludes drafts. Drafts are workspace-owned, never reach the model, search or export; a submit clears only the version that was sent and a delayed save cannot resurrect a deleted chat. Export builds a saved snapshot with speaker labels, notes for length-stopped and context-limited replies, a sanitised filename and no mutation. Added six routes and a per-row accessible menu with rename in place, pin indicator, both export choices and a title-confirmed delete with Cancel focused. Chats now sort pinned first, then most recent.
+- verification: 73 offline checks pass, 27 of them new: rename trimming and rejection, literal % and _ search, Unicode and case-insensitive search, reach beyond the sidebar page, draft isolation and submit-version clearing, resurrection prevention, pin persistence and ordering, cascade delete, and export scope, formatting, filename safety and non-mutation. In the browser: search for 100% matched exactly one chat, clearing restored the list, the row menu exposed five actions with focus landing on Rename, pinning showed its mark, rename prefilled and saved on Enter, and a draft survived both a chat switch and a full page reload. A real export contained the saved exchange and excluded the draft.
+- remaining: Codex review. The delete confirmation uses a native modal dialog which hangs the automation harness, so its Cancel-focused behaviour was verified by construction rather than by an automated click; a human should confirm it. Regenerate remains excluded by design.
+
+<a id="ac-20260904-004"></a>
+## AC-20260904-004 — Corrected stale documentation claims
+- prompt_id: [UP-20260904-003](userprompts.md#up-20260904-003)
+- date: 2026-09-04
+- status: in review
+- scope: documentation
+- tags: c03, readme, accuracy, stale-claims
+- aliases: fix stale docs, readme says nothing to run, doc accuracy
+- paths: README.md, backend/README.md, docs/prd.md, docs/evaluation.md
+- summary: Corrected six documentation claims that became false once the coordinator started running, without overclaiming what still does not exist.
+- changes: README's status banner said no application runtime or executable product exists; it now states that a local coordinator runs with Chat and a minimum Control Center, and names what is still absent. Replaced "There is nothing to install or run yet" with the actual run command and a link to the coordinator README. Expanded the repository tree, which listed backend and frontend only as planned boundaries, to show contracts, coordinator, worker-image, app and design. prd.md and evaluation.md's status paragraphs were updated the same way. backend/README.md claimed five contract checks pass and that the coordinator, runtime adapter and database do not exist; corrected to eight contract checks, 73 offline checks in total, and a description of what exists versus what does not. Recorded there that FastAPI remains the C04 worker-API direction while the C03 coordinator uses the standard library. Annotated the OD-03 comparison table's 4096 as the value held constant for that comparison, since the coordinator now runs 8192.
+- verification: Swept README, backend, frontend and every docs file for stale phrases and found none remaining. 384 local Markdown links and anchors resolve, git diff --check is clean, and the 73 offline checks still pass. Every replacement names what is still missing so the corrections do not overclaim in the other direction.
+- remaining: Codex review. Non-documentation review findings are unaddressed by design: GET query parameters are not length-bounded the way POST fields are, and backend/__init__.py is missing so unittest discover fails from the repository root. No Git writes ran.
+
+<a id="ac-20260904-008"></a>
+## AC-20260904-008 — Repair the C03 acceptance defects
+- prompt_id: [UP-20260904-008](userprompts.md#up-20260904-008)
+- date: 2026-09-04
+- status: verified locally; requester acceptance pending
+- tags: c03, review-fixes, drafts, delete, export, context
+- aliases: stale draft responses, atomic delete guard, Marathi export, context overflow
+- paths: backend/coordinator/, frontend/app/app.js, frontend/app/test-conversations.cjs, docs/evaluation.md, docs/model-catalog.md, docs/c03-repair-handoff.md, agent-memory/
+- summary: Fixed draft navigation/submission races, active-job deletion, Unicode export headers and context overflow enforcement on the Mac.
+- changes: Guarded restored drafts by chat/edit version and serialized captured saves; preserved failed-deletion state; rejected unfinished deletion atomically with HTTP 409; preserved Unicode combining marks with encoded download filenames; disabled runtime truncation/shifting and distinguished context, output and unidentified length limits while retaining partial replies. Added focused regressions, a repeatable bounded runtime check and the device/Git handoff.
+- verification: 80 Python checks and 8 Node frontend checks passed; JavaScript syntax and diff whitespace passed. Installed Ollama 0.32.14 retained a fact at 5034 prompt tokens, rejected oversized input before output, and stopped at 8042 prompt plus 150 output tokens with a saved context-limited partial reply. Browser tests confirmed draft switch/reload recovery, busy-delete disabling, Cancel focus, cancelled deletion and confirmed deletion surviving reload. Both Marathi exports returned HTTP 200 with the correct filename and excluded unsent drafts.
+- remaining: Requester restarts and accepts C03 on the macOS coordinator. Ubuntu policy verification and C04 remain separate checkpoints. Temporary servers/tabs were closed; real chat history and pre-existing changes were preserved. No installs, model downloads, service changes or Git writes ran.
+
+<a id="ac-20260904-009"></a>
+## AC-20260904-009 — Report simultaneous context and output limits
+- prompt_id: [UP-20260904-009](userprompts.md#up-20260904-009)
+- date: 2026-09-04
+- status: verified locally
+- tags: c03, review-follow-up, context, output-limit
+- aliases: simultaneous caps, limit_reason, both bounds reached
+- paths: backend/coordinator/runtime.py, backend/coordinator/server.py, backend/coordinator/db.py, backend/coordinator/test_coordinator.py, frontend/app/app.js, docs/c03-repair-handoff.md, agent-memory/
+- summary: Removed the ambiguous single-limit classification when a reply reaches both configured bounds.
+- changes: Record context_and_output for simultaneous caps, display readable wording in the UI and export, retain full-context guidance, and recognise a measured output cap even without a prompt count.
+- verification: Extended the existing partial-reply regression with 6144+2048 and missing-prompt-count cases; all 80 Python and 8 Node checks passed, plus JavaScript syntax and diff whitespace. No additional real-model run was needed for the classifier change.
+- remaining: Requester C03 acceptance on the macOS coordinator. No Git writes or live-history changes.
+
+<a id="ac-20260904-010"></a>
+## AC-20260904-010 — Record C03 acceptance and prepare Claude's C04 handoff
+- prompt_id: [UP-20260904-010](userprompts.md#up-20260904-010)
+- date: 2026-09-04
+- status: handoff prepared; Claude dispatch pending
+- tags: c03, c04, acceptance, orchestration, networking
+- aliases: accepted Mac app, Claude execution brief, connect Ubuntu and Mac
+- paths: tasks.md, docs/c03-repair-handoff.md, docs/c04-execution-brief.md, backend/worker-image/README.md, agent-memory/
+- summary: Recorded requester C03 acceptance and prepared the C04 source/build handoff with trusted-LAN checks and device evidence gates.
+- changes: Advanced current scope to C04, labelled old network addresses historical, retained separate image/deployment/pairing gates and clarified that the prepared base image is not the final worker. Added a paste-ready Claude brief, exact device commands and scoped Git handoff.
+- verification: Mac route/address reads reported en0, 192.168.68.132 and gateway 192.168.68.1. Claude Code 2.1.246 was present but auth status reported loggedIn false; the enabled browser inventory had no Claude session. Four document fence checks, 26 local file-link checks, acceptance/dispatch assertions and git diff --check passed. No application tests were rerun for this documentation-only change.
+- remaining: Requester sends the brief to the existing Claude conversation and returns Ubuntu LAN output; Codex reviews the resulting C04 source before the Ubuntu image-build checkpoint. No direct Claude dispatch, installations, service changes or Git writes ran.
+
+<a id="ac-20260904-005"></a>
+## AC-20260904-005 — Worker API implemented and image verified
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, worker, container-image
+- tags: c04, af-003, worker-api, docker, image-digest
+- aliases: worker image build, worker api, c04 execution
+- paths: backend/worker/, backend/worker-image/, docs/c04-ubuntu-build-handoff.md, tasks.md, agent-memory/
+- summary: Implemented the worker service against the frozen /v1 contract, completed the pinned image, verified it by building and running it, and prepared the Ubuntu build handoff.
+- changes: Added backend/worker with an Ollama adapter and a FastAPI application serving exactly the contract's reserved worker routes, including the attempt_id scoping that stops a delayed poll or cancel targeting a newer retry. The service refuses to start without a bearer credential compared in constant time, so it cannot run open on a LAN; both pairing routes return 501 because OD-06 is recorded but unimplemented. A model is advertised only when the runtime reports a real 64-character manifest digest, replacing an earlier placeholder of zeros. Health reports unknown with no measurements when nothing was observed. Truncation and shifting are disabled, and the limit classifier checks the output branch first so a capped reply after a large prompt is not mislabelled as a context stop. Errors carry only a Failure code, short message and retryable flag. Rewrote the Dockerfile to run the worker with a build-time route check under --network=none, extended the dockerignore, recorded the verification build in provenance.json, and wrote the Ubuntu handoff with endpoint-explicit Docker commands and rollback.
+- verification: Built the image for linux/amd64 on the macOS coordinator under emulation: 13 wheels installed under --require-hashes, 8 contract checks passing inside the image with --network=none, route surface matching the contract, 49,496,153 bytes across 11 layers, running as uid 10001 with /app not writable. Ran the container and exercised the API: POST /v1/jobs returned 202, the SSE stream carried attempt.state, three output.delta frames and completion, the model answered DISPATCHED, and runtime_ms was 2812. Authentication returned 401 without or with a wrong token, 400 without the contract header and 409 on a wrong version; a wrong attempt_id returned 404, a malformed envelope 422 and pairing 501. 90 Python checks and 8 Node checks pass.
+- remaining: Codex review of the implementation and handoff, then the Ubuntu build. The Mac build was emulated and never pushed, so it is not the deployment artifact; C05 pins the digest the Ubuntu operator reports. Kubernetes readiness, Service exposure, Redis, NetworkPolicy enforcement and container GPU access remain unverified C05 work. No Git writes ran.
+
+<a id="ac-20260904-006"></a>
+## AC-20260904-006 — C04 review corrections
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, worker, container-image, documentation
+- tags: c04, af-003, streaming, admission, idempotency, image-digest
+- aliases: c04 corrections, worker streaming fix, manifest digest
+- paths: backend/worker/, backend/worker-image/, scripts/image-digests.py, docs/c04-ubuntu-build-handoff.md
+- summary: Fixed the three reproduced worker defects plus admission, identity, idempotency and handoff findings from Codex's C04 review.
+- changes: Output is now forwarded incrementally through a backpressured thread-to-async relay instead of materialising the whole generator first, so partial text survives an error or cancellation and reaches the stream as it is produced. A reply is validated before completing: a length stop no longer completes, its typed incomplete reason names which bounds were reached using the accepted context_and_output semantics, and the partial text is retained. Admission refuses unsupported task types, capabilities, output kinds and validators, context or attachment packages, envelopes targeting another node, pre-cancelled envelopes, expired deadlines and absent relationships, and returns 429 at capacity rather than evicting active work. Request bodies are bounded during streaming rather than after, compression and non-JSON content types are refused, and the runtime timeout follows the job's remaining deadline. Idempotency keys are required, scoped to route and resource and bound to a body hash, so an exact retry replays the original 202 and a changed body conflicts. Node identity is distinct and persisted rather than a shared default, the service exits at import when no credential of at least 32 characters is set, contract version headers appear on error paths, and upstream runtime error text is no longer echoed. loaded_model_id now needs an actual residency observation rather than an installed listing. Added 19 behavioural checks that run inside the image at build time, and scripts/image-digests.py to read manifest, config and archive digests from a saved archive. Rewrote the build handoff and the worker-image README.
+- verification: 37 checks pass inside a linux/amd64 image built under emulation with --network=none. A live container showed the first output event at 2.73 s of a 15.98 s generation across 417 deltas, confirming incremental delivery; an exact retry replayed 202 while a changed body returned 409; and unsupported task type, output kind, wrong target node and pre-cancelled envelopes were refused with typed codes. Confirmed manifest, config and archive digests are three distinct values and that docker image inspect .Id reports different objects under BuildKit and the classic builder, which is why the handoff no longer relies on it. 90 Python and 8 Node checks pass offline.
+- remaining: Codex re-review, then the Ubuntu build. Container-to-runtime networking is deliberately unattempted and belongs with the C05 Pod networking design; the earlier untested 172.17.0.1 claim was retracted. Acceptance in the worker is in-memory and is not a durable receipt, which needs AF-005. Pairing stays at 501. The Mac build was emulated, never pushed, and is not the deployment artifact. No Git writes ran.
+
+<a id="ac-20260904-007"></a>
+## AC-20260904-007 — C04 re-review blockers closed
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, worker, container-image
+- tags: c04, fail-closed, od-06, af-005, deadline, attempt-schema, idempotency
+- aliases: c04 blockers, worker fail closed, absolute deadline
+- paths: backend/worker/, backend/worker-image/, scripts/image-digests.py, docs/c04-ubuntu-build-handoff.md
+- summary: Closed all five C04 re-review blockers by making the job routes fail closed, enforcing one absolute deadline with the envelope's limits, serving contract-valid Attempt records, and requiring UUIDv4 idempotency keys scoped to the relationship.
+- changes: All four job routes now return a typed 503 while OD-06 pairing and the AF-005 durable receipt are absent, so the worker never returns 202 for in-memory acceptance and never trusts an unverified relationship over plain HTTP; the relationship registry is populated by nothing in the application, so there is no deployable bypass, and a check asserts that. Health and capabilities remain available and advertise no capability while the worker cannot accept work. Execution now derives every wait from one absolute deadline taken as the earlier of the envelope's remaining time and its runtime_seconds, with no per-read floor, and enforces output_bytes and a bounded producer join through a stop event. Attempt records are built through the contract on every read, so state, started_at, finished_at and the single typed reason are validated and the previously extra metrics and output_chars fields are gone. Idempotency keys must be UUIDv4 and are scoped by relationship, workspace, job and route. The archive extractor now detects Docker Archive layouts and reports that the format carries no manifest digest instead of presenting the config digest as one.
+- verification: 52 checks pass inside a linux/amd64 image built with --network=none, including new cases for the fail-closed gate, the absent bypass, contract-valid terminal attempts with no extra fields, a slow stream that cannot extend a 0.30 second budget, runtime_seconds bounding the attempt, output_bytes enforcement, and rejection of non-UUIDv4 keys. A live container returned 503 with a typed reason on all four job routes while health reported degraded with empty capabilities and loaded_model_id null; the container exits 1 with no credential. The extractor was exercised against an OCI single manifest, an OCI index with an attestation, and an unrecognised archive. 90 Python and 8 Node checks pass offline.
+- remaining: Codex re-review. Enabling dispatch needs OD-06 pairing and the AF-005 receipt; until then the worker builds and reports health but accepts no work, which is the intended C04 state. Container-to-runtime networking and TLS remain C05. The Mac build was emulated, never pushed, and is not the deployment artifact. No Git writes ran.
+
+<a id="ac-20260904-011"></a>
+## AC-20260904-011 — Correct the C04 OCI export path
+- prompt_id: [UP-20260904-011](userprompts.md#up-20260904-011)
+- date: 2026-09-04
+- status: source and instructions verified; Ubuntu build pending
+- tags: c04, export, buildkit, review-fixes
+- aliases: explicit OCI output, docker-container builder, archive guidance
+- paths: docs/c04-ubuntu-build-handoff.md, backend/worker-image/README.md, backend/worker-image/provenance.json, scripts/image-digests.py, agent-memory/
+- summary: Replaced the BuildKit/docker-save assumption with an explicit OCI export and a pinned dedicated builder checkpoint.
+- changes: Added Buildx prerequisites, a digest-pinned BuildKit 0.33.0 builder with bounded resources, fresh artifact directory, explicit type=oci output, provenance/storage/rollback and Git handoff. Removed obsolete dependency-only build and unloaded-image smoke commands. Corrected archive error guidance and labelled the old 37-check image historical while recording the latest 52 checks as Claude-reported, with independently checked source count.
+- verification: OCI and Docker-archive CLI cases passed with synthetic temporary archives; handoff shell syntax, local document links, provenance/pin consistency and 8+10+34 source count passed. git diff --check passed. Public BuildKit manifest bytes matched SHA-256, its config reported linux/amd64, licence was Apache-2.0 and compressed layers totalled 112271581 bytes. Local Buildx help confirmed used flags; no builder was created.
+- remaining: Ubuntu operator verifies its Buildx availability and performs the image build/export after reviewed Git transfer. The 52 container checks were not rerun by Codex. No images downloaded, builds/deployments, worker-code changes or Git writes ran.
+
+<a id="ac-20260904-008"></a>
+## AC-20260904-008 — C04 Ubuntu build evidence recorded
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- scope: documentation, container-image, execution
+- tags: c04, af-003, image-digest, ubuntu-build, od-08
+- aliases: c04 build result, worker manifest digest, ubuntu image build
+- paths: backend/worker-image/provenance.json, docs/architecture.md, tasks.md
+- summary: Recorded the Ubuntu worker's C04 image build, whose manifest digest is the artifact C05 pins.
+- changes: Added the Ubuntu build to provenance.json with device, endpoint, platform, flags, base digest, manifest, config and archive digests, layer count, in-image check result and the observed health record. Replaced the OD-08 worker-image row in architecture.md, which had said no digest existed yet, with the built manifest and config digests and their build conditions. Recorded the same evidence in the tasks.md current-scope note, including that the digest differs from the earlier emulated Mac build because image configs embed a creation timestamp, so no reproducible-build claim is made.
+- verification: Reviewed the returned build transcript. The base image resolved by the OD-08 pinned digest 2f2e5a87, 13 wheels installed under --require-hashes with pip check reporting no broken requirements, and 52 in-image checks passed with --network=none. The reported manifest digest a1eb434c and config digest 4d9c9189 match the build's own exporting manifest and exporting config lines, an independent cross-check. The archive was 48 MB across 11 layers, matching the emulated Mac build's layer count. The container reported a distinct generated node identity, empty capabilities, health unavailable and loaded_model_id null, which is correct for no reachable runtime and fail-closed job routes. Claude did not run this build; the evidence is the operator's returned transcript.
+- remaining: Codex review of the build evidence and requester acceptance close C04. A built image is not a running Pod: Kubernetes readiness, Service exposure, Redis, NetworkPolicy, container GPU access and container-to-runtime networking are C05. Dispatch stays closed until OD-06 pairing and the AF-005 receipt exist. No Git writes ran.
+
+<a id="ac-20260904-009"></a>
+## AC-20260904-009 — C05 deployment assets prepared
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, deployment, kubernetes
+- tags: c05, af-002, k3s, redis, networkpolicy, manifests
+- aliases: c05 manifests, k3s deployment, redis clusterip, worker nodeport
+- paths: deploy/k3s/, docs/c05-ubuntu-deployment-handoff.md, tasks.md
+- summary: Prepared the K3s deployment manifests pinned to the accepted C04 manifest digest, with offline invariant checks and the exact Ubuntu host commands, leaving installation and deployment at the human checkpoint.
+- changes: Added deploy/k3s with a namespace carrying restricted Pod Security and a default-deny NetworkPolicy applied before any workload, a DNS exception, Redis 7.2.16 pinned by its OD-08 linux/amd64 digest behind ClusterIP with snapshots and append-only disabled since it is not storage, and the worker Deployment pinned by the C04 manifest digest with imagePullPolicy Never behind the contract's NodePort 30443 to port 8443. Every Pod runs non-root with privilege escalation disabled, all capabilities dropped, RuntimeDefault seccomp, a read-only root filesystem, bounded CPU and memory and no service-account token. Worker egress is limited to Redis; runtime egress is deliberately absent because Ollama binds host loopback, which no Pod can reach, so a guessed CIDR would be useless or far too wide. The credential is created by the operator and no Secret is committed. Added 16 offline invariant checks and the deployment handoff.
+- verification: The 16 checks confirm the worker digest matches provenance.json, the Redis digest matches the OD-08 pin in architecture.md, no image uses a floating tag, Service ports match WORKER_PORT and WORKER_NODE_PORT read from the contract source, Redis is ClusterIP with no nodePort and no Ingress exists anywhere, the default-deny policy sits in the lowest-numbered file so ordering cannot create a workload before it, worker egress contains no 0.0.0.0/0, every Deployment is hardened and resource-bounded, nothing uses hostNetwork, hostPath, hostPort or privileged, and no manifest defines a Secret or inlines a token. kubectl --dry-run=client was attempted and needs a live cluster to resolve API groups, so it could not run offline. 90 Python and 8 Node checks still pass.
+- remaining: Codex review, then the Ubuntu checkpoint. Nothing was installed or deployed. A gate conflict is recorded for the requester: C05's row expects one real worker-model response, which this deployment cannot produce because the job routes are fail-closed pending OD-06 and AF-005 and the Pod has no route to the host runtime. Container GPU access, dispatch through Redis and zero-egress evidence remain later work. No Git writes ran.
+
+<a id="ac-20260904-010"></a>
+## AC-20260904-010 — C05 review blockers closed
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, deployment, kubernetes
+- tags: c05, probes, redis-auth, networkpolicy, exposure, artifact-path
+- aliases: c05 blockers, authenticated probes, redis password, isolation proof
+- paths: deploy/k3s/, docs/c05-ubuntu-deployment-handoff.md, tasks.md
+- summary: Closed all five C05 review blockers — unauthenticated probes, Redis protected mode, a meaningless isolation test, unfinished network exposure, and the stale artifact path — and added the missing in-Pod inference and coordinator persistence checks.
+- changes: Replaced all three worker httpGet probes with authenticated exec probes that read the credential from the container environment and send the contract header, so a healthy Pod is no longer restarted by a 401 while the endpoint keeps its authentication. Gave Redis a required password from an operator-created Secret expanded through sh so it never appears as an argument literal, and authenticated its readiness and liveness probes, which would otherwise have failed with NOAUTH. Replaced the ad-hoc kubectl run isolation test with two reviewed Pod manifests carrying the full restricted Pod Security context so admission cannot reject them before a connection is attempted; each reports a RESULT line separating a network refusal from DNS, authentication, protected-mode and missing-tooling failures, and the allowed half must pass before the denied half means anything. Kept the Kubernetes API and the worker NodePort closed to the LAN with reversible firewall rules rather than exposing plain HTTP, recording that K3s listens on all interfaces by default and that TLS belongs to OD-06. Switched to the preserved artifact at /home/prachi/.aegisforge/artifacts/c04/worker.tar and removed the rebuild advice. Added a separate narrow runtime-egress manifest and an in-Pod bounded inference check through the runtime adapter, plus the missing macOS coordinator metadata-persistence steps across a restart.
+- verification: 30 offline invariant checks pass, 14 of them new: the worker has no unauthenticated httpGet probe and its probes send both required headers, Redis requires a password sourced from a Secret rather than a literal and its probes authenticate, both isolation Pods satisfy restricted Pod Security and pin their image, the allowed half carries the selected label and the denied half does not, both distinguish five failure modes, the default worker egress reaches Redis and nothing else with no ipBlock, and the runtime policy is a single /32. 106 Python and 8 Node checks pass. Nothing was installed or deployed.
+- remaining: Codex re-review, then the Ubuntu checkpoint. Recorded for the requester that Ready Pods plus adapter-level inference is not completed integration: a response through the public job routes needs OD-06 pairing and the AF-005 receipt. LAN exposure and TLS arrive with pairing. No Git writes ran.
+
+<a id="ac-20260904-011"></a>
+## AC-20260904-011 — C05 second-round blockers closed
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, deployment, kubernetes
+- tags: c05, nodeport, kube-proxy, ollama-forwarder, redis-cli, sqlite
+- aliases: c05 second review, nodeport-addresses, socket proxy, rediscli auth
+- paths: deploy/k3s/, docs/c05-ubuntu-deployment-handoff.md
+- summary: Closed six further C05 findings covering the firewall layer, Ollama rebinding, an unsupported redis-cli flag, an inference check that could not fail, a broken persistence query and the password still reaching process arguments.
+- changes: Replaced INPUT firewall rules with install-time controls, because NodePort traffic is DNATed and forwarded and never traverses INPUT, and a blunt INPUT drop on 6443 would break cluster components reaching the API by node address. K3s now installs with --bind-address 127.0.0.1 and --kube-proxy-arg=nodeport-addresses=127.0.0.1/32, which live in the systemd unit and survive a reboot, with verification and a documented reinstall if the single-node bind does not come Ready. Ollama is no longer rebound: a systemd-socket-proxyd unit listens on the CNI bridge and forwards to the untouched loopback listener, with an INPUT rule limiting it to the Pod CIDR and rollback that removes only the new units, never systemctl revert ollama. Recorded plainly that NetworkPolicy does not govern traffic to a Pod's own node, so the runtime is reachable by any Pod on this node rather than the worker alone. Removed redis-cli -t, which does not exist in the 7.2 parser and would have been read as a command, replacing it with timeout and an exit-status classification that treats 124 as blocked and reports refused and empty-output separately. Moved the Redis password out of process arguments entirely: the server reads it from a config file written to the Pod's own tmpfs, and clients use REDISCLI_AUTH instead of -a. Rewrote the inference check to fail on an empty, truncated or wrong answer, a done_reason other than stop, missing token counts, or its own overall deadline. Corrected the persistence query to SELECT value FROM meta WHERE key='contract_version'.
+- verification: Confirmed against the Redis 7.2 source that the CLI parser accepts a c d e h i n p r s u v x and no -t, and that REDISCLI_AUTH is supported. Confirmed the previous SQL fails with no such column and the corrected form returns 1.0 against the live coordinator database, alongside an attempt carrying state, node id, route reason and runtime and a 475-event count. 33 manifest invariant checks pass, six of them new, including that the password never reaches argv, clients use REDISCLI_AUTH, no redis-cli -t appears in any command, probes classify exit status rather than empty output, and probes report seven distinct failure modes. Three of those checks initially failed by matching their own explanatory comments, so the matcher now strips comment lines. 123 Python and 8 Node checks pass. Nothing was installed or deployed.
+- remaining: Codex re-review, then the Ubuntu checkpoint. Two arrangements are untested on the target host and are marked so with verification and rollback: the single-node --bind-address and whether kube-proxy accepts a loopback nodeport-addresses CIDR. The forwarder restricts the runtime to Pods on this node, not to the worker Pod. No Git writes ran.
+
+<a id="ac-20260904-012"></a>
+## AC-20260904-012 — C05 completed in one pass
+- prompt_id: [UP-20260904-004](userprompts.md#up-20260904-004)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, deployment, kubernetes, host-units
+- tags: c05, k3s, guards, probes, redis-auth, inference-check, handoff
+- aliases: c05 single pass, cluster guard, ollama forwarder, ordered handoff
+- paths: deploy/k3s/, docs/c05-ubuntu-deployment-handoff.md
+- summary: Completed C05 deployment assets against the single execution brief, with host guard units, corrected workload configuration, an executable bounded inference check and one ordered operator sequence.
+- changes: Worker probe timeouts raised to 20s against the measured 13s worst-case health budget, since /v1/health calls runtime.probe which makes three HTTP calls; readiness now documents that it means the API answers, not that jobs are accepted. The worker Service selector gained a component label so an isolation Pod carrying only the policy label can never become a Service endpoint. Redis writes its generated config into a bounded memory-backed volume, verifies the credential is readable and non-empty before starting, and both server and clients keep the password out of process arguments; Secrets are group-readable with fsGroup so a non-root user can read them. Both isolation probes gained fsGroup, credential-readability reporting and timeout -k. Added host units under deploy/k3s/host: a tagged idempotent guard script, a cluster guard that k3s requires so failure to protect prevents startup, an Ollama guard that waits for the bridge and that the proxy socket requires, and the proxy units. K3s now installs with SKIP_ENABLE and SKIP_START so protection precedes any listener, keeps the API reachable by cluster components by dropping only the LAN interface, and restricts NodePort through kube-proxy rather than INPUT. The inference check became a real script piped over kubectl exec -i with an explicit container, a SIGALRM deadline that interrupts blocked reads and covers the initial probe, and a bounded outer wrapper. Rewrote the handoff as one ordered A-K sequence.
+- verification: 70 offline checks pass across three new suites. 41 manifest invariants, including probe timeouts exceeding the health budget, probes never matching the Service selector, group-readable Secrets with fsGroup, credential readability checked before use, generated config in bounded memory and timeout -k. 15 guard checks against a stubbed iptables and ip confirm loopback and cluster CIDRs stay allowed, only the LAN interface is dropped, NodePort is not handled in INPUT, apply is idempotent, removal deletes only tagged rules and never flushes, a missing bridge fails rather than guessing, and Ollama's loopback is never firewalled. 14 checks exercise the real inference script and the real wrapper across valid, empty, wrong, truncated, missing-metric, zero-count, unreachable and blocked-read cases, plus stdin forwarding, failure propagation, explicit container, missing Pod and a stuck exec. Two genuine defects surfaced from those checks and were fixed: an unbounded rule-removal loop, and a watchdog that killed only the direct child so grandchildren held the pipe open. A 16-point cross-check confirms source, manifests and handoff agree. Shell syntax and YAML structure validated. 123 Python and 8 Node checks pass.
+- remaining: Codex review, then the Ubuntu checkpoint. Nothing installed or deployed. Two arrangements remain untested on the target host and are marked so with verification and scoped rollback: whether kube-proxy accepts a loopback nodeport-addresses CIDR, and the socket-proxy path. The runtime forwarder admits every Pod on this node, not the worker alone, because NetworkPolicy does not govern a Pod's connection to its own node. Public job routes stay fail-closed; C06 owns dispatch. No Git writes ran.
+
+<a id="ac-20260904-013"></a>
+## AC-20260904-013 — Execution 1: Refinix desktop foundation
+- prompt_id: [UP-20260904-012](userprompts.md#up-20260904-012)
+- date: 2026-09-04
+- status: in review
+- scope: implementation, desktop-shell, packaging, branding, ui, cancellation
+- tags: execution-1, refinix, pywebview, py2app, attachments, skills, settings-cards, stop
+- aliases: desktop foundation, native window, refinix branding, stalled cancel, attachment intake
+- paths: desktop/, frontend/app/, backend/coordinator/, scripts/build-brand-assets.py, README.md, tasks.md
+- summary: Built a native desktop foundation named Refinix around the existing coordinator — pywebview shell with a bounded startup lifecycle, brand assets derived from the supplied masters, simplified Chat/Code navigation with a skill-and-attachment composer, card-based Settings, and repaired cancellation — with macOS packaging prepared but not built.
+- changes: New `desktop/` package. `lifecycle.py` holds the whole startup sequence with no window toolkit so it is testable offline: an OS-level single-instance lock, port selection that reuses only this workspace's own coordinator and never attaches to an unrelated listener, an engine supervisor that starts Ollama only when it is installed and stops only a copy it started, and model detection that reports the exact `ollama pull` command without downloading. `shell.py` opens the window on a local startup page that shows readable progress and a Try again button, and exposes a six-method bridge with no method that accepts a path, URL or command from the page. `server.py` gained `build_server`/`shutdown_server` so the shell serves the same coordinator on a thread, a bundle-aware `static_root()`, `/v1/capabilities`, attachment routes with a route-scoped 28 MB bound, a focus route for a second launch, and observed capability state in `/v1/status`. `db.py` gained an attachments table and helpers: names are sanitised for display only, the stored name is the attachment id, writes are confined to `~/.aegisforge/attachments`, and size, count, type and emptiness are all bounded. Attachments bind to the request that carried them and are described as received, never as read; the export says the same. `runtime.py` gained `_CancelWatch`, which aborts the socket from a second thread so a cancel reaches a stalled stream instead of waiting out the 300 s request timeout. The frontend was rebranded and simplified: Chat | Code top level, Control Center renamed Settings and moved to secondary navigation with interactive cards over observed state and the readouts under Advanced, a composer carrying an inline skill label with a keyboard path plus `+` attachment intake by native picker, file input and drag-and-drop, and Send that becomes a prominent Stop showing "Stopping…" on click. Code renders no access selector, because no access mode is enforced. Icons and the header wordmark are derived from the two brand masters by `scripts/build-brand-assets.py`; the originals are untouched.
+- verification: 151 Python checks pass, 71 of them new, plus 8 Node checks. New suites cover the engine supervisor across running, stopped, missing, dying and silent runtimes with a bounded timeout; port choice against a real occupied socket, another workspace's coordinator and an exhausted range; the single-instance lock including a corrupt lock file; attachment intake including traversal, wrong type, empty, oversized, count bound, removal, and that a stored name from outside the folder is never unlinked; that file contents and names never reach the model request; capability state under every runtime condition; and cancellation. Two genuine defects surfaced from those checks and were fixed: the cancel watcher's abort raised `http.client.IncompleteRead`, which is neither OSError nor ValueError, so it escaped as a crash instead of a cancellation — caught by a test that streams from a real local socket that then stalls; and `[hidden]` did nothing against app.css's `display` rules, so the drop hint and skill label were always visible. Observed in a browser against an isolated database: streaming, Stop during a stall recording `cancelled` with the partial text on the attempt and no assistant message, Stop restored after a full reload of an active conversation, attachment add and remove with the file appearing and disappearing on disk, the skill label reachable and removable by keyboard, and both light and dark themes. `python3 -m desktop --no-window` ran the real sequence: all six steps ok, a second launch refused to start and asked the running copy to come forward, and an unrelated listener on the preferred port caused a different free port to be chosen rather than an attachment to it. Nothing was installed, downloaded or deployed; no C05 test was rerun as evidence.
+- remaining: Codex review, then requester acceptance. `Refinix.app` is **not built** — py2app and pywebview are not installed, so no native-window screenshot and no packaged-launch result exist; the exact install and acceptance commands are the setup handoff in `desktop/README.md`. Whether pywebview, pyobjc and py2app support this Mac's CPython 3.14.6 is unverified and is the first question that handoff answers. The Windows and Ubuntu launch and packaging paths are written and unverified on any device. C05 is untouched and stays paused. No Git writes ran.
+
+<a id="ac-20260904-014"></a>
+## AC-20260904-014 — Verify the desktop review corrections
+- prompt_id: [UP-20260904-013](userprompts.md#up-20260904-013)
+- date: 2026-09-04
+- status: fixes verified; requester acceptance pending
+- tags: refinix, desktop, review-fixes, cancellation, lifecycle
+- aliases: pre-header cancellation, reused coordinator quit, Windows lock offset, native Quit
+- paths: desktop/, backend/coordinator/runtime.py, backend/coordinator/server.py, backend/coordinator/test_desktop_surface.py, README.md, tasks.md
+- summary: Fixed the six desktop findings and added regressions without replacing the existing frontend or coordinator.
+- changes: Cancellation owns the loopback HTTP connection before response headers; startup cancellation cleans late resources; native Quit waits for the startup worker; reused coordinators expose active jobs and receive confirmed cancellation without shutdown; both native entry points record the selected port; Windows metadata sits outside the locked byte; dependency locks contain valid hashes and existing backend pins.
+- verification: 161 Python checks passed under desktop CPython 3.12, and 8 Node checks passed; after the final native Quit repair, all 7 focused desktop review regressions passed. Synthetic checks cover stalled headers/body, startup cleanup, reused-coordinator cancellation, native entry metadata, lock offsets and source staging. Shell syntax and git diff --check passed.
+- remaining: Windows native behavior and requester visual/chat acceptance are unverified. No C05 checks or Git writes ran.
+
+<a id="ac-20260904-015"></a>
+## AC-20260904-015 — Build and open the macOS Refinix application
+- prompt_id: [UP-20260904-014](userprompts.md#up-20260904-014)
+- date: 2026-09-04
+- status: setup completed; requester acceptance pending
+- tags: refinix, macos, py2app, dependency-locks, standalone
+- aliases: Refinix app launch, source-independent bundle, signature verification
+- paths: desktop/, .gitignore, README.md, tasks.md
+- summary: Completed the approved isolated desktop dependency setup, repaired actual bundle failures and opened Refinix.app on the macOS coordinator.
+- changes: Added the executable setup script and 20 hash-pinned artifacts totaling 12,495,337 bytes, including existing backend pins. Packaging stages only application sources, disables external site-packages and avoids py2app's dangling optimized-bytecode link; setup verifies the ad-hoc signature before launch.
+- verification: Artifact hashes, pip check and codesign --verify --deep --strict passed. Final bundle opened from desktop/dist/Refinix.app and reported packaged mode with reachable existing Ollama. A copied bundle started with repository and Homebrew Python reads denied; the denial was verified. Reopening reused the same instance, including on fallback port 8771.
+- remaining: No real inference request or native screenshot was produced in this correction pass; visual/chat acceptance remains with the requester. Developer ID signing, notarisation, Windows and Ubuntu packaging are unfinished. No Docker startup, model downloads, C05 execution or Git writes ran.
+
+<a id="ac-20260904-016"></a>
+## AC-20260904-016 — Record requester acceptance and isolate the desktop handoff
+- prompt_id: [UP-20260904-015](userprompts.md#up-20260904-015)
+- date: 2026-09-04
+- tags: refinix, requester-acceptance, git-handoff, scoped-pr
+- aliases: stopped chat retained after quit, desktop-only tasks patch, exclude C05
+- paths: README.md, desktop/README.md, tasks.md, agent-memory/
+- summary: Updated current desktop status with the requester's successful Chat/Stop/quit/history check and prepared explicit staging commands and PR text excluding pending C05 changes.
+- evidence: Requester reported starting and stopping Chat, quitting with Command-Q, reopening with the stopped conversation retained, and supplied a generated follow-up reply.
+- verification: Current branch is aditya and the index is empty. Inspected the shared-file diffs; only tasks.md mixes desktop and C05 edits. A temporary desktop-only tasks patch was checked against HEAD and leaves all numbered execution-task content identical to HEAD. No application tests were repeated.
+- remaining: No Git writes performed; requester runs the supplied commit/push/PR commands. Windows/Linux packaging and native acceptance remain unfinished; C05 remains paused.

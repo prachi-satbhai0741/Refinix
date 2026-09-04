@@ -40,8 +40,11 @@ The candidate is not judged by file count, agent count, or Kubernetes objects:
   Services, Redis queue state, deterministic routing, approval, failure
   recovery, and scoped offline evidence in one coherent story.
 
-Until C09 verifies both signature workflows, a second worker, multilingual
-support, voice, scaling, and visual polish remain deferred. If the
+The critical path uses **two devices: the macOS coordinator and Ubuntu worker**.
+OCR is part of the C08 Documents workflow on this configuration. Additional
+machines stay off the critical path and are added only for a measured need
+with a new device-based setup checkpoint; they remain available to build any
+module. Multilingual support, voice, scaling, and visual polish remain deferred. If the
 complete frozen path does not pass three consecutive rehearsals, it is not the
 candidate regardless of how many individual components work.
 
@@ -53,19 +56,35 @@ code, and no person has exclusive ownership of a module. The board below
 identifies human actions by **device role** — `macOS coordinator`, `Ubuntu
 worker` — or by **requester** for acceptance, never by team member.
 
-- Execute one authorised chunk at a time. Within it, build, review and fix
-  confirmed findings without repeatedly asking permission for ordinary coding.
-- Stop execution at the first required human action: a missing decision or
-  permission, download, installation, host command, pairing, physical operation,
-  artifact inspection, or Git publication. Do not bypass it by advancing another
-  chunk. A newly discovered human dependency splits the chunk at that point.
+- **Execution order and authorisation scope are separate concerns.** Work
+  proceeds sequentially through the chunks, one at a time. Authorisation may
+  cover a single chunk or a **named range**; progression through an authorised
+  range happens only after each chunk's required acceptance gate clears.
+  Authorising C03 does not authorise C04 unless the range says so.
+- Within an authorised scope, resolve routine implementation questions from
+  repository evidence, the established requirements and authoritative upstream
+  documentation. **Those questions are not human checkpoints** and must not be
+  relayed as ones. The scope covers implementation, review fixes and
+  proportionate offline checks using existing dependencies and isolated test
+  data.
+- Stop execution for exactly three things: an essential input or decision only
+  the requester can supply; **missing authorisation**; or a required device
+  action or acceptance check — a download, installation, host command, pairing,
+  physical operation, artifact inspection, or Git publication. **Repository
+  evidence can answer a technical question; it can never grant permission.**
+  Never bypass an uncleared gate by advancing another chunk. A newly discovered
+  human dependency splits the chunk at that point.
 - Prepare the exact action and obtain Codex's review before the human performs
   it. Whoever operates the named device returns the evidence to the requester;
   verify the result before resuming. A message saying "done" alone does not
   prove a runtime gate.
 - Continue only within the authorised scope after the checkpoint is cleared.
-  This board is not permission to execute the entire plan. Documentation
+  This board is not permission to execute an unauthorised chunk. Documentation
   approval does not start runtime implementation or authorise terminal setup.
+- Inputs the requester supplies in advance through the
+  [handover pack](docs/handover-pack.md) remove the *question*, never the
+  *gate*. A supplied fixture still needs its acceptance check; a stated
+  constraint still needs the device action it describes.
 - A checkpoint belongs to a device, not a person. Anyone with access to that
   device may perform it. Change the target device in the handoff rather than
   reassigning a person; never silently operate another device.
@@ -115,6 +134,45 @@ inventory. Do not distribute speculative installs now. The C01 read-only
 have been run and returned for all six devices; the C02 follow-up commands are
 also read-only and must report missing tooling rather than install it.
 
+## Desktop executions (separate from C01–C13)
+
+A parallel track, numbered on its own. It does not consume, reorder or complete
+any numbered chunk, and **C05 stays exactly where it is**: partially executed,
+Ubuntu host powered down, pending review.
+
+**Execution 1 — Refinix desktop foundation (review fixes verified, macOS
+bundle built/opened and requester smoke test accepted 2026-09-04).** A native desktop shell around the
+existing coordinator, in [`desktop/`](desktop/README.md). Product decisions this
+execution settles, which change what earlier documents describe:
+
+| Decision | What changed |
+|---|---|
+| Product name | Visible branding is **Refinix**. `~/.aegisforge`, the `X-AegisForge-Contract` header, the `AegisForgeCoordinator` server token and worker identifiers are compatibility-sensitive and unchanged. |
+| Top-level navigation | **Chat \| Code**. Documents is no longer a top-level surface; document work becomes a selectable skill inside Chat. |
+| Control Center | Renamed **Settings** and moved to secondary navigation. Its technical tables became interactive cards; the readouts moved under **Advanced**. |
+| Attachments | Chat accepts files. Execution 1 stores and lists them; **nothing reads them**, and the interface says so on the request and in the export. |
+| Access modes | The Code access selector is **not** rendered. The three modes are described as planned. A control implying enforcement is not added before the enforcement exists. |
+| Ordinary Chat | Needs the model runtime only. Docker is never started, and an offline Ubuntu worker does not block local Chat or cause a replacement cluster on the Mac. |
+| Cancellation | `/v1/cancel` now aborts a stalled model stream instead of waiting out the request timeout. |
+
+**Observed macOS setup:** after explicit approval, installed 20 hash-verified
+artifacts into `desktop/.venv` using existing CPython 3.12.13, built
+`desktop/dist/Refinix.app`, verified its ad-hoc signature and opened its native
+window. A copied bundle also started with repository and Homebrew Python reads
+denied. Existing-instance relaunch worked after a port fallback. The correction
+pass ran 161 Python checks and 8 Node checks, then all 7 final lifecycle
+regressions after the native Quit repair. See the
+[observed verification](desktop/README.md#observed-verification) and opening steps.
+The requester subsequently confirmed starting Chat, stopping it, quitting with
+Command-Q and seeing the stopped conversation after reopening, then supplied a
+generated Kubernetes explanation from a follow-up request. These are requester
+observations; no native screenshot was captured by the reviewer. Windows and
+Ubuntu packaging/launchers and native acceptance remain unfinished. C05 stays paused.
+
+**Execution 2 — repository editing and access-mode enforcement.** Not started.
+
+**Execution 3 — document understanding, retrieval and generation.** Not started.
+
 ## Numbered execution tasks
 
 The **thirteen numbered tasks** below define execution order. Building an image
@@ -126,9 +184,106 @@ Execute C01 → C02 → C03 → C04 → C05 → C06 → C07 → C08 → C09 → 
 C12 → C13. The **After** column means the previous task's reviewed work, human
 checkpoint and return-evidence checks are all clear. At **Wait**, pause until
 the named device returns the required evidence. Do not skip ahead while waiting.
-Progress depends on these conditions, with no duration limit or delivery date.
+Progress depends on these conditions. The internal demonstration target is
+**8–9 September 2026**; a missed gate changes what can be demonstrated, not
+the evidence required to call it complete.
 
-**Current scope: C02 — Environment preparation, setup and verification.** The
+**Current scope: C05 — Cluster deployment and integration.** The requester accepted C04 on 2026-09-04. Deployment assets are prepared in [`deploy/k3s`](deploy/k3s/) pinned to the C04 manifest digest `sha256:a1eb434c…`, with the exact host commands in [the deployment handoff](docs/c05-ubuntu-deployment-handoff.md). K3s is installed without Traefik or ServiceLB so it binds no port 80/443 and leaves Jenkins on 8080 untouched. **Installation and deployment remain at the Ubuntu human checkpoint; nothing has been executed.**
+
+**A gate distinction to settle:** C05's row lists *one real worker-model response*. Step 7e of the handoff produces one **through the worker's runtime adapter inside the Pod**, without opening dispatch. A response through the contract's *public job routes* additionally needs OD-06 pairing and the AF-005 receipt, neither implemented. **Ready Pods plus adapter-level inference is not completed integration.** Whether the gate means the adapter-level response or the dispatched one is a requester decision.
+
+The worker speaks plain HTTP and pinned TLS belongs to OD-06, so C05 keeps the Kubernetes API and the worker NodePort **closed to the LAN** and verifies from the node itself; LAN exposure arrives with pairing.
+
+---
+
+**C04 — Worker/API implementation and image build (accepted 2026-09-04).** The requester
+accepted C03 on 2026-09-04 and assigned implementation to Claude, with Codex
+orchestrating and reviewing. The existing authorisation is **C03 through C13 sequentially**,
+covering implementation, review fixes and proportionate offline checks on
+existing dependencies. Progression still needs each chunk's acceptance gate.
+
+Ubuntu-to-Mac connectivity passed with zero packet loss. The worker API is
+implemented in [`backend/worker`](backend/worker/README.md) against the frozen
+`/v1` contract, and a `linux/amd64` verification build ran on the macOS
+coordinator under emulation: hash-verified wheels, 8 contract checks passing
+inside the image with `--network=none`, non-root execution, and a real prompt
+streaming from `POST /v1/jobs` through SSE to completion. That build was
+emulated and never pushed. Pairing routes return `501`; OD-06 stays recorded
+but unimplemented.
+
+**C04 build returned, 2026-09-04.** The Ubuntu worker built the image on the
+native Docker endpoint (server 29.6.1, `linux/amd64`): the pinned base resolved
+by digest, 13 wheels installed under `--require-hashes`, **52 in-image checks
+passed with `--network=none`**, 11 layers, ~48 MB.
+
+| | |
+|---|---|
+| **manifest digest — C05 pins this** | `sha256:a1eb434c91ff5e51a095ccbdc5becd10e98a099a281302ef68e86b531543a295` |
+| config digest | `sha256:4d9c91892fc813c846f08a42fa17dde870b0a35f4e969431522059738dd96b5f` |
+| archive checksum | `sha256:53eb20e4d77b222e783d7bd50fb3339663fbd5001feb9a704f4482800d108a9a` |
+
+Both digests match the build's own `exporting manifest` and `exporting config`
+lines. The running container reported a distinct generated node identity, empty
+capabilities, `health: unavailable` and `loaded_model_id: null` — correct for a
+container with no reachable runtime and fail-closed job routes.
+
+The digest differs from the earlier emulated Mac build; image configs embed a
+creation timestamp, so identical inputs do not yield identical digests. **No
+reproducible-build claim is made.**
+
+The Ubuntu `*:8080` listener is identified: **Jenkins** (`java`, PID 1239, user
+`jenkins`, `jenkins.service`, working directory `/var/lib/jenkins`). It is
+preserved and avoided; the coordinator uses port 8770. Its wildcard bind is
+**not** evidence of safe LAN exposure, so the exposure review stays open before
+worker LAN access. The worker contract ports remain 8443 and 30443. The Ubuntu
+worker has two distinct Docker environments — `desktop-linux` (server 29.6.2,
+~3.6 GiB) and the native socket at `unix:///var/run/docker.sock` (server 29.6.1,
+12 CPUs, 16382078976 bytes) — so future host-Docker commands select the endpoint
+explicitly rather than changing a global context. Earlier inventory reported
+coordinator `192.168.1.3/24` and worker `192.168.29.98/24`; those addresses are
+historical. On 2026-09-04 the Mac reported `192.168.68.132` on `en0`, with default
+gateway `192.168.68.1`. Ubuntu's current address and peer reachability still need
+checking. Different address ranges alone do not establish whether routing works.
+Prepare the trusted LAN alongside C04; application pairing remains a C06 gate.
+
+C03 is implemented and Codex's repaired-source review is **PASS**. An isolated
+run returned a real loopback Ollama answer, stopped cleanly, restarted with the
+same node ID, and restored the conversation. Requester acceptance is now
+recorded; these local results do not establish Ubuntu or distributed readiness.
+
+**2026-09-04 requester correction:** the mandatory third OCR device is withdrawn.
+C01/C02 acceptance and all C03 repairs stand. The requester subsequently accepted
+C03 and requested [Claude's C04 execution handoff](docs/c04-execution-brief.md).
+C04 build inputs are [prepared](backend/worker-image/README.md); implementation
+may proceed, while the actual Ubuntu image build and later deployment retain
+their device checkpoints. The retained
+[`scripts/qualify-ocr-worker.ps1`](scripts/qualify-ocr-worker.ps1) is **deferred**,
+used only if a measured need selects a Windows execution device later.
+
+### Sequence toward the internal demonstration
+
+These are working targets, not completed tasks or permission to skip a gate.
+
+| Target window | Work in the existing order | Evidence needed to keep the window |
+|---|---|---|
+| 4 September | C03 requester acceptance, then C04 worker/API implementation and Ubuntu image build | Accepted Mac run and actual image digest |
+| 5 September | C05–C06 deployment, model response, pairing, dispatch and recovery | Real Mac-to-Ubuntu response and cancel/disconnect evidence |
+| 6 September | C07–C09 synthetic fixtures, Documents/OCR and bounded Code workflow | Openable cited Word output and an observed sandbox-validated patch |
+| 7 September | C10–C12 concurrent workflows, approvals, offline evidence and failure drills | Actual concurrent outputs, approval/recovery behavior and scoped network evidence |
+| 8–9 September | C13 three clean-start rehearsals, backup recording and demonstration | Same setup passes the rehearsals; only supported claims enter the presentation |
+
+**Capacity assessment:** this is a stretch plan. C04–C12 have no integrated
+runtime proof yet, so the full candidate is not currently a credible commitment
+for 8 September. An image/model/container or LAN delay consumes the workflow
+and rehearsal window. If C06 slips beyond 5 September, report C08–C13 as at risk
+immediately; if a complete C09 path is absent on 6 September, flag the full
+concurrent/offline candidate as unlikely to fit. Extra devices, optional models,
+voice, scaling and polish do not fit this window. Demonstrate only the verified
+subset if a gate remains open, and state that the full candidate is incomplete.
+
+---
+
+**C02 — Environment preparation, setup and verification (accepted).** The
 requester authorised C02 and recorded that C01's contract code passed review.
 Codex reviewed the AF-001 fixes at `e7f44fb` and reported PASS with eight
 contract checks passing and all pinned dependencies matching; that test result
@@ -139,11 +294,8 @@ supplied for all six devices and is recorded in
 **draft** until its consumer-integration gate passes at C05; OD-06 pairing is
 recorded but unimplemented.
 
-**C01 documentation and C02 setup are ready for requester closeout review.**
-Requester acceptance remains pending, with the targeted Ubuntu listener
-follow-up recorded below. Update this current-scope note when the requester
-authorises a new chunk; the note itself never grants permission. C03 has not
-started.
+**C01/C02/C03 are accepted.** The current work is C04. Ubuntu runtime and
+integration claims still need their own checks.
 
 C02 decisions are now recorded with upstream provenance:
 [OD-03 runtime](docs/model-catalog.md#od-03--ollama-is-the-first-runtime),
@@ -172,21 +324,24 @@ and zero-egress evidence belong to later checkpoints.
 
 **C02 review follow-up:**
 
-- **Ubuntu wildcard listener:** identify the process and purpose of the
-  recorded `*:8080` bind. This is an open C02 setup item, separate from C05's
-  contract-port checks; resolve its exposure before enabling worker LAN access
-  or reusing that port. Recorded loopback inference remains valid.
+- **Ubuntu wildcard listener:** identified as Jenkins as recorded above.
+  Preserve it; review the host exposure before enabling worker LAN access.
 - **Cancellation:** not exercised in C02 and not implemented in an application.
   C06 / AF-005–AF-007 retains the implementation and cancel exercise; streaming
   and configured request limits do not clear that gate.
 
-**Next human action:** the Ubuntu worker operator returns the listener evidence;
-the requester reviews and accepts this closeout, then separately authorises C03.
+**Next human action:** give Claude the [C04 execution brief](docs/c04-execution-brief.md)
+and return Ubuntu's current LAN evidence while implementation proceeds.
+Codex reviews the result before the Ubuntu worker runs the final image build.
+OCR follows at C08 on these two devices. Other machines have no required
+execution role and may still build any module.
 
-The first configuration is two devices. Every other machine, and the incomplete
-GPU output on two of them, stays **off the critical path** until a measured need
-selects it through a new device-based setup checkpoint. Any device may still
-build any module.
+**C03 reply repair, 2026-09-04:** raised Chat output from 512 to 2048 tokens,
+persisted runtime stopping evidence, marked capped replies incomplete while
+retaining their text, and handled expected browser resets. 33 local checks and
+an isolated real 664-token response passed; restart retained the result.
+The [updated Mac handoff](docs/handover-pack.md#verify--run-these-yourself)
+recorded the then-pending acceptance gate; requester acceptance has since cleared it.
 
 | Device role | Documented machine | Purpose in the first configuration |
 |---|---|---|
@@ -197,12 +352,12 @@ build any module.
 |---|---|---|---|---|
 | C01 — Contracts and prerequisites | — | **AF-001** — Repair output-validator requirements, typed cancellation/interruption reasons, and citation/page payloads; update examples and focused checks. Keep the contract draft until consumers integrate. | **Requester:** accept the reviewed contract changes and this documentation closeout. **Every inventoried device:** report its own read-only inventory — supplied for all six devices. | Reviewed contract diff and authorised check results; each device's current inventory or explicit unavailability. Use it to prepare setup choices. No runtime installation here. |
 | C02 — Environment setup | C01 cleared | **AF-001–AF-004 preparation** — Prepare exact setup instructions and evidence-backed runtime/model/pairing choices (OD-03/05/06), plus K3s/Redis/base-image pins (OD-08); built-image digests follow C04. | **Requester:** confirm the proposed choices after Codex's review. **macOS coordinator:** confirm the reviewed dependency/runtime/model state and run the reviewed bounded local inference check. **Ubuntu worker:** return the read-only environment evidence, then perform only the reviewed worker runtime/model setup for the selected path. | Humans supply versions, paths, hashes and setup output. Agents verify compatibility with permitted checks. Only approved required components are installed; no cluster deployment or six-device model rollout. |
-| C03 — Local application | C02 cleared | **AF-004, local AF-003 adapter** — Implement coordinator SQLite, local inference, basic Chat/Control Center, streaming and restart reconciliation using the installed runtime. | **macOS coordinator:** start the reviewed local commands, send a request, restart the app, then inspect the UI and history. No second installation is required on any other device. | Real local response and retained job/attempt history after restart; missing measurements display unavailable. Return observations and permitted runtime-check output. |
-| C04 — Worker image build | C03 cleared | **AF-003, AF-002 preparation** — Implement the worker/API and Docker build assets against the reviewed contract and pairing policy; prepare exact build and digest-inspection commands. | **Ubuntu worker:** run the reviewed image build and report build output, immutable image digest, architecture and provenance. | Agents inspect the actual build result and prepare a deployment pinned to that digest. Build failure stays in C04; a Dockerfile alone is not image evidence. |
-| C05 — Cluster deployment and integration | C04 cleared | **AF-001–AF-004 integration** — Review the pinned K3s/Redis/worker manifests, limits and Service exposure using C04's image evidence. | **Ubuntu worker:** provision and apply the reviewed cluster commands. **macOS coordinator:** perform the coordinator acceptance steps supplied for this setup. | Ready Pods, internal-only Redis, one real worker-model response, persisted coordinator metadata and shared-version consumers. Pass the C05 integration gate before C06. |
+| C03 — Local application | C02 cleared | **AF-004, local AF-003 adapter** — Implemented in [`backend/coordinator`](backend/coordinator/README.md) and `frontend/app/`: SQLite state, Ollama streaming, contract-validated job/attempt/event records, restart reconciliation, Chat and minimum Control Center. | **macOS coordinator:** start the reviewed local commands, send a request, restart the app, then inspect the UI and history. No second installation is required on any other device. | Real local response and retained job/attempt history after restart; missing measurements display unavailable. Return observations and permitted runtime-check output. |
+| C04 — Worker image build | C03 cleared | **AF-003, AF-002 preparation** — Worker API implemented in [`backend/worker`](backend/worker/README.md); build assets in [`backend/worker-image`](backend/worker-image/README.md); reviewed build and digest-inspection commands in [the handoff](docs/c04-ubuntu-build-handoff.md). | **Ubuntu worker:** run the reviewed image build and report build output, immutable image digest, architecture and provenance. | Agents inspect the actual build result and prepare a deployment pinned to that digest. Build failure stays in C04; a Dockerfile alone is not image evidence. |
+| C05 — Cluster deployment and integration | C04 cleared | **AF-001–AF-004 integration** — Manifests in [`deploy/k3s`](deploy/k3s/) pinned to the C04 digest, with 16 offline invariant checks; host commands in [the handoff](docs/c05-ubuntu-deployment-handoff.md). | **Ubuntu worker:** provision and apply the reviewed cluster commands. **macOS coordinator:** perform the coordinator acceptance steps supplied for this setup. | Ready Pods, internal-only Redis, one real worker-model response, persisted coordinator metadata and shared-version consumers. Pass the C05 integration gate before C06. |
 | C06 — Distributed execution | C05 cleared | **AF-005–AF-007** — Implement Redis dispatch/leases/receipt, routing, SSE replay, cancellation, recovery, preflight and truthful fallback. | **macOS coordinator and Ubuntu worker:** connect and explicitly pair the two devices, apply the reviewed trusted-LAN settings, and perform the documented disconnect/cancel exercise. | Actual Mac -> Service -> Redis -> executor -> Mac completion, correct route reason, and usable canonical history after cluster loss. Pass the C06 distributed-execution gate. |
-| C07 — Workflow inputs and setup | C06 cleared | **AF-008–AF-011 preparation** — Prepare permitted scan/SOP and synthetic-code fixtures, their checks, and only the additional model/dependency setup the two workflows require. | **Requester:** approve the public scan/SOP provenance, the synthetic repository and the allowed validation commands. **macOS coordinator:** select the coordinator inputs. **Ubuntu worker:** install only the approved missing worker workflow packages and models. | Source hashes, expected extraction/citation examples, selected repository/base and commands, plus verified installed artifacts. If another device is needed, stop and name that device before any download. |
-| C08 — Documents workflow | C07 cleared | **AF-008–AF-009** — Implement real rendering/OCR, uncertainty, page mapping, local retrieval, cited drafting, DOCX creation and artifact checks. | **macOS coordinator:** open the Word output and compare its extracted facts and citations against the approved scan/SOP. | Openable Word output with checksum, resolvable citations and honest missing values. Fix discrepancies before proceeding to Code. |
+| C07 — Workflow inputs and setup | C06 cleared | **AF-008–AF-011 preparation** — Prepare synthetic scan/SOP/expected-result and Python code fixtures, their checks, and only the additional model/dependency setup the two workflows require on the Mac/Ubuntu configuration. | **Requester:** approve fixture provenance and allowed validation commands. **macOS coordinator:** select the coordinator inputs. **Ubuntu worker:** install only reviewed missing workflow packages/models. | Source hashes, expected extraction/citation examples, selected repository/base and commands, plus verified installed artifacts. Another execution device needs a measured need and a new device-based setup checkpoint. |
+| C08 — Documents workflow | C07 cleared | **AF-008–AF-009** — Implement real rendering/OCR, uncertainty, page mapping, local retrieval, cited drafting, DOCX creation and artifact checks on the two-device configuration. | **macOS coordinator:** open the Word output and compare its extracted facts and citations against the approved scan/SOP. | Openable Word output with checksum, resolvable citations and honest missing values. Fix discrepancies before proceeding to Code. |
 | C09 — Code workflow | C08 cleared | **AF-010–AF-011** — Implement bounded repository context, patch generation and restricted validation Jobs. Reuse approved images where suitable; a new image needing a build creates another checkpoint before deployment. | **Ubuntu worker:** apply the reviewed sandbox configuration and run the approved host steps. **macOS coordinator:** inspect the patch and validation results on the approved fixture. | Applicable patch, observed approved-command result, enforced limits/network isolation and cleanup; canonical repository unchanged. Pass the C09 signature-workflow gate. |
 | C10 — Concurrent workflows and approvals | C09 cleared | **AF-012–AF-014** — Implement concurrent workflows, exact-action approvals, durable final-write recovery and evidence-backed Proof Cards. | **macOS coordinator:** choose the output destination, exercise approve/deny/expiry, and inspect both workflows and the displayed proof against the observed results. | Concurrent progress with separate attempts/artifacts; denial writes nothing; approval writes once; no inferred health, timing or network measurements. |
 | C11 — Offline evidence | C10 cleared | **AF-015** — Prepare reviewed Pod/host network controls, rollback commands and independent observation for the real concurrent run. | **Ubuntu worker:** apply the host and cluster network controls. **macOS coordinator:** apply the coordinator network controls. **A separate observing device on the same LAN:** record the named device, interface and time window using the reviewed observation procedure. | Actual concurrent outputs plus enforcement and observation evidence for the specified scope. Preserve trusted LAN traffic and pass the C11 concurrent/offline gate; absent evidence remains unavailable. |
@@ -333,7 +488,8 @@ requester approval and these prerequisites:
    calculation-with-steps inside the approval note.
 2. **After C11 passes:** add a second executor replica and prove Redis-backed
    concurrency and Pod-loss recovery on the same cluster.
-3. **After C13 passes:** evaluate one additional physical worker or
+3. **After C13 passes:** evaluate one additional physical worker on measured need,
+   with a new device-based setup checkpoint, or
    the narrow text-only part of FR-019.
 
 Do not unlock multi-node Kubernetes, voice, PPT, Excel, broad P&ID support,

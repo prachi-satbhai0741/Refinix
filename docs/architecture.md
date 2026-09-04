@@ -381,7 +381,7 @@ The alpha baseline minimises prototype risk:
 
 | Area | Direction | Status |
 |---|---|---|
-| Local service and worker API | Python with FastAPI | Alpha decision |
+| Local service and worker API | Python with FastAPI for the **worker API** (C04, installed in the pinned image). The **C03 coordinator** uses the standard library — `http.server`, `sqlite3`, `urllib` — because FastAPI is not installed and adding it is a setup checkpoint, not implementation | Alpha decision; coordinator deviation recorded at C03 |
 | One-way job streaming | Server-Sent Events | Alpha decision |
 | Coordinator state | SQLite | Alpha decision |
 | Container image build | Docker from pinned base `python:3.13-slim-bookworm` | OD-08 resolved; built worker digest follows C04 |
@@ -419,7 +419,7 @@ or run: these are *pins to use*, not observed runtime evidence.
 | K3s | `v1.36.4+k3s1` (Kubernetes 1.36, released 2026-08-27) | — (installer release, not an image) | Apache-2.0 | `stable` channel at [`update.k3s.io/v1-release/channels`](https://update.k3s.io/v1-release/channels) |
 | Redis | `redis:7.2.16` | index `sha256:74566c6910d13ae61e7ce73ebd3127438a1fe805b309b097c323142719ec8a5b`<br>`linux/amd64` `sha256:e17e3a1993da428251cbd88dbdb3de8c8d4007f840d7350eb17a2d8695fa705f` | BSD-3-Clause | Docker Hub `library/redis`; version confirmed against `src/version.h` on the upstream `7.2` branch (`REDIS_VERSION "7.2.16"`) |
 | Worker base image | `python:3.13-slim-bookworm` | index `sha256:ed86c82274b3c69b52fb5820f358f0bd7df0b603332063cb5c6e32bd220c3e6e`<br>`linux/amd64` `sha256:2f2e5a876c71a6757f55ec57f2add0225ddaf01c802a33fcc29073943f94d907` | PSF (Python) over Debian 12 packages | Docker Hub `library/python` |
-| Worker image | **not pinned yet** | Produced by the C04 build | — | A worker digest invented before that build would be fiction |
+| Worker image | `aegisforge-worker:c04` | manifest `sha256:a1eb434c91ff5e51a095ccbdc5becd10e98a099a281302ef68e86b531543a295`<br>config `sha256:4d9c91892fc813c846f08a42fa17dde870b0a35f4e969431522059738dd96b5f` | MIT/Apache/PSF via `requirements.lock` and the base image | **Built on the Ubuntu worker 2026-09-04**, `linux/amd64`, 11 layers, 52 in-image checks passing under `--network=none`. This is the digest C05 pins. |
 
 Compatibility notes:
 

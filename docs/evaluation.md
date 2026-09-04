@@ -2,10 +2,13 @@
 
 ## Current status
 
-The repository has initial shared contracts with passing local schema and
-lifecycle checks, documented in [AF-001](../backend/contracts/README.md).
-It has no application runtime, model bundle or installer. Product capabilities
-in this document remain planned until observed evidence changes their state.
+The repository has the shared contract draft with passing local schema and
+lifecycle checks, documented in [AF-001](../backend/contracts/README.md), and a
+**running local coordinator** — Chat and a minimum Control Center over SQLite
+state and one local model, with restart reconciliation and bounded context
+selection. There is still no worker, cluster, Documents or Code workflow,
+approval path, model bundle or installer. Product capabilities in this document
+remain planned until observed evidence changes their state.
 
 ## 1. Evidence labels
 
@@ -219,7 +222,7 @@ Requested settings for the macOS comparison:
 | Model file | the same GGUF — the Ollama blob `sha256:81fb60c7…` is a real GGUF, so `llama-server -m <blob path>` loads identical weights with no second download |
 | Request shape | a **chat** request on both sides — Ollama `/api/chat`, llama-server `/v1/chat/completions` — so the model's own chat template is applied to both. A raw completion against a templated chat is not a comparison. |
 | Prompt | one fixed user message, compiled into the script |
-| Context | `num_ctx` / `-c` 4096 |
+| Context | `num_ctx` / `-c` 4096 — the value held constant for **this comparison**; the coordinator now runs 8192, measured separately in [§5.2](#52-context-window-sizing--macos-coordinator-2026-09-04) |
 | Output limit | `num_predict` / `max_tokens` 128 |
 | Sampling | `temperature` 0, `seed` 42; direct-server launch also sets `top_k` 20, `top_p` 0.95, `min_p` 0, `presence_penalty` 1.5 to match the selected model's settings |
 | GPU allocation | macOS direct-server launch requests `--n-gpu-layers all`; Ollama chooses placement. Ubuntu's separately recorded partial GPU allocation is not held equal to the Mac. |
@@ -450,6 +453,80 @@ llama.cpp release, Windows, output quality, application persistence, container
 GPU access, trusted-LAN pairing and zero-egress operation are not established
 by the native runtime checks above. C03 begins only after closeout acceptance
 and its own authorisation.
+
+## 5.2 Context window sizing — macOS coordinator, 2026-09-04
+
+Request-local settings only; no service or install was changed. Same installed
+model, synthetic near-boundary input with a fact planted at the start.
+
+| Setting | Prompt tokens | Cold TTFT | Warm TTFT | Resident bytes | Early fact retrieved |
+|---|---:|---:|---:|---:|---|
+| `num_ctx` 4096 | 919 | 3.796 s | 0.196 s | 3,144,910,109 | yes |
+| `num_ctx` 8192 | 919 | 3.409 s | 0.198 s | 3,375,617,800 | yes |
+| `num_ctx` 8192, larger input | 3052 | 4.543 s | 0.203 s | 3,375,617,800 | yes |
+
+**8192 adopted for the macOS coordinator.** It costs about **220 MiB** more
+resident memory, warm time-to-first-token is unchanged, and a fact at the start
+of a 3052-token prompt was still answerable. The Ubuntu worker keeps 4096 until
+it is measured at its own device checkpoint; the Mac repair was not held for it.
+
+### Context selection observed end to end
+
+A seven-turn synthetic conversation on the coordinator drove the selector past
+its budget. Estimated input rose 35 → 1690 → 3376 → 5063 → 5132 of a
+5168-token budget, then omission began: 4 messages omitted at turn 6, 6 at
+turn 7, each with a visible notice. Saved history stayed at 16 messages
+throughout — nothing was trimmed from storage.
+
+When the turn carrying a planted fact had been omitted, the model answered
+**"I no longer have it"** rather than inventing the value. That is the intended
+behaviour: omission is visible and its consequence is honest.
+
+**Estimate versus measurement.** The pre-flight estimate is characters ÷ 3.0
+and was conservative for this fixture: at turn 6 it predicted 5053 tokens where
+the runtime reported **2832**. This is not a bound for other inputs or scripts.
+Runtime-reported prompt and output counts are recorded separately as measured
+values; the enforcement check below covers underestimates.
+
+## 5.3 C03 review repairs — macOS coordinator, 2026-09-04
+
+Observed using the installed `qwen3.5:4b-q4_K_M` GGUF, Ollama **0.32.14**, and
+disposable SQLite state. Reproduce from the repository with:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./.venv/bin/python -m backend.coordinator.check_runtime_context
+```
+
+The script makes three explicit local-model requests with `num_ctx: 8192`,
+`num_predict: 2048`, `think: false`, `truncate: false`, `shift: false` and the
+existing request-local `keep_alive: "10m"`. It installs nothing and does not
+read or write the user's chat database.
+
+| Synthetic case | Observed result | Coordinator elapsed |
+|---|---|---:|
+| Early label before 5,000 CJK padding characters | 5,034 prompt tokens, 5 output tokens; correct label retained, normal completion | 9.618 s |
+| 12,000 CJK characters accepted by the selection estimate | Runtime rejected input; no output or assistant message; visible shorten/new-chat error | 0.250 s |
+| Counting after near-window CJK padding | 8,042 prompt + 150 output = 8,192; `length`, classified **context**; partial reply saved and job marked incomplete/failed | 6.191 s |
+
+A direct rejection probe reported **12,012 actual prompt tokens**, exceeding
+8,192. This demonstrates why the character heuristic is not enforcement.
+The loaded runner reported context 8,192, resident allocation **3,375,617,800
+bytes**, and model digest
+`2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd`.
+These are bounded functional checks, not new cold-start, quality or memory-pressure benchmarks.
+
+Offline regressions cover draft response/write ordering and newer typing,
+failed sends, atomic submit/delete exclusion, HTTP 409 for unfinished states,
+Unicode download headers and combining marks, and output/context limit notices.
+Browser checks on an isolated server observed draft isolation and reload
+recovery, disabled busy deletion, Cancel focused in the native confirmation,
+cancel preserving history, and confirmed deletion remaining absent after reload
+with the other chat intact. Both Marathi Markdown and text downloads returned
+HTTP 200 with the correct filename and no unsent draft content.
+
+This evidence applies to the macOS coordinator. It does not accept C03 on behalf
+of the requester, qualify Ubuntu, or advance C04. See the
+[repair handoff](c03-repair-handoff.md) for exact verification and Git paths.
 
 ## 6. Demonstration
 
