@@ -82,7 +82,7 @@ nodes never receive canonical workspace ownership merely by joining.
 
 This is a deliberate architectural position, not an oversight — see [Design Philosophy](#design-philosophy-coordinator-not-a-cluster) below for why.
 
-> **Status:** AF-001 implementation has started with [shared contracts and passing local checks](backend/contracts/README.md). No application runtime, model bundle or executable product exists yet. This README and the linked PRD describe the intended system, its constraints, and its demonstration plan.
+> **Status:** A **local coordinator runs** — Chat and a minimum Control Center over SQLite state and one local model, built on the [shared contracts](backend/contracts/README.md). There is **no worker, cluster, Documents or Code workflow, approval path, model bundle or installer**; those surfaces report themselves unavailable. See [backend/coordinator](backend/coordinator/README.md) to run it. This README and the linked PRD describe the wider intended system, its constraints, and its demonstration plan.
 
 ---
 
@@ -165,8 +165,13 @@ These constraints are treated as non-negotiable design requirements, not aspirat
 
 ```text
 AegisForge/
-├── backend/              # Planned coordinator, worker, router, and runtime boundary
-├── frontend/             # Planned desktop workspace and public-site boundary
+├── backend/
+│   ├── contracts/         # Shared job, attempt, event and approval contract (draft)
+│   ├── coordinator/       # The running local application: state, runtime, API, UI server
+│   └── worker-image/      # C04 build inputs; no image built yet
+├── frontend/
+│   ├── app/               # The application interface actually served by the coordinator
+│   └── design/            # Design track's visual reference; not served by the app
 ├── docs/
 │   ├── prd.md             # Short product contract and priorities
 │   ├── architecture.md    # Harness, nodes, state, jobs, and local data
@@ -183,7 +188,18 @@ AegisForge/
 
 ## Start Here
 
-There is nothing to install or run yet. Before contributing code:
+To run what exists today, you need a local [Ollama](https://ollama.com) server
+with `qwen3.5:4b-q4_K_M` installed, then:
+
+```bash
+PYTHONPATH=. ./.venv/bin/python -m backend.coordinator
+```
+
+Open <http://127.0.0.1:8770>. Details, including what the application
+deliberately does **not** do, are in
+[backend/coordinator/README.md](backend/coordinator/README.md).
+
+Before contributing code:
 
 1. Start with the [documentation map](docs/README.md) and short
    [PRD](docs/prd.md), then read [TechStack.md](TechStack.md) for the recommended

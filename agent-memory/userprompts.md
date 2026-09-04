@@ -712,3 +712,38 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260904-002](#up-20260904-002)
 - supersedes: none
 - linked_changes: [AC-20260904-003](agentchangelog.md#ac-20260904-003)
+
+<a id="up-20260904-008"></a>
+## UP-20260904-008 — Execute the C03 review repairs
+- date: 2026-09-04
+- tags: c03, review-fixes, drafts, delete, export, context
+- aliases: Codex execute, draft race, active chat deletion, Unicode export, context overflow
+- paths: backend/coordinator/, frontend/app/, docs/evaluation.md, agent-memory/
+- summary: Requester authorised Codex to repair the draft, deletion, export and context issues found in the C03 review.
+- request: Implement the fixes and verify them with isolated regression checks and bounded local runtime evidence.
+- follow_up_to: [UP-20260904-007](#up-20260904-007)
+- constraints: Preserve existing changes and real chat history; no Git writes or C04 execution.
+- linked_changes: [AC-20260904-008](agentchangelog.md#ac-20260904-008)
+
+<a id="up-20260904-009"></a>
+## UP-20260904-009 — Address the simultaneous-limit review feedback
+- date: 2026-09-04
+- tags: c03, review-follow-up, context, output-limit
+- aliases: Claude PASS review, simultaneous token limits, limit_reason
+- paths: backend/coordinator/, frontend/app/app.js, docs/c03-repair-handoff.md, agent-memory/
+- summary: Requester supplied an independent PASS review with a remaining simultaneous context/output-limit finding.
+- request: Evaluate the feedback as a follow-up to the authorised Codex repairs.
+- follow_up_to: [UP-20260904-008](#up-20260904-008)
+- linked_changes: [AC-20260904-009](agentchangelog.md#ac-20260904-009)
+
+<a id="up-20260904-010"></a>
+## UP-20260904-010 — Accept C03 and hand C04 execution to Claude
+- date: 2026-09-04
+- tags: c03, c04, acceptance, orchestration, networking
+- aliases: C03 accepted, connect Mac and Ubuntu, Claude executes Codex reviews
+- paths: tasks.md, docs/c03-repair-handoff.md, docs/c04-execution-brief.md, backend/worker-image/README.md, agent-memory/
+- summary: Requester accepted C03 and asked Codex to orchestrate Claude's next build and explain Mac–Ubuntu connection steps.
+- request: Record acceptance, prepare the bounded C04 execution handoff, and establish the next device checkpoint.
+- constraints: Preserve the two-device sequence, existing changes and human deployment gates; no Git writes.
+- follow_up_to: [UP-20260904-009](#up-20260904-009)
+- linked_changes: [AC-20260904-010](agentchangelog.md#ac-20260904-010)

@@ -149,8 +149,9 @@ Progress depends on these conditions. The internal demonstration target is
 **8–9 September 2026**; a missed gate changes what can be demonstrated, not
 the evidence required to call it complete.
 
-**Current scope: C03 — Local application, in review.** The requester accepted
-the C02 closeout on 2026-09-04 and authorised **C03 through C13 sequentially**,
+**Current scope: C04 — Worker/API implementation and image build.** The requester
+accepted C03 on 2026-09-04 and assigned implementation to Claude, with Codex
+orchestrating and reviewing. The existing authorisation is **C03 through C13 sequentially**,
 covering implementation, review fixes and proportionate offline checks on
 existing dependencies. Progression still needs each chunk's acceptance gate.
 
@@ -162,20 +163,24 @@ worker LAN access. The worker contract ports remain 8443 and 30443. The Ubuntu
 worker has two distinct Docker environments — `desktop-linux` (server 29.6.2,
 ~3.6 GiB) and the native socket at `unix:///var/run/docker.sock` (server 29.6.1,
 12 CPUs, 16382078976 bytes) — so future host-Docker commands select the endpoint
-explicitly rather than changing a global context. **The two devices are on
-different subnets** (coordinator `192.168.1.3/24`, worker `192.168.29.98/24`);
-connectivity and routing must be established at the C06 pairing checkpoint.
+explicitly rather than changing a global context. Earlier inventory reported
+coordinator `192.168.1.3/24` and worker `192.168.29.98/24`; those addresses are
+historical. On 2026-09-04 the Mac reported `192.168.68.132` on `en0`, with default
+gateway `192.168.68.1`. Ubuntu's current address and peer reachability still need
+checking. Different address ranges alone do not establish whether routing works.
+Prepare the trusted LAN alongside C04; application pairing remains a C06 gate.
 
 C03 is implemented and Codex's repaired-source review is **PASS**. An isolated
 run returned a real loopback Ollama answer, stopped cleanly, restarted with the
-same node ID, and restored the conversation. The existing port-8770 process
-predates these fixes; restart it and confirm the same behavior before C04.
+same node ID, and restored the conversation. Requester acceptance is now
+recorded; these local results do not establish Ubuntu or distributed readiness.
 
 **2026-09-04 requester correction:** the mandatory third OCR device is withdrawn.
-C01/C02 acceptance and all C03 repairs stand. The requester will accept C03
-after running the repaired Mac app; that acceptance is still pending. C04 build
-inputs are [prepared](backend/worker-image/README.md), but worker/API implementation, the image build and
-later deployment remain behind their existing gates. The retained
+C01/C02 acceptance and all C03 repairs stand. The requester subsequently accepted
+C03 and requested [Claude's C04 execution handoff](docs/c04-execution-brief.md).
+C04 build inputs are [prepared](backend/worker-image/README.md); implementation
+may proceed, while the actual Ubuntu image build and later deployment retain
+their device checkpoints. The retained
 [`scripts/qualify-ocr-worker.ps1`](scripts/qualify-ocr-worker.ps1) is **deferred**,
 used only if a measured need selects a Windows execution device later.
 
@@ -213,8 +218,8 @@ supplied for all six devices and is recorded in
 **draft** until its consumer-integration gate passes at C05; OD-06 pairing is
 recorded but unimplemented.
 
-**C01/C02 are accepted.** The earlier closeout questions are settled; the
-current work is C03. Runtime and integration claims still need their own checks.
+**C01/C02/C03 are accepted.** The current work is C04. Ubuntu runtime and
+integration claims still need their own checks.
 
 C02 decisions are now recorded with upstream provenance:
 [OD-03 runtime](docs/model-catalog.md#od-03--ollama-is-the-first-runtime),
@@ -249,8 +254,9 @@ and zero-egress evidence belong to later checkpoints.
   C06 / AF-005–AF-007 retains the implementation and cancel exercise; streaming
   and configured request limits do not clear that gate.
 
-**Next human action:** accept the repaired C03 app on the macOS coordinator;
-then proceed to C04 implementation and the reviewed Ubuntu worker image build.
+**Next human action:** give Claude the [C04 execution brief](docs/c04-execution-brief.md)
+and return Ubuntu's current LAN evidence while implementation proceeds.
+Codex reviews the result before the Ubuntu worker runs the final image build.
 OCR follows at C08 on these two devices. Other machines have no required
 execution role and may still build any module.
 
@@ -259,7 +265,7 @@ persisted runtime stopping evidence, marked capped replies incomplete while
 retaining their text, and handled expected browser resets. 33 local checks and
 an isolated real 664-token response passed; restart retained the result.
 The [updated Mac handoff](docs/handover-pack.md#verify--run-these-yourself)
-keeps requester acceptance open before C04.
+recorded the then-pending acceptance gate; requester acceptance has since cleared it.
 
 | Device role | Documented machine | Purpose in the first configuration |
 |---|---|---|

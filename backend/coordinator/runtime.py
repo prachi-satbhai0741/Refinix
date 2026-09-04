@@ -89,12 +89,20 @@ def stream_chat(messages: list[dict], *, should_cancel=None):
     payload = {
         "model": MODEL, "messages": messages, "stream": True,
         "think": THINK, "keep_alive": KEEP_ALIVE,
+        # Estimates select history; the runtime must reject real overflow.
+        "truncate": False, "shift": False,
         "options": {"num_ctx": NUM_CTX, "num_predict": NUM_PREDICT},
     }
     try:
         resp = _request("/api/chat", payload, timeout=300)
     except urllib.error.HTTPError as exc:
-        raise RuntimeUnavailable(f"HTTP {exc.code}: {exc.read()[:200]!r}") from exc
+        with exc:
+            detail = exc.read().decode("utf-8", "replace")
+        if "exceed_context_size_error" in detail or "exceeds the available context size" in detail:
+            raise RuntimeUnavailable(
+                f"Context window exceeded ({NUM_CTX} tokens). Shorten your message "
+                "or start a new chat. The runtime rejected the request without trimming it.") from exc
+        raise RuntimeUnavailable(f"HTTP {exc.code}: {detail[:200]}") from exc
     except OSError as exc:
         raise RuntimeUnavailable(f"{HOST} unreachable: {exc}") from exc
 
@@ -117,8 +125,19 @@ def stream_chat(messages: list[dict], *, should_cancel=None):
                 yield "delta", chunk
             if obj.get("done"):
                 ns = 1_000_000_000
+                prompt_count, output_count = obj.get("prompt_eval_count"), obj.get("eval_count")
+                limit = None
+                if obj.get("done_reason") == "length":
+                    context_full = (isinstance(prompt_count, int) and isinstance(output_count, int)
+                                    and prompt_count + output_count >= NUM_CTX)
+                    output_full = isinstance(output_count, int) and output_count >= NUM_PREDICT
+                    # Counts establish which bounds were reached, not which fired first.
+                    limit = ("context_and_output" if context_full and output_full else
+                             "context" if context_full else "output" if output_full else "unknown")
                 yield "done", {
                     "done_reason": obj.get("done_reason"),
+                    "limit_reason": limit,
+                    "context_window": NUM_CTX,
                     "output_token_limit": NUM_PREDICT,
                     "eval_count": obj.get("eval_count"),
                     # Runtime-reported counts. These are MEASURED, unlike

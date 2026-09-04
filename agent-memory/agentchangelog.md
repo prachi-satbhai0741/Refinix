@@ -964,3 +964,56 @@ work. No repository file change means no changelog entry.
 - changes: Added a pinned column and a drafts table with additive migrations, plus rename_chat, set_pinned, delete_chat, search, get_draft, set_draft, clear_draft_if_matches and export_chat. Search escapes LIKE wildcards so % and _ are literal, is parameterised, covers every saved chat rather than the sidebar page, and excludes drafts. Drafts are workspace-owned, never reach the model, search or export; a submit clears only the version that was sent and a delayed save cannot resurrect a deleted chat. Export builds a saved snapshot with speaker labels, notes for length-stopped and context-limited replies, a sanitised filename and no mutation. Added six routes and a per-row accessible menu with rename in place, pin indicator, both export choices and a title-confirmed delete with Cancel focused. Chats now sort pinned first, then most recent.
 - verification: 73 offline checks pass, 27 of them new: rename trimming and rejection, literal % and _ search, Unicode and case-insensitive search, reach beyond the sidebar page, draft isolation and submit-version clearing, resurrection prevention, pin persistence and ordering, cascade delete, and export scope, formatting, filename safety and non-mutation. In the browser: search for 100% matched exactly one chat, clearing restored the list, the row menu exposed five actions with focus landing on Rename, pinning showed its mark, rename prefilled and saved on Enter, and a draft survived both a chat switch and a full page reload. A real export contained the saved exchange and excluded the draft.
 - remaining: Codex review. The delete confirmation uses a native modal dialog which hangs the automation harness, so its Cancel-focused behaviour was verified by construction rather than by an automated click; a human should confirm it. Regenerate remains excluded by design.
+
+<a id="ac-20260904-004"></a>
+## AC-20260904-004 — Corrected stale documentation claims
+- prompt_id: [UP-20260904-003](userprompts.md#up-20260904-003)
+- date: 2026-09-04
+- status: in review
+- scope: documentation
+- tags: c03, readme, accuracy, stale-claims
+- aliases: fix stale docs, readme says nothing to run, doc accuracy
+- paths: README.md, backend/README.md, docs/prd.md, docs/evaluation.md
+- summary: Corrected six documentation claims that became false once the coordinator started running, without overclaiming what still does not exist.
+- changes: README's status banner said no application runtime or executable product exists; it now states that a local coordinator runs with Chat and a minimum Control Center, and names what is still absent. Replaced "There is nothing to install or run yet" with the actual run command and a link to the coordinator README. Expanded the repository tree, which listed backend and frontend only as planned boundaries, to show contracts, coordinator, worker-image, app and design. prd.md and evaluation.md's status paragraphs were updated the same way. backend/README.md claimed five contract checks pass and that the coordinator, runtime adapter and database do not exist; corrected to eight contract checks, 73 offline checks in total, and a description of what exists versus what does not. Recorded there that FastAPI remains the C04 worker-API direction while the C03 coordinator uses the standard library. Annotated the OD-03 comparison table's 4096 as the value held constant for that comparison, since the coordinator now runs 8192.
+- verification: Swept README, backend, frontend and every docs file for stale phrases and found none remaining. 384 local Markdown links and anchors resolve, git diff --check is clean, and the 73 offline checks still pass. Every replacement names what is still missing so the corrections do not overclaim in the other direction.
+- remaining: Codex review. Non-documentation review findings are unaddressed by design: GET query parameters are not length-bounded the way POST fields are, and backend/__init__.py is missing so unittest discover fails from the repository root. No Git writes ran.
+
+<a id="ac-20260904-008"></a>
+## AC-20260904-008 — Repair the C03 acceptance defects
+- prompt_id: [UP-20260904-008](userprompts.md#up-20260904-008)
+- date: 2026-09-04
+- status: verified locally; requester acceptance pending
+- tags: c03, review-fixes, drafts, delete, export, context
+- aliases: stale draft responses, atomic delete guard, Marathi export, context overflow
+- paths: backend/coordinator/, frontend/app/app.js, frontend/app/test-conversations.cjs, docs/evaluation.md, docs/model-catalog.md, docs/c03-repair-handoff.md, agent-memory/
+- summary: Fixed draft navigation/submission races, active-job deletion, Unicode export headers and context overflow enforcement on the Mac.
+- changes: Guarded restored drafts by chat/edit version and serialized captured saves; preserved failed-deletion state; rejected unfinished deletion atomically with HTTP 409; preserved Unicode combining marks with encoded download filenames; disabled runtime truncation/shifting and distinguished context, output and unidentified length limits while retaining partial replies. Added focused regressions, a repeatable bounded runtime check and the device/Git handoff.
+- verification: 80 Python checks and 8 Node frontend checks passed; JavaScript syntax and diff whitespace passed. Installed Ollama 0.32.14 retained a fact at 5034 prompt tokens, rejected oversized input before output, and stopped at 8042 prompt plus 150 output tokens with a saved context-limited partial reply. Browser tests confirmed draft switch/reload recovery, busy-delete disabling, Cancel focus, cancelled deletion and confirmed deletion surviving reload. Both Marathi exports returned HTTP 200 with the correct filename and excluded unsent drafts.
+- remaining: Requester restarts and accepts C03 on the macOS coordinator. Ubuntu policy verification and C04 remain separate checkpoints. Temporary servers/tabs were closed; real chat history and pre-existing changes were preserved. No installs, model downloads, service changes or Git writes ran.
+
+<a id="ac-20260904-009"></a>
+## AC-20260904-009 — Report simultaneous context and output limits
+- prompt_id: [UP-20260904-009](userprompts.md#up-20260904-009)
+- date: 2026-09-04
+- status: verified locally
+- tags: c03, review-follow-up, context, output-limit
+- aliases: simultaneous caps, limit_reason, both bounds reached
+- paths: backend/coordinator/runtime.py, backend/coordinator/server.py, backend/coordinator/db.py, backend/coordinator/test_coordinator.py, frontend/app/app.js, docs/c03-repair-handoff.md, agent-memory/
+- summary: Removed the ambiguous single-limit classification when a reply reaches both configured bounds.
+- changes: Record context_and_output for simultaneous caps, display readable wording in the UI and export, retain full-context guidance, and recognise a measured output cap even without a prompt count.
+- verification: Extended the existing partial-reply regression with 6144+2048 and missing-prompt-count cases; all 80 Python and 8 Node checks passed, plus JavaScript syntax and diff whitespace. No additional real-model run was needed for the classifier change.
+- remaining: Requester C03 acceptance on the macOS coordinator. No Git writes or live-history changes.
+
+<a id="ac-20260904-010"></a>
+## AC-20260904-010 — Record C03 acceptance and prepare Claude's C04 handoff
+- prompt_id: [UP-20260904-010](userprompts.md#up-20260904-010)
+- date: 2026-09-04
+- status: handoff prepared; Claude dispatch pending
+- tags: c03, c04, acceptance, orchestration, networking
+- aliases: accepted Mac app, Claude execution brief, connect Ubuntu and Mac
+- paths: tasks.md, docs/c03-repair-handoff.md, docs/c04-execution-brief.md, backend/worker-image/README.md, agent-memory/
+- summary: Recorded requester C03 acceptance and prepared the C04 source/build handoff with trusted-LAN checks and device evidence gates.
+- changes: Advanced current scope to C04, labelled old network addresses historical, retained separate image/deployment/pairing gates and clarified that the prepared base image is not the final worker. Added a paste-ready Claude brief, exact device commands and scoped Git handoff.
+- verification: Mac route/address reads reported en0, 192.168.68.132 and gateway 192.168.68.1. Claude Code 2.1.246 was present but auth status reported loggedIn false; the enabled browser inventory had no Claude session. Four document fence checks, 26 local file-link checks, acceptance/dispatch assertions and git diff --check passed. No application tests were rerun for this documentation-only change.
+- remaining: Requester sends the brief to the existing Claude conversation and returns Ubuntu LAN output; Codex reviews the resulting C04 source before the Ubuntu image-build checkpoint. No direct Claude dispatch, installations, service changes or Git writes ran.
