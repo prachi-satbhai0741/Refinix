@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
+from unicodedata import category
 
 from backend.contracts import v1
 
@@ -229,9 +230,19 @@ def set_pinned(conn, chat_id: str, pinned: bool) -> None:
         raise KeyError(chat_id)
 
 
+class ChatBusyError(ValueError):
+    pass
+
+
 def delete_chat(conn, chat_id: str) -> None:
     """Remove a chat with its messages, jobs, attempts, events and draft."""
     with LOCK, conn:
+        if not conn.execute("SELECT 1 FROM chats WHERE chat_id=?", (chat_id,)).fetchone():
+            raise KeyError(chat_id)
+        if any(r["state"] not in v1.TERMINAL_JOB_STATES | {"interrupted"}
+               for r in conn.execute("SELECT state FROM jobs WHERE chat_id=?", (chat_id,))):
+            # The same lock covers Coordinator.submit, including job creation.
+            raise ChatBusyError("Stop the response before deleting this chat.")
         jobs = [r["job_id"] for r in
                 conn.execute("SELECT job_id FROM jobs WHERE chat_id=?", (chat_id,))]
         for job_id in jobs:
@@ -295,6 +306,7 @@ def search(conn, term: str, limit: int = 40) -> list[dict]:
     return results
 
 
+@serialized
 def get_draft(conn, chat_id: str) -> str:
     row = conn.execute("SELECT text FROM drafts WHERE chat_id=?", (chat_id,)).fetchone()
     return row["text"] if row else ""
@@ -323,6 +335,7 @@ def clear_draft_if_matches(conn, chat_id: str, submitted: str) -> None:
                      (chat_id, submitted))
 
 
+@serialized
 def export_chat(conn, chat_id: str, fmt: str = "md") -> tuple[str, str]:
     """Return (filename, body) for a saved snapshot of one chat.
 
@@ -342,7 +355,11 @@ def export_chat(conn, chat_id: str, fmt: str = "md") -> tuple[str, str]:
         notes = []
         metrics = json.loads(row["metrics_json"]) if row["metrics_json"] else {}
         if metrics.get("done_reason") == "length":
-            notes.append("reply stopped at the configured token limit")
+            limit = metrics.get("limit_reason")
+            notes.append("context window and output token limits both reached" if limit == "context_and_output"
+                         else "reply stopped at the context window limit" if limit == "context"
+                         else "reply stopped at the output token limit" if limit == "output"
+                         else "reply stopped at a runtime length limit")
         selection = json.loads(row["selection_json"]) if row["selection_json"] else {}
         if selection.get("omitted_count"):
             notes.append(f"{selection['omitted_count']} earlier message(s) were "
@@ -368,7 +385,7 @@ def export_chat(conn, chat_id: str, fmt: str = "md") -> tuple[str, str]:
             lines.append(f"> Note: {note}" if markdown else f"[Note: {note}]")
             lines.append("")
 
-    safe = "".join(ch if ch.isalnum() or ch in " -_" else "-"
+    safe = "".join(ch if ch.isalnum() or category(ch).startswith("M") or ch in " -_" else "-"
                    for ch in chat["title"]).strip()[:60] or "conversation"
     return f"{safe}.{'md' if markdown else 'txt'}", "\n".join(lines)
 

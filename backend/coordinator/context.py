@@ -15,8 +15,8 @@ from dataclasses import dataclass, field, asdict
 
 # Character-per-token divisor used for the pre-flight estimate. It is an
 # ESTIMATE, never a guarantee: English averages near 4, but code, CJK and
-# Devanagari are far denser. The margin below absorbs the difference, and the
-# runtime's own reported prompt count is what gets recorded as measured.
+# Devanagari can be far denser. The margin is only a heuristic; runtime.py
+# disables truncation and shifting so an underestimate fails visibly.
 CHARS_PER_TOKEN = 3.0
 
 # Per-message chat-template overhead (role markers, separators). Measured
@@ -32,7 +32,7 @@ SAFETY_FRACTION = 0.85
 
 
 def estimate_tokens(text: str) -> int:
-    """Deliberately pessimistic character-based estimate. Not a token count."""
+    """Character-based selection heuristic, never a token-count guarantee."""
     return int(len(text) / CHARS_PER_TOKEN) + 1
 
 

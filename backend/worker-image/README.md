@@ -1,7 +1,8 @@
 # C04 image inputs
 
 **Prepared, not built.** The requester authorised preparation alongside the
-two-device correction. C03 requester acceptance is still pending. These files
+two-device correction. The requester accepted C03 on 2026-09-04 and assigned
+[C04 implementation to Claude](../../docs/c04-execution-brief.md), with Codex review. These files
 prepare the Python/FastAPI/Uvicorn image and package the existing shared
 contracts; they do not implement a worker API or clear C04.
 
@@ -38,7 +39,7 @@ build. [pip hash checking](https://pip.pypa.io/en/stable/topics/secure-installs/
 and [Docker build-context exclusions](https://docs.docker.com/build/concepts/context/#dockerignore-files)
 are the mechanisms used here.
 
-## Ubuntu build check — after C03 acceptance
+## Preparation-only Ubuntu build check — not the final C04 worker
 
 Device: **Ubuntu worker**, Ubuntu 24.04.4 LTS, x86_64, bash,
 `/home/prachi/SIH/AegisForge`. Use its already reported native Docker socket;
@@ -53,7 +54,9 @@ not measured final image size. The image/cache are stored by the native daemon;
 no model weights or private files are copied. This preparation image is never
 deployed as the product worker.
 
-Once C03 is accepted and the operator is ready for this connected build check:
+The following commands build only the prepared dependency/contract image.
+The next C04 checkpoint must instead use the final worker commands supplied
+after implementation and Codex review; running this preparation check is optional:
 
 ```sh
 cd /home/prachi/SIH/AegisForge

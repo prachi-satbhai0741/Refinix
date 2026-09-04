@@ -157,6 +157,7 @@ class TestDelete(Base):
         c = self.chat("gone")
         db.add_message(self.conn, c, "user", "hi")
         job = db.create_job(self.conn, workspace_id=self.ws, chat_id=c, request="hi")
+        db.set_job_state(self.conn, job, "cancelled")
         db.delete_chat(self.conn, c)
         for table, column in (("chats", "chat_id"), ("messages", "chat_id"),
                               ("jobs", "chat_id"), ("drafts", "chat_id")):
@@ -204,6 +205,10 @@ class TestExport(Base):
         name, _ = db.export_chat(self.conn, c, "md")
         for bad in ("/", "\\", ":", ".."):
             self.assertNotIn(bad, name.replace(".md", ""), f"{bad!r} in {name!r}")
+
+    def test_unicode_filename_keeps_combining_marks(self):
+        c = self.chat("मराठी तपासणी")
+        self.assertEqual(db.export_chat(self.conn, c, "md")[0], "मराठी तपासणी.md")
 
     def test_unknown_chat(self):
         with self.assertRaises(KeyError):

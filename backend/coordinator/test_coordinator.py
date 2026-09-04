@@ -16,6 +16,9 @@ from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from threading import Event
+from urllib.error import HTTPError
+from urllib.parse import quote
 
 from backend.contracts import v1
 from backend.coordinator import db
@@ -208,6 +211,84 @@ class TestLocalBoundary(unittest.TestCase):
         h.rfile = BytesIO(body)
         return h
 
+    def test_busy_delete_is_http_409_and_preserves_every_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            c = Coordinator(Path(directory) / 'state.sqlite3')
+            chat = db.create_chat(c.conn, c.workspace_id, 'keep')
+            with patch('backend.coordinator.server.threading.Thread.start'):
+                job = c.submit(chat, 'unfinished')
+            db.set_draft(c.conn, chat, 'unsent')
+            h = self.handler(json.dumps({'chat_id': chat}).encode())
+            h.path, h.coordinator = '/v1/chat/delete', c
+            for state in ['created', 'context_preparing', 'queued', 'routing',
+                          'running', 'validating', 'awaiting_approval']:
+                if state != 'created':
+                    db.set_job_state(c.conn, job, state)
+                with patch.object(h, '_body', return_value={'chat_id': chat}), patch.object(h, '_json') as reply:
+                    h.do_POST()
+                self.assertEqual(reply.call_args.args[1], 409, state)
+                self.assertEqual(c.chat_messages(chat)[0]['text'], 'unfinished')
+                self.assertEqual(db.get_draft(c.conn, chat), 'unsent')
+            db.set_job_state(c.conn, job, 'cancelled')
+            db.delete_chat(c.conn, chat)
+            c.conn.close()
+
+    def test_submit_and_delete_share_one_critical_section(self):
+        with tempfile.TemporaryDirectory() as directory:
+            c = Coordinator(Path(directory) / 'state.sqlite3')
+            chat = db.create_chat(c.conn, c.workspace_id, 'race')
+            entered, release, deleting = Event(), Event(), Event()
+            create = db.create_job
+            def paused_create(*args, **kwargs):
+                entered.set()
+                if not release.wait(3):
+                    raise AssertionError('delete did not start')
+                return create(*args, **kwargs)
+            def remove():
+                deleting.set()
+                db.delete_chat(c.conn, chat)
+            with patch.object(db, 'create_job', paused_create), patch.object(c, '_run'), ThreadPoolExecutor(2) as pool:
+                submitted = pool.submit(c.submit, chat, 'keep')
+                self.assertTrue(entered.wait(3))
+                removed = pool.submit(remove)
+                self.assertTrue(deleting.wait(3))
+                release.set()
+                job = submitted.result(3)
+                with self.assertRaises(db.ChatBusyError):
+                    removed.result(3)
+            self.assertEqual(c.jobs(chat)[0]['job_id'], job)
+            c.conn.close()
+
+    def test_export_serializes_unicode_filename_as_an_ascii_header(self):
+        h = self.handler()
+        h.request_version = 'HTTP/1.1'
+        h.wfile = BytesIO()
+        name = 'मराठी तपासणी.md'
+        c = SimpleNamespace(export=lambda *args: (name, 'saved text'))
+        with patch.object(h, 'log_request'):
+            h._export(c, {'chat_id': ['synthetic'], 'format': ['md']})
+        headers, body = h.wfile.getvalue().split(b'\r\n\r\n', 1)
+        self.assertIn("filename*=UTF-8''" + quote(name, safe=''), headers.decode('ascii'))
+        self.assertEqual(body, b'saved text')
+
+    def test_submit_clears_the_exact_draft_including_new_chat_and_whitespace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            c = Coordinator(Path(directory) / 'state.sqlite3')
+            chat = db.create_chat(c.conn, c.workspace_id, 'draft')
+            for draft_id in (chat, db.NEW_CHAT_DRAFT):
+                for saved in ('  send this\n', 'newer typing'):
+                    db.set_draft(c.conn, draft_id, saved)
+                    body = {'chat_id': chat, 'text': 'send this', 'draft_id': draft_id,
+                            'draft_text': '  send this\n'}
+                    h = self.handler(json.dumps(body).encode())
+                    h.path, h.coordinator = '/v1/messages', c
+                    with patch.object(c, 'submit', return_value=db.new_id()), patch.object(h, '_json') as reply:
+                        h.do_POST()
+                    self.assertEqual(reply.call_args.args[1], 202)
+                    self.assertEqual(db.get_draft(c.conn, draft_id),
+                                     '' if saved.strip() == 'send this' else saved)
+            c.conn.close()
+
     def test_disconnects_close_the_connection_without_masking_other_errors(self):
         h = self.handler()
         for error in (ConnectionResetError(), BrokenPipeError()):
@@ -312,6 +393,44 @@ class TestLocalBoundary(unittest.TestCase):
 
 
 class TestCompletion(unittest.TestCase):
+    def test_real_input_overflow_error_is_actionable(self):
+        error = HTTPError(runtime.HOST, 400, 'Bad Request', {},
+                          BytesIO(b'{"error":"exceed_context_size_error"}'))
+        with patch.object(runtime, '_request', side_effect=error):
+            with self.assertRaisesRegex(runtime.RuntimeUnavailable, 'Shorten your message'):
+                list(runtime.stream_chat([{'role': 'user', 'content': 'dense input'}]))
+
+    def test_context_and_output_limits_keep_partial_answers_with_distinct_notices(self):
+        for prompt, output, limit in [(8042, 150, 'context'), (40, 2048, 'output'),
+                                      (6144, 2048, 'context_and_output'),
+                                      (None, 2048, 'output'), (None, 100, 'unknown')]:
+            with self.subTest(limit=limit), tempfile.TemporaryDirectory() as directory:
+                c = Coordinator(Path(directory) / 'state.sqlite3')
+                chat = db.create_chat(c.conn, c.workspace_id, 'limit test')
+                with patch('backend.coordinator.server.threading.Thread.start'):
+                    job = c.submit(chat, 'Count')
+                final = {'message': {'content': 'saved partial answer'}, 'done': True,
+                         'done_reason': 'length', 'prompt_eval_count': prompt, 'eval_count': output}
+                with patch.object(runtime, '_request', return_value=BytesIO((json.dumps(final) + '\n').encode())):
+                    c._run(job, chat)
+                detail = c.job_detail(job)
+                self.assertEqual(detail['job']['state'], 'failed')
+                metrics = json.loads(detail['attempts'][0]['metrics_json'])
+                self.assertEqual(metrics['limit_reason'], limit)
+                message = c.chat_messages(chat)[-1]
+                self.assertEqual(message['text'], 'saved partial answer')
+                explanation = json.loads(message['error_json'])['message']
+                self.assertIn({'context': 'context window', 'output': 'output limit',
+                               'context_and_output': 'output limit also reached',
+                               'unknown': 'which limit was not reported'}[limit], explanation)
+                export = c.export(chat, 'md')[1]
+                self.assertIn('saved partial answer', export)
+                if limit == 'context_and_output':
+                    self.assertIn('context window', explanation)
+                    self.assertIn('start a new chat', explanation)
+                    self.assertIn('context window and output token limits both reached', export)
+                c.conn.close()
+
     def test_runtime_stopping_reason_controls_status_and_survives_restart(self):
         for reason in ('stop', 'length', None, 'unexpected'):
             with self.subTest(reason=reason), tempfile.TemporaryDirectory() as directory:
@@ -327,6 +446,8 @@ class TestCompletion(unittest.TestCase):
                 with patch.object(runtime, '_request', return_value=stream) as request:
                     c._run(job, chat)
                 options = request.call_args.args[1]['options']
+                self.assertIs(request.call_args.args[1]['truncate'], False)
+                self.assertIs(request.call_args.args[1]['shift'], False)
                 # Assert the configured values are passed through, rather than
                 # a literal needing an edit whenever a measured window changes.
                 self.assertEqual(options, {'num_ctx': runtime.NUM_CTX,

@@ -265,15 +265,19 @@ function applyEvent(ev) {
 }
 
 async function showSelection() {
-  if (!activeJob) return;
-  const detail = await api(`/v1/job?job_id=${activeJob}`).catch(() => null);
+  const id = activeJob;
+  if (!id) return;
+  const detail = await api(`/v1/job?job_id=${id}`).catch(() => null);
+  if (activeJob !== id) return;
   const a = detail && detail.attempts[detail.attempts.length - 1];
   if (a && a.selection) contextNotice(a.selection);
 }
 
 async function refreshAttempt() {
-  if (!activeJob) return;
-  const detail = await api(`/v1/job?job_id=${activeJob}`).catch(() => null);
+  const id = activeJob;
+  if (!id) return;
+  const detail = await api(`/v1/job?job_id=${id}`).catch(() => null);
+  if (activeJob !== id) return;
   if (!detail || !detail.attempts.length) return;
   const a = detail.attempts[detail.attempts.length - 1];
   const err = a.error_json ? JSON.parse(a.error_json) : null;
@@ -285,6 +289,7 @@ async function refreshAttempt() {
     ['stop reason', metrics.done_reason, 'not recorded'],
     ['output tokens', metrics.eval_count, 'not measured'],
     ['reply limit', metrics.output_token_limit, 'not recorded'],
+    ['limit reached', metrics.limit_reason?.replace(/_/g, ' '), 'not reported'],
     ['detail', err ? err.message : metrics.done_reason === 'stop'
       ? 'Model finished normally' : null, 'not recorded'],
   ]);
@@ -295,6 +300,10 @@ async function refreshAttempt() {
 const NEW_CHAT_DRAFT = '__new__';
 let searchTimer = null;
 let draftTimer = null;
+let draftVersion = 0;
+let draftReady = false;
+// ponytail: serialize saves in this browser; concurrent-tab editing is not merged.
+let draftWrites = Promise.resolve();
 let openMenu = null;
 
 /* Drafts live in coordinator state, so they survive a refresh or restart.
@@ -302,22 +311,39 @@ let openMenu = null;
 async function loadDraft(id) {
   const input = $('input');
   if (!input) return;
-  const { text } = await api(`/v1/draft?chat_id=${encodeURIComponent(id || NEW_CHAT_DRAFT)}`)
-    .catch(() => ({ text: '' }));
-  input.value = text || '';
-  const mark = $('draft-mark');
-  if (mark) mark.hidden = !text;
+  const version = ++draftVersion;
+  draftReady = false;
+  input.value = '';
+  if ($('draft-mark')) $('draft-mark').hidden = true;
+  await draftWrites.catch(() => {});
+  if (chatId !== id || draftVersion !== version) return;
+  try {
+    const { text } = await api(`/v1/draft?chat_id=${encodeURIComponent(id || NEW_CHAT_DRAFT)}`);
+    if (chatId !== id || draftVersion !== version) return;
+    input.value = text || '';
+    draftReady = true;
+    if ($('draft-mark')) $('draft-mark').hidden = !text;
+  } catch (err) {
+    if (chatId === id && draftVersion === version)
+      notice('Could not restore this draft.', 'error', err.message);
+  }
 }
 
 function saveDraftSoon(immediate = false) {
   const input = $('input');
-  if (!input) return;
+  if (!input || !draftReady) return draftWrites;
   clearTimeout(draftTimer);
-  const send = () => api('/v1/draft', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId || NEW_CHAT_DRAFT, text: input.value }),
-  }).catch(() => {});                 // a failed draft save must not interrupt typing
-  if (immediate) send(); else draftTimer = setTimeout(send, 600);
+  const body = JSON.stringify({ chat_id: chatId || NEW_CHAT_DRAFT, text: input.value });
+  const save = () => {
+    draftWrites = draftWrites.catch(() => {}).then(() => api('/v1/draft', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+    }));
+    draftWrites.catch((err) => notice('Draft could not be saved.', 'error', err.message));
+    return draftWrites;
+  };
+  if (immediate) return save();
+  draftTimer = setTimeout(save, 600);
+  return draftWrites;
 }
 
 function closeMenu() {
@@ -378,28 +404,42 @@ function rowMenu(anchor, chat) {
   });
   item('Export as Markdown', () => downloadExport(chat, 'md'));
   item('Export as plain text', () => downloadExport(chat, 'txt'));
-  item('Delete chat', async () => {
+  const remove = item('Delete chat', () => deleteChat(chat), true);
+  remove.disabled = true;
+  remove.title = 'Checking for unfinished work…';
+  api(`/v1/jobs?chat_id=${encodeURIComponent(chat.chat_id)}`).then(({ jobs }) => {
+    const busy = jobs.some((j) => !['completed', 'failed', 'cancelled', 'denied', 'interrupted'].includes(j.state));
+    remove.disabled = busy;
+    remove.title = busy ? 'Stop the response before deleting this chat.' : '';
+    remove.textContent = busy ? 'Delete chat — stop the response first' : 'Delete chat';
+  }).catch(() => { remove.title = 'Could not check this chat. Reopen the menu to retry.'; });
+
+  document.body.append(menu);
+  openMenu = menu;
+  menu.querySelector('button').focus();
+}
+
+async function deleteChat(chat) {
     const yes = await confirmDialog(
       `Delete “${chat.title}”?`,
       'Its messages and run history will be removed. This cannot be undone.',
       'Delete chat');
     if (!yes) return;
-    await api('/v1/chat/delete', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chat.chat_id }),
-    }).catch((e) => notice('Could not delete the chat.', 'error', e.message));
+    try {
+      await api('/v1/chat/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chat.chat_id }),
+      });
+    } catch (err) {
+      notice('Could not delete the chat.', 'error', err.message);
+      return;
+    }
     if (chat.chat_id === chatId) {
-      chatId = null; activeJob = null;
-      $('thread').replaceChildren();
-      $('events').replaceChildren();
-      renderLife(null);
+      clearTimeout(draftTimer);
+      draftReady = false;
+      newChat();
     }
     loadChats();
-  }, true);
-
-  document.body.append(menu);
-  openMenu = menu;
-  menu.querySelector('button').focus();
 }
 
 /* Export is an explicit download of saved history. The link is created,
@@ -410,8 +450,10 @@ async function downloadExport(chat, fmt) {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const blob = await resp.blob();
-    const name = (resp.headers.get('Content-Disposition') || '')
-      .match(/filename="([^"]+)"/)?.[1] || `conversation.${fmt}`;
+    const disposition = resp.headers.get('Content-Disposition') || '';
+    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const name = encoded ? decodeURIComponent(encoded)
+      : disposition.match(/filename="([^"]+)"/)?.[1] || `conversation.${fmt}`;
     const href = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = href; a.download = name;
@@ -528,8 +570,11 @@ async function loadChats() {
 }
 
 async function openChat(id) {
-  if (chatId !== id) saveDraftSoon(true);   // flush before leaving
-  chatId = id;
+  if (chatId !== id) {
+    saveDraftSoon(true);                  // capture and flush the old chat first
+    chatId = id;
+    loadDraft(id);
+  }
   activeJob = null;
   streamBox = null;
   lastSequence = 0;
@@ -588,25 +633,53 @@ async function openChat(id) {
     $('attempt-kv').replaceChildren();
   }
   loadChats();
-  loadDraft(id);
 }
 
-async function send(text) {
-  if (!chatId) {
+async function send(text, { draftText = null } = {}) {
+  const sourceId = chatId, version = draftVersion;
+  await saveDraftSoon(true);             // no delayed old save may follow acceptance
+  let targetId = sourceId;
+  if (!targetId) {
     const { chat_id } = await api('/v1/chats', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: text.slice(0, 60) }),
     });
-    chatId = chat_id;
+    targetId = chat_id;
   }
-  streamBox = null;
   const { job_id } = await api('/v1/messages', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify({ chat_id: targetId, text,
+      draft_id: sourceId || NEW_CHAT_DRAFT, draft_text: draftText ?? text }),
   });
+  if (chatId !== sourceId || (sourceId === null && draftVersion !== version)) {
+    loadChats();
+    return;
+  }
+  if (draftText !== null && draftVersion === version && $('input').value === draftText) {
+    $('input').value = '';
+    ++draftVersion;
+    if ($('draft-mark')) $('draft-mark').hidden = true;
+  }
+  chatId = targetId;
   // Read persisted messages/output after acceptance; generation may already
   // have emitted events before the POST response reached this browser.
   await openChat(chatId);
+}
+
+function newChat() {
+  saveDraftSoon(true);
+  chatId = null; activeJob = null;
+  streamBox = null; jobState = null; lastSequence = 0;
+  pendingEvents = new Map();
+  $('cancel-btn').hidden = true;
+  $('job-chip').textContent = 'no job';
+  $('attempt-kv').replaceChildren();
+  $('thread').replaceChildren();
+  $('events').replaceChildren();
+  deltaCount = 0; deltaChars = 0;
+  renderLife(null);
+  turn('assistant', 'New conversation. Send a request to start a job.');
+  loadDraft(null);
 }
 
 /* ------------------------------------------------------------- Control --- */
@@ -737,7 +810,12 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
   const draftInput = $('input');
-  if (draftInput) draftInput.addEventListener('input', () => saveDraftSoon());
+  if (draftInput) draftInput.addEventListener('input', () => {
+    ++draftVersion;
+    draftReady = true;
+    if ($('draft-mark')) $('draft-mark').hidden = !draftInput.value;
+    saveDraftSoon();
+  });
   document.addEventListener('click', (e) => {
     if (openMenu && !openMenu.contains(e.target)) closeMenu();
   });
@@ -763,16 +841,13 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
       sending = true;
-      input.disabled = true;
       $('send').disabled = true;
       try {
-        await send(text);
-        input.value = '';          // cleared only once the job is accepted
+        await send(text, { draftText: input.value });
       } catch (err) {
         notice('Could not send that request.', 'error', err.message);
       } finally {
         sending = false;
-        input.disabled = false;
         $('send').disabled = false;
         input.focus();
       }
@@ -784,20 +859,7 @@ window.addEventListener('DOMContentLoaded', () => {
         $('composer').requestSubmit();
       }
     });
-    $('new-chat').onclick = async () => {
-      chatId = null; activeJob = null;
-      streamBox = null; jobState = null; lastSequence = 0;
-      pendingEvents = new Map();
-      $('cancel-btn').hidden = true;
-      $('job-chip').textContent = 'no job';
-      $('attempt-kv').replaceChildren();
-      $('thread').replaceChildren();
-      $('events').replaceChildren();
-      deltaCount = 0; deltaChars = 0;
-      renderLife(null);
-      turn('assistant', 'New conversation. Send a request to start a job.');
-      loadDraft(null);            // a draft typed before the chat exists
-    };
+    $('new-chat').onclick = newChat;
     $('cancel-btn').onclick = () => {
       if (!activeJob) return;
       api('/v1/cancel', {

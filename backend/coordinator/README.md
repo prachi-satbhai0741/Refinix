@@ -20,10 +20,17 @@ the runtime as unreachable and Chat fails the job with a typed `unavailable`
 reason — it never fabricates a reply.
 
 Chat allows up to **2,048 output tokens** per reply (formerly 512), with thinking
-off and a 4,096-token context. `NUM_PREDICT` in `runtime.py` sets the reply limit;
+off and an 8,192-token context on the Mac. `NUM_PREDICT` in `runtime.py` sets the reply limit;
 restart the coordinator after changing it. Longer output can take longer to
 generate. This is a maximum, not a promised answer length or a larger memory of
 the conversation. No new model download is involved.
+
+Context selection uses an estimate; Ollama receives `truncate: false` and
+`shift: false` to enforce the actual boundary. Oversized input is rejected with
+an actionable notice. If generation fills the context, the saved partial reply
+is marked incomplete with a context-limit reason, separate from the reply limit.
+Verified on the installed Mac model and Ollama 0.32.14; see the
+[repair evidence and handoff](../../docs/c03-repair-handoff.md).
 
 ## Why the standard library
 
@@ -68,7 +75,7 @@ service observed on the Ubuntu worker's `8080`.
 | Drafts | One unsent draft per conversation, plus a slot for text typed before a chat exists. Stored in coordinator state so it survives a refresh or restart. **Never sent to the model, never searched, never exported.** Submitting clears only the version that was sent, so newer typing survives; a failed send keeps it. Deleting a chat clears its draft, and a delayed save cannot resurrect a deleted chat. |
 | Pin | Ordering only — pinned chats sort first, most-recent-activity within each group. Unpinning preserves every message. Shown with a mark, not colour alone. |
 | Export | An explicit local download of the **saved snapshot**: complete history, not what the interface happened to show. Markdown preserves the model's formatting; plain text stays literal. Partial and context-limited replies carry a readable note. Unsent drafts and other chats are excluded, filenames are sanitised, and nothing is mutated or fetched. |
-| Delete | Removes the chat with its messages, jobs, attempts, events and draft. Confirmed by title, with Cancel focused. |
+| Delete | Removes the chat with its messages, jobs, attempts, events and draft. Confirmed by title, with Cancel focused. Unfinished work disables deletion; the backend rejects it atomically with HTTP 409. Failed deletion keeps the conversation visible. |
 
 **Regenerate is deliberately absent.** Continue extends a saved partial reply; it
 never overwrites or re-runs an earlier answer. No editing or branching.
@@ -86,7 +93,8 @@ The offline-runtime invariant and `docs/security.md` §12 shape the surfaces:
 - A cancelled job writes no assistant message.
 - Only the runtime's `stop` reason permits successful completion. `length`
   marks the job **failed** with a visible **Incomplete reply** notice; its
-  partial text stays in the conversation and can be continued in the next turn.
+  partial text stays in the conversation. Output-limited replies can be continued
+  in the next turn; a full context needs a new chat with the relevant excerpt.
   Missing or unexpected reasons fail validation rather than claiming success.
 - The attempt records the actual stopping reason, output token count and limit.
   Existing databases receive one nullable metadata column at startup; old

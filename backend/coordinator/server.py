@@ -17,7 +17,7 @@ import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from backend.contracts import v1
 from backend.coordinator import context, db, runtime
@@ -207,10 +207,22 @@ class Coordinator:
                     if reason == "length":
                         # Keep the partial reply in history so the user can continue it.
                         db.add_message(self.conn, chat_id, "assistant", answer, job_id=job_id)
-                        message = (
-                            f"Incomplete reply: output limit reached "
-                            f"({metrics.get('output_token_limit', runtime.NUM_PREDICT)} tokens). "
-                            "Partial text saved; ask to continue from the last sentence.")
+                        limit = metrics.get("limit_reason")
+                        if limit in ("context", "context_and_output"):
+                            explanation = (f"context window reached "
+                                           f"({metrics.get('context_window', runtime.NUM_CTX)} tokens)")
+                            if limit == "context_and_output":
+                                explanation += (f"; output limit also reached "
+                                                f"({metrics.get('output_token_limit', runtime.NUM_PREDICT)} tokens)")
+                        elif limit == "output":
+                            explanation = (f"output limit reached "
+                                           f"({metrics.get('output_token_limit', runtime.NUM_PREDICT)} tokens)")
+                        else:
+                            explanation = "runtime length limit reached (which limit was not reported)"
+                        next_step = ("Partial text saved; start a new chat with the relevant excerpt."
+                                     if limit in ("context", "context_and_output") else
+                                     "Partial text saved; ask to continue from the last sentence.")
+                        message = f"Incomplete reply: {explanation}. {next_step}"
                     else:
                         message = f"Completion unverified: runtime stop reason {reason or 'not reported'}"
                     self._stop(job_id, attempt_id, "failed", "validating", {
@@ -264,6 +276,7 @@ class Coordinator:
     def export(self, chat_id, fmt):
         return db.export_chat(self.conn, chat_id, fmt)
 
+    @db.serialized
     def chats(self):
         return [dict(r) for r in self.conn.execute(
             "SELECT * FROM chats ORDER BY pinned DESC, updated_at DESC LIMIT 100")]
@@ -418,7 +431,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type",
                          f"text/{'markdown' if fmt == 'md' else 'plain'}; charset=utf-8")
-        self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+        fallback = name.encode("ascii", "replace").decode().replace("?", "_")
+        self.send_header("Content-Disposition",
+                         f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(name, safe="")}')
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -492,9 +507,15 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "/v1/messages":
                 text = self._text(payload, "text")
                 chat_id = self._text(payload, "chat_id", 36)
+                draft_id = payload.get("draft_id", chat_id)
+                draft_text = payload.get("draft_text", text)
+                if (draft_id not in (chat_id, db.NEW_CHAT_DRAFT)
+                        or not isinstance(draft_text, str) or len(draft_text) > 16_384
+                        or draft_text.strip() != text):
+                    raise RequestError("invalid submitted draft")
                 job_id = c.submit(chat_id, text)
                 # Clear only the version that was sent; newer typing survives.
-                db.clear_draft_if_matches(c.conn, chat_id, text)
+                db.clear_draft_if_matches(c.conn, draft_id, draft_text)
                 self._json({"job_id": job_id}, 202)
             elif route == "/v1/chat/rename":
                 chat_id = self._text(payload, "chat_id", 36)
@@ -518,11 +539,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"cancel_requested": payload["job_id"]}, 202)
             else:
                 self._json({"error": "not found"}, 404)
-        except ValueError as exc:
-            self._json({"error": str(exc)}, 400)
+        except db.ChatBusyError as exc:
+            self._json({"error": str(exc)}, 409)
         except RequestError as exc:
             self.close_connection = True
             self._json({"error": str(exc)}, exc.status)
+        except ValueError as exc:
+            self._json({"error": str(exc)}, 400)
         except KeyError as exc:
             self._json({"error": f"missing field {exc}"}, 400)
         except (ConnectionResetError, BrokenPipeError):
