@@ -1,1 +1,1 @@
-"""AegisForge local coordinator (C03)."""
+"""Local coordinator for Refinix, the application AegisForge builds."""

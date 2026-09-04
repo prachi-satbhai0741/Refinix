@@ -1,8 +1,8 @@
-# Coordinator — C03 local application
+# Coordinator — the local application
 
 The smallest usable local application: a Python coordinator that owns canonical
-state in SQLite, runs one real local inference through Ollama, streams it to a
-browser UI, and survives a restart without losing or inventing history.
+state in SQLite, runs one real local inference through Ollama, streams it to the
+Refinix interface, and survives a restart without losing or inventing history.
 
 ## Run it
 
@@ -14,8 +14,13 @@ PYTHONPATH=. ./.venv/bin/python -m backend.coordinator
 Then open <http://127.0.0.1:8770>. `--port` and `--state` override the defaults.
 State lives at `~/.aegisforge/coordinator.sqlite3`, outside the repository.
 
+This entry point is unchanged and stays supported. The desktop shell in
+[`desktop/`](../../desktop/README.md) starts the same coordinator inside a
+native window, adding a startup sequence, port selection and a single-instance
+lock; `python3 -m desktop --no-window` runs that sequence headlessly.
+
 Requires the local Ollama server on `127.0.0.1:11434` with
-`qwen3.5:4b-q4_K_M` installed. If it is not running the Control Center reports
+`qwen3.5:4b-q4_K_M` installed. If it is not running, Settings reports
 the runtime as unreachable and Chat fails the job with a typed `unavailable`
 reason — it never fabricates a reply.
 
@@ -84,7 +89,13 @@ never overwrites or re-runs an earlier answer. No editing or branching.
 
 The offline-runtime invariant and `docs/security.md` §12 shape the surfaces:
 
-- Documents and Code render **unavailable**; they are implemented at C08 and C09.
+- Code renders **unavailable**, and shows no access-mode selector, because no
+  access mode is enforced. Document reading, document generation and document
+  search appear as skills whose state is **unavailable**; selecting one
+  disables Send rather than quietly answering as ordinary Chat.
+- A file attached to a request is stored under `~/.aegisforge/attachments/` and
+  listed beside the request. **Nothing reads it.** Its contents never enter the
+  prompt, and the interface says so on the request itself and in the export.
 - Workers, cluster, approvals, Proof Cards and egress evidence render
   **unavailable**, each naming the chunk that produces its evidence.
 - A missing measurement renders hatched as unavailable — never as a default,
@@ -130,9 +141,10 @@ the number of jobs repaired.
 restart; the contract has no dedicated one. The message says exactly what
 happened.
 
-## What this chunk does not do
+## What this does not do
 
-No worker, no pairing, no cluster, no Documents or Code workflow, no approvals,
-no Proof Cards, and no egress evidence. The browser making no external request
+No worker, no pairing, no cluster, no document understanding, no Code workflow,
+no access-mode enforcement, no approvals, no Proof Cards, and no egress
+evidence. The browser making no external request
 is a property of these pages — it is **not** zero-egress proof, which needs the
 network controls and independent observation at C11.

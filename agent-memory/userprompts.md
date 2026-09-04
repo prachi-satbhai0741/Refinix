@@ -774,3 +774,56 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Edit existing files, keep the response concise, preserve worker code and other changes; no Git writes or Ubuntu host actions.
 - follow_up_to: [UP-20260904-010](#up-20260904-010)
 - linked_changes: [AC-20260904-011](agentchangelog.md#ac-20260904-011)
+
+<a id="up-20260904-012"></a>
+## UP-20260904-012 — Execution 1: Refinix desktop foundation
+- date: 2026-09-04
+- status: in-progress
+- scope: implementation, desktop-shell, packaging, branding, ui
+- tags: execution-1, refinix, pywebview, py2app, desktop, cancellation, attachments
+- aliases: refinix desktop foundation, desktop shell, native window, app icon, stop behaviour
+- paths: desktop/, frontend/app/, backend/coordinator/, scripts/build-brand-assets.py, docs/, tasks.md
+- summary: Build a native desktop foundation named Refinix around the existing coordinator — pywebview shell, startup/shutdown lifecycle, branding, simplified Chat/Code navigation with skill and attachment composer, graphical settings, and working cancellation — targeting macOS first with prepared Windows and Ubuntu paths.
+- request: Implement the desktop shell and packaging path, startup lifecycle with real readiness checks, Refinix branding from the supplied masters, simplified navigation and composer, card-based settings, and repaired /v1/cancel; report built, verified, screenshots, packaged location and remaining device checks.
+- constraints: Separate from C01–C13 numbering; C05 stays paused with its dirty files and pending review preserved. Reuse the coordinator, SQLite state, frontend and event stream. No Git writes, Ubuntu operations, worker-image rebuilds or model downloads. New installations, downloads and live-device checks keep their permission gates and are consolidated into one setup handoff. Repository-editing agents, access-mode enforcement and OCR belong to Executions 2 and 3.
+- acceptance: Refinix opens from the launcher into a native window, reports real service readiness, chats, stops an execution and reopens with history intact.
+- verification_authorization: Implementation, proportionate offline checks against existing dependencies and isolated test data.
+- follow_up_to: [UP-20260904-011](#up-20260904-011)
+- linked_changes: [AC-20260904-013](agentchangelog.md#ac-20260904-013)
+
+<a id="up-20260904-013"></a>
+## UP-20260904-013 — Execute the desktop review fixes
+- date: 2026-09-04
+- status: fixes verified; requester acceptance pending
+- scope: desktop, coordinator, verification
+- tags: refinix, execution-1, review-fixes, cancellation, packaging
+- aliases: execute fix all issues, open and view app, desktop correction pass
+- paths: desktop/, backend/coordinator/, agent-memory/
+- summary: Requester authorised fixing all six Execution 1 review findings and returning exact instructions to open Refinix.
+- constraints: Preserve the existing frontend, C05 work and user data; no Git writes. New dependency and native-device setup remains a reviewed device checkpoint.
+- follow_up_to: [UP-20260904-012](#up-20260904-012)
+- linked_changes: [AC-20260904-014](agentchangelog.md#ac-20260904-014)
+
+<a id="up-20260904-014"></a>
+## UP-20260904-014 — Approve macOS desktop setup and launch
+- date: 2026-09-04
+- status: setup completed; requester acceptance pending
+- scope: desktop, macos-setup, verification
+- tags: refinix, dependency-install, py2app, native-launch
+- aliases: approved desktop setup, build and open Refinix app
+- paths: desktop/, agent-memory/
+- summary: Requester explicitly approved the reviewed 10.1 MB dependency install, local app build and opening Refinix.
+- constraints: Use desktop/.venv with hash-pinned PyPI dependencies; opening may start installed Ollama, but no model downloads or Docker startup; no Git writes or C05 actions.
+- follow_up_to: [UP-20260904-013](#up-20260904-013)
+- linked_changes: [AC-20260904-015](agentchangelog.md#ac-20260904-015)
+
+<a id="up-20260904-015"></a>
+## UP-20260904-015 — Accept the desktop smoke test and prepare its Git handoff
+- date: 2026-09-04
+- tags: refinix, acceptance, git-handoff, scoped-pr
+- aliases: stopped chat survives quit, exclude C05 from commit, PR to dev
+- paths: README.md, desktop/README.md, tasks.md, agent-memory/
+- summary: Requester confirmed Chat, Stop, Command-Q and retained stopped history, then requested exact Git commands and a PR description excluding C05 changes.
+- constraints: Prepare commands for the requester; no Git writes. Preserve all C05 work and label Windows/Linux packaging unfinished.
+- follow_up_to: [UP-20260904-014](#up-20260904-014)
+- linked_changes: [AC-20260904-016](agentchangelog.md#ac-20260904-016)

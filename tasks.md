@@ -134,6 +134,45 @@ inventory. Do not distribute speculative installs now. The C01 read-only
 have been run and returned for all six devices; the C02 follow-up commands are
 also read-only and must report missing tooling rather than install it.
 
+## Desktop executions (separate from C01–C13)
+
+A parallel track, numbered on its own. It does not consume, reorder or complete
+any numbered chunk, and **C05 stays exactly where it is**: partially executed,
+Ubuntu host powered down, pending review.
+
+**Execution 1 — Refinix desktop foundation (review fixes verified, macOS
+bundle built/opened and requester smoke test accepted 2026-09-04).** A native desktop shell around the
+existing coordinator, in [`desktop/`](desktop/README.md). Product decisions this
+execution settles, which change what earlier documents describe:
+
+| Decision | What changed |
+|---|---|
+| Product name | Visible branding is **Refinix**. `~/.aegisforge`, the `X-AegisForge-Contract` header, the `AegisForgeCoordinator` server token and worker identifiers are compatibility-sensitive and unchanged. |
+| Top-level navigation | **Chat \| Code**. Documents is no longer a top-level surface; document work becomes a selectable skill inside Chat. |
+| Control Center | Renamed **Settings** and moved to secondary navigation. Its technical tables became interactive cards; the readouts moved under **Advanced**. |
+| Attachments | Chat accepts files. Execution 1 stores and lists them; **nothing reads them**, and the interface says so on the request and in the export. |
+| Access modes | The Code access selector is **not** rendered. The three modes are described as planned. A control implying enforcement is not added before the enforcement exists. |
+| Ordinary Chat | Needs the model runtime only. Docker is never started, and an offline Ubuntu worker does not block local Chat or cause a replacement cluster on the Mac. |
+| Cancellation | `/v1/cancel` now aborts a stalled model stream instead of waiting out the request timeout. |
+
+**Observed macOS setup:** after explicit approval, installed 20 hash-verified
+artifacts into `desktop/.venv` using existing CPython 3.12.13, built
+`desktop/dist/Refinix.app`, verified its ad-hoc signature and opened its native
+window. A copied bundle also started with repository and Homebrew Python reads
+denied. Existing-instance relaunch worked after a port fallback. The correction
+pass ran 161 Python checks and 8 Node checks, then all 7 final lifecycle
+regressions after the native Quit repair. See the
+[observed verification](desktop/README.md#observed-verification) and opening steps.
+The requester subsequently confirmed starting Chat, stopping it, quitting with
+Command-Q and seeing the stopped conversation after reopening, then supplied a
+generated Kubernetes explanation from a follow-up request. These are requester
+observations; no native screenshot was captured by the reviewer. Windows and
+Ubuntu packaging/launchers and native acceptance remain unfinished. C05 stays paused.
+
+**Execution 2 — repository editing and access-mode enforcement.** Not started.
+
+**Execution 3 — document understanding, retrieval and generation.** Not started.
+
 ## Numbered execution tasks
 
 The **thirteen numbered tasks** below define execution order. Building an image

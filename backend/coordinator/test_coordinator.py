@@ -505,7 +505,8 @@ class TestCompletion(unittest.TestCase):
                 self.assertIsNone(c.job_detail(job)['attempts'][0]['metrics_json'])
                 self.assertEqual(c.job_detail(job)['job']['state'], 'completed')
                 self.assertEqual(c.conn.execute(
-                    "SELECT value FROM meta WHERE key='schema_version'").fetchone()[0], '2')
+                    "SELECT value FROM meta WHERE key='schema_version'").fetchone()[0],
+                    str(db.SCHEMA_VERSION))
                 self.assertIn('metrics_json', {r['name'] for r in c.conn.execute('PRAGMA table_info(attempts)')})
                 c.conn.close()
 
