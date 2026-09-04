@@ -1,0 +1,82 @@
+# macOS arm64, CPython 3.12; PyPI metadata inspected 2026-09-04.
+# Exact upstream artifacts, unmodified. Hashes are checked before installation.
+# All 20 artifacts total 12,495,337 bytes including the build lock.
+# Includes the existing backend/requirements.txt pins.
+# proxy-tools is source-only; use --no-build-isolation after bootstrapping.
+-r requirements-build-macos.lock
+
+# https://pypi.org/pypi/altgraph/json
+# altgraph-0.17.5-py2.py3-none-any.whl | 21228 bytes | MIT
+altgraph==0.17.5 --hash=sha256:f3a22400bce1b0c701683820ac4f3b159cd301acab067c51c653e06961600597
+
+# https://pypi.org/pypi/annotated-types/0.7.0/json
+# annotated_types-0.7.0-py3-none-any.whl | 13643 bytes | MIT
+annotated-types==0.7.0 --hash=sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53
+
+# https://pypi.org/pypi/bottle/json
+# bottle-0.13.4-py2.py3-none-any.whl | 103807 bytes | MIT
+bottle==0.13.4 --hash=sha256:045684fbd2764eac9cdeb824861d1551d113e8b683d8d26e296898d3dd99a12e
+
+# https://pypi.org/pypi/macholib/json
+# macholib-1.16.4-py2.py3-none-any.whl | 38117 bytes | MIT
+macholib==1.16.4 --hash=sha256:da1a3fa8266e30f0ce7e97c6a54eefaae8edd1e5f86f3eb8b95457cae90265ea
+
+# https://pypi.org/pypi/modulegraph/json
+# modulegraph-0.19.7-py2.py3-none-any.whl | 35151 bytes | MIT
+modulegraph==0.19.7 --hash=sha256:139f89042c9912777ba4bbf1d5496591c6ad780110ea3082c11e8737cf82cacc
+
+# https://pypi.org/pypi/packaging/json
+# packaging-26.3-py3-none-any.whl | 129956 bytes | Apache-2.0 OR BSD-2-Clause
+packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+
+# https://pypi.org/pypi/proxy-tools/json
+# proxy_tools-0.1.0.tar.gz | 2978 bytes | MIT
+proxy-tools==0.1.0 --hash=sha256:ccb3751f529c047e2d8a58440d86b205303cf0fe8146f784d1cbcd94f0a28010
+
+# https://pypi.org/pypi/py2app/0.28.10/json
+# py2app-0.28.10-py3-none-any.whl | 837349 bytes | MIT or PSF
+py2app==0.28.10 --hash=sha256:bdb0cd2cbfa5160b5b11b8d612f6eb92d484a0282801e85b159f1930cd834714
+
+# https://pypi.org/pypi/pydantic/2.13.5/json
+# pydantic-2.13.5-py3-none-any.whl | 472589 bytes | MIT
+pydantic==2.13.5 --hash=sha256:346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73
+
+# https://pypi.org/pypi/pydantic-core/2.46.5/json
+# pydantic_core-2.46.5-cp312-cp312-macosx_11_0_arm64.whl | 1922874 bytes | MIT
+pydantic-core==2.46.5 --hash=sha256:a39ac25a9a2fa4072efdb429833c4a4c8009a51ff9eea3eeae131713cd27991e
+
+# https://pypi.org/pypi/pyobjc-core/json
+# pyobjc_core-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 6427637 bytes | MIT
+pyobjc-core==12.2.2 --hash=sha256:122e6ad302a2abf5d4d4adb0156db751600ddf2768441696cba17b31323085e7
+
+# https://pypi.org/pypi/pyobjc-framework-cocoa/json
+# pyobjc_framework_cocoa-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 388117 bytes | MIT
+pyobjc-framework-cocoa==12.2.2 --hash=sha256:e106f395531e67694376b0f1184612cbeea3ec8b9bf56b55ef41d026171d2a2d
+
+# https://pypi.org/pypi/pyobjc-framework-quartz/json
+# pyobjc_framework_quartz-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 219003 bytes | MIT
+pyobjc-framework-quartz==12.2.2 --hash=sha256:7f668979d0c7320bf8f7ed6e030da578f93ab0f5dd619b295ec735cd8d5faa34
+
+# https://pypi.org/pypi/pyobjc-framework-security/json
+# pyobjc_framework_security-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 41298 bytes | MIT
+pyobjc-framework-security==12.2.2 --hash=sha256:266f41995f2fc80660c8451bdb199a7e259a6cad02fbc1e0e2f69dd5576e2203
+
+# https://pypi.org/pypi/pyobjc-framework-uniformtypeidentifiers/json
+# pyobjc_framework_uniformtypeidentifiers-12.2.2-py2.py3-none-any.whl | 5045 bytes | MIT
+pyobjc-framework-uniformtypeidentifiers==12.2.2 --hash=sha256:1dc6a538df07c410e4bfd6457adcb0b663a5e0df331905dbe135bcfd3f89ae57
+
+# https://pypi.org/pypi/pyobjc-framework-webkit/json
+# pyobjc_framework_webkit-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 50371 bytes | MIT
+pyobjc-framework-webkit==12.2.2 --hash=sha256:ef37692f0280151bf8164a718e334a9b3cb0abfc5455be14172280de7e277505
+
+# https://pypi.org/pypi/pywebview/6.2.1/json
+# pywebview-6.2.1-py3-none-any.whl | 525463 bytes | BSD-3-Clause
+pywebview==6.2.1 --hash=sha256:9d07275f53894ab4d5e2e0e996227193e7187dec276d9b624dccbce029216b46
+
+# https://pypi.org/pypi/typing-extensions/4.15.0/json
+# typing_extensions-4.15.0-py3-none-any.whl | 44614 bytes | PSF-2.0
+typing-extensions==4.15.0 --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
+
+# https://pypi.org/pypi/typing-inspection/0.4.2/json
+# typing_inspection-0.4.2-py3-none-any.whl | 14611 bytes | MIT
+typing-inspection==0.4.2 --hash=sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7

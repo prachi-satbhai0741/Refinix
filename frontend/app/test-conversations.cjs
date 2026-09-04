@@ -61,10 +61,13 @@ test('New chat flushes the old draft before restoring the new-chat slot', async 
   const p = page();
   p.run("chatId = 'A'; draftReady = true"); p.node('input').value = 'keep A';
   p.run('saveDraftSoon(); newChat()'); await tick();
-  assert.deepEqual(JSON.parse(p.requests[0].options.body), { chat_id: 'A', text: 'keep A' });
-  p.requests[0].reply(); await tick();
-  assert.equal(p.requests[1].path, '/v1/draft?chat_id=__new__');
-  p.requests[1].reply({ text: 'new-chat draft' }); await tick();
+  // Reading the pending attachment selection also happens here; the ordering
+  // this test protects is between the draft save and the draft restore.
+  const drafts = () => p.requests.filter((r) => r.path.startsWith('/v1/draft'));
+  assert.deepEqual(JSON.parse(drafts()[0].options.body), { chat_id: 'A', text: 'keep A' });
+  drafts()[0].reply(); await tick();
+  assert.equal(drafts()[1].path, '/v1/draft?chat_id=__new__');
+  drafts()[1].reply({ text: 'new-chat draft' }); await tick();
   assert.equal(p.node('input').value, 'new-chat draft');
 });
 

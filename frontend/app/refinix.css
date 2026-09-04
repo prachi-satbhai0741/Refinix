@@ -1,0 +1,470 @@
+/* Refinix desktop shell styles.
+ *
+ * Loaded after app.css and overrides.css, and additive to both. It carries the
+ * pieces this execution introduces — the brand header, the simplified
+ * navigation, the composer with its skill label and attachments, the settings
+ * cards and the Code destination.
+ *
+ * Black and silver: the ground is near-black in both themes so the metal
+ * wordmark reads the same everywhere, while the reading surfaces keep the
+ * existing light and dark palettes. Colour is still spent only on live,
+ * caution, fault and enforced, exactly as tokens.css requires — the brand adds
+ * no new colour of its own.
+ *
+ * No @font-face and no remote stylesheet: every face is a system face, so the
+ * application makes no network request for type.
+ */
+
+/* app.css styles several elements with `display`, which wins over the browser
+   default for [hidden]. Without this, hiding by attribute silently does
+   nothing — the drop hint, the skill label and the attachment list all depend
+   on it. */
+[hidden] { display: none !important; }
+
+:root {
+  --brand-ground: #050608;
+  --brand-metal:  #C6CFDA;
+  --brand-edge:   #1E242C;
+  --card-radius:  var(--radius-lg);
+}
+
+/* ---- brand header ---------------------------------------------------- */
+
+.brand {
+  display: flex;
+  align-items: center;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--brand-ground);
+  border-bottom: 1px solid var(--brand-edge);
+}
+
+/* The complete horizontal symbol-and-name logo, cropped to its content in
+   scripts/build-brand-assets.py so it stays legible at header size. */
+.brand-logo {
+  height: 26px;
+  width: auto;
+  display: block;
+  image-rendering: auto;
+}
+
+/* ---- simplified navigation ------------------------------------------- */
+
+.surfaces {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.surfaces .surface-link {
+  flex: 1;
+  justify-content: center;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  letter-spacing: .01em;
+}
+
+.surfaces .surface-link[aria-current="page"] {
+  background: var(--veil-sunken, rgba(127, 140, 160, .16));
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.nav-foot { display: grid; gap: var(--sp-2); }
+
+.nav-secondary {
+  display: block;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.nav-secondary:hover { color: var(--text); border-color: var(--text-faint); }
+.nav-secondary[aria-current="page"] { color: var(--text); background: var(--veil); }
+
+.ready-line {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.ready-line[data-state="ok"]        { color: var(--st-enforced); }
+.ready-line[data-state="attention"] { color: var(--st-caution); }
+.ready-line[data-state="failed"]    { color: var(--st-fault); }
+
+.head-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+/* Pages with no inspector rail. */
+.app-plain { grid-template-columns: var(--nav-w) 1fr; }
+
+/* ---- composer -------------------------------------------------------- */
+
+.composer-box { position: relative; }
+
+.composer-box[data-drag="true"] { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.drop-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+  color: var(--signal);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+/* The selected skill sits at the start of the request line, at the same size
+   and typeface as the request itself. It is selection state, not text: the
+   textarea never contains it. */
+.composer-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.composer-line .composer-input {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--text);
+}
+
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--veil);
+  max-width: 100%;
+}
+
+.skill-chip[data-available="false"] { border-color: var(--st-caution); }
+
+.skill-icon {
+  width: 14px; height: 14px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  color: var(--text-dim);
+}
+
+.skill-icon svg { width: 14px; height: 14px; }
+
+/* Same size and family as the request the person types beside it. */
+.skill-name {
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skill-remove {
+  flex: none;
+  width: 18px; height: 18px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.skill-remove:hover { color: var(--text); background: var(--veil-sunken, rgba(127, 140, 160, .2)); }
+.skill-chip:focus-within { border-color: var(--signal); }
+
+.skill-status {
+  margin: var(--sp-2) 0 0;
+  font-size: 12px;
+  color: var(--st-caution);
+}
+
+/* ---- attachments ----------------------------------------------------- */
+
+.attachments {
+  list-style: none;
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 5px 6px 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  font-size: 12px;
+  max-width: 22rem;
+}
+
+/* An inline <svg> with no width/height fills its box, which turned the clip
+   icon into a 300px block and squeezed the name to one letter. */
+.attachment > svg { width: 14px; height: 14px; flex: none; color: var(--text-faint); }
+
+.attachment .a-name {
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment .a-meta { color: var(--text-faint); flex: none; }
+
+.attachment .a-remove {
+  flex: none;
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
+  border: 0; border-radius: var(--radius-pill);
+  background: none; color: var(--text-faint);
+  font-size: 14px; line-height: 1; cursor: pointer;
+}
+
+.attachment .a-remove:hover { color: var(--st-fault); }
+
+/* Attachments already sent, shown under the request that carried them. */
+.turn-attachments {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  justify-content: flex-end;
+}
+
+.turn-attachments .attachment { background: transparent; }
+
+/* ---- composer bar ---------------------------------------------------- */
+
+.composer-bar { display: flex; align-items: center; gap: var(--sp-3); }
+
+.round-btn {
+  width: 30px; height: 30px;
+  flex: none;
+  display: grid; place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 18px; line-height: 1;
+  cursor: pointer;
+}
+
+.round-btn:hover { border-color: var(--signal); color: var(--signal); }
+.round-btn[aria-expanded="true"] { border-color: var(--signal); color: var(--signal); }
+
+.btn-stop { border-color: var(--st-fault); color: var(--st-fault); font-weight: 600; }
+.btn-stop:hover { background: var(--st-fault); color: var(--text-invert); border-color: var(--st-fault); }
+.btn-stop:disabled { border-color: var(--line-soft); color: var(--text-faint); }
+
+/* ---- the + menu ------------------------------------------------------ */
+
+.plus-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 15rem;
+  max-width: 22rem;
+  padding: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  display: grid;
+  gap: 2px;
+}
+
+.plus-menu .menu-label {
+  padding: var(--sp-2) var(--sp-2) 4px;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.plus-menu button {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: var(--sp-2);
+  align-items: start;
+  text-align: left;
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.plus-menu button:hover,
+.plus-menu button:focus-visible { background: var(--veil); }
+.plus-menu button[disabled] { cursor: not-allowed; }
+.plus-menu button .m-sub { display: block; font-size: 11px; color: var(--text-faint); }
+.plus-menu button[data-state="unavailable"] .m-name { color: var(--text-dim); }
+
+/* ---- settings cards -------------------------------------------------- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  align-items: start;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface-raised);
+  padding: var(--sp-4);
+  display: grid;
+  gap: var(--sp-3);
+  align-content: start;
+}
+
+.card.span-2 { grid-column: 1 / -1; }
+
+.card-head { display: flex; align-items: center; gap: var(--sp-3); }
+.card-head h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+.card h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.card-lead { margin: 0; color: var(--text-dim); font-size: 12.5px; line-height: 1.55; }
+.card p { margin: 0; font-size: 12.5px; line-height: 1.55; }
+
+.facts { margin: 0; display: grid; gap: var(--sp-2); }
+.facts > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 38%) 1fr;
+  gap: var(--sp-3);
+  font-size: 12px;
+}
+.facts dt { color: var(--text-faint); }
+.facts dd { margin: 0; color: var(--text); word-break: break-word; }
+.facts dd.unavailable { color: var(--text-faint); font-style: italic; }
+
+.card-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+.setup-command {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  color: var(--text);
+  user-select: all;
+  overflow-x: auto;
+}
+
+.cap-list, .work-list, .mode-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+
+.cap-list li, .work-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: var(--sp-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+
+.cap-list .c-name, .work-list .w-name { color: var(--text); }
+.cap-list .c-detail, .work-list .w-detail {
+  display: block;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+
+.mode-list li {
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-3);
+  border-left: 2px solid var(--line);
+  font-size: 12.5px;
+}
+
+.mode-name { color: var(--text); font-weight: 600; }
+.mode-body { color: var(--text-dim); }
+
+.warn-line {
+  color: var(--st-caution);
+  border-top: 1px solid var(--line-soft);
+  padding-top: var(--sp-3);
+}
+
+/* ---- advanced -------------------------------------------------------- */
+
+.advanced > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.advanced > summary::-webkit-details-marker { display: none; }
+.advanced > summary::before { content: "▸"; color: var(--text-faint); }
+.advanced[open] > summary::before { content: "▾"; }
+.advanced > summary h2 { display: inline; }
+
+.adv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+
+.adv-grid .adv-wide { grid-column: 1 / -1; }
+.adv-grid h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-faint);
+}
+
+/* ---- narrow windows -------------------------------------------------- */
+
+@media (max-width: 760px) {
+  .app-plain { grid-template-columns: 1fr; }
+  .cards { grid-template-columns: 1fr; padding: var(--sp-3); }
+  .facts > div { grid-template-columns: 1fr; gap: 2px; }
+}

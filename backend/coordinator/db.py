@@ -10,6 +10,7 @@ rather than a parallel schema.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -21,7 +22,7 @@ from unicodedata import category
 
 from backend.contracts import v1
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # ponytail: one coordinator database; use per-database locks if hosting several.
 LOCK = threading.RLock()
@@ -112,6 +113,24 @@ CREATE TABLE IF NOT EXISTS events (
     UNIQUE (job_id, sequence)
 );
 CREATE INDEX IF NOT EXISTS events_by_job ON events(job_id, sequence);
+-- Files the user selected for a request. Execution 1 stores and describes them;
+-- nothing reads their contents, so `state` never claims more than `received`.
+-- chat_id carries the NEW_CHAT_DRAFT slot before a conversation exists, so it
+-- deliberately has no foreign key.
+CREATE TABLE IF NOT EXISTS attachments (
+    attachment_id TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL,
+    chat_id       TEXT NOT NULL,
+    message_id    TEXT,
+    filename      TEXT NOT NULL,
+    media_type    TEXT NOT NULL,
+    byte_size     INTEGER NOT NULL,
+    sha256        TEXT NOT NULL,
+    stored_name   TEXT NOT NULL,
+    state         TEXT NOT NULL CHECK (state IN ('received', 'sent')),
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS attachments_by_chat ON attachments(chat_id, created_at);
 """
 
 
@@ -234,8 +253,8 @@ class ChatBusyError(ValueError):
     pass
 
 
-def delete_chat(conn, chat_id: str) -> None:
-    """Remove a chat with its messages, jobs, attempts, events and draft."""
+def delete_chat(conn, chat_id: str, root: Path | None = None) -> None:
+    """Remove a chat with its messages, jobs, attempts, events, draft and files."""
     with LOCK, conn:
         if not conn.execute("SELECT 1 FROM chats WHERE chat_id=?", (chat_id,)).fetchone():
             raise KeyError(chat_id)
@@ -251,6 +270,11 @@ def delete_chat(conn, chat_id: str) -> None:
         conn.execute("DELETE FROM jobs WHERE chat_id=?", (chat_id,))
         conn.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
         conn.execute("DELETE FROM drafts WHERE chat_id=?", (chat_id,))
+        if root is not None:
+            for row in conn.execute(
+                    "SELECT stored_name FROM attachments WHERE chat_id=?", (chat_id,)):
+                _unlink_stored(root, row["stored_name"])
+        conn.execute("DELETE FROM attachments WHERE chat_id=?", (chat_id,))
         conn.execute("DELETE FROM chats WHERE chat_id=?", (chat_id,))
 
 
@@ -368,12 +392,20 @@ def export_chat(conn, chat_id: str, fmt: str = "md") -> tuple[str, str]:
             notices[row["job_id"]] = notes
 
     markdown = fmt != "txt"
-    lines = [f"# {chat['title']}", "", f"Exported {now()} from AegisForge.",
+    lines = [f"# {chat['title']}", "", f"Exported {now()} from Refinix.",
              "Saved conversation only; unsent drafts are not included.", ""]
     if not markdown:
         lines = [chat["title"], "=" * len(chat["title"]), "",
-                 f"Exported {now()} from AegisForge.",
+                 f"Exported {now()} from Refinix.",
                  "Saved conversation only; unsent drafts are not included.", ""]
+    files = {}
+    for row in conn.execute(
+            "SELECT message_id, filename, byte_size FROM attachments"
+            " WHERE chat_id=? AND message_id IS NOT NULL ORDER BY created_at, rowid",
+            (chat_id,)):
+        files.setdefault(row["message_id"], []).append(
+            f"{row['filename']} ({row['byte_size']} bytes)")
+
     for m in messages:
         who = "You" if m["role"] == "user" else "Assistant"
         lines.append(f"## {who}" if markdown else f"--- {who} ---")
@@ -381,6 +413,12 @@ def export_chat(conn, chat_id: str, fmt: str = "md") -> tuple[str, str]:
         # Markdown keeps the model's own formatting; plain text stays literal.
         lines.append(m["text"])
         lines.append("")
+        attached = files.get(m["message_id"])
+        if attached:
+            note = ("Files attached to this request, received but not read: "
+                    + "; ".join(attached))
+            lines.append(f"> {note}" if markdown else f"[{note}]")
+            lines.append("")
         for note in notices.get(m["job_id"] or "", []):
             lines.append(f"> Note: {note}" if markdown else f"[Note: {note}]")
             lines.append("")
@@ -388,6 +426,196 @@ def export_chat(conn, chat_id: str, fmt: str = "md") -> tuple[str, str]:
     safe = "".join(ch if ch.isalnum() or category(ch).startswith("M") or ch in " -_" else "-"
                    for ch in chat["title"]).strip()[:60] or "conversation"
     return f"{safe}.{'md' if markdown else 'txt'}", "\n".join(lines)
+
+
+# --------------------------------------------------------------------------
+# Attachments
+#
+# Execution 1 establishes intake only. The bytes are stored so a later
+# execution has something real to read, and nothing in this file or in the
+# runtime path opens them. An attachment is described to the user as
+# `received`, never as understood.
+# --------------------------------------------------------------------------
+
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+MAX_ATTACHMENTS_PER_REQUEST = 10
+
+# Extension -> media type. An intake allowlist, not a capability claim: every
+# one of these is still `received` until a reader exists for it.
+ATTACHMENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".tif": "image/tiff", ".tiff": "image/tiff",
+    ".heic": "image/heic",
+    ".webp": "image/webp",
+    ".txt": "text/plain", ".md": "text/markdown", ".csv": "text/csv",
+    ".json": "application/json",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
+
+class AttachmentRejected(ValueError):
+    """Intake refused the file, with a reason the user can act on."""
+
+
+def attachments_root(state_path: Path) -> Path:
+    return state_path.parent / "attachments"
+
+
+def safe_attachment_name(raw: str) -> str:
+    """A display filename with no directory, no traversal and no control bytes.
+
+    The stored name never comes from here — it is the attachment id — so this
+    only has to be safe to render and to echo back.
+    """
+    if not isinstance(raw, str):
+        raise AttachmentRejected("The file name was not text.")
+    name = raw.replace("\\", "/").rsplit("/", 1)[-1]
+    name = "".join(ch for ch in name if ch.isprintable() and ch not in '\\/:*?"<>|')
+    name = name.strip().strip(".")
+    if not name:
+        raise AttachmentRejected("The file name was empty after removing unsafe characters.")
+    return name[:120]
+
+
+def classify_attachment(filename: str) -> tuple[str, str]:
+    """(safe name, media type). Raises AttachmentRejected for anything else."""
+    name = safe_attachment_name(filename)
+    suffix = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
+    media = ATTACHMENT_TYPES.get(suffix)
+    if media is None:
+        allowed = ", ".join(sorted({k.lstrip(".") for k in ATTACHMENT_TYPES}))
+        raise AttachmentRejected(
+            f"Refinix does not accept {suffix or 'files without an extension'}. "
+            f"Accepted: {allowed}.")
+    return name, media
+
+
+@serialized
+def add_attachment(conn, root: Path, *, workspace_id: str, chat_id: str,
+                   filename: str, data: bytes) -> dict:
+    """Store one selected file. Bounded, typed, and written only inside `root`."""
+    name, media = classify_attachment(filename)
+    if not data:
+        raise AttachmentRejected(f"{name} is empty.")
+    if len(data) > MAX_ATTACHMENT_BYTES:
+        raise AttachmentRejected(
+            f"{name} is {len(data) // (1024 * 1024)} MB. The limit is "
+            f"{MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB per file.")
+    pending = conn.execute(
+        "SELECT COUNT(*) AS n FROM attachments WHERE chat_id=? AND state='received'",
+        (chat_id,)).fetchone()["n"]
+    if pending >= MAX_ATTACHMENTS_PER_REQUEST:
+        raise AttachmentRejected(
+            f"A request can carry {MAX_ATTACHMENTS_PER_REQUEST} files. "
+            "Remove one before adding another.")
+
+    attachment_id, stamp = new_id(), now()
+    stored = f"{attachment_id}{('.' + name.rsplit('.', 1)[-1].lower()) if '.' in name else ''}"
+    root = root.resolve()
+    target = (root / stored).resolve()
+    if target.parent != root:
+        raise AttachmentRejected("Refused to write outside the attachment folder.")
+    root.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    try:
+        target.chmod(0o600)
+    except OSError:
+        pass
+
+    record = dict(attachment_id=attachment_id, workspace_id=workspace_id,
+                  chat_id=chat_id, message_id=None, filename=name, media_type=media,
+                  byte_size=len(data), sha256=hashlib.sha256(data).hexdigest(),
+                  stored_name=stored, state="received", created_at=stamp)
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO attachments(attachment_id, workspace_id, chat_id,"
+                " message_id, filename, media_type, byte_size, sha256, stored_name,"
+                " state, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                tuple(record[k] for k in (
+                    "attachment_id", "workspace_id", "chat_id", "message_id",
+                    "filename", "media_type", "byte_size", "sha256", "stored_name",
+                    "state", "created_at")))
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    return record
+
+
+@serialized
+def list_attachments(conn, chat_id=None, message_id=None) -> list[dict]:
+    if message_id is not None:
+        rows = conn.execute(
+            "SELECT * FROM attachments WHERE message_id=? ORDER BY created_at, rowid",
+            (message_id,))
+    else:
+        rows = conn.execute(
+            "SELECT * FROM attachments WHERE chat_id=? AND state='received'"
+            " ORDER BY created_at, rowid", (chat_id,))
+    return [{k: r[k] for k in r.keys() if k != "stored_name"} for r in rows]
+
+
+@serialized
+def attachments_by_message(conn, chat_id: str) -> dict[str, list[dict]]:
+    """Every sent attachment in one chat, grouped by the request it went with."""
+    grouped: dict[str, list[dict]] = {}
+    for row in conn.execute(
+            "SELECT * FROM attachments WHERE chat_id=? AND message_id IS NOT NULL"
+            " ORDER BY created_at, rowid", (chat_id,)):
+        grouped.setdefault(row["message_id"], []).append(
+            {k: row[k] for k in row.keys() if k != "stored_name"})
+    return grouped
+
+
+@serialized
+def delete_attachment(conn, root: Path, attachment_id: str) -> None:
+    row = conn.execute("SELECT * FROM attachments WHERE attachment_id=?",
+                       (attachment_id,)).fetchone()
+    if row is None:
+        raise KeyError(attachment_id)
+    if row["state"] != "received":
+        raise AttachmentRejected("A file that was already sent cannot be removed here.")
+    _unlink_stored(root, row["stored_name"])
+    with conn:
+        conn.execute("DELETE FROM attachments WHERE attachment_id=?", (attachment_id,))
+
+
+def _unlink_stored(root: Path, stored_name: str) -> None:
+    """Delete one stored file, refusing any name that escapes the folder."""
+    root = root.resolve()
+    target = (root / stored_name).resolve()
+    if target.parent == root:
+        target.unlink(missing_ok=True)
+
+
+@serialized
+def bind_attachments(conn, draft_chat_id: str, chat_id: str, message_id: str) -> list[dict]:
+    """Attach the pending selection to the request that was just sent."""
+    stamp = now()
+    with conn:
+        conn.execute(
+            "UPDATE attachments SET state='sent', message_id=?, chat_id=?"
+            " WHERE chat_id=? AND state='received'",
+            (message_id, chat_id, draft_chat_id))
+        conn.execute("UPDATE chats SET updated_at=? WHERE chat_id=?", (stamp, chat_id))
+    return list_attachments(conn, message_id=message_id)
+
+
+@serialized
+def clear_attachments(conn, root: Path, chat_id: str) -> int:
+    rows = conn.execute(
+        "SELECT attachment_id, stored_name FROM attachments"
+        " WHERE chat_id=? AND state='received'", (chat_id,)).fetchall()
+    for row in rows:
+        _unlink_stored(root, row["stored_name"])
+    with conn:
+        conn.execute("DELETE FROM attachments WHERE chat_id=? AND state='received'",
+                     (chat_id,))
+    return len(rows)
 
 
 @serialized
