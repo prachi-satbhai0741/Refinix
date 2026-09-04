@@ -149,7 +149,15 @@ Progress depends on these conditions. The internal demonstration target is
 **8–9 September 2026**; a missed gate changes what can be demonstrated, not
 the evidence required to call it complete.
 
-**Current scope: C04 — Worker/API implementation and image build.** The requester
+**Current scope: C05 — Cluster deployment and integration.** The requester accepted C04 on 2026-09-04. Deployment assets are prepared in [`deploy/k3s`](deploy/k3s/) pinned to the C04 manifest digest `sha256:a1eb434c…`, with the exact host commands in [the deployment handoff](docs/c05-ubuntu-deployment-handoff.md). K3s is installed without Traefik or ServiceLB so it binds no port 80/443 and leaves Jenkins on 8080 untouched. **Installation and deployment remain at the Ubuntu human checkpoint; nothing has been executed.**
+
+**A gate distinction to settle:** C05's row lists *one real worker-model response*. Step 7e of the handoff produces one **through the worker's runtime adapter inside the Pod**, without opening dispatch. A response through the contract's *public job routes* additionally needs OD-06 pairing and the AF-005 receipt, neither implemented. **Ready Pods plus adapter-level inference is not completed integration.** Whether the gate means the adapter-level response or the dispatched one is a requester decision.
+
+The worker speaks plain HTTP and pinned TLS belongs to OD-06, so C05 keeps the Kubernetes API and the worker NodePort **closed to the LAN** and verifies from the node itself; LAN exposure arrives with pairing.
+
+---
+
+**C04 — Worker/API implementation and image build (accepted 2026-09-04).** The requester
 accepted C03 on 2026-09-04 and assigned implementation to Claude, with Codex
 orchestrating and reviewing. The existing authorisation is **C03 through C13 sequentially**,
 covering implementation, review fixes and proportionate offline checks on
@@ -161,9 +169,28 @@ implemented in [`backend/worker`](backend/worker/README.md) against the frozen
 coordinator under emulation: hash-verified wheels, 8 contract checks passing
 inside the image with `--network=none`, non-root execution, and a real prompt
 streaming from `POST /v1/jobs` through SSE to completion. That build was
-emulated and never pushed — **C05 pins the digest the Ubuntu operator reports**,
-using [the build handoff](docs/c04-ubuntu-build-handoff.md). Pairing routes
-return `501`; OD-06 stays recorded but unimplemented.
+emulated and never pushed. Pairing routes return `501`; OD-06 stays recorded
+but unimplemented.
+
+**C04 build returned, 2026-09-04.** The Ubuntu worker built the image on the
+native Docker endpoint (server 29.6.1, `linux/amd64`): the pinned base resolved
+by digest, 13 wheels installed under `--require-hashes`, **52 in-image checks
+passed with `--network=none`**, 11 layers, ~48 MB.
+
+| | |
+|---|---|
+| **manifest digest — C05 pins this** | `sha256:a1eb434c91ff5e51a095ccbdc5becd10e98a099a281302ef68e86b531543a295` |
+| config digest | `sha256:4d9c91892fc813c846f08a42fa17dde870b0a35f4e969431522059738dd96b5f` |
+| archive checksum | `sha256:53eb20e4d77b222e783d7bd50fb3339663fbd5001feb9a704f4482800d108a9a` |
+
+Both digests match the build's own `exporting manifest` and `exporting config`
+lines. The running container reported a distinct generated node identity, empty
+capabilities, `health: unavailable` and `loaded_model_id: null` — correct for a
+container with no reachable runtime and fail-closed job routes.
+
+The digest differs from the earlier emulated Mac build; image configs embed a
+creation timestamp, so identical inputs do not yield identical digests. **No
+reproducible-build claim is made.**
 
 The Ubuntu `*:8080` listener is identified: **Jenkins** (`java`, PID 1239, user
 `jenkins`, `jenkins.service`, working directory `/var/lib/jenkins`). It is
@@ -288,7 +315,7 @@ recorded the then-pending acceptance gate; requester acceptance has since cleare
 | C02 — Environment setup | C01 cleared | **AF-001–AF-004 preparation** — Prepare exact setup instructions and evidence-backed runtime/model/pairing choices (OD-03/05/06), plus K3s/Redis/base-image pins (OD-08); built-image digests follow C04. | **Requester:** confirm the proposed choices after Codex's review. **macOS coordinator:** confirm the reviewed dependency/runtime/model state and run the reviewed bounded local inference check. **Ubuntu worker:** return the read-only environment evidence, then perform only the reviewed worker runtime/model setup for the selected path. | Humans supply versions, paths, hashes and setup output. Agents verify compatibility with permitted checks. Only approved required components are installed; no cluster deployment or six-device model rollout. |
 | C03 — Local application | C02 cleared | **AF-004, local AF-003 adapter** — Implemented in [`backend/coordinator`](backend/coordinator/README.md) and `frontend/app/`: SQLite state, Ollama streaming, contract-validated job/attempt/event records, restart reconciliation, Chat and minimum Control Center. | **macOS coordinator:** start the reviewed local commands, send a request, restart the app, then inspect the UI and history. No second installation is required on any other device. | Real local response and retained job/attempt history after restart; missing measurements display unavailable. Return observations and permitted runtime-check output. |
 | C04 — Worker image build | C03 cleared | **AF-003, AF-002 preparation** — Worker API implemented in [`backend/worker`](backend/worker/README.md); build assets in [`backend/worker-image`](backend/worker-image/README.md); reviewed build and digest-inspection commands in [the handoff](docs/c04-ubuntu-build-handoff.md). | **Ubuntu worker:** run the reviewed image build and report build output, immutable image digest, architecture and provenance. | Agents inspect the actual build result and prepare a deployment pinned to that digest. Build failure stays in C04; a Dockerfile alone is not image evidence. |
-| C05 — Cluster deployment and integration | C04 cleared | **AF-001–AF-004 integration** — Review the pinned K3s/Redis/worker manifests, limits and Service exposure using C04's image evidence. | **Ubuntu worker:** provision and apply the reviewed cluster commands. **macOS coordinator:** perform the coordinator acceptance steps supplied for this setup. | Ready Pods, internal-only Redis, one real worker-model response, persisted coordinator metadata and shared-version consumers. Pass the C05 integration gate before C06. |
+| C05 — Cluster deployment and integration | C04 cleared | **AF-001–AF-004 integration** — Manifests in [`deploy/k3s`](deploy/k3s/) pinned to the C04 digest, with 16 offline invariant checks; host commands in [the handoff](docs/c05-ubuntu-deployment-handoff.md). | **Ubuntu worker:** provision and apply the reviewed cluster commands. **macOS coordinator:** perform the coordinator acceptance steps supplied for this setup. | Ready Pods, internal-only Redis, one real worker-model response, persisted coordinator metadata and shared-version consumers. Pass the C05 integration gate before C06. |
 | C06 — Distributed execution | C05 cleared | **AF-005–AF-007** — Implement Redis dispatch/leases/receipt, routing, SSE replay, cancellation, recovery, preflight and truthful fallback. | **macOS coordinator and Ubuntu worker:** connect and explicitly pair the two devices, apply the reviewed trusted-LAN settings, and perform the documented disconnect/cancel exercise. | Actual Mac -> Service -> Redis -> executor -> Mac completion, correct route reason, and usable canonical history after cluster loss. Pass the C06 distributed-execution gate. |
 | C07 — Workflow inputs and setup | C06 cleared | **AF-008–AF-011 preparation** — Prepare synthetic scan/SOP/expected-result and Python code fixtures, their checks, and only the additional model/dependency setup the two workflows require on the Mac/Ubuntu configuration. | **Requester:** approve fixture provenance and allowed validation commands. **macOS coordinator:** select the coordinator inputs. **Ubuntu worker:** install only reviewed missing workflow packages/models. | Source hashes, expected extraction/citation examples, selected repository/base and commands, plus verified installed artifacts. Another execution device needs a measured need and a new device-based setup checkpoint. |
 | C08 — Documents workflow | C07 cleared | **AF-008–AF-009** — Implement real rendering/OCR, uncertainty, page mapping, local retrieval, cited drafting, DOCX creation and artifact checks on the two-device configuration. | **macOS coordinator:** open the Word output and compare its extracted facts and citations against the approved scan/SOP. | Openable Word output with checksum, resolvable citations and honest missing values. Fix discrepancies before proceeding to Code. |

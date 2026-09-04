@@ -1,6 +1,6 @@
 {
   "recorded_on": "2026-09-04",
-  "status": "worker API implemented and corrected after Codex review. Verification build run on the macOS coordinator for linux/amd64 under emulation; the Ubuntu build produces the digest C05 pins.",
+  "status": "built on the Ubuntu worker 2026-09-04; the manifest digest below is the C04 artifact that C05 pins.",
   "target": {
     "os": "linux",
     "architecture": "amd64",
@@ -238,5 +238,23 @@
     "storage_allowance_bytes": 2147483648,
     "memory_bytes": 2147483648,
     "cpus": 2
+  },
+  "ubuntu_build": {
+    "device": "Ubuntu worker, Ubuntu 24.04.4 LTS, x86_64",
+    "recorded_on": "2026-09-04",
+    "docker_server": "29.6.1 (native unix:///var/run/docker.sock endpoint)",
+    "platform": "linux/amd64",
+    "build_flags": "--provenance=false --sbom=false",
+    "base_image_digest": "sha256:2f2e5a876c71a6757f55ec57f2add0225ddaf01c802a33fcc29073943f94d907",
+    "manifest_digest": "sha256:a1eb434c91ff5e51a095ccbdc5becd10e98a099a281302ef68e86b531543a295",
+    "config_digest": "sha256:4d9c91892fc813c846f08a42fa17dde870b0a35f4e969431522059738dd96b5f",
+    "archive_sha256": "sha256:53eb20e4d77b222e783d7bd50fb3339663fbd5001feb9a704f4482800d108a9a",
+    "archive_bytes_approx": 50331648,
+    "layers": 11,
+    "checks_in_image": "52 passed with --network=none",
+    "wheels": "13 installed under --require-hashes; pip check found no broken requirements",
+    "health_observed": "node_id f5871f87-ac34-410c-a744-c89eeef175ac, capabilities [], models [], health unavailable, loaded_model_id null \u2014 correct for a container with no reachable runtime and closed job routes",
+    "cross_check": "the reported manifest and config digests match the build's own 'exporting manifest' and 'exporting config' lines",
+    "note": "Differs from the earlier emulated Mac build (sha256:82d723e6...). Expected: image configs embed a creation timestamp, so identical inputs do not produce identical digests. This is not a reproducible-build claim."
   }
 }
