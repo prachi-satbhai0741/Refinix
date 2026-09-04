@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refinix — Workflow Diagram (SIH26117)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Refinix workflow diagram — slide asset for the SIH26117 idea deck.
+ * Palette and colour discipline taken from frontend/design/tokens.css:
+ *   silver = resting state of everything      purple = local model provenance ONLY
+ *   sky    = the live path / routing          green  = a named control is ACTIVE
+ *   amber  = approval required                red-clay = denied / blocked
+ * Fixed 1600x900 (16:9) stage, scaled to the viewport, so a screenshot drops
+ * straight onto a slide without reflow. */
+
+:root{
+  --bg:#D2D9E4; --surface:#EAEEF4; --surface-raised:#F3F6FA; --surface-sunken:#D1D8E3;
+  --line:#A8B3C3; --line-soft:#CBD3DE;
+  --text:#0E141C; --text-dim:#3E4959; --text-faint:#4B5665; --text-invert:#F3F6FA;
+  --signal:#1A5E97; --signal-soft:#DBE8F4;
+  --agent:#58399B;  --agent-soft:#E5DFF4;
+  --enforced:#1A6349; --enforced-soft:#DCEBE4;
+  --observed:#3E4959;
+  --caution:#7A4C04;  --caution-soft:#F4E9D5;
+  --fault:#96322A;    --fault-soft:#F4DEDA;
+  --font-ui:'IBM Plex Sans Condensed',ui-sans-serif,system-ui,'Segoe UI',sans-serif;
+  --font-data:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+  --r:5px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:radial-gradient(1200px 700px at 50% -10%, #E6EBF2 0%, transparent 60%), var(--bg);
+  font-family:var(--font-ui);
+  color:var(--text);
+  display:grid; place-items:center; overflow:hidden;
+}
+
+/* ---- stage ------------------------------------------------------------- */
+#fit{position:relative}
+.stage{
+  width:1600px; height:900px; transform-origin:50% 50%;
+  background:var(--surface);
+  border:1px solid var(--line);
+  box-shadow:0 24px 70px -30px rgba(14,20,28,.45), 0 2px 0 rgba(255,255,255,.7) inset;
+  padding:26px 40px 22px;
+  display:flex; flex-direction:column;
+  position:relative; overflow:hidden;
+}
+/* faint engineering grid — texture, not decoration */
+.stage::before{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
+  background-size:40px 40px; opacity:.35;
+  -webkit-mask-image:radial-gradient(900px 520px at 50% 46%,#000 0%,transparent 100%);
+          mask-image:radial-gradient(900px 520px at 50% 46%,#000 0%,transparent 100%);
+}
+.stage>*{position:relative}
+
+/* ---- header ------------------------------------------------------------ */
+.head{display:flex; align-items:flex-start; justify-content:space-between; gap:24px; margin-bottom:16px}
+.brand h1{font-size:29px; font-weight:700; letter-spacing:-.015em; line-height:1; display:flex; align-items:baseline; gap:11px}
+.brand h1 em{font-style:normal; font-size:14px; font-weight:500; color:var(--text-dim); letter-spacing:0}
+.brand .sub{font-size:12.5px; color:var(--text-faint); margin-top:5px; max-width:720px; line-height:1.35}
+.kicker{
+  font-family:var(--font-data); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--text-faint); margin-bottom:8px; display:flex; gap:9px; align-items:center;
+}
+.kicker b{color:var(--signal); font-weight:600}
+.kicker i{width:1px;height:9px;background:var(--line);display:inline-block}
+
+/* blocked-egress badge — deliberately OUTSIDE the boundary drawn below */
+.egress{
+  border:1px solid var(--fault); background:var(--fault-soft);
+  border-radius:var(--r); padding:8px 12px 9px; width:262px; position:relative; flex:none;
+}
+.egress .t{display:flex; align-items:center; gap:8px; color:var(--fault); font-size:12.5px; font-weight:700}
+.egress .d{font-size:10.5px; color:var(--fault); opacity:.9; margin-top:3px; line-height:1.35}
+.egress .t svg{width:19px;height:19px;flex:none}
+.egress .drop{position:absolute; left:50%; bottom:-25px; transform:translateX(-50%); color:var(--fault)}
+
+/* ---- trust boundary ---------------------------------------------------- */
+.boundary{
+  flex:1; border:1.5px dashed var(--line); border-radius:8px; padding:20px 22px 12px;
+  background:linear-gradient(180deg, rgba(243,246,250,.82), rgba(234,238,244,.5));
+  display:flex; flex-direction:column; position:relative;
+}
+.boundary .tag,.boundary .tag-r{
+  position:absolute; top:-9px; background:var(--surface); padding:0 9px;
+  font-family:var(--font-data); font-size:10px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--text-faint); display:flex; gap:8px; align-items:center; white-space:nowrap;
+}
+.boundary .tag{left:20px} .boundary .tag-r{right:20px; letter-spacing:.1em}
+.boundary .tag b{color:var(--text); font-weight:700}
+.boundary .tag em{font-style:normal; color:var(--enforced); font-weight:600}
+
+/* ---- columns ----------------------------------------------------------- */
+.cols{position:relative; height:496px; display:flex; gap:44px}
+.col{display:flex; flex-direction:column; gap:9px}
+.c1{width:200px}.c2{width:240px}.c3{width:316px}.c4{width:300px}.c5{width:244px}
+.chead{display:flex; align-items:center; gap:8px; height:20px}
+.chead .n{
+  font-family:var(--font-data); font-size:11px; font-weight:600; color:var(--surface-raised);
+  background:var(--text-dim); border-radius:3px; padding:1px 5px 2px;
+}
+.chead .l{font-size:11.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--text-dim)}
+
+.card{
+  background:var(--surface-raised); border:1px solid var(--line-soft);
+  border-left:2.5px solid var(--line); border-radius:var(--r); padding:8px 10px 9px;
+}
+.card .h{display:flex; align-items:center; gap:7px; font-size:12.5px; font-weight:600; line-height:1.15}
+.card .h svg{width:15px; height:15px; flex:none; color:var(--text-dim)}
+.card p{font-size:10.5px; line-height:1.4; color:var(--text-faint); margin-top:3px}
+.card .m{font-family:var(--font-data); font-size:9.5px; color:var(--text-faint); margin-top:4px}
+.card.sig{border-left-color:var(--signal); background:linear-gradient(180deg,var(--signal-soft),var(--surface-raised) 62%)}
+.card.sig .h,.card.sig .h svg{color:var(--signal)}
+.card.agent{border-left-color:var(--agent); background:linear-gradient(180deg,var(--agent-soft),var(--surface-raised) 62%)}
+.card.agent .h,.card.agent .h svg{color:var(--agent)}
+.card.enf{border-left-color:var(--enforced); background:linear-gradient(180deg,var(--enforced-soft),var(--surface-raised) 62%)}
+.card.enf .h,.card.enf .h svg{color:var(--enforced)}
+.card.cau{border-left-color:var(--caution); background:linear-gradient(180deg,var(--caution-soft),var(--surface-raised) 62%)}
+.card.cau .h,.card.cau .h svg{color:var(--caution)}
+
+.chip{
+  display:flex; align-items:center; gap:8px; padding:7px 9px;
+  background:var(--surface-raised); border:1px solid var(--line-soft); border-radius:var(--r);
+  font-size:11.5px; font-weight:500; color:var(--text-dim); line-height:1.2;
+}
+.chip svg{width:14px;height:14px;flex:none;color:var(--text-faint)}
+
+.group{border:1px solid var(--line); border-radius:var(--r); background:rgba(209,216,227,.5); padding:7px}
+.group .gt{
+  font-family:var(--font-data); font-size:9.5px; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--text-faint); display:flex; align-items:center; gap:6px; margin:0 1px 6px;
+}
+.group .gt svg{width:13px;height:13px}
+.group .stack{display:flex; flex-direction:column; gap:5px}
+.mini{
+  display:flex; align-items:center; gap:7px; background:var(--surface-raised);
+  border:1px solid var(--line-soft); border-left:2.5px solid var(--line);
+  border-radius:4px; padding:5px 8px; font-size:11.5px; font-weight:600; line-height:1.15;
+}
+.mini svg{width:14px;height:14px;flex:none;color:var(--text-faint)}
+.mini span{font-family:var(--font-data); font-size:9px; font-weight:400; color:var(--text-faint); margin-left:auto}
+.mini.agent{border-left-color:var(--agent); color:var(--agent)} .mini.agent svg{color:var(--agent)}
+.mini.sig{border-left-color:var(--signal); color:var(--signal)} .mini.sig svg{color:var(--signal)}
+
+.models{display:flex; flex-wrap:wrap; gap:4px}
+.models b{
+  font-family:var(--font-data); font-size:9px; font-weight:500;
+  color:var(--agent); background:var(--agent-soft); border:1px solid #CFC3E8;
+  border-radius:3px; padding:2px 5px;
+}
+
+.proof{border:1px solid var(--text-dim); border-radius:var(--r); background:var(--surface-raised); overflow:hidden}
+.proof .pt{
+  background:var(--text-dim); color:var(--text-invert); padding:5px 9px 6px;
+  display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700;
+}
+.proof .pt svg{width:15px;height:15px}
+.proof ul{list-style:none; padding:7px 9px 8px}
+.proof li{display:flex; align-items:flex-start; gap:7px; font-size:10.5px; line-height:1.35; color:var(--text-dim); padding:2.5px 0}
+.dot{width:6px;height:6px;border-radius:50%;flex:none;margin-top:4px}
+.dot.e{background:var(--enforced)} .dot.o{background:var(--observed)}
+.dot.a{background:var(--agent)}    .dot.s{background:var(--signal)}
+
+.note{font-size:10px; line-height:1.35; color:var(--text-faint); border-top:1px solid var(--line-soft); padding-top:6px}
+.note b{color:var(--text-dim); font-weight:600}
+.pin{margin-top:auto}
+.wires{position:absolute; inset:0; pointer-events:none; overflow:visible}
+
+/* ---- return band ------------------------------------------------------- */
+.band{height:56px; position:relative}
+.band .rl{
+  position:absolute; top:27px; left:50%; transform:translateX(-50%);
+  background:var(--surface-raised); border:1px solid var(--line-soft); border-radius:3px;
+  padding:2px 9px 3px; font-family:var(--font-data); font-size:9.5px; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--text-dim); white-space:nowrap;
+}
+.band .rl b{color:var(--enforced); font-weight:600}
+
+/* ---- legend ------------------------------------------------------------ */
+.legend{display:flex; align-items:center; justify-content:space-between; gap:20px; margin-top:12px; height:34px}
+.keys{display:flex; gap:15px; flex-wrap:wrap}
+.key{display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--text-faint); white-space:nowrap}
+.key i{width:15px;height:3px;border-radius:2px;display:inline-block}
+.key b{color:var(--text-dim); font-weight:600}
+.stamp{
+  font-family:var(--font-data); font-size:9.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--text-faint); text-align:right; line-height:1.5; white-space:nowrap;
+}
+
+.hint{
+  position:fixed; bottom:8px; left:50%; transform:translateX(-50%);
+  font-family:var(--font-data); font-size:10px; letter-spacing:.06em; color:var(--text-faint);
+  background:rgba(243,246,250,.92); border:1px solid var(--line-soft); border-radius:99px;
+  padding:4px 12px; opacity:.7; transition:opacity .2s;
+}
+.hint:hover{opacity:0}
+
+@media print{
+  @page{size:1600px 900px; margin:0}
+  body{background:#fff; display:block; overflow:visible}
+  #fit,.stage{transform:none !important}
+  .stage{box-shadow:none; border:none}
+  .hint{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ============================ icon set ============================ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+ <defs>
+  <g id="s" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></g>
+ </defs>
+ <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <circle cx="12" cy="7.5" r="3.4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></symbol>
+ <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M3 8V5.5A1.5 1.5 0 0 1 4.5 4H7M17 4h2.5A1.5 1.5 0 0 1 21 5.5V8M21 16v2.5a1.5 1.5 0 0 1-1.5 1.5H17M7 20H4.5A1.5 1.5 0 0 1 3 18.5V16"/><path d="M3.5 12h17"/></symbol>
+ <symbol id="i-pid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <circle cx="6" cy="7" r="2.4"/><circle cx="18" cy="17" r="2.4"/><path d="M8.4 7H14a2 2 0 0 1 2 2v6"/><path d="M3 17h12.6"/><path d="M9 15.2v3.6"/></symbol>
+ <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H19v15H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 1 5.5 21H19"/><path d="M8.5 7.5h6M8.5 11h4"/></symbol>
+ <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M8.5 7.5 4 12l4.5 4.5M15.5 7.5 20 12l-4.5 4.5M13.5 4.5l-3 15"/></symbol>
+ <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M20 15.5a2 2 0 0 1-2 2H8l-4 3.2V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/><path d="M8.5 9h7M8.5 12.5h4.5"/></symbol>
+ <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8.5 13h7M8.5 16.5h4.5"/></symbol>
+ <symbol id="i-gauge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-5"/><circle cx="12" cy="18" r="1.3"/></symbol>
+ <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="m12 3 8.5 4.5L12 12 3.5 7.5z"/><path d="m4.5 12 7.5 4 7.5-4"/><path d="m4.5 16.5 7.5 4 7.5-4"/></symbol>
+ <symbol id="i-router" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <circle cx="5.5" cy="12" r="2.2"/><circle cx="18.5" cy="6" r="2.2"/><circle cx="18.5" cy="18" r="2.2"/>
+   <path d="M7.7 11.2 16.4 6.8M7.7 12.8l8.7 4.4"/></symbol>
+ <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M12 3 5 6v5.5c0 4.3 2.9 7.7 7 9.5 4.1-1.8 7-5.2 7-9.5V6z"/><path d="m9.2 12 2 2 3.6-3.8"/></symbol>
+ <symbol id="i-steps" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M4 6.5h3.5v3.5H4zM10.5 8.2H20M4 14h3.5v3.5H4zM10.5 15.7H20"/></symbol>
+ <symbol id="i-db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6"/><path d="M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8"/></symbol>
+ <symbol id="i-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <rect x="6.5" y="6.5" width="11" height="11" rx="2"/><rect x="10" y="10" width="4" height="4" rx="1"/>
+   <path d="M9.5 3.5v3M14.5 3.5v3M9.5 17.5v3M14.5 17.5v3M3.5 9.5h3M3.5 14.5h3M17.5 9.5h3M17.5 14.5h3"/></symbol>
+ <symbol id="i-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <rect x="3.5" y="4" width="17" height="6" rx="1.6"/><rect x="3.5" y="14" width="17" height="6" rx="1.6"/>
+   <path d="M7 7h.01M7 17h.01"/></symbol>
+ <symbol id="i-endpoint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <circle cx="12" cy="12" r="3"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/></symbol>
+ <symbol id="i-stream" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M4 7.5h11M4 12h16M4 16.5h9"/><path d="m17.5 5.5 2.5 2-2.5 2M12.5 14.5l2.5 2-2.5 2"/></symbol>
+ <symbol id="i-pod" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="m12 3 8 4.2v9.6L12 21l-8-4.2V7.2z"/><path d="m4.3 7.3 7.7 4 7.7-4M12 11.3V21"/></symbol>
+ <symbol id="i-nonet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M4.5 9.2A12 12 0 0 1 10 6.6M14.5 6.9a12 12 0 0 1 5 2.3M7.8 12.7a8 8 0 0 1 2.4-1.3M14 11.6a8 8 0 0 1 2.3 1.2M10.6 16a3.5 3.5 0 0 1 3 .1"/>
+   <circle cx="12" cy="19.3" r="1.1"/><path d="M3.5 3.5 20.5 20.5"/></symbol>
+ <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="m8.5 12.2 2.6 2.6 5-5.6"/><circle cx="12" cy="12" r="8.5"/></symbol>
+ <symbol id="i-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="m8.6 15.4 2 2 4-4.6"/></symbol>
+ <symbol id="i-approve" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M8 11.5V5.2a1.7 1.7 0 0 1 3.4 0v5.3"/><path d="M11.4 10.5V9a1.6 1.6 0 0 1 3.2 0v1.6"/>
+   <path d="M14.6 10.8V9.9a1.6 1.6 0 0 1 3.2 0v5.2A5.9 5.9 0 0 1 12 21a5.9 5.9 0 0 1-5.9-5.9v-2a1.5 1.5 0 0 1 2.9-.5"/></symbol>
+ <symbol id="i-seal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="m12 2.6 2.3 1.7 2.8-.3 1 2.7 2.4 1.6-.9 2.7.9 2.7-2.4 1.6-1 2.7-2.8-.3L12 19.8l-2.3-1.8-2.8.3-1-2.7L3.5 14l.9-2.7-.9-2.7 2.4-1.6 1-2.7 2.8.3z"/>
+   <path d="m9.6 11.2 1.8 1.8 3.2-3.6"/></symbol>
+ <symbol id="i-cloudoff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M7.6 18.5h9.6a3.9 3.9 0 0 0 1.2-7.6 5.6 5.6 0 0 0-8.2-4.4"/>
+   <path d="M6.4 9.1a4.7 4.7 0 0 0 1.2 9.4"/><path d="M3.2 3.2 20.8 20.8"/></symbol>
+ <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.2 10.5V7.6a3.8 3.8 0 0 1 7.6 0v2.9"/></symbol>
+ <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.4 15.4 4.4 4.4"/></symbol>
+ <symbol id="i-quote" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+   <path d="M4 5h11M4 9.5h16M4 14h11M4 18.5h7"/><circle cx="18.5" cy="17.5" r="3"/></symbol>
+</svg>
+
+<div id="fit">
+<div class="stage" id="stage">
+
+  <!-- ======================= header ======================= -->
+  <header class="head">
+    <div class="brand">
+      <div class="kicker">
+        <span>SIH 2026</span><i></i><b>PS SIH26117</b><i></i><span>MRPL</span><i></i>
+        <span>Team Rokunin Sync</span><i></i><span>Repo AegisForge</span>
+      </div>
+      <h1>Refinix <em>— end-to-end workflow</em></h1>
+      <p class="sub">Confidential input becomes a validated, human-approved deliverable using only approved local models — with per-job evidence of where the work ran.</p>
+    </div>
+    <div class="egress">
+      <div class="t"><svg><use href="#i-cloudoff"/></svg> Public cloud AI</div>
+      <div class="d">No external inference call at runtime. Egress is blocked, and the block is <b>observed and recorded</b> per job.</div>
+      <svg class="drop" width="26" height="24" viewBox="0 0 26 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M13 0v9" stroke-dasharray="3 3"/>
+        <path d="M8.4 12.4 17.6 21.6M17.6 12.4 8.4 21.6" stroke-linecap="round" stroke-width="2"/>
+      </svg>
+    </div>
+  </header>
+
+  <!-- ======================= trust boundary ======================= -->
+  <section class="boundary">
+    <div class="tag"><b>On-premise trust boundary</b> · offline runtime · loopback-bound services · <em>egress denied</em></div>
+    <div class="tag-r">One job = one complete model = one device</div>
+
+    <div class="cols">
+      <!-- connectors: 1:1 px overlay, coordinates fixed to the column grid -->
+      <svg class="wires" width="1476" height="496" viewBox="0 0 1476 496" fill="none" aria-hidden="true">
+        <defs>
+          <marker id="ah" markerWidth="7" markerHeight="7" refX="5.6" refY="3.5" orient="auto">
+            <path d="M0 0.6 5.8 3.5 0 6.4z" fill="#1A5E97"/>
+          </marker>
+        </defs>
+        <g stroke="#1A5E97" stroke-width="1.8" marker-end="url(#ah)">
+          <path d="M206 262h30"/>
+          <path d="M490 262h30"/>
+          <path d="M850 262h30"/>
+          <path d="M1194 262h30"/>
+        </g>
+        <g fill="#1A5E97" font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing=".08em" text-anchor="middle">
+          <text x="222" y="252">SELECT</text>
+          <text x="506" y="252">SUBMIT</text>
+          <text x="866" y="252">ROUTE</text>
+          <text x="1210" y="252">RETURN</text>
+        </g>
+      </svg>
+
+      <!-- ---------- 01 INPUT ---------- -->
+      <div class="col c1">
+        <div class="chead"><span class="n">01</span><span class="l">Input</span></div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-user"/></svg> Engineer / officer</div>
+          <p>Selects the material for one task. Nothing is uploaded anywhere.</p>
+        </div>
+        <div class="chip"><svg><use href="#i-scan"/></svg> Scanned inspection report</div>
+        <div class="chip"><svg><use href="#i-pid"/></svg> P&amp;ID, drawing, photo</div>
+        <div class="chip"><svg><use href="#i-book"/></svg> SOP &amp; manual corpus</div>
+        <div class="chip"><svg><use href="#i-code"/></svg> Internal repository</div>
+        <div class="chip"><svg><use href="#i-chat"/></svg> Question / request</div>
+        <div class="note pin"><b>SHA-256 on entry.</b> Every input is hashed and bound to the job before a model sees it.</div>
+      </div>
+
+      <!-- ---------- 02 SURFACE ---------- -->
+      <div class="col c2">
+        <div class="chead"><span class="n">02</span><span class="l">Work surface</span></div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-chat"/></svg> Chat</div>
+          <p>Reason over approved local knowledge.</p>
+        </div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-doc"/></svg> Documents</div>
+          <p>OCR &amp; vision, local retrieval, cited artifacts.</p>
+        </div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-code"/></svg> Code</div>
+          <p>Bounded repo context, isolated execution, patches.</p>
+        </div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-gauge"/></svg> Control Center</div>
+          <p>Models, devices, jobs, approvals, health, evidence.</p>
+        </div>
+        <div class="note pin">Four opinionated entry points into <b>one harness</b> — not three separate backends.</div>
+      </div>
+
+      <!-- ---------- 03 HARNESS ---------- -->
+      <div class="col c3">
+        <div class="chead"><span class="n">03</span><span class="l">Local agent harness — coordinator</span></div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-layers"/></svg> Context &amp; memory</div>
+          <p>Preserves the original request; selects recent context, curated memory and relevant local SOP passages within the model limit.</p>
+        </div>
+        <div class="card sig">
+          <div class="h"><svg><use href="#i-router"/></svg> Deterministic router</div>
+          <p>Task type + approved model manifest + device health + queue state &rarr; one eligible model on one eligible device. Not a model choosing for itself.</p>
+        </div>
+        <div class="card cau">
+          <div class="h"><svg><use href="#i-shield"/></svg> Policy &amp; approval gate</div>
+          <p>Read / OCR / draft &rarr; automatic. Canonical write, export, pairing &rarr; <b>approval required</b>. Unselected paths, host secrets, public AI &rarr; denied.</p>
+        </div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-steps"/></svg> Workflow runner</div>
+          <p>Bounded typed steps, attempt IDs, leases, retries and replanning. Models never talk to each other directly.</p>
+        </div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-db"/></svg> SQLite — canonical state</div>
+          <p>Jobs, chats, approvals, artifacts, audit. Survives any worker or cluster restart.</p>
+        </div>
+      </div>
+
+      <!-- ---------- 04 EXECUTION ---------- -->
+      <div class="col c4">
+        <div class="chead"><span class="n">04</span><span class="l">Execution</span></div>
+        <div class="card sig">
+          <div class="h"><svg><use href="#i-endpoint"/></svg> Target: Auto</div>
+          <p>Auto · this device · trusted devices · a pinned node. Never silently rerouted.</p>
+        </div>
+        <div class="group">
+          <div class="gt"><svg><use href="#i-chip"/></svg> A · this device</div>
+          <div class="stack">
+            <div class="mini agent"><svg><use href="#i-chip"/></svg> Local model runtime <span>ollama</span></div>
+          </div>
+        </div>
+        <div class="group">
+          <div class="gt"><svg><use href="#i-server"/></svg> B · trusted host — single-node K3s</div>
+          <div class="stack">
+            <div class="mini sig"><svg><use href="#i-endpoint"/></svg> Service <span>stable</span></div>
+            <div class="mini"><svg><use href="#i-stream"/></svg> Redis Streams <span>queue</span></div>
+            <div class="mini"><svg><use href="#i-pod"/></svg> Worker Pod <span>executor</span></div>
+            <div class="mini agent"><svg><use href="#i-chip"/></svg> Local model <span>weights ro</span></div>
+          </div>
+        </div>
+        <div class="card enf">
+          <div class="h"><svg><use href="#i-nonet"/></svg> Sandbox Job</div>
+          <p>Short-lived K8s Job for code validation: <b>networking disabled</b>, CPU/memory limits, deadline + cleanup TTL, no host socket.</p>
+        </div>
+        <div class="models pin">
+          <b>Qwen3.5-4B · vision</b><b>PaddleOCR-VL</b><b>Qwen2.5-Coder-7B</b><b>Qwen3-Embedding</b>
+        </div>
+      </div>
+
+      <!-- ---------- 05 DELIVERABLE ---------- -->
+      <div class="col c5">
+        <div class="chead"><span class="n">05</span><span class="l">Deliverable</span></div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-check"/></svg> Validators</div>
+          <p>Page-mapped citations, uncertainty preserved, patch applicability, exit status. A failed check is never promoted.</p>
+        </div>
+        <div class="card">
+          <div class="h"><svg><use href="#i-out"/></svg> Real artifacts</div>
+          <p>Cited <b>.docx</b> approval note, <b>.xlsx</b> calculation, validated <b>patch</b> — not a chat transcript.</p>
+        </div>
+        <div class="card enf">
+          <div class="h"><svg><use href="#i-approve"/></svg> Human approval</div>
+          <p>No worker approves its own persistent change.</p>
+        </div>
+        <div class="proof">
+          <div class="pt"><svg><use href="#i-seal"/></svg> Sovereign Proof Card</div>
+          <ul>
+            <li><span class="dot s"></span>Routing decision — model, device, rationale</li>
+            <li><span class="dot a"></span>Model &amp; manifest checksum</li>
+            <li><span class="dot e"></span>SHA-256 of every input and artifact</li>
+            <li><span class="dot e"></span>Validation result + approval record</li>
+            <li><span class="dot o"></span>Observed zero-egress window for this job</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- return path ---------- -->
+    <div class="band">
+      <svg class="wires" width="1476" height="56" viewBox="0 0 1476 56" fill="none" aria-hidden="true">
+        <defs>
+          <marker id="ah2" markerWidth="7" markerHeight="7" refX="5.6" refY="3.5" orient="auto">
+            <path d="M0 0.6 5.8 3.5 0 6.4z" fill="#1A6349"/>
+          </marker>
+        </defs>
+        <path d="M1354 2v14a6 6 0 0 1-6 6H692a6 6 0 0 0-6 6v-4"
+              stroke="#1A6349" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#ah2)"
+              transform="translate(0,0)"/>
+      </svg>
+      <div class="rl">Approved result returns to the coordinator &rarr; <b>exactly-once canonical write</b> into SQLite</div>
+    </div>
+  </section>
+
+  <!-- ======================= legend ======================= -->
+  <footer class="legend">
+    <div class="keys">
+      <span class="key"><i style="background:#A8B3C3"></i><b>Silver</b> resting / local infrastructure</span>
+      <span class="key"><i style="background:#1A5E97"></i><b>Sky</b> live path &amp; routing decision</span>
+      <span class="key"><i style="background:#58399B"></i><b>Purple</b> local model provenance</span>
+      <span class="key"><i style="background:#1A6349"></i><b>Green</b> a named control is active</span>
+      <span class="key"><i style="background:#7A4C04"></i><b>Amber</b> approval required</span>
+      <span class="key"><i style="background:#96322A"></i><b>Red</b> denied / blocked</span>
+    </div>
+    <div class="stamp">
+      Coordinator, not a cluster — no VRAM pooling, no model sharding<br>
+      Task-level distribution only · standalone operation always works
+    </div>
+  </footer>
+
+</div>
+</div>
+
+<div class="hint">Frame is a fixed 1600 &times; 900 (16:9) — screenshot it, or Ctrl/Cmd&#8202;+&#8202;P &rarr; Save as PDF for a full-bleed slide</div>
+
+<script>
+(function () {
+  var fit = document.getElementById('fit');
+  function scale() {
+    var s = Math.min(window.innerWidth / 1640, window.innerHeight / 930);
+    fit.style.transform = 'scale(' + s + ')';
+  }
+  scale();
+  window.addEventListener('resize', scale);
+})();
+</script>
+</body>
+</html>

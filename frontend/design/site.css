@@ -18,50 +18,86 @@
   --deity: url(assets/deity.png);
   --team-logo: url(assets/rokunin-sync-logo.png);
 
-  /* Grounds: near-black, with a cooler blue-black for raised panels. */
-  --ground:      #09090A;
-  --ground-2:    #0D1017;
-  --ground-3:    #14181F;
+  /* Grounds. Black, and neutral. The old tiers were blue-black, and under the
+     atmosphere layer that stacked into a page which read navy end to end.
+     These lift by luminance alone, so nothing beneath the content has a hue. */
+  --ground:      #070708;
+  --ground-2:    #0E0E10;
+  --ground-3:    #151517;
 
-  /* Silver, not plain white. The dim tiers carry a faint blue cast so they
-     sit with the accent instead of reading as grey. */
-  --ink:         #FFFFFF;
-  --ink-2:       #E6E8EA;
-  --ink-dim:     #A8B0BC;
-  --ink-faint:   #81858C;
+  /* Silver. Neutral grey-white with no cast at any tier, which is what makes
+     the four accents legible as colour rather than as a slightly warmer grey. */
+  --ink:         #F4F5F7;
+  --ink-2:       #D3D6DA;
+  --ink-dim:     #9AA0A8;
+  --ink-faint:   #767C85;
+
+  /* The metal itself: a brushed vertical ramp, highlight to shadow to
+     highlight, shared by the wordmark, the section numerals and the stat
+     figures so every metallic thing on the page is struck from one recipe. */
+  --silver-1:    #FFFFFF;
+  --silver-2:    #DCE1E6;
+  --silver-3:    #9AA2AB;
+  --silver-4:    #5A616A;
 
   --glass:       rgba(255, 255, 255, .045);
   --glass-2:     rgba(255, 255, 255, .075);
-  --glass-blur:  rgba(13, 16, 23, .62);
+  --glass-blur:  rgba(14, 14, 16, .64);
   --edge:        rgba(255, 255, 255, .10);
   --edge-2:      rgba(255, 255, 255, .16);
   --edge-hi:     rgba(255, 255, 255, .28);
 
-  /* Sky blue carries every accent. */
-  --accent:      #7FB6E8;
-  --accent-deep: #4D7FD6;
-  --accent-soft: rgba(127, 182, 232, .14);
-  --ember:       #9CCBF2;
-  --on-accent:   #09090A;
+  /* Four accents, each with one job, so colour on this page always means
+     something. Sky blue is interactive: links, rules, focus, hover. Violet
+     indexes structure: numerals, counters, the marks that number the page.
+     Green is the "enforced" evidence state and nothing else. Silver is metal. */
+  --accent:      #8CC2F2;
+  --accent-deep: #5B93DA;
+  --accent-soft: rgba(140, 194, 242, .13);
+  --ember:       #A8D5F7;
+  --on-accent:   #070708;
+
+  --violet:      #B497E8;
+  --violet-deep: #8A6BD4;
+  --violet-soft: rgba(180, 151, 232, .13);
+
+  --ok:          #74D2A6;
+  --ok-soft:     rgba(116, 210, 166, .13);
 
   /* Brand orange is reserved for the Rokunin Sync mark and nothing else. */
   --brand:       #F08A24;
-  /* The one green on the page: the "enforced" state, and only that. */
-  --ok:          #74C79C;
   --danger:      #E28274;
 
-  --aura-1:      rgba(46, 108, 178, .52);
-  --aura-2:      rgba(96, 150, 200, .20);
-  --aura-3:      rgba(34, 70, 124, .34);
-  --ray:         rgba(198, 218, 236, .44);
+  /* No atmosphere on the dark theme. The ground is black, full stop.
+
+     These four fields used to wash the page with sky, violet, graphite and a
+     trace of green — quietly, at .06 to .16 — but quietly is still visible, and
+     it read as light nobody asked for sitting behind the content. The only lit
+     thing on this page is now the halo behind the hero figure, which is drawn
+     locally by .hero-plate and has nothing to do with these.
+
+     Kept as tokens rather than deleted so the layer can be brought back by
+     changing four values; the light theme still uses its own, below. */
+  --aura-1:      transparent;
+  --aura-2:      transparent;
+  --aura-3:      transparent;
+  --aura-4:      transparent;
+  --ray:         rgba(206, 214, 224, .40);
 
   --font-display: 'Spectral', Georgia, 'Times New Roman', serif;
+  /* The hero headline alone. A high-contrast Didone, matching the display face
+     on the Hermes Agent page — that page uses Sigurd, which is a retail font
+     from Or Type and cannot be redistributed here, so Bodoni Moda stands in:
+     same vertical stress, same hairline-to-stem contrast, same flat serifs. */
+  --font-hero:    'Bodoni Moda', 'Spectral', Georgia, 'Times New Roman', serif;
   --font-ui:      'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-data:    'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-pixel:   'Pixelify Sans', 'Silkscreen', ui-monospace, monospace;
 
   --max: 1560px;
+  --nav-h: 64px;
   --gutter: clamp(20px, 3.4vw, 64px);
-  --sec: clamp(76px, 9vw, 148px);
+  --sec: clamp(52px, 5.4vw, 92px);
   --r-card: 12px;
   --r-panel: 14px;
   --r-pill: 100px;
@@ -87,23 +123,41 @@
   --edge-2:      rgba(12, 17, 25, .18);
   --edge-hi:     rgba(12, 17, 25, .28);
 
-  --accent:      #2C6FA8;
+  --accent:      #26618F;
   --accent-deep: #1F5488;
   --accent-soft: rgba(44, 111, 168, .10);
   --ember:       #3B7FB8;
   --on-accent:   #FFFFFF;
 
-  --brand:       #C96A0E;
+  --violet:      #6742A8;
+  --violet-deep: #543391;
+  --violet-soft: rgba(103, 66, 168, .10);
+
   --ok:          #1E6B4F;
+  --ok-soft:     rgba(30, 107, 79, .10);
+
+  --brand:       #C96A0E;
   --danger:      #A33528;
 
+  /* On a pale ground the metal ramp has to run dark, or the wordmark clips to
+     white on white. Same four stops, inverted in luminance. */
+  --silver-1:    #5E666F;
+  --silver-2:    #2B323A;
+  --silver-3:    #767E88;
+  --silver-4:    #171C22;
+
   --aura-1:      rgba(120, 168, 210, .34);
-  --aura-2:      rgba(168, 196, 220, .24);
+  --aura-2:      rgba(160, 130, 205, .18);
   --aura-3:      rgba(140, 172, 206, .24);
+  --aura-4:      rgba(96, 175, 145, .10);
   --ray:         rgba(62, 88, 116, .45);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
+
+/* The nav is sticky, so an anchor jump has to stop clear of it or the heading
+   it targets lands underneath the bar. */
+html { scroll-padding-top: 88px; }
 
 body {
   margin: 0;
@@ -130,9 +184,10 @@ body {
   z-index: -2;
   pointer-events: none;
   background:
-    radial-gradient(62vw 52vw at 74% -4%, var(--aura-1), transparent 60%),
-    radial-gradient(46vw 40vw at 8% 26%,  var(--aura-2), transparent 64%),
-    radial-gradient(60vw 50vw at 46% 92%, var(--aura-3), transparent 62%);
+    radial-gradient(58vw 46vw at 78% -6%, var(--aura-1), transparent 58%),
+    radial-gradient(44vw 40vw at 4%  30%, var(--aura-2), transparent 62%),
+    radial-gradient(64vw 52vw at 50% 96%, var(--aura-3), transparent 60%),
+    radial-gradient(30vw 26vw at 92% 62%, var(--aura-4), transparent 66%);
 }
 /* Grain field. A canvas of low-alpha particles drifting on a slow rotation —
    the sync mark's motion, at ambient scale. Particles brighten and scatter
@@ -151,8 +206,8 @@ body {
   display: block;
 }
 /* Particle colours as tokens so the canvas can follow the theme. */
-:root { --grain-ink: 214, 222, 232; --grain-brand: 127, 182, 232; }
-:root[data-theme="light"] { --grain-ink: 38, 49, 63; --grain-brand: 44, 111, 168; }
+:root { --grain-ink: 220, 225, 230; --grain-brand: 180, 151, 232; }
+:root[data-theme="light"] { --grain-ink: 43, 50, 58; --grain-brand: 103, 66, 168; }
 
 .page { position: relative; z-index: 1; }
 .wrap { max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); }
@@ -169,8 +224,7 @@ body {
 .term,
 .demo,
 .stat,
-.build,
-.notice {
+.build {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .022));
   border: var(--hair) solid var(--edge);
@@ -187,8 +241,7 @@ body {
 :root[data-theme="light"] .term,
 :root[data-theme="light"] .demo,
 :root[data-theme="light"] .stat,
-:root[data-theme="light"] .build,
-:root[data-theme="light"] .notice {
+:root[data-theme="light"] .build {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, .86), rgba(255, 255, 255, .58));
   box-shadow:
@@ -219,9 +272,9 @@ body {
 }
 .label::before {
   content: "";
-  width: 22px;
+  width: 26px;
   height: var(--hair);
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--accent), var(--violet));
 }
 
 /* Scroll reveal. Hidden only once the inline bootstrap has marked the document
@@ -266,11 +319,12 @@ body {
 }
 /* Rokunin Sync symbol. Inline SVG stand-in until the real asset lands —
    see assets/README.md. Sized in em so it tracks whatever it sits beside. */
+/* Kept for the surfaces that still draw the bare symbol on its own. The mark
+   fills from its own gradient now, so no colour is set here. */
 .mark {
   width: 1.32em;
   height: 1.32em;
   flex: none;
-  color: var(--brand);
   display: block;
 }
 
@@ -279,12 +333,15 @@ body {
    asset degrades to the text credit instead of a broken image. */
 .team-logo {
   width: 100%;
-  max-width: 180px;
+  max-width: 124px;
   aspect-ratio: 1064 / 773;
   background: var(--team-logo) left center / contain no-repeat;
   margin-bottom: 14px;
 }
 .closing .team-logo { margin: 0 auto 18px; max-width: 148px; }
+/* The closing signature carries the product lockup; the team mark stays in the
+   footer credit, where team attribution belongs. */
+.closing .lockup-lg { display: flex; margin: 0 auto clamp(22px, 2.6vw, 34px); }
 
 .chip {
   font-family: var(--font-data);
@@ -348,33 +405,55 @@ body {
 
 .hero {
   position: relative;
-  padding: clamp(34px, 5vw, 72px) 0 var(--sec);
+  min-height: calc(100svh - var(--nav-h));
+  padding: clamp(14px, 2vw, 28px) 0;
   display: grid;
-  /* The art carries the right side, so give it the larger share. */
-  grid-template-columns: minmax(0, .97fr) minmax(0, 1.03fr);
+  /* The headline used to be four short words and the art could take the larger
+     share. Six words set two to a line is a much wider block, so the split is
+     reversed — the type column now leads and the engraving gives ground. */
+  grid-template-columns: minmax(0, 1.22fr) minmax(0, .78fr);
   gap: clamp(20px, 3vw, 44px);
   align-items: center;
 }
 .hero > * { position: relative; z-index: 1; }
 
+/* The headline is sized against its own column, not the viewport.
+
+   Its width is set by one string — "SOVEREIGN INTELLIGENCE,", the longest of
+   the three pairs, which measures 14.14em in this face at these caps. Filling
+   the column exactly therefore means 100cqi / 14.14 = 7.07cqi, and 6.8cqi
+   leaves a little air. Because that is a share of the *column* rather than of
+   the window, it survives the 980px breakpoint where the hero stops being two
+   columns and the measure suddenly doubles — a vw-based clamp cannot, and the
+   earlier one overflowed at 375px for exactly that reason.
+
+   The vh term is still there so a short window shrinks the headline rather
+   than pushing the terminal card off the bottom of the screen. */
+/* Scoped off the plate: the art figure also carries .reveal, and it has no
+   need to be a query container. */
+.hero .reveal:not(.plate) { container-type: inline-size; }
 .hero h1 {
-  font-family: var(--font-display);
-  font-size: clamp(2.9rem, 1rem + 7.4vw, 6.2rem);
-  line-height: .96;
-  letter-spacing: -.03em;
-  font-weight: 700;
+  font-family: var(--font-hero);
+  font-size: min(6.8cqi, 8.5vh, 4rem);
+  line-height: 1.02;
+  letter-spacing: -.005em;
+  /* A Didone at display size wants less weight than a text serif does: the
+     contrast carries it, and 700 closes the hairlines up. */
+  font-weight: 500;
+  text-transform: uppercase;
   margin: 0 0 26px;
-  max-width: 11ch;
-  text-wrap: balance;
+  max-width: none;
 }
+/* The pairs are hard breaks, not wrapping. */
+.hero h1 span { display: block; }
 .hero .lede {
   font-size: clamp(1rem, .94rem + .34vw, 1.18rem);
   color: var(--ink-dim);
-  max-width: 46ch;
+  max-width: 52ch;
   margin: 0 0 32px;
 }
 .hero .lede strong { color: var(--ink); font-weight: 600; }
-.cta-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 30px; }
+.cta-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 22px; }
 
 /* ============================================================== terminal */
 
@@ -431,7 +510,9 @@ body {
   overflow-x: auto;
 }
 .term .cmt { color: var(--ink-faint); }
-.term .pr { color: var(--accent); }
+/* A shell prompt is a thing that ran, not a thing you click — green, matching
+   the "enforced" state, because both mean the same thing: it actually happened. */
+.term .pr { color: var(--ok); }
 .term-panel[hidden] { display: none; }
 
 /* ============================================================== the plates */
@@ -472,7 +553,93 @@ body {
   width: auto;
   display: block;
   object-fit: contain;
+  /* The clip has no edge, rather than an edge matched to something.
+
+     Three attempts at matching failed for the same reason, so it is worth
+     writing down: this clip's ground is neither black nor constant. Measured
+     off the file it runs 0-13/255 at the sides and lifts further wherever the
+     glow off the head reaches, so it changes frame by frame with the content.
+     A flat gutter — black, or sampled from the edge, or averaged — is a single
+     value chased by a moving one, and it is visibly wrong somewhere in every
+     frame. There is no value that works.
+
+     Dissolving the clip's own edge sidesteps it entirely. The outer eighth of
+     each side ramps to fully transparent, so the frame boundary is not a
+     boundary any more: the picture simply stops existing before it gets there,
+     and pure black shows through because pure black is all that is behind it.
+     Nothing to match, nothing in the gutters, no seam to find.
+
+     The stops are an eased S rather than a straight ramp — a linear fade over
+     this distance bands visibly on a near-black image. Vertical edges only;
+     the clip fills the height, so top and bottom stay crisp. */
+  --edge: linear-gradient(90deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, .22) 3.5%,
+    rgba(0, 0, 0, .58) 7%,
+    rgba(0, 0, 0, .86) 10%,
+    rgb(0, 0, 0) 13.5%,
+    rgb(0, 0, 0) 86.5%,
+    rgba(0, 0, 0, .86) 90%,
+    rgba(0, 0, 0, .58) 93%,
+    rgba(0, 0, 0, .22) 96.5%,
+    rgba(0, 0, 0, 0) 100%);
+  -webkit-mask-image: var(--edge);
+  mask-image: var(--edge);
 }
+
+/* The clip: full viewport height, native aspect, centred.
+   Sized in viewport units, NOT height:100%. `.intro` centres its children, so
+   a centred item has an indefinite block size and a percentage height falls
+   back to the media's intrinsic height — which made a 1280px-tall clip
+   overflow a shorter window and cut the top and bottom off. */
+.intro-video {
+  position: relative;
+  z-index: 1;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  max-width: 100vw;
+  width: auto;
+  display: block;
+  object-fit: contain;
+  /* The clip has no edge, rather than an edge matched to something.
+
+     Three attempts at matching failed for the same reason, so it is worth
+     writing down: this clip's ground is neither black nor constant. Measured
+     off the file it runs 0-13/255 at the sides and lifts further wherever the
+     glow off the head reaches, so it changes frame by frame with the content.
+     A flat gutter — black, or sampled from the edge, or averaged — is a single
+     value chased by a moving one, and it is visibly wrong somewhere in every
+     frame. There is no value that works.
+
+     Dissolving the clip's own edge sidesteps it entirely. The outer eighth of
+     each side ramps to fully transparent, so the frame boundary is not a
+     boundary any more: the picture simply stops existing before it gets there,
+     and pure black shows through because pure black is all that is behind it.
+     Nothing to match, nothing in the gutters, no seam to find.
+
+     The stops are an eased S rather than a straight ramp — a linear fade over
+     this distance bands visibly on a near-black image. Vertical edges only;
+     the clip fills the height, so top and bottom stay crisp. */
+  --edge: linear-gradient(90deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, .22) 3.5%,
+    rgba(0, 0, 0, .58) 7%,
+    rgba(0, 0, 0, .86) 10%,
+    rgb(0, 0, 0) 13.5%,
+    rgb(0, 0, 0) 86.5%,
+    rgba(0, 0, 0, .86) 90%,
+    rgba(0, 0, 0, .58) 93%,
+    rgba(0, 0, 0, .22) 96.5%,
+    rgba(0, 0, 0, 0) 100%);
+  -webkit-mask-image: var(--edge);
+  mask-image: var(--edge);
+}
+
+/* The ambient wash: a 40x72 frame copy stretched over the whole viewport and
+   blurred past recognition, so the gutters carry the clip's own light. The
+   horizontal stretch is the point - it drags the frame's edge colour outward
+   to meet the window. Scaled up so the blur's soft edge falls outside. */
 /* The side field sits behind the clip and fills the gutters. Explicit 100%
    sizing, not just inset:0 — .intro centres its items, and a centred
    absolutely-positioned canvas collapses to its intrinsic 300x150 instead of
@@ -492,6 +659,58 @@ body {
    Swap in a PNG here when one is saved — see assets/README.md.
    The gradient runs light-to-dark-to-light with a hard tonal break just below
    the midline, which is what reads as a bevelled metal edge. */
+/* --- brand lockups --------------------------------------------------------
+   Two supplied lockups, each used where its shape fits: horizontal in the nav,
+   where the bar is short and wide, and stacked on the intro, which is a full
+   screen with room above and below.
+
+   Each is an <img> with an onerror that removes itself, sitting above a type
+   fallback that :has() hides only while the image is actually present. So a
+   missing file degrades to the wordmark rather than to a broken image icon,
+   and the page is safe to ship before the assets land. */
+/* =================================================================== lockup
+   One lockup, two arrangements. .lockup-h sets the mark beside the wordmark
+   for the nav; .lockup-v stacks it above for the intro gate and the closing
+   signature. Both are drawn — the .brand-lockup / .intro-lockup <img> elements
+   are swap hooks that hide the drawn version the moment a real PNG loads, and
+   remove themselves when one does not exist. */
+.brand-lockup { height: clamp(22px, 2vw, 30px); width: auto; display: block; }
+.nav-brand:has(.brand-lockup) .lockup,
+.intro-mark:has(.intro-lockup) .lockup { display: none; }
+
+.intro-lockup {
+  width: clamp(104px, 12vw, 178px);
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 2px 14px rgba(0, 0, 0, .55));
+}
+
+.lockup { display: inline-flex; align-items: center; }
+.lockup-h { gap: 11px; }
+.lockup-v { flex-direction: column; gap: clamp(8px, 1vw, 14px); }
+
+/* The mark is struck metal, so it gets a real drop shadow rather than sitting
+   flat on the ground — without it the dark half of the ramp merges into black. */
+.lockup-mark {
+  flex: none;
+  display: block;
+  width: 1.55em;
+  height: 1.55em;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .8));
+}
+/* The stacked variants size against the viewport, not against em: their
+   containers set no font-size, so an em here would pin the mark to 16px while
+   the wordmark beside it scaled with vw and left the two out of proportion. */
+.lockup-v .lockup-mark  { width: clamp(46px, 5.4vw, 92px); height: auto; aspect-ratio: 1; }
+.lockup-lg .lockup-mark { width: clamp(56px, 6.4vw, 104px); }
+
+/* On a pale ground the mark's dark half is what carries it, and the light half
+   disappears. Dropping the highlights a little and shadowing downward keeps it
+   legible without maintaining a second copy of the artwork. */
+:root[data-theme="light"] .lockup-mark {
+  filter: brightness(.62) contrast(1.35) drop-shadow(0 1px 2px rgba(12, 17, 25, .35));
+}
+
 .intro-mark {
   position: absolute;
   z-index: 3;
@@ -500,23 +719,61 @@ body {
   pointer-events: none;
   isolation: isolate;
 }
+/* The wordmark carries the same vertical ramp as the mark: highlight, a hard
+   shadow band across the middle where the bevel turns, then highlight again.
+   Sizing is set by whichever lockup holds it, so one rule serves the nav at
+   15px and the intro gate at 42px. */
 .wordmark {
   font-family: 'Michroma', 'DM Sans', sans-serif;
   font-size: clamp(21px, 2.5vw, 42px);
   letter-spacing: .055em;
   line-height: 1;
   margin: 0;
+  white-space: nowrap;
   background: linear-gradient(180deg,
-    #FFFFFF 0%, #E6ECF0 12%, #B9C2C9 26%, #7C858D 40%,
-    #4A525A 49%, #262C32 51%,
+    var(--silver-1) 0%, #E6ECF0 12%, var(--silver-2) 26%, var(--silver-3) 40%,
+    var(--silver-4) 49%, #262C32 51%,
     #6E777F 60%, #B6BFC6 74%, #F4F7F9 88%, #A9B2BA 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 1px 0 rgba(255,255,255,.28)) drop-shadow(0 3px 10px rgba(0,0,0,.85));
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .28)) drop-shadow(0 3px 10px rgba(0, 0, 0, .85));
 }
+/* A pale ground cannot take a highlight-led ramp — the top half of the letters
+   would clip to white on white — so the light theme runs the metal dark and
+   drops the glow that only reads against black. */
+:root[data-theme="light"] .wordmark {
+  background: linear-gradient(180deg,
+    #6B737C 0%, #2B323A 22%, #171C22 48%,
+    #3D444C 54%, #79818A 76%, #2E353D 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: none;
+}
+/* Nav size, where the full ramp would turn to mud. Tighter tracking, and the
+   shadow band pulled shallower so the middle of each letter stays readable. */
+.lockup-h .wordmark {
+  /* uppercase, because this is the lockup rather than prose — the body text
+     says "Refinix", the mark says REFINIX, and the markup keeps the readable
+     casing so it copies and reads aloud correctly */
+  text-transform: uppercase;
+  font-size: clamp(14px, 1.05vw, 16.5px);
+  letter-spacing: .05em;
+  background: linear-gradient(180deg,
+    #FFFFFF 0%, #DDE3E9 34%, #8F98A1 52%, #C8D0D7 74%, #EEF2F5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .7));
+}
+:root[data-theme="light"] .lockup-h .wordmark {
+  background: linear-gradient(180deg, #3A424B 0%, #131920 55%, #454D56 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: none;
+}
+.lockup-lg .wordmark { font-size: clamp(26px, 3vw, 44px); }
 /* the sheen, masked to the letterforms themselves */
-.intro-mark::after {
+.lockup-v .wordmark::after {
   content: "REFINIX";
   position: absolute;
   inset: 0;
@@ -536,6 +793,10 @@ body {
   color: transparent;
   animation: sheen 4.5s cubic-bezier(.5,0,.4,1) infinite;
   pointer-events: none;
+}
+.lockup-v .wordmark { position: relative; }
+@media (prefers-reduced-motion: reduce) {
+  .lockup-v .wordmark::after { animation: none; opacity: 0; }
 }
 @keyframes sheen {
   0%, 62% { background-position: 150% 0; }
@@ -649,7 +910,7 @@ body {
    simply fading up. */
 .intro.revealing .deity-reveal {
   opacity: 1;
-  animation: arrive .62s steps(3, end) 1;
+  animation: arrive .44s steps(3, end) 1;
 }
 @keyframes arrive {
   0%   { filter: url(#turb) brightness(2.2) contrast(2); clip-path: inset(0 0 62% 0); transform: translateX(-22px) }
@@ -710,9 +971,13 @@ body {
 .eye::before { bottom: 50%; height: 21vh; }              /* driven upward */
 .eye::after  { top: 50%; height: 16vh; rotate: 180deg; } /* and downward */
 
-.intro.revealing .eye { animation: slit 3.2s ease-in-out infinite; }
-.intro.revealing .eye::before { animation: beam 2.1s ease-in-out infinite; }
-.intro.revealing .eye::after  { animation: beam 2.1s ease-in-out infinite .35s; }
+/* Timed to the 1.3s hold: a full blink lands inside it rather than being cut
+   off part way through the cycle. */
+/* Timed against the 0.6s hold in site.html, not chosen for their own sake:
+   at the old durations the figure left while the slit was still opening. */
+.intro.revealing .eye { animation: slit .6s ease-in-out infinite; }
+.intro.revealing .eye::before { animation: beam .42s ease-in-out infinite; }
+.intro.revealing .eye::after  { animation: beam .42s ease-in-out infinite .09s; }
 @keyframes slit {
   0%, 100% { opacity: .82 }
   14%      { opacity: 1 }
@@ -727,7 +992,16 @@ body {
   0%, 100% { opacity: .55; transform: scaleY(.92) }
   50%      { opacity: 1;   transform: scaleY(1.12) }
 }
-.intro.exiting .eye { opacity: 0; transition: opacity .4s ease; }
+/* The animations have to be cancelled, not overridden. An animated property
+   beats a plain declaration in the cascade, so setting opacity here alone left
+   the rays blinking through the whole exit and the fade after it. */
+.intro.exiting .eye,
+.intro.exiting .eye::before,
+.intro.exiting .eye::after {
+  animation: none !important;
+  opacity: 0;
+  transition: opacity .16s linear;
+}
 
 /* --- lightning, as the figure arrives ------------------------------------ */
 /* A full-bleed flash with a hard rise and a slow fall — a storm strike is
@@ -744,8 +1018,15 @@ body {
     linear-gradient(180deg, rgba(150, 205, 255, .5), transparent 55%);
   mix-blend-mode: screen;
 }
-.intro.revealing .bolt { animation: strike 2.1s ease-out 1 both; }
-.intro.revealing .bolt.b { animation: strike 2.1s ease-out .42s 1 both; }
+/* Both strikes finish inside the 1.3s hold - the second starts at .25s and
+   runs .95s, landing at 1.2s - so the storm is over before the figure moves
+   rather than trailing after it. */
+/* Both strikes have to complete inside the hold; at .95s with a .25s stagger
+   the second one was still mid-flash when the figure started travelling. */
+.intro.revealing .bolt { animation: strike .46s ease-out 1 both; }
+.intro.revealing .bolt.b { animation: strike .46s ease-out .12s 1 both; }
+/* fill-mode both holds the last frame, so this needs cancelling too. */
+.intro.exiting .bolt { animation: none !important; opacity: 0; }
 @keyframes strike {
   0%   { opacity: 0 }
   2%   { opacity: 1 }
@@ -798,7 +1079,19 @@ body {
 
 /* A field that breathes behind the line work — sky blue and silver crossing
    at different periods, so the two never settle into a single pulse. */
-.hero-plate { position: relative; }
+.hero-plate {
+  position: relative;
+  --art-h: min(calc(100svh - var(--nav-h) - 76px), 780px);
+  /* The ideal width is the one the height wants; min() takes the column's width
+     instead whenever that is smaller, and aspect-ratio lets the height fall out
+     of whichever won. Setting height explicitly and clamping width, as this did
+     before, distorted the box the moment the clamp bound. */
+  width: min(calc(var(--art-h) * 1040 / 1272), 100%);
+  aspect-ratio: 1040 / 1272;
+  height: auto;
+  max-height: var(--art-h);
+  margin-inline: auto;
+}
 .hero-plate::before {
   content: "";
   position: absolute;
@@ -836,24 +1129,51 @@ body {
   position: relative;
   z-index: 1;
   width: 100%;
-  aspect-ratio: 1040 / 1272;
+  height: 100%;
   background: var(--deity) center / contain no-repeat;
   display: block;
   filter: drop-shadow(0 0 40px rgba(127, 182, 232, .18)) contrast(1.12);
 }
 :root[data-theme="light"] .hero-art { filter: invert(1) contrast(1.15); }
 
-/* A short tear every few seconds, so the figure stays alive on the page.
-   Driven by a class the script toggles rather than an infinite animation, so
-   the quiet gap between bursts costs nothing. */
-.hero-art.tear { animation: hero-tear .5s steps(3, end) 1; }
-@keyframes hero-tear {
-  0%   { clip-path: inset(0 0 0 0);     transform: translateX(0) }
-  16%  { clip-path: inset(14% 0 52% 0); transform: translateX(-11px) }
-  33%  { clip-path: inset(56% 0 16% 0); transform: translateX(9px) }
-  50%  { clip-path: inset(30% 0 34% 0); transform: translateX(-6px); filter: url(#turb) brightness(1.5) }
-  70%  { clip-path: inset(6% 0 8% 0);   transform: translateX(3px) }
-  100% { clip-path: inset(0 0 0 0);     transform: translateX(0) }
+/* A short burst of pixel corruption every few seconds, so the figure stays
+   alive on the page. Driven by a class the script toggles rather than an
+   infinite animation, so the quiet gap between bursts costs nothing.
+
+   This is a block glitch, not a slice tear. The difference is where the
+   displacement comes from: #pixglitch quantises its turbulence with discrete
+   transfer functions, so the image is pushed around in flat blocks and breaks
+   up like failing pixels. The earlier version stacked clip-path bands, which
+   slid whole horizontal strips - a film tear, not a digital one.
+
+   Three things stack to sell it: the block displacement, the red/cyan channel
+   split carried in the same filter, and a stepped jitter here so the whole
+   figure snaps between positions instead of sliding. A mask of fine vertical
+   and horizontal lines drops out thin runs of pixels on top. */
+.hero-art.pixglitch {
+  animation: pixjolt .52s steps(4, end) 1;
+  -webkit-mask-image:
+    repeating-linear-gradient(90deg, #000 0 9px, transparent 9px 10px),
+    repeating-linear-gradient(0deg,  #000 0 13px, transparent 13px 14px);
+  mask-image:
+    repeating-linear-gradient(90deg, #000 0 9px, transparent 9px 10px),
+    repeating-linear-gradient(0deg,  #000 0 13px, transparent 13px 14px);
+}
+@keyframes pixjolt {
+  0%   { filter: url(#pixglitch) contrast(1.12); transform: translate(0) }
+  25%  { filter: url(#pixglitch) brightness(1.5) contrast(1.35); transform: translate(-5px, 3px) }
+  50%  { filter: url(#pixglitch) brightness(1.2) contrast(1.25); transform: translate(4px, -4px) }
+  75%  { filter: url(#pixglitch) brightness(1.4) contrast(1.3);  transform: translate(-2px, 2px) }
+  100% { filter: drop-shadow(0 0 40px rgba(127, 182, 232, .18)) contrast(1.12); transform: translate(0) }
+}
+/* the light theme inverts the figure, so the burst has to keep the inversion */
+:root[data-theme="light"] .hero-art.pixglitch { animation-name: pixjolt-light; }
+@keyframes pixjolt-light {
+  0%   { filter: invert(1) url(#pixglitch) contrast(1.15); transform: translate(0) }
+  25%  { filter: invert(1) url(#pixglitch) contrast(1.4);  transform: translate(-5px, 3px) }
+  50%  { filter: invert(1) url(#pixglitch) contrast(1.25); transform: translate(4px, -4px) }
+  75%  { filter: invert(1) url(#pixglitch) contrast(1.3);  transform: translate(-2px, 2px) }
+  100% { filter: invert(1) contrast(1.15); transform: translate(0) }
 }
 
 /* ---------------------------------------------------------- hero video ---
@@ -897,7 +1217,16 @@ body {
 /* Let the art bleed past its column toward the page edge, so it fills the
    right side instead of sitting in a padded box. Contained by the body's
    overflow-x. */
-.plate-hero { width: 108%; margin-left: -4%; }
+.plate-hero {
+  width: 100%;
+  display: grid;
+  /* Not the implicit auto track: an auto column sizes to max-content, which
+     let the plate set its own width and pushed the page into horizontal scroll
+     below about 1100px. minmax(0, 1fr) keeps the track inside the column, so
+     the plate's max-width:100% resolves against something real. */
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+}
 
 /* a thin ring, so the circle reads as deliberate rather than as a crop */
 .hero-media::after {
@@ -995,23 +1324,134 @@ body {
 .formula {
   border-top: var(--hair) solid var(--edge);
   border-bottom: var(--hair) solid var(--edge);
-  padding: clamp(34px, 5vw, 60px) 0;
+  padding: clamp(14px, 1.7vw, 22px) 0;
   text-align: center;
 }
+/* Set in a pixel face, because this line is a slogan rather than prose - it is
+   the one place on the page where the type is allowed a voice of its own. The
+   tracking comes down from .22em: a pixel face carries its own spacing, and the
+   extra letter-spacing pulled the words apart. */
 .formula p {
-  font-family: var(--font-data);
-  font-size: clamp(.85rem, .7rem + .7vw, 1.15rem);
-  letter-spacing: .22em;
+  font-family: var(--font-pixel);
+  font-size: clamp(1rem, .78rem + .95vw, 1.55rem);
+  letter-spacing: .06em;
   text-transform: uppercase;
   color: var(--ink-faint);
   margin: 0;
+  line-height: 1.3;
 }
-.formula b { color: var(--ink); font-weight: 500; }
-.formula .plus { color: var(--accent); }
+.formula b {
+  font-weight: 600;
+  background: linear-gradient(180deg, var(--silver-1), var(--silver-2) 55%, var(--silver-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.formula .plus { color: var(--violet); font-weight: 700; }
+
+/* --- the evidence rule, set in the pixel face ----------------------------
+   The whole section takes --font-pixel at the owner's request. A pixel face has
+   a small x-height and no true italic, so the sizes here run larger than the
+   rest of the page and the line-height is looser — set at the page's normal
+   scale it would be markedly harder to read than the prose around it. */
+#proof .label,
+#proof .sec-h,
+#proof .sec-lede,
+#proof .rule,
+#proof .claim-tag,
+#proof .claim h3,
+#proof .claim p {
+  font-family: var(--font-pixel);
+}
+#proof .sec-h {
+  font-size: clamp(1.5rem, 1rem + 1.5vw, 2.15rem);
+  line-height: 1.24;
+  letter-spacing: -.005em;
+  max-width: 17ch;
+}
+#proof .sec-lede {
+  font-size: clamp(.92rem, .86rem + .24vw, 1.02rem);
+  line-height: 1.66;
+  max-width: 40ch;
+  margin-bottom: 0;
+}
+#proof .claim h3 { font-size: .98rem; line-height: 1.36; }
+#proof .claim p  { font-size: .88rem; line-height: 1.66; }
+#proof .sec-lede em { font-style: normal; color: var(--ink); }
+
+/* --- the rule, as a numbered ledger ---------------------------------------
+   Three lines where there used to be three paragraphs. The numerals take the
+   three state colours, so the system the cards below run on is stated here
+   first: the reader meets green, blue and violet as an ordered set before
+   meeting them as three separate cards. */
+.rule {
+  counter-reset: r;
+  list-style: none;
+  margin: clamp(26px, 3vw, 38px) 0 0;
+  padding: 0;
+  border-bottom: var(--hair) solid var(--edge);
+}
+.rule li {
+  counter-increment: r;
+  position: relative;
+  padding: 14px 0 14px 46px;
+  border-top: var(--hair) solid var(--edge);
+  color: var(--ink-2);
+  font-size: clamp(.9rem, .84rem + .22vw, 1rem);
+  line-height: 1.5;
+}
+.rule li::before {
+  content: counter(r, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 17px;
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  color: var(--state);
+}
+.rule li:nth-child(1) { --state: var(--ok); }
+.rule li:nth-child(2) { --state: var(--accent); }
+.rule li:nth-child(3) { --state: var(--violet); }
+.rule em { font-style: normal; color: var(--violet); }
+
+/* The clip that replaced the drawn owl. It is a bright graphic on a hard black
+   ground, and inside a bordered panel that ground read as a black rectangle
+   sitting on the page. screen drops black to nothing, so the graphic now floats
+   on the page ground the way the hero clip does, and the panel border and
+   radius come off with it because there is no longer a box to describe. */
+.plate-clip { display: grid; place-items: center; border: 0; padding: 0; background: none; }
+.evidence-clip {
+  width: 100%;
+  height: auto;
+  display: block;
+  mix-blend-mode: screen;
+  filter: contrast(1.08) saturate(1.1);
+  -webkit-mask-image: radial-gradient(ellipse closest-side at 50% 50%,
+    #000 58%, rgba(0, 0, 0, .5) 84%, transparent 100%);
+  mask-image: radial-gradient(ellipse closest-side at 50% 50%,
+    #000 58%, rgba(0, 0, 0, .5) 84%, transparent 100%);
+}
+/* A pale ground gives screen nothing to reveal, so the light theme inverts the
+   clip and multiplies it instead, which is the same trick the hero uses. */
+:root[data-theme="light"] .evidence-clip {
+  mix-blend-mode: multiply;
+  filter: invert(1) contrast(1.04);
+}
 
 /* --- glass card rows ----------------------------------------------------- */
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr)); gap: 16px; }
+/* Four cards on a twelve-column grid rather than four equal thirds. The spans
+   run 5-7 then 7-5, so the two rows mirror each other and no card sits directly
+   under one the same width — an even row of four reads as a slide, and this is
+   the cheapest way out of that without inventing a different component. */
+.cards { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+.card:nth-child(1) { grid-column: span 5; }
+.card:nth-child(2) { grid-column: span 7; }
+.card:nth-child(3) { grid-column: span 7; }
+.card:nth-child(4) { grid-column: span 5; }
+@media (max-width: 1080px) { .card { grid-column: span 6 !important; } }
+@media (max-width: 660px)  { .card { grid-column: span 12 !important; } }
 .card {
   border: var(--hair) solid var(--edge);
   border-radius: var(--r-card);
@@ -1025,23 +1465,91 @@ body {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: radial-gradient(240px 160px at 50% 0%, rgba(127, 182, 232, .13), transparent 70%);
+  background: radial-gradient(240px 160px at 50% 0%, var(--violet-soft), transparent 70%);
   opacity: 0;
   transition: opacity 300ms ease;
   pointer-events: none;
 }
 .card:hover { border-color: var(--edge-hi); background: var(--glass-2); transform: translateY(-3px); }
 .card:hover::after { opacity: 1; }
+/* Numerals index the page, so they are violet: sky blue is reserved for things
+   that respond to a pointer, and a number that is not a link should not wear
+   the colour that means "clickable". */
 .card-n {
   font-family: var(--font-data);
   font-size: 10.5px;
   letter-spacing: .16em;
-  color: var(--accent);
+  color: var(--violet);
   display: block;
   margin-bottom: 16px;
 }
 .card h3 { font-size: 1.12rem; margin: 0 0 10px; font-weight: 600; letter-spacing: -.01em; }
-.card p { margin: 0; color: var(--ink-dim); font-size: 14.5px; }
+.card p { margin: 0; color: var(--ink-dim); font-size: 14.5px; max-width: 46ch; }
+.card:nth-child(2) .card-n,
+.card:nth-child(3) .card-n {
+  position: absolute;
+  top: 26px;
+  right: 24px;
+  margin: 0;
+}
+.card:nth-child(2) h3,
+.card:nth-child(3) h3 { padding-right: 46px; }
+
+/* --- the sun ornament ------------------------------------------------------
+   Absolutely positioned, and that is the whole point of it.
+
+   In normal flow it made the page 203px taller — an ornament whose job is to
+   fill a gap was manufacturing one. Out of flow it costs no height at all and
+   occupies emptiness that was already on the page: the band to the right of the
+   Surfaces heading, which measures roughly 729x233 at 1440.
+
+   Right offset is a percentage of the section, so it holds the same optical
+   position as the wrap grows rather than drifting toward the window edge. */
+#surfaces { position: relative; }
+.sun {
+  position: absolute;
+  top: clamp(-8px, 0.4vw, 14px);
+  right: clamp(16px, 6%, 120px);
+  width: clamp(150px, 15.5vw, 238px);
+  margin: 0;
+  z-index: 0;
+  display: block;
+  pointer-events: none;
+  line-height: 0;
+}
+.sun img {
+  width: 100%;
+  height: auto;
+  display: block;
+  /* A shadow rather than a glow. The artwork is polished metal, and metal on a
+     black ground needs something under it or the dark half of every ray merges
+     into the page and the silhouette falls apart. */
+  /* The artwork is dark chrome, and dark chrome on a black ground loses its
+     modelling - the shadowed half of every ray disappears into the page. A
+     small lift brings the mid-tones back without touching the highlights. */
+  filter: brightness(1.18) contrast(1.04)
+          drop-shadow(0 12px 34px rgba(0, 0, 0, .8))
+          drop-shadow(0 2px 6px rgba(0, 0, 0, .6));
+}
+/* On a pale ground the highlights are what disappear, so the metal is darkened
+   and the shadow tightened to keep the edges of the rays legible. */
+:root[data-theme="light"] .sun img {
+  filter: brightness(.72) contrast(1.28)
+          drop-shadow(0 6px 18px rgba(18, 34, 56, .28));
+  opacity: 1;
+}
+/* Below this the heading runs the full width and there is no band beside it to
+   sit in, so the ornament returns to the flow as a small centred mark. A phone
+   page is long and narrow; 120px of ornament there is not the empty space this
+   was avoiding on the desktop layout. */
+@media (max-width: 900px) {
+  #surfaces { position: static; }
+  .sun {
+    position: static;
+    width: clamp(104px, 26vw, 140px);
+    margin: 0 auto clamp(18px, 4vw, 30px);
+  }
+}
 
 /* --- the statement ------------------------------------------------------- */
 
@@ -1058,21 +1566,111 @@ body {
 
 /* --- the claim trio ------------------------------------------------------ */
 
-.claims { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: clamp(24px, 3vw, 44px); }
-.claim { padding-top: 22px; border-top: var(--hair) solid var(--edge-2); }
+/* --- the three evidence states ------------------------------------------
+   Deliberately not three identical cards in an even row. The first is widest
+   because it carries the strongest claim; each card owns a state colour through
+   the --state variable, which drives its rail, its tag and its source line at
+   once; and the unavailable card is drawn hatched and dashed rather than
+   described as such in prose. */
+.claims {
+  display: grid;
+  grid-template-columns: 1.18fr 1fr 1fr;
+  gap: clamp(16px, 1.8vw, 26px);
+}
+.claim {
+  --state: var(--ink-faint);
+  position: relative;
+  padding: 24px 24px 22px 28px;
+  border: var(--hair) solid var(--edge);
+  border-radius: var(--r-card);
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .012));
+  transition: border-color 240ms ease, transform 240ms ease;
+}
+:root[data-theme="light"] .claim {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .82), rgba(255, 255, 255, .52));
+}
+/* the state rail */
+.claim::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--state);
+}
+.claim:hover { border-color: var(--edge-hi); transform: translateY(-3px); }
+
+.claim-enforced { --state: var(--ok); }
+.claim-observed { --state: var(--accent); }
+.claim-unknown  { --state: var(--violet); }
+
+/* Enforced is a continuous rail, because the control is continuous. Observed is
+   broken at the observation interval. Unavailable has more gap than rail. */
+.claim-observed::before {
+  background: repeating-linear-gradient(180deg, var(--state) 0 9px, transparent 9px 15px);
+}
+.claim-unknown::before {
+  background: repeating-linear-gradient(180deg, var(--state) 0 3px, transparent 3px 12px);
+}
+/* the hatching the copy used to have to describe */
+.claim-unknown {
+  border-style: dashed;
+  background: none;
+}
+.claim-unknown::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(-45deg,
+    transparent 0 7px, var(--violet-soft) 7px 8px);
+}
+
 .claim-tag {
   font-family: var(--font-data);
   font-size: 10px;
   letter-spacing: .16em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--state);
   display: block;
   margin-bottom: 14px;
 }
-.claim h3 { font-family: var(--font-display); font-size: 1.3rem; margin: 0 0 10px; font-weight: 700; letter-spacing: -.012em; }
-.claim p { margin: 0; color: var(--ink-dim); font-size: 14.5px; }
-.claim-unknown { border-top-style: dashed; }
-.claim-unknown .claim-tag { color: var(--accent); }
+.claim h3 {
+  font-family: var(--font-display);
+  font-size: 1.16rem;
+  margin: 0 0 9px;
+  font-weight: 700;
+  letter-spacing: -.012em;
+}
+.claim p { margin: 0; color: var(--ink-dim); font-size: 14px; }
+
+/* the source line, in the state colour, present even when it says there is none */
+.claim-src {
+  font-family: var(--font-data);
+  font-size: 9.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--state);
+  margin: 18px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.claim-src::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--state);
+  flex: none;
+}
+.claim-unknown .claim-src::before {
+  background: none;
+  border: 1px dashed var(--state);
+}
+
+@media (max-width: 900px) {
+  .claims { grid-template-columns: 1fr; }
+}
 
 /* ====================================================== the surface switch */
 
@@ -1192,9 +1790,11 @@ body {
   border: var(--hair) solid currentColor;
   white-space: nowrap;
 }
+/* Same three states as the cards below, same three colours. The table and the
+   cards are the same claim system seen twice, so they must not disagree. */
 .t-enf { color: var(--ok) }
-.t-obs { color: var(--ink-faint) }
-.t-unk { color: var(--accent); border-style: dashed }
+.t-obs { color: var(--accent) }
+.t-unk { color: var(--violet); border-style: dashed }
 .ev .unk .n { color: var(--ink-faint) }
 
 /* diff view */
@@ -1217,7 +1817,7 @@ body {
 }
 .cap-row:last-child { border-bottom: var(--hair) solid var(--edge); }
 .cap-row:hover { background: rgba(255,255,255,.015); }
-.cap-n { font-family: var(--font-data); font-size: 11px; letter-spacing: .16em; color: var(--accent); }
+.cap-n { font-family: var(--font-data); font-size: 11px; letter-spacing: .16em; color: var(--violet); }
 .cap-row h3 {
   font-family: var(--font-display);
   font-size: clamp(1.25rem, .95rem + 1vw, 1.7rem);
@@ -1227,7 +1827,7 @@ body {
   line-height: 1.16;
 }
 .cap-row p { margin: 0; color: var(--ink-dim); font-size: 15px; }
-.cap-row code { font-family: var(--font-data); font-size: 12.5px; color: var(--ink-2); }
+.cap-row code { font-family: var(--font-data); font-size: 12.5px; color: var(--accent); }
 
 /* --- stats band ----------------------------------------------------------- */
 
@@ -1237,6 +1837,9 @@ body {
   border-radius: var(--r-card);
   padding: 24px 22px;
 }
+/* The four counts are the page's only large numerals, so they get the same
+   brushed ramp as the wordmark rather than flat ink — it ties them to the mark
+   and separates them from the prose numerals elsewhere. */
 .stat b {
   display: block;
   font-family: var(--font-display);
@@ -1245,6 +1848,18 @@ body {
   letter-spacing: -.03em;
   line-height: 1;
   margin-bottom: 10px;
+  background: linear-gradient(180deg,
+    var(--silver-1) 0%, var(--silver-2) 38%, var(--silver-3) 62%, var(--silver-4) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* The zero is the claim the whole page rests on, so it is the one figure drawn
+   in the enforced green rather than in metal. */
+.stat:nth-child(3) b {
+  background: none;
+  -webkit-text-fill-color: var(--ok);
+  color: var(--ok);
 }
 .stat span { color: var(--ink-dim); font-size: 13.5px; display: block; }
 .stat em { font-style: normal; color: var(--ink-faint); font-size: 11.5px; font-family: var(--font-data); display: block; margin-top: 8px; }
@@ -1273,42 +1888,42 @@ body {
 .build .req { font-family: var(--font-data); font-size: 11px; color: var(--ink-faint); }
 .build .btn { margin-top: 16px; justify-content: center; font-size: 13px; padding: 9px 14px; }
 
-.notice {
-  border: var(--hair) solid var(--accent);
-  background: var(--accent-soft);
-  border-radius: var(--r-card);
-  padding: 18px 22px;
-  color: var(--ink-2);
-  font-size: 14.5px;
-  max-width: 68ch;
-  margin: 0 0 40px;
-}
-.notice b { color: var(--ink); font-weight: 600; }
-
 /* --- closing -------------------------------------------------------------- */
 
-.closing { text-align: center; padding: var(--sec) 0; }
+/* The bottom padding was a full --sec (up to 92px) on top of the footer's own
+   44px top padding, which read as a hole between the buttons and the rules. */
+.closing { text-align: center; padding: 0 0 clamp(28px, 3.4vw, 52px); }
 .closing .sec-h { margin-inline: auto; }
 .closing .sec-lede { margin-inline: auto; margin-bottom: 34px; }
 .closing .cta-row { justify-content: center; }
 
 /* --- footer --------------------------------------------------------------- */
 
-.foot { border-top: var(--hair) solid var(--edge); padding: 52px 0 60px; }
-.foot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 32px; margin-bottom: 42px; }
+.foot { border-top: var(--hair) solid var(--edge); padding: 40px 0 26px; }
+/* align-items:start matters more than it looks. The credit column is the tall
+   one — a logo plus its lines — and without it the three link columns stretched
+   to match, which is where the band of empty space under them came from. */
+.foot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  align-items: start;
+  gap: 30px 32px;
+  margin-bottom: 28px;
+}
 .foot h4 {
   font-family: var(--font-data);
   font-size: 10px;
   letter-spacing: .16em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--violet);
   margin: 0 0 14px;
   font-weight: 400;
 }
 .foot ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
 .foot a { color: var(--ink-2); text-decoration: none; font-size: 14.5px; transition: color 160ms ease; }
 .foot a:hover { color: var(--accent); }
-.foot dd { margin: 0 0 9px; font-size: 14.5px; color: var(--ink-2); }
+.foot dl { margin: 0; }
+.foot dd { margin: 0; font-size: 14.5px; color: var(--ink-2); }
 .foot-base {
   display: flex;
   gap: 18px;
@@ -1325,18 +1940,6 @@ body {
 
 /* --- sample marker -------------------------------------------------------- */
 
-.sample-strip {
-  position: relative;
-  z-index: 41;
-  font-family: var(--font-data);
-  font-size: 10.5px;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--on-accent);
-  background: var(--accent);
-  padding: 8px var(--gutter);
-  text-align: center;
-}
 
 /* theme toggle */
 .theme-btn {
@@ -1356,8 +1959,17 @@ body {
 
 /* --- responsive ----------------------------------------------------------- */
 
+/* Below this the one-screen hero cannot be kept honestly: there is not enough
+   height for the headline, the lede, the actions, the terminal card and a
+   portrait figure at once, and forcing it would only crush the type. Let it
+   flow and scroll instead. */
+@media (max-height: 800px) and (max-width: 1200px) {
+  .hero { min-height: 0; }
+}
+
 @media (max-width: 980px) {
-  .hero { grid-template-columns: 1fr; }
+  .hero { min-height: 0; grid-template-columns: 1fr; }
+  .hero-plate { width: min(100%, 400px); height: auto; aspect-ratio: 1040 / 1272; }
   .plate-hero { order: -1; max-width: 440px; margin-inline: auto; }
   .split { grid-template-columns: 1fr; }
   .split .plate { max-width: 330px; margin-inline: auto; }
