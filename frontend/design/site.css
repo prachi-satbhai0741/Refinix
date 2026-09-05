@@ -30,7 +30,13 @@
   --ink:         #F4F5F7;
   --ink-2:       #D3D6DA;
   --ink-dim:     #9AA0A8;
-  --ink-faint:   #767C85;
+  /* Raised from #767C85, which measured 3.77:1 where it lands on the lightest
+     ground it actually gets — the composited rgb(34,34,35) of a nested card,
+     not the page ground. It carries file sizes, terminal comments, event
+     sources, the diff's context lines and the demo captions: 34 elements, all
+     small type, all below 4.5:1. The cool cast is kept; only the luminance
+     moves, so the tier still reads as a step below --ink-dim. */
+  --ink-faint:   #888E97;
 
   /* The metal itself: a brushed vertical ramp, highlight to shadow to
      highlight, shared by the wordmark, the section numerals and the stat
@@ -38,7 +44,11 @@
   --silver-1:    #FFFFFF;
   --silver-2:    #DCE1E6;
   --silver-3:    #9AA2AB;
-  --silver-4:    #5A616A;
+  /* Raised from #5A616A, which measured 3.21:1. These four are clipped to text
+     in .wordmark, .formula b and .stat b, so a "darkest silver" that no longer
+     needs to reach dark is the right trade — the ramp keeps its direction, it
+     just does not bottom out below what a reader can resolve. */
+  --silver-4:    #797F88;
 
   --glass:       rgba(255, 255, 255, .045);
   --glass-2:     rgba(255, 255, 255, .075);
@@ -66,7 +76,7 @@
 
   /* Brand orange is reserved for the Rokunin Sync mark and nothing else. */
   --brand:       #F08A24;
-  --danger:      #E28274;
+  --danger:      #CC6B7D;
 
   /* No atmosphere on the dark theme. The ground is black, full stop.
 
@@ -137,13 +147,15 @@
   --ok-soft:     rgba(30, 107, 79, .10);
 
   --brand:       #C96A0E;
-  --danger:      #A33528;
+  --danger:      #6E2230;
 
   /* On a pale ground the metal ramp has to run dark, or the wordmark clips to
      white on white. Same four stops, inverted in luminance. */
   --silver-1:    #5E666F;
   --silver-2:    #2B323A;
-  --silver-3:    #767E88;
+  /* Darkened from #767E88, which measured 3.63:1 on the light ground — that
+     was the value colouring the four tagline words in .formula b. */
+  --silver-3:    #616A74;
   --silver-4:    #171C22;
 
   --aura-1:      rgba(120, 168, 210, .34);
@@ -711,6 +723,27 @@ body {
   filter: brightness(.62) contrast(1.35) drop-shadow(0 1px 2px rgba(12, 17, 25, .35));
 }
 
+/* ...but NOT on the intro gate. `.intro` is `background: #000` in both themes —
+   it is a black curtain, not a page surface — so the light theme's two "pale
+   ground" adjustments are exactly wrong there. Applied, they darkened the mark
+   and ran the wordmark's dark ramp over black: the lockup measured 1.23:1 and
+   was effectively invisible in light mode, on the one screen every visitor
+   sees first.
+   The silver tokens resolve to their LIGHT values inside a light root, so the
+   metal-on-black ramp has to be written out here rather than referenced. */
+:root[data-theme="light"] .intro .lockup-mark {
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .8));
+}
+:root[data-theme="light"] .intro .wordmark {
+  background: linear-gradient(180deg,
+    #FFFFFF 0%, #E6ECF0 12%, #DCE1E6 26%, #9AA2AB 40%,
+    #797F88 49%, #757B84 51%,
+    #7C838C 60%, #B6BFC6 74%, #F4F7F9 88%, #A9B2BA 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .28)) drop-shadow(0 3px 10px rgba(0, 0, 0, .85));
+}
+
 .intro-mark {
   position: absolute;
   z-index: 3;
@@ -730,10 +763,19 @@ body {
   line-height: 1;
   margin: 0;
   white-space: nowrap;
+  /* NARROWED. Clipped-to-text gradients are still text, and every band of a
+     letterform has to be readable — not just the dominant one. The old ramp
+     ran its fold down to #262C32, which measures 1.43:1 on this ground: the
+     middle of every glyph was a band you could not read. The fold is kept,
+     just shallower — #757B84 at the crease, which is 4.72:1. It reads as
+     brushed aluminium now rather than dark steel, which is the cost.
+
+     Floor for this ground is L >= 0.1847, i.e. about #777 in luminance. Any
+     stop darker than that fails 4.5:1, so nothing here goes below #757B84. */
   background: linear-gradient(180deg,
     var(--silver-1) 0%, #E6ECF0 12%, var(--silver-2) 26%, var(--silver-3) 40%,
-    var(--silver-4) 49%, #262C32 51%,
-    #6E777F 60%, #B6BFC6 74%, #F4F7F9 88%, #A9B2BA 100%);
+    var(--silver-4) 49%, #757B84 51%,
+    #7C838C 60%, #B6BFC6 74%, #F4F7F9 88%, #A9B2BA 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -742,10 +784,14 @@ body {
 /* A pale ground cannot take a highlight-led ramp — the top half of the letters
    would clip to white on white — so the light theme runs the metal dark and
    drops the glow that only reads against black. */
+/* Narrowed the same way, in the other direction: on a pale ground the ceiling
+   is what fails, not the floor. #79818A measured 3.48:1 and #6B737C 4.24:1, so
+   the ramp's two lightest bands were the unreadable ones. Ceiling here is
+   L <= 0.156; nothing goes above #626A74. */
 :root[data-theme="light"] .wordmark {
   background: linear-gradient(180deg,
-    #6B737C 0%, #2B323A 22%, #171C22 48%,
-    #3D444C 54%, #79818A 76%, #2E353D 100%);
+    #5C646E 0%, #2B323A 22%, #171C22 48%,
+    #3D444C 54%, #626A74 76%, #2E353D 100%);
   -webkit-background-clip: text;
   background-clip: text;
   filter: none;
