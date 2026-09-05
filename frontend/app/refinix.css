@@ -303,16 +303,76 @@
 
 /* ---- the + menu ------------------------------------------------------ */
 
+/* ---- composer bar rhythm ----------------------------------------------
+ * Everything in this row arrived at a different height — the + button at 30px,
+ * the mode/model/context pills at 27px, Send and Stop at 33px — which reads as
+ * three rows of controls stacked into one. They now share a 30px baseline.
+ *
+ * Shape stays different on purpose, and the difference means something:
+ *   pill (--radius-pill)  a setting you are choosing — access mode, model,
+ *                         context, which project
+ *   button (--radius)     an action you are taking — Propose, Send, Stop
+ * So the row scans as "settings on the left, actions on the right" rather than
+ * as a bag of controls. */
+.composer-bar > .round-btn,
+.composer-bar > .mode-pill,
+.composer-bar > .model-pill,
+.composer-bar > .context-meter,
+.project-row > .project-chooser,
+.project-row > .project-switch {
+  min-height: 30px;
+}
+
+/* .btn sets its height through vertical padding, so a min-height alone cannot
+   bring it down to the row. Height is pinned and the label centred instead. */
+.composer-bar > .btn {
+  height: 30px;
+  padding-block: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Secondary prose inside a turn: the qualification that follows a statement.
+   Quieter than the paragraph above it, but still body copy — .lbl is a
+   micro-label at 10px uppercase mono and a whole sentence set in it is not
+   something anyone reads. The distinction is worth keeping sharp, because
+   .lbl marks machine-side labels everywhere else in this UI. */
+.prose-note {
+  margin: .6em 0 0;
+  font-size: .92em;
+  line-height: 1.55;
+  color: var(--prose-muted);
+}
+.prose-note strong { color: var(--prose-text); font-weight: 600; }
+
+/* ---- floating surfaces ------------------------------------------------
+ * One treatment for everything that floats over the conversation: the + menu
+ * and its mode/file variants, the model and context popovers, and the
+ * conversation row menu. They arrived from three different places with three
+ * different looks — 6px and 13px radii, two hand-written shadows, and two
+ * different border tokens — so a menu and a popover opened from the same
+ * composer did not look related.
+ *
+ * These are exactly the surfaces app.css calls glass: they float over the
+ * canvas with the page showing past their edges. So they take the same glass
+ * the dialogs and the composer box take, rather than an opaque panel colour. */
+.plus-menu,
+.model-popover,
+.row-menu {
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-lg);
+  background: var(--glass-fill), var(--glass-base);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-hi), var(--glass-shadow);
+}
+
 .plus-menu {
   position: fixed;
   z-index: 60;
   min-width: 15rem;
   max-width: 22rem;
   padding: var(--sp-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-raised);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
   display: grid;
   gap: 2px;
 }
@@ -394,7 +454,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-data);   /* --font-mono is not a token in this system */
   font-size: 12px;
   color: var(--text);
   user-select: all;
@@ -518,15 +578,12 @@
   text-transform: uppercase;
 }
 
+/* Shares the floating-surface treatment above; only its box is set here. */
 .model-popover {
   position: fixed;
   z-index: 60;
   width: min(22rem, 90vw);
   padding: var(--sp-4);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-raised);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
   display: grid;
   gap: var(--sp-3);
 }
@@ -535,7 +592,7 @@
   margin: 0;
   font-size: 12px;
   color: var(--text-faint);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-data);   /* --font-mono is not a token in this system */
 }
 
 .mp-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
@@ -553,9 +610,14 @@
   cursor: pointer;
 }
 
+/* --signal, not --st-enforced. Green in this palette means one thing only: a
+   named control is active, or a step completed. A reasoning toggle being on is
+   neither — it is a live setting, which is exactly what the sky accent is for.
+   Spending green here would make "reasoning is on" look like an enforcement
+   claim, which is the one confusion tokens.css exists to prevent. */
 .mp-switch[aria-checked="true"] {
-  border-color: var(--st-enforced);
-  background: var(--st-enforced);
+  border-color: var(--signal);
+  background: var(--signal);
   color: var(--text-invert);
 }
 
@@ -607,7 +669,7 @@
   margin: 0;
   font-size: 12px;
   color: var(--text);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-data);   /* --font-mono is not a token in this system */
 }
 
 /* Diffs stay square and scroll inside themselves; the page never scrolls
@@ -620,7 +682,7 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-data);
   background: var(--surface-sunken);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-data);   /* --font-mono is not a token in this system */
   font-size: 11.5px;
   line-height: 1.55;
   white-space: pre;

@@ -961,3 +961,14 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Fix everything found; do not come back with questions.
 - follow_up_to: [UP-20260905-004](#up-20260905-004)
 - linked_changes: [AC-20260905-005](agentchangelog.md#ac-20260905-005)
+
+<a id="up-20260905-006"></a>
+## UP-20260905-006 — Bring the new Code and composer surfaces onto our design system
+- date: 2026-09-05
+- tags: refinix, design-integration, code-surface, composer, parallel-work
+- aliases: codex implemented app integration, perform design beauty changes only, integrate his buttons workflow and logic with our ui, dont change any logic
+- paths: frontend/app/
+- summary: A parallel execution landed the Code surface, the model and context controls and the access-mode selector as working UI. Requester asked for presentation-only work on top of it — no logic, no button behaviour, no code changes — bringing those new controls onto the design system built in this session.
+- constraints: Design and appearance only. Do not change logic, button wiring or behaviour.
+- follow_up_to: [UP-20260905-005](#up-20260905-005)
+- linked_changes: [AC-20260905-006](agentchangelog.md#ac-20260905-006)
