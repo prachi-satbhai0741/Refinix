@@ -17,9 +17,6 @@ Requires=k3s.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# The NodePort stays bound to loopback, so wait for that listener rather than
-# for a LAN one that must never appear.
-ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do ss -ltn "sport = :30443" | grep -q 127.0.0.1 && exit 0; sleep 2; done; echo "the loopback NodePort never appeared" >&2; exit 1'
 ExecStart=/usr/local/lib/aegisforge/aegisforge-guard.sh apply worker
 ExecStop=/usr/local/lib/aegisforge/aegisforge-guard.sh remove worker
 

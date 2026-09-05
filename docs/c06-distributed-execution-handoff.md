@@ -183,19 +183,24 @@ sudo ss -ltn 'sport = :30443'
 grep -n 'nodeport-addresses' /etc/rancher/k3s/config.yaml
 ```
 
-**Expected:** a listener on `127.0.0.1:30443` and nothing else, and
-`nodeport-addresses=127.0.0.1/32` unchanged from C05. **If you are ever told to
-widen this to a subnet, that instruction is wrong** — an offline check in
+**Expected:** no listener on a LAN address, and
+`nodeport-addresses=127.0.0.1/32` unchanged from C05. K3s may implement the
+NodePort with packet rules rather than a process socket, so an empty `ss` result
+is valid; the TLS request below is the functional proof. **If you are ever told
+to widen this to a subnet, that instruction is wrong** — an offline check in
 `deploy/k3s/host/test_guard.py` fails the repository if this document says
 otherwise.
 
 **Prove TLS, from the node itself:**
 
 ```bash
-TOKEN=$(sudo k3s kubectl -n aegisforge get secret worker-credential \
-  -o jsonpath='{.data.token}' | base64 -d)
-curl -sS --cacert /etc/aegisforge/tls/tls.crt --resolve WORKER_IP:30443:127.0.0.1 \
-  -H "Authorization: Bearer $TOKEN" -H "X-AegisForge-Contract: 1.0" \
+{
+  printf 'Authorization: Bearer '
+  sudo k3s kubectl -n aegisforge get secret worker-credential \
+    -o jsonpath='{.data.token}' | base64 -d
+  printf '\nX-AegisForge-Contract: 1.0\n'
+} | sudo curl -sS --cacert /etc/aegisforge/tls/tls.crt \
+  --resolve WORKER_IP:30443:127.0.0.1 -H @- \
   "https://WORKER_IP:30443/v1/health" | head -c 400; echo
 ```
 
@@ -277,8 +282,9 @@ sudo ss -ltn 'sport = :30443'
 ```
 
 **Expected:** two IPv4 rules tagged `aegisforge-c06-worker` — an `ACCEPT` from
-`MAC_IP/32` above a `DROP` — one IPv6 `DROP`, and listeners on both
-`127.0.0.1:30443` and `WORKER_IP:30443`.
+`MAC_IP/32` above a `DROP` — one IPv6 `DROP`, and a listener on
+`WORKER_IP:30443`. The loopback NodePort may be implemented by packet rules and
+therefore absent from `ss`; step D already proved that path with TLS.
 
 **From the Mac:**
 

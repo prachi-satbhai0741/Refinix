@@ -1097,3 +1097,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Source consistency only; the Ubuntu rollout is the authoritative check.
 - follow_up_to: [UP-20260905-012](#up-20260905-012)
 - linked_changes: [AC-20260905-013](agentchangelog.md#ac-20260905-013)
+
+<a id="up-20260905-014"></a>
+## UP-20260905-014 — Remove the invalid NodePort listener precheck
+- date: 2026-09-05
+- status: implemented; Ubuntu guard installation pending
+- scope: c06, k3s, nodeport, systemd, handoff
+- tags: c06, k3s, nodeport, systemd, socket-proxy, runtime-evidence
+- aliases: empty ss, packet-rule NodePort, guard precheck timeout, TLS curl root certificate
+- paths: deploy/k3s/host/aegisforge-worker-guard.service, deploy/k3s/host/test_guard.py, docs/c06-distributed-execution-handoff.md, agent-memory/
+- summary: Remove a worker-guard startup check that incorrectly assumes a K3s NodePort appears as a process listener.
+- request: Continue C06 after loopback TLS succeeded while `ss` correctly showed no listener for the packet-rule NodePort.
+- constraints: Preserve the loopback-only K3s setting, guard-before-socket dependency, pinned TLS proof, and single-Mac firewall restriction.
+- acceptance: The guard can start on the observed K3s implementation without weakening its firewall dependency, and the handoff treats TLS as functional proof.
+- verification_authorization: Source consistency only; the Ubuntu systemd activation is the authoritative check.
+- follow_up_to: [UP-20260905-013](#up-20260905-013)
+- linked_changes: [AC-20260905-014](agentchangelog.md#ac-20260905-014)

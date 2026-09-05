@@ -1537,3 +1537,17 @@ work. No repository file change means no changelog entry.
 - changes: Added pod-level `fsGroup: 10001`, matching the repository's Redis secret-volume pattern, and a focused assertion pairing it with secret mode `0440`.
 - verification: Requester logs proved `PermissionError` at Uvicorn `load_cert_chain`; pod events proved the pinned C06 image was present. `git diff --check` passed locally; no test or deployment was run by Codex.
 - remaining: Push and pull the two-file source fix plus ledger entries, rerun the manifest suite, and reapply only `20-worker.yaml`. Keep the executor undeployed until pairing produces its relationship ID.
+
+<a id="ac-20260905-014"></a>
+## AC-20260905-014 — Worker guard accepts packet-rule NodePort implementations
+- prompt_id: [UP-20260905-014](userprompts.md#up-20260905-014)
+- date: 2026-09-05
+- status: implemented; Ubuntu guard installation pending
+- scope: c06, k3s, nodeport, systemd, handoff
+- tags: c06, k3s, nodeport, systemd, socket-proxy, runtime-evidence
+- aliases: empty ss, packet-rule NodePort, guard precheck timeout, TLS curl root certificate
+- paths: deploy/k3s/host/aegisforge-worker-guard.service, deploy/k3s/host/test_guard.py, docs/c06-distributed-execution-handoff.md, agent-memory/
+- summary: Deleted the invalid `ss` listener wait while retaining the firewall guard as a hard dependency of the LAN socket.
+- changes: The worker guard now applies its scoped rules as soon as K3s is active. The handoff records that `ss` may be empty for a packet-rule NodePort, uses the successful TLS request as functional proof, reads the root-only certificate via root curl without exposing the token, and expects only the LAN proxy to appear as a process listener.
+- verification: Requester output showed empty `ss`, loopback-only K3s configuration, an authenticated pinned-TLS Node response, and plaintext rejection with exit 52. `git diff --check` passed locally; no systemd unit was installed or started by Codex.
+- remaining: Push and pull this correction, install the worker guard/proxy units with the observed addresses, then verify the rules, LAN listener and Mac-only reachability before pairing.
