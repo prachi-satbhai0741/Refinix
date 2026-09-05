@@ -5,7 +5,14 @@
 # rejects the Pod before any connection is attempted, and a "failure" would say
 # nothing about the network at all.
 #
+# Run this half FIRST: netpolicy-denied.yaml is only evidence of isolation once
+# this probe has proven the same Redis Service and the same mounted credential
+# work from a labelled Pod.
+#
 # Expect: RESULT=allowed-reached-redis, exit 0.
+# On this path a refusal is NOT a policy success. It stays RESULT=refused,
+# exit 9, because a rejected connection where the policy permits one means the
+# Service is unavailable — the opposite of the isolation the pair is testing.
 apiVersion: v1
 kind: Pod
 metadata:
