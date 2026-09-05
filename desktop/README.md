@@ -65,14 +65,19 @@ a runtime that was already running on the computer is left exactly as it was.
 
 ## The native bridge
 
-The page can reach six methods and nothing else: `progress`, `retry_startup`,
-`choose_files`, `open_state_folder`, `shell_info`, `quit`. None of them takes a
-filesystem path, a URL or a command from the page. `choose_files` opens the
-system picker, which a person has to act on, and reads the chosen bytes into
-the coordinator itself; the page never sees a path. `open_state_folder` opens
-one fixed directory and takes no argument. Model output rendered in the page
-therefore cannot read a file, run a command, or reach a path of its own
-choosing.
+The page can reach seven methods and nothing else: `progress`, `retry_startup`,
+`choose_files`, `choose_repository`, `open_state_folder`, `shell_info`, `quit`.
+None of them takes a filesystem path, a URL or a command from the page.
+`choose_files` opens the system picker, which a person has to act on, and reads
+the chosen bytes into the coordinator itself; the page never sees a path.
+`choose_repository` (Execution 2) opens the native *folder* dialog, takes no
+argument, and returns only an opaque repository id and display name — the
+canonical root stays inside the coordinator. There is deliberately no HTTP
+route anywhere that accepts a filesystem path, so a browser-only run says that
+connecting a folder needs the desktop app rather than offering a box to type a
+path into. `open_state_folder` opens one fixed directory and takes no argument.
+Model output rendered in the page therefore cannot read a file, run a command,
+or reach a path of its own choosing.
 
 ## State
 
@@ -84,6 +89,22 @@ execution:
 - `~/.aegisforge/attachments/` — files selected for a request, each stored
   under its attachment id, never under a name taken from the file;
 - `~/.aegisforge/desktop.lock` — the single-instance lock.
+
+Execution 3 adds one folder and more rows:
+
+- `~/.aegisforge/artifacts/` — documents Refinix generated. They stay here
+  until a recorded approval allows a copy out, and are written atomically
+  without ever overwriting an existing file.
+
+Extraction results, page text, the search index and artifact provenance are
+rows in the same database. A document's original bytes are never copied there;
+the attachment the user sent remains the only stored copy.
+
+Execution 2 adds coordinator-owned rows in the same database, not new folders:
+the per-model Reasoning choice, connected repository roots (never sent to a
+surface or a model), proposals with their diffs, approvals and the Code audit.
+A connected project is never copied into the database; only metadata and the
+proposed replacement text the workflow needs are stored.
 
 ## Setup handoff
 

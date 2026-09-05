@@ -86,8 +86,17 @@
                   aria-haspopup="menu" aria-expanded="false"
                   aria-label="Add files or choose a skill">+</button>
           <input class="visually-hidden" type="file" id="file-input" multiple>
+          <button class="context-meter" type="button" id="context-meter"
+                  aria-haspopup="dialog" aria-expanded="false" hidden>
+            <span id="context-figure">Context</span>
+          </button>
           <span class="lbl" id="send-hint">Runs on this computer</span>
           <div class="head-spacer"></div>
+          <button class="model-pill" type="button" id="model-pill"
+                  aria-haspopup="dialog" aria-expanded="false" hidden>
+            <span class="model-name" id="model-name">—</span>
+            <span class="model-reasoning" id="model-reasoning" hidden>Reasoning</span>
+          </button>
           <button class="btn btn-stop" type="button" id="cancel-btn" hidden>Stop</button>
           <button class="btn btn-primary" type="submit" id="send">Send</button>
         </div>

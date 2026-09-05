@@ -27,7 +27,7 @@ print 'Building the app; detailed output is saved in desktop/build.log.'
 # This directory contains only this script's generated build intermediates.
 rm -rf -- "$REFINIX_REPO/desktop/build" "$REFINIX_REPO/desktop/dist/Refinix.app"
 if ! "$REFINIX_ENV" desktop/setup_py2app.py py2app \
-  --bdist-base desktop/build --dist-dir desktop/dist > desktop/build.log 2>&1; then
+  --bdist-base "$REFINIX_REPO/desktop/build" --dist-dir "$REFINIX_REPO/desktop/dist" > desktop/build.log 2>&1; then
   tail -n 50 desktop/build.log
   exit 1
 fi

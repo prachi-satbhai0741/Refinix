@@ -16,6 +16,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -44,12 +45,14 @@ class TestBundleContents(unittest.TestCase):
         shipped = {Path(f).resolve()
                    for _dest, files in self.ns["frontend_data_files"]()
                    for f in files}
-        development_only = {"fixture.html", "fixture.js", "test-conversations.cjs"}
+        development_only = {"fixture.html", "fixture.js"}
         for path in server.STATIC.rglob("*"):
             if not path.is_file() or path.name.startswith("."):
                 continue
-            if path.name in development_only:
-                self.assertNotIn(path.resolve(), shipped)
+            if path.name in development_only or path.suffix == ".cjs":
+                self.assertNotIn(path.resolve(), shipped,
+                                 f"{path.name} is a development tool and must "
+                                 "not be in the bundle")
                 continue
             self.assertIn(path.resolve(), shipped,
                           f"{path.name} is served but would not be in the bundle")
@@ -70,7 +73,7 @@ class TestBundleContents(unittest.TestCase):
         # Outside a bundle it still resolves to the working tree.
         self.assertEqual(server.static_root(), REPO / "frontend" / "app")
 
-    def test_modulegraph_receives_only_application_sources(self):
+    def test_staging_contains_only_application_sources(self):
         with tempfile.TemporaryDirectory() as folder:
             sources = self.ns["stage_application_sources"](Path(folder))
             files = {str(p.relative_to(sources)) for p in sources.rglob("*") if p.is_file()}
@@ -78,6 +81,28 @@ class TestBundleContents(unittest.TestCase):
                              "backend/contracts/v1.py", "desktop/shell.py"} <= files)
             self.assertTrue(all(p.endswith(".py") for p in files))
             self.assertFalse(any("test_" in p or "setup_" in p or "worker" in p for p in files))
+
+    def test_bundle_check_catches_loose_and_zipped_repository_files(self):
+        verify = self.ns["verify_application_contents"]
+        with tempfile.TemporaryDirectory() as folder:
+            bundle = Path(folder) / "Refinix.app"
+            library = bundle / "Contents" / "Resources" / "lib"
+            library.mkdir(parents=True)
+            archive = library / "python312.zip"
+            with zipfile.ZipFile(archive, "w") as files:
+                for name in ("backend/coordinator/server.pyc", "backend/contracts/v1.pyc", "desktop/shell.pyc"):
+                    files.writestr(name, b"synthetic")
+            verify(bundle)
+            leaked = library / "python3.12" / "backend" / "worker" / "app.py"
+            leaked.parent.mkdir(parents=True)
+            leaked.write_text("# synthetic unwanted worker")
+            with self.assertRaisesRegex(RuntimeError, "backend/worker/app.py"):
+                verify(bundle)
+            leaked.unlink()
+            with zipfile.ZipFile(archive, "a") as files:
+                files.writestr("backend/coordinator/__pycache__/runtime.cpython-314.pyc", b"synthetic")
+            with self.assertRaisesRegex(RuntimeError, "__pycache__"):
+                verify(bundle)
 
     def test_the_desktop_lock_includes_the_existing_backend_versions(self):
         lock = (REPO / "desktop" / "requirements-macos.lock").read_text()

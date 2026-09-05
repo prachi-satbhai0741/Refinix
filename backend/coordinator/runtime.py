@@ -27,6 +27,11 @@ MODEL = "qwen3.5:4b-q4_K_M"
 # worker keeps 4096 until it is measured at its own device checkpoint.
 NUM_CTX = 8192
 NUM_PREDICT = 2048
+# The safe default, not a prohibition. docs/model-catalog.md records why:
+# with reasoning on, this model spent the whole 128- and 512-token output
+# budget thinking and returned an empty answer. Chat now allows 2048, and the
+# user can turn reasoning on per model; a request that still ends with nothing
+# visible fails honestly rather than saving a blank reply.
 THINK = False
 KEEP_ALIVE = "10m"
 
@@ -176,20 +181,30 @@ def probe() -> dict:
     return state
 
 
-def stream_chat(messages: list[dict], *, should_cancel=None):
-    """Yield ('delta', text) then ('done', metrics).
+def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None = None,
+                model: str | None = None, num_predict: int | None = None):
+    """Yield ('delta', text), optionally ('thinking', text), then ('done', metrics).
+
+    `think` is the request-scoped reasoning choice and becomes Ollama's
+    top-level `/api/chat` field. It is snapshotted by the caller, so changing
+    the switch later cannot alter a request that is already running. No Qwen
+    `/think` or `/nothink` prompt suffix is used: this model documents
+    API-controlled thinking and does not support those Qwen 3 soft switches.
 
     `should_cancel` is polled between chunks, and also on its own thread by
     `_CancelWatch`, which aborts the connection when the stream stalls — without
-    it a cancel would wait out the whole request timeout. Raises
-    RuntimeUnavailable rather than returning a plausible-looking empty answer.
+    it a cancel would wait out the whole request timeout, and a quiet reasoning
+    period looks exactly like a stall. Raises RuntimeUnavailable rather than
+    returning a plausible-looking empty answer.
     """
+    reasoning = THINK if think is None else bool(think)
     payload = {
-        "model": MODEL, "messages": messages, "stream": True,
-        "think": THINK, "keep_alive": KEEP_ALIVE,
+        "model": model or MODEL, "messages": messages, "stream": True,
+        "think": reasoning, "keep_alive": KEEP_ALIVE,
         # Estimates select history; the runtime must reject real overflow.
         "truncate": False, "shift": False,
-        "options": {"num_ctx": NUM_CTX, "num_predict": NUM_PREDICT},
+        "options": {"num_ctx": NUM_CTX,
+                    "num_predict": NUM_PREDICT if num_predict is None else num_predict},
     }
     with _CancelWatch(None, should_cancel) as watch:
         try:
@@ -236,7 +251,13 @@ def _read_stream(resp, watch, should_cancel):
             if should_cancel is not None and should_cancel():
                 yield "cancelled", {}
                 return
-            chunk = (obj.get("message") or {}).get("content") or ""
+            message = obj.get("message") or {}
+            # Reasoning arrives on its own field. It is progress, never the
+            # answer: it is not collected, saved, searched, exported or shown.
+            reasoning = message.get("thinking") or ""
+            if reasoning:
+                yield "thinking", reasoning
+            chunk = message.get("content") or ""
             if chunk:
                 yield "delta", chunk
             if obj.get("done"):

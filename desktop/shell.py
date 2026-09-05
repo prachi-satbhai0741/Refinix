@@ -199,6 +199,24 @@ class Bridge:
             webview.OPEN_DIALOG, allow_multiple=True, file_types=DIALOG_FILE_TYPES)
         return self._app.take_files([Path(p) for p in (chosen or [])])
 
+    def choose_repository(self) -> dict:
+        """Open the native folder dialog and connect what the person chose.
+
+        The narrowest possible addition: it takes no argument, so the page
+        cannot supply a path, a picker default, a URL or a command. The chosen
+        folder is canonicalised and registered by the coordinator, and only an
+        opaque repository id and display name come back.
+        """
+        window = self._app.window
+        if window is None:
+            return {"error": "Connecting a folder needs the Refinix application "
+                             "window.", "code": "no_window"}
+        webview = _import_webview()
+        chosen = window.create_file_dialog(webview.FOLDER_DIALOG)
+        if not chosen:
+            return {"cancelled": True}
+        return self._app.connect_repository(str(chosen[0]))
+
     def open_state_folder(self) -> dict:
         """Reveal the fixed application folder. No argument, no other path."""
         import subprocess
@@ -348,6 +366,25 @@ class DesktopApp:
             else:
                 accepted.append(result["attachment"])
         return {"accepted": accepted, "rejected": rejected}
+
+    def connect_repository(self, selected: str) -> dict:
+        """Register a natively chosen folder. Never called with a page value."""
+        if self.startup is None:
+            return {"error": "Refinix is still starting.", "code": "starting"}
+        coordinator = self.startup.coordinator
+        if coordinator is None:
+            # This window is showing a coordinator another process owns. There
+            # is deliberately no HTTP route that accepts a filesystem path, so
+            # the folder cannot be handed across; say so rather than opening a
+            # second connection to the same database or adding that route.
+            return {"error": "This window is showing a Refinix coordinator that "
+                             "another process started. Quit that one and open "
+                             "Refinix again to connect a folder.",
+                    "code": "reused_coordinator"}
+        try:
+            return {"repository": coordinator.code.connect(selected)}
+        except Exception as exc:                       # noqa: BLE001
+            return {"error": str(exc), "code": getattr(exc, "code", "failed")}
 
     def _current_chat(self) -> str:
         """Ask the page which conversation the selection belongs to."""

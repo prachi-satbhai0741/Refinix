@@ -89,10 +89,43 @@ never overwrites or re-runs an earlier answer. No editing or branching.
 
 The offline-runtime invariant and `docs/security.md` §12 shape the surfaces:
 
-- Code renders **unavailable**, and shows no access-mode selector, because no
-  access mode is enforced. Document reading, document generation and document
-  search appear as skills whose state is **unavailable**; selecting one
-  disables Send rather than quietly answering as ordinary Chat.
+- Code connects one folder you choose in the native dialog, reads only the
+  files you select, and proposes whole-file replacements you review as a diff.
+  The access mode is enforced in [`policy.py`](policy.py) — one pure function
+  every repository operation passes through, not a check spread across HTTP
+  handlers. Reading the selection and sending it to the model are one action,
+  `repo.read_and_propose`, so one approval covers one immutable batch and the
+  audit records exactly how it was authorised. Creating, deleting and renaming
+  files, project commands, Git, installs and network enablement are denied in
+  **every** mode, including Full. The diff you review is complete: Apply writes
+  what it showed, or the proposal is refused.
+- Code needs descriptor-relative traversal to keep a folder bounded. Where an
+  operating system cannot provide it, the whole surface is unavailable —
+  listing and reading included — rather than falling back to a weaker check.
+  Chat is unaffected.
+- Document reading, search and generation are skills inside Chat. A skill
+  reads **only the attachments sent with its own request**; plain Chat still
+  reads nothing. `.txt`, `.md`, `.csv`, `.json` and `.docx` are read with the
+  standard library. PDF and OCR are **unavailable** here — no parser and no OCR
+  engine are installed — and the capability row names the missing prerequisite
+  rather than half-reading a file or inventing text for a scan.
+- Search is keyword matching over SQLite FTS5, described as such. Citations are
+  re-checked against the selected sources and their real pages; one that does
+  not resolve is shown as unresolved, never rendered as a reference.
+- `write-document` runs `inspection_report_to_approval_note` and produces a
+  real `.docx`, validated by reopening it. Generated documents stay in
+  `~/.aegisforge/artifacts/` until a recorded one-shot approval, bound to the
+  file's digest, allows a copy out.
+- `/v1/context` reports what the next request would cost, from `context.py` —
+  the same estimator that decides what is actually sent. It is an estimate from
+  character counts, not the model's tokenizer, and it says so.
+- Reasoning is a per-model switch in the composer, off by default. It sets
+  Ollama's top-level `think` field for that one request, and the value is
+  snapshotted on the attempt, so changing the switch cannot alter work already
+  running. A model's own reasoning text is progress, never the answer: it is
+  not collected, saved, searched or exported. If reasoning consumes the reply
+  budget without producing visible content, the attempt fails with that named
+  reason and no blank assistant message is saved.
 - A file attached to a request is stored under `~/.aegisforge/attachments/` and
   listed beside the request. **Nothing reads it.** Its contents never enter the
   prompt, and the interface says so on the request itself and in the export.
@@ -143,8 +176,11 @@ happened.
 
 ## What this does not do
 
-No worker, no pairing, no cluster, no document understanding, no Code workflow,
-no access-mode enforcement, no approvals, no Proof Cards, and no egress
-evidence. The browser making no external request
+No worker, no pairing, no cluster, no document understanding, no sandboxed
+execution, no Proof Cards, and no egress evidence. Code edits the contents of
+existing text files only; it cannot create, delete or rename a file, run a
+project command, use Git, install anything or enable a network. A structurally
+valid proposal proves the workflow ran — it is not evidence that the change is
+correct. The browser making no external request
 is a property of these pages — it is **not** zero-egress proof, which needs the
 network controls and independent observation at C11.

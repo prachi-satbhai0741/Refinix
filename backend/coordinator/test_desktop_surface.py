@@ -136,7 +136,8 @@ class TestSelectionTravelsWithTheRequest(Base):
         self.attach("secret-contents.txt", b"THE MODEL MUST NOT SEE THIS")
         seen = {}
 
-        def fake_stream(messages, *, should_cancel=None):
+        def fake_stream(messages, *, should_cancel=None, think=None,
+                        model=None, num_predict=None):
             seen["messages"] = messages
             yield "delta", "an answer"
             yield "done", {"done_reason": "stop"}
@@ -164,11 +165,14 @@ class TestSelectionTravelsWithTheRequest(Base):
 
 
 class TestCapabilities(Base):
-    def test_nothing_is_available_when_the_runtime_did_not_answer(self):
+    def test_runtime_free_document_search_stays_available_when_inference_is_down(self):
         rows = self.c.capabilities({"reachable": False, "models": []})
-        chat = next(r for r in rows if r["id"] == "chat")
-        self.assertEqual(chat["state"], "blocked")
-        self.assertTrue(all(r["state"] != "available" for r in rows))
+        by_id = {row["id"]: row for row in rows}
+        self.assertEqual(by_id["chat"]["state"], "blocked")
+        self.assertEqual(by_id["code"]["state"], "blocked")
+        self.assertEqual(by_id["read-document"]["state"], "blocked")
+        self.assertEqual(by_id["write-document"]["state"], "blocked")
+        self.assertEqual(by_id["search-documents"]["state"], "available")
 
     def test_a_missing_model_blocks_chat_with_the_exact_command(self):
         rows = self.c.capabilities({"reachable": True, "models": ["other:1b"]})
@@ -176,24 +180,36 @@ class TestCapabilities(Base):
         self.assertEqual(chat["state"], "blocked")
         self.assertEqual(chat["setup"], f"ollama pull {runtime.MODEL}")
 
-    def test_unbuilt_capabilities_stay_unavailable_even_when_everything_is_ready(self):
+    def test_execution_three_document_skills_are_available_when_ready(self):
         rows = self.c.capabilities({"reachable": True, "models": [runtime.MODEL]})
         by_id = {r["id"]: r for r in rows}
         self.assertEqual(by_id["chat"]["state"], "available")
-        for unbuilt in ("read-document", "write-document", "search-documents", "code"):
-            self.assertEqual(by_id[unbuilt]["state"], "unavailable")
+        self.assertEqual(by_id["code"]["state"], "available")
+        for skill in ("read-document", "write-document", "search-documents"):
+            self.assertEqual(by_id[skill]["state"], "available")
 
-    def test_the_code_capability_never_claims_an_enforced_access_mode(self):
+    def test_the_code_capability_names_what_it_still_cannot_do(self):
+        """Execution 2 enforces the access modes, so the old 'no enforcement'
+        wording is gone. What replaces it must still be honest about the
+        boundary rather than implying a general development platform."""
         rows = self.c.capabilities({"reachable": True, "models": [runtime.MODEL]})
         code = next(r for r in rows if r["id"] == "code")
-        self.assertIn("no access mode is", code["detail"])
+        self.assertEqual(code["state"], "available")
+        for missing in ("Creating", "deleting", "renaming", "commands", "Git"):
+            self.assertIn(missing, code["detail"])
+
+    def test_code_is_blocked_rather_than_available_without_the_runtime(self):
+        rows = self.c.capabilities({"reachable": False, "models": []})
+        code = next(r for r in rows if r["id"] == "code")
+        self.assertEqual(code["state"], "blocked")
 
 
 class TestStopBehaviour(Base):
     """The Stop path, exercised end to end with a synthetic runtime."""
 
     def _stalling_stream(self, delivered, stalled):
-        def stream(messages, *, should_cancel=None):
+        def stream(messages, *, should_cancel=None, think=None,
+                   model=None, num_predict=None):
             yield "delta", "partial answer"
             delivered.set()
             # From here the runtime produces nothing at all, the way a wedged

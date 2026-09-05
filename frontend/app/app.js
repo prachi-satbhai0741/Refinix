@@ -153,7 +153,12 @@ function renderLife(current) {
   });
 }
 
-function turn(role, text, attachments, plain) {
+/* Render one turn into `host`, which defaults to the live thread.
+ *
+ * The detached-host argument is what makes the repair possible: openChat()
+ * builds the whole replacement view off-screen and commits it in one step, so
+ * a failure part-way through can never leave a cleared pane behind. */
+function turn(role, text, attachments, plain, host, skill, artifacts) {
   const article = document.createElement('article');
   article.className = `turn turn-${role === 'user' ? 'user' : 'agent'}`;
   const box = document.createElement('div');
@@ -162,7 +167,19 @@ function turn(role, text, attachments, plain) {
     box.textContent = text;
   } else {
     box.dataset.raw = text;          // literal source, used for copy and re-render
-    renderMarkdown(box, text);
+    // One formatter defect must cost one message's formatting, not the
+    // conversation. The fallback is textContent — never innerHTML.
+    try {
+      renderMarkdown(box, text);
+    } catch (err) {
+      box.replaceChildren();
+      box.textContent = text;
+      const note = document.createElement('p');
+      note.className = 'lbl format-fallback';
+      note.textContent = 'Formatting unavailable — shown as plain text';
+      box.append(note);
+      console.error('markdown render failed for one message:', err.message);
+    }
   }
   article.append(box);
   if (attachments && attachments.length) {
@@ -173,10 +190,24 @@ function turn(role, text, attachments, plain) {
     article.append(list);
     const note = document.createElement('p');
     note.className = 'lbl';
-    note.textContent = attachments.length === 1
-      ? 'This file was saved with your request. Refinix cannot read documents yet, so the reply came from your text alone.'
-      : 'These files were saved with your request. Refinix cannot read documents yet, so the reply came from your text alone.';
+    // What actually happened to these files, per request. Plain Chat still
+    // reads nothing; a document skill reads only its own request's files.
+    const capability = skill && capabilities.find((c) => c.id === skill);
+    note.textContent = capability
+      ? `Read by ${capability.name} for this request.`
+      : (attachments.length === 1
+        ? 'Saved with your request. Plain Chat does not read attachments — '
+          + 'choose a document skill with + to have a file read.'
+        : 'Saved with your request. Plain Chat does not read attachments — '
+          + 'choose a document skill with + to have them read.');
     article.append(note);
+  }
+  if (artifacts && artifacts.length) {
+    const list = document.createElement('ul');
+    list.className = 'turn-attachments';
+    list.setAttribute('aria-label', 'Documents Refinix produced');
+    for (const artifact of artifacts) list.append(artifactRow(artifact));
+    article.append(list);
   }
   if (role !== 'user' && !plain) {
     const bar = document.createElement('div');
@@ -195,8 +226,8 @@ function turn(role, text, attachments, plain) {
     bar.append(copy);
     article.append(bar);
   }
-  $('thread').append(article);
-  maybeFollow();
+  (host || $('thread')).append(article);
+  if (!host) maybeFollow();
   return box;
 }
 
@@ -343,6 +374,163 @@ async function refreshAttempt() {
   ]);
 }
 
+/* ---- composer sizing and the context estimate ------------------------- */
+
+/* Both composers start one line tall, grow with the text, stop at a maximum
+ * and scroll inside themselves after that. Height is set from scrollHeight
+ * rather than by counting characters, so wrapped lines, pasted blocks and
+ * different fonts all measure correctly. */
+const COMPOSER_MIN_ROWS = 1;
+const COMPOSER_MAX_PX = 260;
+
+function autogrow(input) {
+  if (!input) return;
+  // Collapse first: scrollHeight only shrinks if the box is allowed to.
+  input.style.height = 'auto';
+  const wanted = input.scrollHeight;
+  const capped = Math.min(wanted, COMPOSER_MAX_PX);
+  input.style.height = `${capped}px`;
+  input.style.overflowY = wanted > COMPOSER_MAX_PX ? 'auto' : 'hidden';
+}
+
+/* Re-measure after anything that changes the text or the available width:
+ * a restored draft, a switched chat or project, an attachment chip appearing,
+ * a send that empties the box, and a window resize. */
+function wireAutogrow(input) {
+  if (!input) return;
+  input.rows = COMPOSER_MIN_ROWS;
+  input.style.resize = 'none';          // sizing is automatic, not dragged
+  input.addEventListener('input', () => autogrow(input));
+  window.addEventListener('resize', () => autogrow(input));
+  autogrow(input);
+}
+
+/* ---- context indicator ------------------------------------------------ */
+
+/* The figure comes from the coordinator, which uses context.py — the same code
+ * that decides what actually gets sent. There is deliberately no second
+ * estimator in this file: two counters would eventually disagree, and the one
+ * on screen would be the wrong one. */
+let contextState = null;
+let contextTimer = null;
+let contextPopover = null;
+
+function shortTokens(value) {
+  if (!Number.isFinite(value)) return '—';
+  return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
+}
+
+function renderContextMeter() {
+  const meter = $('context-meter');
+  if (!meter) return;
+  if (!contextState) { meter.hidden = true; return; }
+  meter.hidden = false;
+  $('context-figure').textContent =
+    `Context ≈ ${shortTokens(contextState.used_tokens)}`
+    + ` / ${shortTokens(contextState.budget_tokens)}`;
+  meter.dataset.level = contextState.level;
+  meter.setAttribute('aria-label', contextSentence(contextState));
+  meter.title = contextSentence(contextState);
+}
+
+function contextSentence(state) {
+  if (!state.newest_fits) {
+    return 'This message is too long to send on its own. Shorten it, or split '
+      + 'it into two messages.';
+  }
+  if (state.omitted_count) {
+    return `${state.omitted_count} earlier message(s) will not be sent with this `
+      + 'request. They stay saved in this conversation. Start a new chat to give '
+      + 'the model a fresh window, and carry over the details it still needs.';
+  }
+  if (state.level === 'near') {
+    return 'This conversation is close to the amount the model can be given at '
+      + 'once. Soon, earlier messages will stop being sent — starting a new chat '
+      + 'with a short summary keeps the relevant context explicit.';
+  }
+  return `About ${state.used_tokens} of ${state.budget_tokens} tokens of room `
+    + 'used. This is an estimate, not an exact count.';
+}
+
+async function refreshContext() {
+  const input = $('input');
+  if (!$('context-meter')) return;
+  try {
+    contextState = await api('/v1/context', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, draft: input ? input.value : '' }),
+    });
+  } catch (err) {
+    contextState = null;
+  }
+  renderContextMeter();
+}
+
+/* Typing should not send a request per keystroke. */
+function refreshContextSoon() {
+  clearTimeout(contextTimer);
+  contextTimer = setTimeout(refreshContext, 400);
+}
+
+function closeContextPopover(returnFocus) {
+  if (!contextPopover) return;
+  contextPopover.remove();
+  contextPopover = null;
+  const meter = $('context-meter');
+  if (meter) {
+    meter.setAttribute('aria-expanded', 'false');
+    if (returnFocus) meter.focus();
+  }
+}
+
+function openContextPopover() {
+  closeContextPopover(false);
+  const meter = $('context-meter');
+  if (!meter || !contextState) return;
+  const box = document.createElement('div');
+  box.className = 'model-popover context-popover';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', 'How much of the conversation fits');
+
+  const headline = document.createElement('p');
+  headline.className = 'mp-name';
+  headline.textContent = contextSentence(contextState);
+  box.append(headline);
+
+  const facts = document.createElement('dl');
+  facts.className = 'facts';
+  const rows = [
+    ['Estimated use', `${contextState.used_tokens} tokens`],
+    ['Room for the conversation', `${contextState.budget_tokens} tokens`],
+    ['Model window', `${contextState.context_window} tokens`],
+    ['Reserved for the reply', `${contextState.reply_allowance} tokens`],
+    ['How it is counted', contextState.counting_method],
+  ];
+  for (const [key, value] of rows) {
+    const div = document.createElement('div');
+    const dt = document.createElement('dt'); dt.textContent = key;
+    const dd = document.createElement('dd'); dd.textContent = value;
+    div.append(dt, dd);
+    facts.append(div);
+  }
+  box.append(facts);
+
+  const note = document.createElement('p');
+  note.className = 'mp-note';
+  note.textContent = contextState.policy
+    + ' The figure is an estimate from character counts, not the model’s own tokenizer.';
+  box.append(note);
+
+  document.body.append(box);
+  const rect = meter.getBoundingClientRect();
+  const height = box.getBoundingClientRect().height;
+  box.style.left = `${Math.round(Math.max(8, rect.left))}px`;
+  box.style.top = `${Math.round(Math.max(8, rect.top - height - 8))}px`;
+  contextPopover = box;
+  meter.setAttribute('aria-expanded', 'true');
+  box.querySelector('p').setAttribute('tabindex', '-1');
+}
+
 /* ---- capabilities, skills and attachments ---------------------------- */
 
 const NEW_DRAFT_SLOT = '__new__';
@@ -468,6 +656,119 @@ function refreshSend() {
   send.title = blocked ? `${skill.name} is not available yet.` : '';
 }
 
+/* ---- the model pill and its Reasoning switch -------------------------- */
+
+/* One approved model, one Boolean. The choice lives in coordinator state, so
+ * it survives a restart and a fallback port; browser storage is origin-scoped
+ * and would not. A submitted request snapshots the value server-side, so
+ * flipping the switch afterwards cannot change work already running. */
+let models = [];
+let modelPopover = null;
+
+function activeModel() {
+  return models[0] || null;
+}
+
+function renderModelPill() {
+  const pill = $('model-pill');
+  if (!pill) return;
+  const model = activeModel();
+  pill.hidden = !model;
+  if (!model) return;
+  $('model-name').textContent = model.id;
+  const mark = $('model-reasoning');
+  mark.hidden = !model.reasoning;
+  pill.setAttribute('aria-label', model.reasoning
+    ? `Model ${model.id}, reasoning on. Change it.`
+    : `Model ${model.id}, reasoning off. Change it.`);
+  pill.title = model.installed ? '' : 'This model is not installed on this computer.';
+}
+
+function closeModelPopover(returnFocus) {
+  if (!modelPopover) return;
+  modelPopover.remove();
+  modelPopover = null;
+  const pill = $('model-pill');
+  if (pill) {
+    pill.setAttribute('aria-expanded', 'false');
+    if (returnFocus) pill.focus();
+  }
+}
+
+function openModelPopover() {
+  closeModelPopover(false);
+  const model = activeModel();
+  const pill = $('model-pill');
+  if (!model || !pill) return;
+
+  const box = document.createElement('div');
+  box.className = 'model-popover';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', 'Model settings');
+
+  const name = document.createElement('p');
+  name.className = 'mp-name';
+  name.textContent = model.id;
+  box.append(name);
+
+  const row = document.createElement('div');
+  row.className = 'mp-row';
+  const label = document.createElement('span');
+  label.className = 'mp-label';
+  label.id = 'mp-reasoning-label';
+  label.textContent = 'Reasoning';
+  // A real switch: role, state and keyboard activation, not a styled div.
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'mp-switch';
+  toggle.setAttribute('role', 'switch');
+  toggle.setAttribute('aria-labelledby', 'mp-reasoning-label');
+  toggle.setAttribute('aria-checked', String(!!model.reasoning));
+  toggle.disabled = !model.installed;
+  const state = document.createElement('span');
+  state.className = 'mp-state';
+  state.textContent = model.reasoning ? 'On' : 'Off';
+  toggle.append(state);
+  row.append(label, toggle);
+  box.append(row);
+
+  const note = document.createElement('p');
+  note.className = 'mp-note';
+  note.textContent = model.installed
+    ? 'On lets the model work through the problem first. Slower, and it can use '
+      + 'the whole reply budget before answering.'
+    : 'This model is not installed on this computer, so reasoning cannot change.';
+  box.append(note);
+
+  toggle.addEventListener('click', async () => {
+    const next = toggle.getAttribute('aria-checked') !== 'true';
+    toggle.disabled = true;
+    try {
+      const saved = await api('/v1/model/reasoning', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: model.id, enabled: next }),
+      });
+      model.reasoning = saved.reasoning;
+      toggle.setAttribute('aria-checked', String(saved.reasoning));
+      state.textContent = saved.reasoning ? 'On' : 'Off';
+      renderModelPill();
+    } catch (err) {
+      notice('That setting could not be saved.', 'error', err.message);
+    } finally {
+      toggle.disabled = !model.installed;
+    }
+  });
+
+  document.body.append(box);
+  const rect = pill.getBoundingClientRect();
+  const height = box.getBoundingClientRect().height;
+  box.style.left = `${Math.round(Math.max(8, rect.right - box.offsetWidth))}px`;
+  box.style.top = `${Math.round(Math.max(8, rect.top - height - 8))}px`;
+  modelPopover = box;
+  pill.setAttribute('aria-expanded', 'true');
+  toggle.focus();
+}
+
 /* ---- attachments ------------------------------------------------------ */
 
 async function loadStaged() {
@@ -503,6 +804,85 @@ function attachmentRow(record, onRemove) {
     li.append(remove);
   }
   return li;
+}
+
+/* A generated document, with its export gated on a recorded approval. */
+function artifactRow(artifact) {
+  const li = document.createElement('li');
+  li.className = 'attachment artifact-row';
+  li.append(icon('document'));
+  const name = document.createElement('span');
+  name.className = 'a-name';
+  name.textContent = artifact.filename;      // text only, never markup
+  const meta = document.createElement('span');
+  meta.className = 'a-meta';
+  meta.textContent = `${bytes(artifact.byte_size)} · `
+    + `${artifact.validation.paragraphs} paragraphs`
+    + (artifact.state === 'exported' ? ' · saved' : '');
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'btn';
+  save.textContent = 'Save a copy';
+  save.onclick = () => exportArtifact(artifact);
+  li.append(name, meta, save);
+  return li;
+}
+
+/* Saving a copy outside Refinix's storage is a separate decision, recorded
+ * before a single byte leaves. Being generated is not permission to leave. */
+async function exportArtifact(artifact) {
+  let pending;
+  try {
+    pending = await api('/v1/artifact/approve-export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ artifact_id: artifact.artifact_id }),
+    });
+  } catch (err) {
+    notice('That document could not be prepared for saving.', 'error', err.message);
+    return;
+  }
+  const approval = pending.needs_approval;
+  const yes = await confirmDialog(
+    `Save ${artifact.filename} outside Refinix?`,
+    'The file leaves the folder Refinix manages and is no longer tracked by it. '
+    + 'Refinix drafted it from the documents you attached; check it before it '
+    + 'is used.', 'Save a copy');
+  if (!yes) {
+    await api('/v1/code/decision', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approval_id: approval.approval_id, approved: false }),
+    }).catch(() => {});
+    notice('Nothing was saved.', 'warn', 'A denied request stays denied.');
+    return;
+  }
+  try {
+    await api('/v1/code/decision', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approval_id: approval.approval_id, approved: true }),
+    });
+  } catch (err) {
+    notice('That approval could not be recorded.', 'error', err.message);
+    return;
+  }
+  try {
+    const response = await fetch('/v1/artifact/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ artifact_id: artifact.artifact_id,
+                             approval_id: approval.approval_id }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    anchor.download = artifact.filename;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(href);
+  } catch (err) {
+    notice('That document could not be saved.', 'error', err.message);
+  }
 }
 
 function renderStaged() {
@@ -927,8 +1307,52 @@ async function loadChats() {
   for (const c of chats) list.append(chatRow(c));
 }
 
+/* Only the newest openChat() may commit.
+ *
+ * Comparing chatId alone cannot tell two concurrent loads of the SAME chat
+ * apart, so a slower earlier response could overwrite a newer render. Each
+ * invocation takes the next number and checks it still holds it. */
+let openGeneration = 0;
+
+/* Optional per-message extras are parsed defensively: one malformed field is
+ * a missing note, never a missing message. */
+function messageNote(raw) {
+  if (!raw) return null;
+  let message;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    message = parsed && typeof parsed.message === 'string' ? parsed.message : null;
+  } catch { message = null; }
+  if (!message) return null;
+  const note = document.createElement('p');
+  note.className = 'chip-caution';
+  note.textContent = message;
+  return note;
+}
+
+/* Build the whole replacement view off-screen, then swap it in once. */
+function buildThread(messages) {
+  const host = document.createDocumentFragment();
+  if (!messages.length) {
+    turn('assistant', 'No messages in this conversation yet.', null, true, host);
+    return host;
+  }
+  for (const m of messages) {
+    const attachments = Array.isArray(m.attachments) ? m.attachments : null;
+    const box = turn(m.role, typeof m.text === 'string' ? m.text : '',
+                     attachments, false, host, m.skill_id,
+                     Array.isArray(m.artifacts) ? m.artifacts : null);
+    const note = messageNote(m.error_json);
+    if (note) box.append(note);
+  }
+  return host;
+}
+
 async function openChat(id) {
-  if (chatId !== id) {
+  const generation = ++openGeneration;
+  const current = () => openGeneration === generation && chatId === id;
+  const switched = chatId !== id;
+  if (switched) {
     saveDraftSoon(true);                  // capture and flush the old chat first
     chatId = id;
     publishSlot();
@@ -936,28 +1360,48 @@ async function openChat(id) {
     loadStaged();
     renderSkill();
   }
+  let messages;
+  try {
+    ({ messages } = await api(`/v1/messages?chat_id=${id}`));
+  } catch (err) {
+    // The pane that is already on screen is the last thing known to be true.
+    // Keep it and say the refresh failed; never replace it with nothing.
+    if (current()) notice('Could not refresh this conversation.', 'error', err.message);
+    return;
+  }
+  if (!current()) return;
+
+  let replacement;
+  try {
+    replacement = buildThread(messages);
+  } catch (err) {
+    if (current()) notice('Could not display this conversation.', 'error', err.message);
+    return;
+  }
+  if (!current()) return;
+  // The only step that touches the live thread, and it cannot throw.
   activeJob = null;
   streamBox = null;
   lastSequence = 0;
   pendingEvents = new Map();
-  const { messages } = await api(`/v1/messages?chat_id=${id}`);
-  if (chatId !== id) return;
-  $('thread').replaceChildren();
-  if (!messages.length)
-    turn('assistant', 'No messages in this conversation yet.', null, true);
-  for (const m of messages) {
-    const box = turn(m.role, m.text, m.attachments);
-    if (m.error_json) {
-      const note = document.createElement('p');
-      note.className = 'chip-caution';
-      note.textContent = JSON.parse(m.error_json).message;
-      box.append(note);
-    }
-  }
+  const thread = $('thread');
+  thread.replaceChildren(replacement);
+  // Only a real switch returns to the latest turn. A refresh of the chat
+  // already on screen leaves the reader where they were.
+  if (switched) following = true;
+  maybeFollow();
+
   // Restart reconciliation is visible here: a job that was interrupted keeps
-  // its record, and its conversation still loads.
-  const { jobs } = await api(`/v1/jobs?chat_id=${id}`);
-  if (chatId !== id) return;
+  // its record, and its conversation still loads. Everything from here is the
+  // technical rail: a failure below leaves the conversation readable.
+  let jobs;
+  try {
+    ({ jobs } = await api(`/v1/jobs?chat_id=${id}`));
+  } catch (err) {
+    if (current()) console.error('job history unavailable:', err.message);
+    return;
+  }
+  if (!current()) return;
   const last = jobs[0];
   if (last) {
     jobState = last.state;
@@ -967,7 +1411,7 @@ async function openChat(id) {
     $('events').replaceChildren();
     deltaCount = 0; deltaChars = 0;
     const detail = await api(`/v1/job?job_id=${last.job_id}`).catch(() => null);
-    if (chatId !== id) return;
+    if (!current()) return;
     if (detail) for (const ev of detail.events) pushEvent(ev);
     lastSequence = detail?.events.at(-1)?.sequence || 0;
     const attempt = detail?.attempts.at(-1);
@@ -1005,10 +1449,14 @@ async function send(text, { draftText = null } = {}) {
     });
     targetId = chat_id;
   }
+  const skill = selectedSkill();
   const { job_id } = await api('/v1/messages', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: targetId, text,
-      draft_id: sourceId || NEW_CHAT_DRAFT, draft_text: draftText ?? text }),
+      draft_id: sourceId || NEW_CHAT_DRAFT, draft_text: draftText ?? text,
+      // The chosen skill is submitted with the request and stored on the job.
+      // It is not left as state only this page knows about.
+      skill_id: skill ? skill.id : undefined }),
   });
   if (chatId !== sourceId || (sourceId === null && draftVersion !== version)) {
     loadChats();
@@ -1017,6 +1465,7 @@ async function send(text, { draftText = null } = {}) {
   if (draftText !== null && draftVersion === version && $('input').value === draftText) {
     $('input').value = '';
     ++draftVersion;
+    autogrow($('input'));
     if ($('draft-mark')) $('draft-mark').hidden = true;
   }
   // The selection was made against the draft slot and is bound to the request
@@ -1024,7 +1473,6 @@ async function send(text, { draftText = null } = {}) {
   const sentFiles = staged.length;
   staged = [];
   renderStaged();
-  const skill = skillByChat.get(sourceId || NEW_DRAFT_SLOT);
   if (skill && targetId !== (sourceId || NEW_DRAFT_SLOT)) {
     skillByChat.delete(NEW_DRAFT_SLOT);
     skillByChat.set(targetId, skill);
@@ -1034,11 +1482,14 @@ async function send(text, { draftText = null } = {}) {
   // Read persisted messages/output after acceptance; generation may already
   // have emitted events before the POST response reached this browser.
   await openChat(chatId);
+  refreshContext();
   if (sentFiles) {
     notice(`${sentFiles} file${sentFiles === 1 ? '' : 's'} went with your request.`,
-           'warn',
-           'Refinix saved them on this computer. It cannot read documents yet, '
-           + 'so the reply comes from your typed request alone.');
+           skill ? 'ok' : 'warn',
+           skill
+             ? `${skill.name} reads only the files sent with this request.`
+             : 'Plain Chat saved them on this computer but did not read them. '
+               + 'Choose a document skill with + when you want their contents used.');
   }
 }
 
@@ -1059,6 +1510,722 @@ function newChat() {
   loadDraft(null);
   loadStaged();
   renderSkill();
+}
+
+/* ---------------------------------------------------------------- Code --- */
+
+/* The Code surface. Enforcement lives in the coordinator: this file sends an
+ * opaque repository id, validated relative paths, a request in words, a mode
+ * from a fixed list, and an approval id plus yes/no. It never sends a
+ * filesystem path, a digest, an approved flag or replacement content, and it
+ * never decides whether something is allowed. */
+
+let codeState = null;
+let repoFiles = [];
+let selectedPaths = new Set();
+let proposing = false;
+/* Only the newest activation may commit, and only for the repository it was
+ * started for. Chat learned this lesson first; Code needs the same guard,
+ * because a late file list from one project must never appear under another. */
+let codeGeneration = 0;
+let activeRepo = null;
+
+const nativeBridge = () => (window.pywebview && window.pywebview.api) || null;
+
+function codeApi(path, body) {
+  return api(path, body === undefined ? undefined : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/* Switching, connecting or reconnecting a project starts from nothing: a
+ * selection made in one folder must never be submitted against another, even
+ * when both contain a file of the same name. */
+function resetRepositoryState() {
+  selectedPaths = new Set();
+  repoFiles = [];
+  // Results belong to the folder they came from. A diff or an approval from
+  // the previous project must not sit above the new one's composer.
+  if (typeof clearCodeResults === 'function') clearCodeResults();
+  if ($('code-context')) {
+    $('code-context').replaceChildren();
+    $('code-context').hidden = true;
+  }
+}
+
+/* `skipFiles` matters after an approved listing: the files have just been
+ * fetched with that one-shot approval, and asking again without one would
+ * raise a fresh approval card and throw the answer away. */
+async function loadCodeState(repoId, { reset = false, skipFiles = false } = {}) {
+  const generation = ++codeGeneration;
+  if (reset) resetRepositoryState();
+  const query = repoId ? `?repo_id=${encodeURIComponent(repoId)}` : '';
+  let next;
+  try {
+    next = await api(`/v1/code/state${query}`);
+  } catch (err) {
+    if (codeGeneration === generation) {
+      notice('Code could not be refreshed.', 'error', err.message);
+    }
+    return codeState;
+  }
+  if (codeGeneration !== generation) return codeState;
+  if (next.active !== activeRepo) {
+    // The coordinator chose a different project than the one on screen.
+    resetRepositoryState();
+    activeRepo = next.active;
+  }
+  codeState = next;
+
+  // Awaited, not fired and forgotten: the listing can need approval, and that
+  // approval has to reach the same render as the rest of the state.
+  if (codeState.active && !skipFiles) {
+    const listing = await loadRepoFiles(codeState.active, generation);
+    if (codeGeneration !== generation) return codeState;
+    if (listing && listing.needs_approval) {
+      const known = new Set(codeState.pending_approvals.map((a) => a.approval_id));
+      if (!known.has(listing.needs_approval.approval_id)) {
+        codeState.pending_approvals = [...codeState.pending_approvals,
+                                       listing.needs_approval];
+      }
+    }
+  }
+  renderCode();
+  return codeState;
+}
+
+async function connectRepository() {
+  const bridge = nativeBridge();
+  if (!bridge || !bridge.choose_repository) {
+    notice('Connecting a folder needs the Refinix application.', 'warn',
+           'The native folder picker is only available in the desktop app. '
+           + 'There is deliberately no box to type a path into.');
+    return;
+  }
+  let result;
+  try {
+    result = await bridge.choose_repository();
+  } catch (err) {
+    notice('The folder picker could not be opened.', 'error', err.message);
+    return;
+  }
+  if (!result || result.cancelled) return;
+  if (result.error) {
+    notice('That folder was not connected.', 'error', result.error);
+    return;
+  }
+  // A newly connected folder is a repository change like any other.
+  await loadCodeState(result.repository.repo_id, { reset: true });
+}
+
+/* Returns the response so the caller can render a listing approval with the
+ * rest of the state. Commits nothing once a newer activation has started. */
+async function loadRepoFiles(repoId, generation, approvalId) {
+  const query = approvalId
+    ? `?repo_id=${encodeURIComponent(repoId)}&approval_id=${encodeURIComponent(approvalId)}`
+    : `?repo_id=${encodeURIComponent(repoId)}`;
+  let body;
+  try {
+    body = await api(`/v1/code/files${query}`);
+  } catch (err) {
+    if (codeGeneration !== generation) return null;
+    repoFiles = [];
+    notice('The file list could not be read.', 'error', err.message);
+    return null;
+  }
+  if (codeGeneration !== generation || repoId !== activeRepo) return null;
+  repoFiles = body.needs_approval ? [] : (body.files || []);
+  return body;
+}
+
+/* Access lives in the composer now, as one pill beside `+`. The large Access
+ * mode card is gone: a permanent panel restating the same three choices took
+ * the work area and told the reader nothing they had not already chosen. */
+const MODE_LABELS = {
+  ask: 'Ask for approval',
+  partial: 'Approve for me',
+  full: 'Full access',
+};
+
+let modeMenu = null;
+
+function activeRepository() {
+  if (!codeState) return null;
+  return codeState.repositories.find((r) => r.repo_id === codeState.active) || null;
+}
+
+function renderModePill() {
+  const pill = $('mode-pill');
+  if (!pill || !codeState) return;
+  const repo = activeRepository();
+  pill.hidden = !repo;
+  if (!repo) return;
+  const label = MODE_LABELS[repo.mode] || repo.mode;
+  $('mode-name').textContent = label;
+  pill.dataset.mode = repo.mode;
+  pill.setAttribute('aria-label', `Access: ${label}. Change it.`);
+}
+
+function closeModeMenu(returnFocus) {
+  if (!modeMenu) return;
+  modeMenu.remove();
+  modeMenu = null;
+  const pill = $('mode-pill');
+  if (pill) {
+    pill.setAttribute('aria-expanded', 'false');
+    if (returnFocus) pill.focus();
+  }
+}
+
+function openModeMenu() {
+  closeModeMenu(false);
+  const pill = $('mode-pill');
+  const repo = activeRepository();
+  if (!pill || !repo) return;
+  const menu = document.createElement('div');
+  menu.className = 'plus-menu mode-menu';
+  menu.setAttribute('role', 'menu');
+  for (const mode of codeState.modes) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('role', 'menuitemradio');
+    button.setAttribute('aria-checked', String(repo.mode === mode.id));
+    const glyph = document.createElement('span');
+    glyph.textContent = repo.mode === mode.id ? '✓' : '';
+    const text = document.createElement('span');
+    const name = document.createElement('span');
+    name.className = 'm-name';
+    // Codex-style words for the same enforced backend modes; the ids are
+    // unchanged, so nothing about what is allowed moves with the label.
+    name.textContent = MODE_LABELS[mode.id] || mode.label;
+    const sub = document.createElement('span');
+    sub.className = 'm-sub';
+    sub.textContent = mode.summary;
+    text.append(name, sub);
+    button.append(glyph, text);
+    button.onclick = () => { closeModeMenu(true); changeMode(mode); };
+    menu.append(button);
+  }
+  document.body.append(menu);
+  const rect = pill.getBoundingClientRect();
+  const height = menu.getBoundingClientRect().height;
+  menu.style.left = `${Math.round(Math.max(8, rect.left))}px`;
+  menu.style.top = `${Math.round(Math.max(8, rect.top - height - 6))}px`;
+  modeMenu = menu;
+  pill.setAttribute('aria-expanded', 'true');
+  menu.querySelector('button').focus();
+}
+
+async function changeMode(mode) {
+  if (!codeState?.active) return;
+  if (mode.confirm) {
+    const yes = await confirmDialog(
+      'Turn on Full access for this folder?',
+      'Refinix will apply edits to the files you select inside this folder '
+      + 'without asking each time. It still cannot run commands, use Git, '
+      + 'install anything, create or delete files, or work outside this folder.',
+      'Turn on Full access');
+    if (!yes) return;
+  }
+  try {
+    await codeApi('/v1/code/mode', { repo_id: codeState.active, mode: mode.id });
+  } catch (err) {
+    notice('That mode could not be set.', 'error', err.message);
+    return;
+  }
+  // Nothing is shown as active until the coordinator confirms it persisted.
+  await loadCodeState(codeState.active);
+}
+
+/* Results are turns, not panels. Each one carries its own diff, its own
+ * approval and its own outcome, so the information the dashboard used to hold
+ * is still here — attached to the operation it describes. */
+function codeTurn(build) {
+  const article = document.createElement('article');
+  article.className = 'turn turn-agent';
+  build(article);
+  const thread = $('thread');
+  if (thread) {
+    thread.append(article);
+    if (following) thread.scrollTop = thread.scrollHeight;
+  }
+  return article;
+}
+
+function approvalCard(approval) {
+  const card = document.createElement('section');
+  card.className = 'card approval-card';
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  const title = document.createElement('h2');
+  title.textContent = {
+    'canonical.write': 'Approve this change?',
+    'repo.list': 'Approve listing this project\u2019s files?',
+  }[approval.action] || 'Approve reading these files?';
+  const chip = document.createElement('span');
+  chip.className = 'chip chip-caution';
+  chip.textContent = 'waiting for you';
+  head.append(title, chip);
+  card.append(head);
+
+  const facts = document.createElement('dl');
+  facts.className = 'facts';
+  const rows = [
+    ['Project', approval.detail.repo_name || '—'],
+    ['Files', (approval.detail.paths || []).join(', ') || approval.target],
+    ['Expires', approval.expires_at],
+  ];
+  for (const [k, v] of rows) {
+    const div = document.createElement('div');
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    div.append(dt, dd);
+    facts.append(div);
+  }
+  card.append(facts);
+
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+  const approve = document.createElement('button');
+  approve.className = 'btn btn-primary';
+  approve.textContent = 'Approve';
+  approve.onclick = () => decideApproval(approval, true);
+  const deny = document.createElement('button');
+  deny.className = 'btn btn-stop';
+  deny.textContent = 'Deny';
+  deny.onclick = () => decideApproval(approval, false);
+  actions.append(approve, deny);
+  card.append(actions);
+  return card;
+}
+
+async function decideApproval(approval, approved) {
+  try {
+    await codeApi('/v1/code/decision', {
+      approval_id: approval.approval_id, approved,
+    });
+  } catch (err) {
+    notice('That decision could not be recorded.', 'error', err.message);
+    return;
+  }
+  if (!approved) {
+    notice(approval.action === 'canonical.write'
+      ? 'Nothing was written.' : 'No file was read.', 'warn',
+      'A denied request stays denied.');
+    await loadCodeState(codeState.active);
+    return;
+  }
+  // An approved decision is carried out by repeating THAT operation with the
+  // approval id. The coordinator matches action and digest, so retrying the
+  // wrong operation would simply fail — each action returns to its own path.
+  if (approval.action === 'canonical.write') {
+    await applyProposal(approval.detail.proposal_id
+      || codeState?.proposal?.proposal_id, approval.approval_id);
+    return;
+  }
+  if (approval.action === 'repo.list') {
+    const generation = ++codeGeneration;
+    const listing = await loadRepoFiles(codeState.active, generation,
+                                        approval.approval_id);
+    // Refresh the rest of the state, but keep the listing this approval just
+    // bought: re-requesting it would only raise another approval.
+    await loadCodeState(activeRepo, { skipFiles: !!(listing && listing.files) });
+    return;
+  }
+  await proposeChange(approval.approval_id);
+}
+
+function proposalCard(proposal) {
+  const card = document.createElement('section');
+  card.className = 'card';
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  const title = document.createElement('h2');
+  title.textContent = 'Proposed change';
+  const chip = document.createElement('span');
+  chip.className = 'chip ' + (proposal.state === 'applied' ? 'chip-enforced'
+    : proposal.state === 'proposed' ? 'chip-unknown' : 'chip-caution');
+  chip.textContent = proposal.state.replace(/_/g, ' ');
+  head.append(title, chip);
+  card.append(head);
+
+  const summary = document.createElement('p');
+  summary.className = 'card-lead';
+  summary.textContent = proposal.summary;    // model text, as a text node only
+  card.append(summary);
+
+  if (!proposal.edits.length) {
+    const none = document.createElement('p');
+    none.className = 'lbl';
+    none.textContent = 'The model proposed no file changes. Nothing was written.';
+    card.append(none);
+    return card;
+  }
+
+  for (const edit of proposal.edits) {
+    const block = document.createElement('div');
+    block.className = 'diff-block';
+    const path = document.createElement('p');
+    path.className = 'diff-path';
+    path.textContent = edit.path;
+    const state = document.createElement('span');
+    state.className = 'lbl';
+    state.textContent = edit.state === 'proposed' ? '' : ` — ${edit.state}`;
+    if (edit.detail) state.textContent += `: ${edit.detail}`;
+    path.append(state);
+    const pre = document.createElement('pre');
+    pre.className = 'diff';
+    // The complete diff, never shortened, and inserted as text so model
+    // output can never become markup.
+    pre.textContent = edit.diff;
+    block.append(path, pre);
+    card.append(block);
+  }
+
+  const note = document.createElement('p');
+  note.className = 'lbl';
+  note.textContent = 'This diff is for you to review, and it shows everything '
+    + 'Apply would write. A valid proposal shows the workflow ran; it is not '
+    + 'evidence that the change is correct.';
+  card.append(note);
+
+  if (proposal.state === 'proposed') {
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    const apply = document.createElement('button');
+    apply.className = 'btn btn-primary';
+    apply.textContent = 'Apply this change';
+    apply.onclick = () => applyProposal(proposal.proposal_id, null);
+    actions.append(apply);
+    card.append(actions);
+  }
+  return card;
+}
+
+/* The audit is reference material, so it sits under Details rather than
+ * occupying the work area. */
+function renderAudit(rows) {
+  const list = $('audit-list');
+  if (!list) return;
+  list.replaceChildren();
+  for (const row of rows.slice(0, 20)) {
+    const li = document.createElement('li');
+    const text = document.createElement('span');
+    const name = document.createElement('span');
+    name.className = 'c-name';
+    name.textContent = row.action;
+    const detail = document.createElement('span');
+    detail.className = 'c-detail';
+    detail.textContent = [row.detail.path, row.detail.target, row.detail.reason]
+      .filter(Boolean).join(' — ') || row.occurred_at;
+    text.append(name, detail);
+    const chip = document.createElement('span');
+    chip.className = 'chip ' + ({
+      applied: 'chip-enforced', approved: 'chip-enforced',
+      allowed_automatically: 'chip-observed', awaiting_approval: 'chip-caution',
+      denied: 'chip-fault', expired: 'chip-fault', rejected_stale: 'chip-fault',
+      failed: 'chip-fault',
+    }[row.outcome] || 'chip-unknown');
+    chip.textContent = row.outcome.replace(/_/g, ' ');
+    li.append(text, chip);
+    list.append(li);
+  }
+}
+
+function renderUnavailable(rows) {
+  const list = $('unavailable-list');
+  if (!list) return;
+  list.replaceChildren();
+  for (const row of rows) {
+    const li = document.createElement('li');
+    const text = document.createElement('span');
+    text.className = 'c-detail';
+    text.textContent = row.detail;
+    li.append(text);
+    list.append(li);
+  }
+}
+
+function renderCode() {
+  if (!codeState || !$('code-composer')) return;
+  // One answer for the whole surface. Where the coordinator cannot keep a
+  // folder bounded, nothing here is offered — not even a connect button that
+  // would fail.
+  const usable = codeState.code_supported !== false;
+  const repo = activeRepository();
+  const connected = usable && !!repo;
+
+  const chooser = $('connect-btn');
+  chooser.disabled = !usable;
+  $('project-name').textContent = repo ? repo.name : 'Choose project';
+  chooser.dataset.connected = String(!!repo);
+  $('switch-btn').hidden = !repo;
+  $('composer-box').hidden = !connected;
+  $('plus-btn').disabled = !connected;
+  renderModePill();
+
+  const list = $('repo-list');
+  if (list) {
+    list.replaceChildren();
+    for (const entry of codeState.repositories) {
+      const button = document.createElement('button');
+      button.className = 'nav-item';
+      button.type = 'button';
+      if (entry.repo_id === codeState.active) button.setAttribute('aria-current', 'true');
+      button.textContent = entry.name;
+      button.onclick = () => loadCodeState(entry.repo_id, { reset: true });
+      list.append(button);
+    }
+  }
+
+  renderAudit(codeState.audit || []);
+  renderUnavailable(codeState.unavailable || []);
+  renderCodeContext();
+
+  const intro = $('intro');
+  if (intro) intro.hidden = connected;
+  if (codeState.platform_note) {
+    showCodeResult((article) => {
+      const warn = document.createElement('p');
+      warn.className = 'warn-line';
+      warn.textContent = codeState.platform_note;
+      article.append(warn);
+    }, 'platform');
+  }
+  // Approvals appear where the work paused, and a proposal arrives as a result.
+  for (const approval of codeState.pending_approvals || []) {
+    showCodeResult((article) => article.append(approvalCard(approval)),
+                   `approval:${approval.approval_id}`);
+  }
+  if (codeState.proposal) {
+    showCodeResult((article) => article.append(proposalCard(codeState.proposal)),
+                   `proposal:${codeState.proposal.proposal_id}:${codeState.proposal.state}`);
+  }
+}
+
+/* Results accumulate like a conversation, but the same result is not appended
+ * twice when the state is polled again. */
+const shownResults = new Set();
+
+function showCodeResult(build, key) {
+  if (key) {
+    if (shownResults.has(key)) return null;
+    shownResults.add(key);
+  }
+  return codeTurn(build);
+}
+
+function clearCodeResults() {
+  shownResults.clear();
+  const thread = $('thread');
+  if (!thread) return;
+  const intro = $('intro');
+  thread.replaceChildren(...(intro ? [intro] : []));
+}
+
+/* The selected files live in the composer, as chips beside `+`. Connecting a
+ * folder never grants a whole-repository read: the selection stays explicit. */
+function renderCodeContext() {
+  const host = $('code-context');
+  if (!host) return;
+  const chosen = repoFiles.filter((f) => selectedPaths.has(f.path));
+  host.replaceChildren(...chosen.map((file) => {
+    const li = document.createElement('li');
+    li.className = 'attachment';
+    li.append(icon('code'));
+    const name = document.createElement('span');
+    name.className = 'a-name';
+    name.textContent = file.path;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'a-remove';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `Remove ${file.path}`);
+    remove.onclick = () => {
+      selectedPaths.delete(file.path);
+      renderCodeContext();
+    };
+    li.append(name, remove);
+    return li;
+  }));
+  host.hidden = chosen.length === 0;
+  renderSelectionHint();
+  autogrow($('code-input'));
+}
+
+/* `+` opens the bounded file picker for this project. */
+function openFileMenu() {
+  closePlusMenu();
+  const button = $('plus-btn');
+  const menu = document.createElement('div');
+  menu.className = 'plus-menu file-menu';
+  menu.setAttribute('role', 'menu');
+
+  const label = document.createElement('p');
+  label.className = 'menu-label';
+  label.textContent = `Files in this project (${repoFiles.length})`;
+  menu.append(label);
+
+  const filter = document.createElement('input');
+  filter.className = 'chat-search';
+  filter.type = 'search';
+  filter.placeholder = 'Filter files';
+  filter.setAttribute('aria-label', 'Filter files');
+  menu.append(filter);
+
+  const rows = document.createElement('div');
+  rows.className = 'file-list';
+  menu.append(rows);
+
+  const draw = () => {
+    const needle = filter.value.toLowerCase();
+    rows.replaceChildren();
+    const shown = repoFiles.filter((f) => !needle
+      || f.path.toLowerCase().includes(needle)).slice(0, 300);
+    if (!shown.length) {
+      const empty = document.createElement('p');
+      empty.className = 'lbl';
+      empty.textContent = repoFiles.length
+        ? 'No file matches that.'
+        : 'No readable text files, or reading needs approval.';
+      rows.append(empty);
+      return;
+    }
+    for (const file of shown) {
+      const row = document.createElement('label');
+      row.className = 'file-row';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = selectedPaths.has(file.path);
+      box.addEventListener('change', () => {
+        if (box.checked) selectedPaths.add(file.path);
+        else selectedPaths.delete(file.path);
+        renderCodeContext();
+      });
+      const name = document.createElement('span');
+      name.className = 'file-path';
+      name.textContent = file.path;
+      row.append(box, name);
+      rows.append(row);
+    }
+  };
+  filter.addEventListener('input', draw);
+  draw();
+
+  document.body.append(menu);
+  const rect = button.getBoundingClientRect();
+  const height = menu.getBoundingClientRect().height;
+  menu.style.left = `${Math.round(Math.max(8, rect.left))}px`;
+  menu.style.top = `${Math.round(Math.max(8, rect.top - height - 6))}px`;
+  plusMenu = menu;
+  button.setAttribute('aria-expanded', 'true');
+  filter.focus();
+}
+
+function renderSelectionHint() {
+  const hint = $('selection-hint');
+  if (!hint) return;
+  hint.textContent = selectedPaths.size
+    ? `${selectedPaths.size} file(s) selected`
+    : 'No files selected';
+  const send = $('code-send');
+  if (send) send.disabled = proposing || !selectedPaths.size || !codeState?.active;
+}
+
+async function proposeChange(approvalId) {
+  const input = $('code-input');
+  const request = (input?.value || '').trim();
+  if (!request || !codeState?.active) return;
+  proposing = true;
+  $('code-send').hidden = true;
+  $('code-stop').hidden = false;
+  const status = $('code-status');
+  status.hidden = false;
+  status.textContent = 'Reading the selected files and asking the model on this computer…';
+  try {
+    const body = await codeApi('/v1/code/propose', {
+      repo_id: codeState.active, request, paths: [...selectedPaths],
+      approval_id: approvalId || undefined,
+    });
+    status.hidden = true;
+    if (body.needs_approval) {
+      notice('Refinix needs your approval before reading those files.', 'warn',
+             'Nothing has been read or sent to the model yet.');
+    }
+  } catch (err) {
+    status.hidden = false;
+    status.textContent = err.message;
+  } finally {
+    proposing = false;
+    $('code-send').hidden = false;
+    $('code-stop').hidden = true;
+    await loadCodeState(activeRepo);
+  }
+}
+
+async function applyProposal(proposalId, approvalId) {
+  if (!proposalId || !codeState?.active) return;
+  try {
+    const body = await codeApi('/v1/code/apply', {
+      repo_id: codeState.active, proposal_id: proposalId,
+      approval_id: approvalId || undefined,
+    });
+    if (body.needs_approval) {
+      notice('Refinix needs your approval before writing.', 'warn',
+             'The file on disk has not changed.');
+    } else if (body.state === 'applied') {
+      notice(`${body.applied} file(s) updated.`, 'warn', body.atomicity);
+    } else {
+      notice(`${body.applied} of ${body.total} file(s) updated.`, 'error',
+             body.results.filter((r) => r.state !== 'applied')
+               .map((r) => `${r.path}: ${r.detail}`).join(' • '));
+    }
+  } catch (err) {
+    notice('That change was not applied.', 'error', err.message);
+  }
+  await loadCodeState(activeRepo);
+}
+
+function wireCode() {
+  $('connect-btn').addEventListener('click', connectRepository);
+  $('switch-btn').addEventListener('click', connectRepository);
+  $('code-composer').onsubmit = (e) => { e.preventDefault(); proposeChange(null); };
+  wireAutogrow($('code-input'));
+  const modePill = $('mode-pill');
+  if (modePill) {
+    modePill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (modeMenu) closeModeMenu(true);
+      else openModeMenu();
+    });
+  }
+  $('code-stop').addEventListener('click', () => {
+    if (codeState?.active) {
+      codeApi('/v1/code/cancel', { repo_id: codeState.active }).catch(() => {});
+    }
+  });
+  $('code-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      $('code-composer').requestSubmit();
+    }
+  });
+  const pill = $('model-pill');
+  if (pill) {
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (modelPopover) closeModelPopover(true);
+      else openModelPopover();
+    });
+  }
+  $('plus-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (plusMenu) closePlusMenu();
+    else openFileMenu();
+  });
+  loadCodeState(null, { reset: true }).catch((err) =>
+    notice('Code could not load.', 'error', err.message));
 }
 
 /* ------------------------------------------------------------ Settings --- */
@@ -1348,6 +2515,10 @@ async function loadStatus() {
   const s = await api('/v1/status');
   lastStatus = s;
   capabilities = s.capabilities || capabilities;
+  if (Array.isArray(s.models)) {
+    models = s.models;
+    renderModelPill();
+  }
   renderReadyLine(s);
   renderSkill();
   if ($('kv-unavailable') && !$('c-cap-list')) {
@@ -1414,6 +2585,15 @@ function wireComposer() {
   for (const type of ['dragover', 'drop']) {
     window.addEventListener(type, (e) => {
       if (Array.from(e.dataTransfer?.types || []).includes('Files')) e.preventDefault();
+    });
+  }
+
+  const pill = $('model-pill');
+  if (pill) {
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (modelPopover) closeModelPopover(true);
+      else openModelPopover();
     });
   }
 
@@ -1512,10 +2692,16 @@ window.addEventListener('DOMContentLoaded', () => {
     if (plusMenu && !plusMenu.contains(e.target) && e.target !== $('plus-btn')) {
       closePlusMenu();
     }
+    const pill = $('model-pill');
+    if (modelPopover && !modelPopover.contains(e.target)
+        && !(pill && pill.contains(e.target))) {
+      closeModelPopover(false);
+    }
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && openMenu) closeMenu();
     if (e.key === 'Escape' && plusMenu) { closePlusMenu(); $('plus-btn').focus(); }
+    if (e.key === 'Escape' && modelPopover) closeModelPopover(true);
   });
   publishSlot();
   loadStatus().catch((e) => console.error('status unavailable:', e.message));
@@ -1585,6 +2771,9 @@ window.addEventListener('DOMContentLoaded', () => {
       if (['running', 'queued', 'routing', 'context_preparing', 'created', 'validating']
           .includes(jobState)) replayEvents();
     }, 2000);
+  } else if ($('code-composer')) {
+    wireCode();
+    setInterval(() => loadStatus().catch(() => {}), 15000);
   } else if ($('refresh')) {
     $('refresh').onclick = () => loadStatus().catch(() => {});
     setInterval(() => loadStatus().catch(() => {}), 10000);
