@@ -1509,3 +1509,17 @@ work. No repository file change means no changelog entry.
 - changes: The image build now invokes the offline suites without inline token or node-ID values; `test_worker_app` continues to install its own non-secret fixtures before importing the guarded app. The redundant cross-package assertion was removed from `test_executor`; the coordinator suite already exercises `internal_error` as receipt-unknown and `redis_lost` as definite.
 - verification: Source inspection confirmed runtime credentials remain `secretKeyRef` values, TLS remains in the `worker-tls` Secret, and no Dockerfile token or node-ID value remains. No tests or image build were run locally; the Ubuntu rebuild is authoritative.
 - remaining: Commit and push these two source corrections, pull them on Ubuntu, then rerun the C06 image build. All later C06 device gates remain pending.
+
+<a id="ac-20260905-012"></a>
+## AC-20260905-012 — Observed C06 image digest pinned
+- prompt_id: [UP-20260905-012](userprompts.md#up-20260905-012)
+- date: 2026-09-05
+- status: implemented; source push and deployment pending
+- scope: c06, image-digest, manifests, provenance, handoff
+- tags: c06, ubuntu, image-digest, containerd, provenance, deployment
+- aliases: daf1052b, single manifest, digest alias, pin C06 image
+- paths: backend/worker-image/provenance.json, deploy/k3s/20-worker.yaml, deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, docs/c06-distributed-execution-handoff.md, agent-memory/
+- summary: Pinned the Ubuntu-built C06 worker image manifest in both deployments and recorded only the artifact evidence actually observed.
+- changes: Worker and executor now pin `sha256:daf1052b...`; provenance records its observed config digest, successful offline build layer and streamed import while leaving unavailable archive fields null. The handoff now disables provenance/SBOM attestations for one Linux manifest and creates the explicit containerd digest alias used by the manifests.
+- verification: Requester output showed the single-manifest build, `sha256:daf1052b...` tag and explicit digest alias in K3s containerd. Source consistency and `git diff --check` were checked locally; no deployment or runtime test was run by Codex.
+- remaining: Push this source update, pull it on Ubuntu, then deploy only the worker API and prove loopback TLS before opening the guarded LAN forwarder. The executor remains blocked until pairing creates the relationship ID.

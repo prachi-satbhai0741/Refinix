@@ -1065,3 +1065,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: No local test rerun requested; the authoritative check is the next Ubuntu image rebuild.
 - follow_up_to: [UP-20260905-010](#up-20260905-010)
 - linked_changes: [AC-20260905-011](agentchangelog.md#ac-20260905-011)
+
+<a id="up-20260905-012"></a>
+## UP-20260905-012 — Pin the observed C06 Ubuntu image
+- date: 2026-09-05
+- status: implemented; source push and deployment pending
+- scope: c06, image-digest, manifests, provenance, handoff
+- tags: c06, ubuntu, image-digest, containerd, provenance, deployment
+- aliases: daf1052b, single manifest, digest alias, pin C06 image
+- paths: backend/worker-image/provenance.json, deploy/k3s/20-worker.yaml, deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, docs/c06-distributed-execution-handoff.md, agent-memory/
+- summary: Record and pin the single-manifest C06 image built and imported on the Ubuntu worker.
+- request: Continue the C06 device checkpoint after containerd confirmed the C06 tag and explicit digest alias resolve to the same observed manifest.
+- constraints: Use only observed digests; keep credentials outside the image and do not deploy the executor before pairing.
+- acceptance: Both manifests pin the observed C06 digest, provenance distinguishes observed from unavailable archive evidence, and the build handoff produces a single manifest plus digest alias.
+- verification_authorization: Source consistency only; deployment and runtime checks remain human steps.
+- follow_up_to: [UP-20260905-011](#up-20260905-011)
+- linked_changes: [AC-20260905-012](agentchangelog.md#ac-20260905-012)

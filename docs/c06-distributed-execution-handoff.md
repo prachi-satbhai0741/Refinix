@@ -122,7 +122,8 @@ C05's image contains none of this code. A new build is required.
 
 ```bash
 cd <repository>
-sudo docker build --pull=false -f backend/worker-image/Dockerfile \
+sudo docker build --pull=false --provenance=false --sbom=false \
+  -f backend/worker-image/Dockerfile \
   -t aegisforge-worker:c06 .
 ```
 
@@ -132,8 +133,10 @@ build is a real failure.** Do not skip the test stage to get past it — that
 stage is the only place the FastAPI-dependent worker tests run at all.
 
 ```bash
-sudo docker image inspect aegisforge-worker:c06 --format '{{.Id}}'
-sudo docker save aegisforge-worker:c06 | sudo k3s ctr images import -
+IMAGE_DIGEST=$(sudo docker image inspect aegisforge-worker:c06 --format '{{.Id}}')
+sudo docker save aegisforge-worker:c06 | sudo k3s ctr images import --digests -
+sudo k3s ctr images tag docker.io/library/aegisforge-worker:c06 \
+  "docker.io/library/aegisforge-worker@$IMAGE_DIGEST"
 sudo k3s ctr images ls | grep aegisforge-worker
 ```
 

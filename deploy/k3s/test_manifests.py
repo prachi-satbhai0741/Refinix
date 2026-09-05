@@ -53,7 +53,7 @@ class TestPinnedDigests(unittest.TestCase):
         worker = [t for _, k, n, t in documents()
                   if k == "Deployment" and n == "aegisforge-worker"][0]
         self.assertIn(built, worker,
-                      "the worker Deployment must pin the digest C04 produced")
+                      "the worker Deployment must pin the recorded Ubuntu build")
 
     def test_redis_image_matches_od08(self):
         architecture = (ROOT / "docs/architecture.md").read_text()
@@ -670,11 +670,8 @@ class TestExecutorAndTLS(unittest.TestCase):
         for forbidden in ("NodePort", "LoadBalancer", "hostPort", "kind: Ingress"):
             self.assertNotIn(forbidden, redis)
 
-    def test_the_executor_digest_is_pinned_and_flagged_for_replacement(self):
-        """It cannot be the real C06 digest yet — that image has not been
-        built — so it must be pinned and it must say so."""
+    def test_the_executor_digest_is_pinned(self):
         self.assertRegex(self.executor(), r"image:\s*\S+@sha256:[0-9a-f]{64}")
-        self.assertIn("REPLACE at the checkpoint", self.executor())
 
 
 if __name__ == "__main__":
