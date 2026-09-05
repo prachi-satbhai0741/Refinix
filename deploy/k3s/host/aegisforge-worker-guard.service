@@ -1,0 +1,27 @@
+# Protects the LAN-side worker forwarder. The proxy socket requires this, so
+# the listener never exists without its restriction.
+#
+# AEGIS_MAC_ADDRESS is REQUIRED and has no default. The guard refuses to apply
+# without it, which means the socket unit below cannot start either — the port
+# stays closed rather than opening to the whole LAN because a value was
+# forgotten. Set it in a drop-in at the checkpoint:
+#
+#   systemctl edit aegisforge-worker-guard.service
+#   [Service]
+#   Environment=AEGIS_MAC_ADDRESS=192.168.1.31
+[Unit]
+Description=AegisForge C06 exposure controls for the worker forwarder
+After=k3s.service
+Requires=k3s.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The NodePort stays bound to loopback, so wait for that listener rather than
+# for a LAN one that must never appear.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do ss -ltn "sport = :30443" | grep -q 127.0.0.1 && exit 0; sleep 2; done; echo "the loopback NodePort never appeared" >&2; exit 1'
+ExecStart=/usr/local/lib/aegisforge/aegisforge-guard.sh apply worker
+ExecStop=/usr/local/lib/aegisforge/aegisforge-guard.sh remove worker
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,50 @@
+{
+  "fixture": "c07-code-v1",
+  "repository": "pumpcheck",
+  "purpose": "One deterministic bug with one correct repair, for the C09 Code workflow. The fixture is delivered broken on purpose: its own test suite is the bug report.",
+  "request_to_make": "The vibration alarm reports an alarm for a reading exactly at the limit. SOP-MECH-014 clause 2.1 says the limit shall not be exceeded, so a reading equal to the limit is in specification. Fix it.",
+  "the_bug": {
+    "file": "pumpcheck/limits.py",
+    "symbol": "exceeds",
+    "shipped": "return value >= limit",
+    "correct": "return value > limit",
+    "why": "\"shall not exceed\" makes the limit inclusive. `>=` turns an in-specification reading into a false alarm, and the same helper is used for bearing temperature, so one wrong comparison produces two wrong answers."
+  },
+  "expected_patch_properties": {
+    "files_changed": ["pumpcheck/limits.py"],
+    "files_that_must_not_change": [
+      "tests/test_limits.py",
+      "pumpcheck/__init__.py"
+    ],
+    "why_tests_must_not_change": "Editing the test to match the code would make the suite pass while leaving the defect. A patch that touches tests/ fails this fixture regardless of the suite result.",
+    "max_changed_lines": 3,
+    "must_not_introduce": [
+      "a new dependency",
+      "a new file",
+      "a network call",
+      "a change to VIBRATION_ALARM_MM_S or BEARING_TEMPERATURE_LIMIT_C"
+    ],
+    "applies_cleanly_to": "the fixture as committed"
+  },
+  "validation": {
+    "command": ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+    "working_directory": "the disposable copy of pumpcheck/",
+    "dependencies": "standard library only; no pip install, no network",
+    "before_repair": {
+      "exit_code": 1,
+      "tests_run": 6,
+      "failures": 2,
+      "failing": [
+        "TestVibrationLimit.test_a_reading_exactly_at_the_limit_is_not_an_alarm",
+        "TestBearingTemperature.test_exactly_at_the_limit_is_not"
+      ]
+    },
+    "after_repair": {
+      "exit_code": 0,
+      "tests_run": 6,
+      "failures": 0
+    },
+    "observed_on": "macOS coordinator, 2026-09-05, CPython 3.14.6 and 3.12.13; the repair was applied to a copy outside the repository and the canonical fixture was left broken."
+  },
+  "canonical_repository_is_unchanged": "Validation runs on a disposable copy. The committed fixture must stay broken; a run that leaves it passing means the workflow wrote to the canonical repository, which AF-010 forbids."
+}

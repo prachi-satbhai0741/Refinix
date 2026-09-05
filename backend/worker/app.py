@@ -1,23 +1,31 @@
 """Worker API — the `/v1` surface reserved by the shared contract.
 
-**The job routes are fail-closed.** Two prerequisites do not exist yet:
+**The job routes are open only when both C06 prerequisites are actually present**,
+and the gate is evaluated per request rather than at import:
 
-* **OD-06 pairing** — there is no way to confirm that a relationship is genuine,
-  so a claimed `relationship_id` under a shared bearer token proves nothing.
-* **AF-005 durable receipt** — the contract requires a job to be persisted and
-  enqueued *before* acknowledging. An in-memory dictionary is not that, and
-  documenting the gap does not close it.
+* **OD-06 pairing** (`backend.worker.pairing`) — at least one confirmed
+  relationship, verified against a stored credential *hash*. An empty store
+  keeps every job route closed, which is still the default state.
+* **AF-005 durable receipt** (`backend.worker.dispatch`) — a reachable Redis
+  Stream. The envelope is written to it *before* the 202, so an API process that
+  dies immediately after answering leaves work an executor can still find.
 
-While either is missing, `POST /v1/jobs` and the other job routes return a typed
-`unavailable`. They do not return `202`. The execution path below is implemented
-and exercised by offline checks so that C05/C06 can enable it; it is not reachable
-over HTTP until the prerequisites are real.
+If either is missing the routes return a typed `unavailable`, exactly as before.
+Losing Redis at runtime closes them again with `redis_lost` rather than falling
+back to an in-memory queue that would acknowledge work nobody will run.
 
-`/v1/health` and `/v1/capabilities` remain available for preflight. They are
-read-only and disclose only what was actually observed.
+Authority is split so a compromised half is bounded. `AEGIS_WORKER_TOKEN` is a
+bootstrap credential for **preflight only** — `/v1/health` and `/v1/capabilities`,
+which is what the kubelet probes use. Dispatched work requires a per-relationship
+credential issued by pairing; the bootstrap token cannot submit, stream or cancel
+a job, and a relationship credential authorises only its own relationship.
 
-The listener speaks plain HTTP. Until OD-06 supplies pinned TLS it must not cross
-a trust boundary; exposure is a C05 Service and NetworkPolicy concern.
+`/v1/health` and `/v1/capabilities` remain read-only and disclose only what was
+actually observed.
+
+The listener speaks plain HTTP inside the Pod. TLS termination with the pinned
+OD-06 certificate is the Service/manifest boundary; the coordinator pins that
+certificate as its sole trust anchor and aborts on a mismatch.
 """
 
 from __future__ import annotations
@@ -25,29 +33,33 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import json
 import os
 import platform
 import threading
 import time
 import uuid
-from collections import OrderedDict
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import TypeAdapter
 
 from backend.contracts import v1
+from backend.worker import dispatch as dispatch_module
+from backend.worker import pairing as pairing_module
 from backend.worker import runtime
+from backend.worker.redis_client import Redis
 
 # ---------------------------------------------------------------- limits ---
 
 MAX_ACTIVE = int(os.environ.get("AEGIS_MAX_ACTIVE", "2"))
-MAX_RETAINED = int(os.environ.get("AEGIS_MAX_RETAINED", "32"))
-STREAM_QUEUE = 256
-RELAY_QUEUE = 64
-EMIT_TIMEOUT = 2.0          # never block execution on a reader that stopped
-PRODUCER_JOIN = 5.0         # bounded wait for the producer thread to notice stop
+
+# Event streaming is a bounded wait, never an open-ended one.
+STREAM_POLL_SECONDS = 0.25    # how often the stored log is re-read
+STREAM_IDLE_LIMIT = 90.0      # no new event: assume the executor is gone
+STREAM_WALL_LIMIT = 1800.0    # hard ceiling, matching Limits.runtime_seconds
 
 SUPPORTED_TASK_TYPES = {"chat"}
 SUPPORTED_CAPABILITIES = {"text.generate"}
@@ -93,26 +105,40 @@ APP_VERSION = os.environ.get("AEGIS_APP_VERSION", "0.1.0")
 app = FastAPI(title="AegisForge worker", docs_url=None, redoc_url=None,
               openapi_url=None)
 
-# Populated only by a completed OD-06 pairing, which does not exist. Empty is
-# the honest state, and it is what keeps the job routes closed.
-_relationships: dict[str, dict] = {}
+# OD-06 state. The default path is inside the Pod's own writable volume; an
+# empty store is the honest starting state and keeps the job routes closed.
+PAIRING_PATH = Path(os.environ.get("AEGIS_PAIRING_STATE",
+                                   "/var/lib/aegisforge/pairing.json"))
+_pairing = pairing_module.PairingStore(PAIRING_PATH)
 
-# Set only by an AF-005 durable receipt backend, which does not exist.
-_receipt_backend = None
+# AF-005 durable receipt. Constructed only when an address was configured;
+# reachability is re-checked per request, because a Redis that answered at
+# startup and is gone now must close the routes rather than silently queue.
+_receipt_backend: dispatch_module.DispatchQueue | None = None
+if os.environ.get("AEGIS_REDIS_HOST"):
+    _receipt_backend = dispatch_module.DispatchQueue(Redis(
+        os.environ["AEGIS_REDIS_HOST"],
+        int(os.environ.get("AEGIS_REDIS_PORT", "6379")),
+        password=os.environ.get("AEGIS_REDIS_PASSWORD") or None))
 
-_attempts: "OrderedDict[str, dict]" = OrderedDict()
-_streams: dict[str, asyncio.Queue] = {}
-_idempotency: "OrderedDict[str, dict]" = OrderedDict()
-_lock = asyncio.Lock()
+# NO PROCESS-LOCAL ATTEMPT STATE. Everything the job routes need is in Redis,
+# which is what lets a restarted API Pod answer for work it never admitted.
 
 
 def missing_prerequisites() -> list[str]:
-    """What must exist before this worker may accept dispatched work."""
+    """What must exist before this worker may accept dispatched work.
+
+    Evaluated per request. Both halves are observations, not configuration: a
+    relationship that was revoked and a Redis that stopped answering both close
+    the routes again without a restart.
+    """
     missing = []
-    if not _relationships:
-        missing.append("a confirmed pairing relationship (OD-06 is not implemented)")
+    if not _pairing.relationships():
+        missing.append("a confirmed pairing relationship (OD-06)")
     if _receipt_backend is None:
-        missing.append("a durable dispatch receipt (AF-005 is not implemented)")
+        missing.append("a durable dispatch receipt backend (AF-005)")
+    elif not _receipt_backend.is_live():
+        missing.append("a reachable dispatch queue (AF-005)")
     return missing
 
 
@@ -126,17 +152,74 @@ def _failure(code: str, message: str, retryable: bool, status: int) -> JSONRespo
         headers={VERSION_HEADER: v1.CONTRACT_VERSION})
 
 
-def _guard(authorization: str | None, contract: str | None) -> JSONResponse | None:
-    supplied = (authorization or "").removeprefix("Bearer ").strip()
-    if not supplied or not hmac.compare_digest(supplied, _CREDENTIAL):
-        return _failure("permission_denied", "unknown or missing worker credential",
-                        False, 401)
+def _bearer(authorization: str | None) -> str:
+    return (authorization or "").removeprefix("Bearer ").strip()
+
+
+def _contract_guard(contract: str | None) -> JSONResponse | None:
     if contract is None:
         return _failure("invalid_request", f"{VERSION_HEADER} is required", False, 400)
     if contract != v1.CONTRACT_VERSION:
         return _failure("incompatible_contract",
                         "contract version is not supported by this worker", False, 409)
     return None
+
+
+def _guard(authorization: str | None, contract: str | None) -> JSONResponse | None:
+    """Preflight authority: the bootstrap token OR any relationship credential.
+
+    `/v1/health` is what the kubelet probes call with `AEGIS_WORKER_TOKEN`, and
+    what a paired coordinator calls with its own credential. Neither is
+    sufficient for a job route — `_job_guard` below requires the relationship.
+    """
+    supplied = _bearer(authorization)
+    if not supplied:
+        return _failure("permission_denied", "unknown or missing worker credential",
+                        False, 401)
+    if not hmac.compare_digest(supplied, _CREDENTIAL) and _identify(supplied) is None:
+        return _failure("permission_denied", "unknown or missing worker credential",
+                        False, 401)
+    return _contract_guard(contract)
+
+
+def _identify(credential: str) -> dict | None:
+    """Which relationship this credential belongs to, or None.
+
+    Every candidate is compared even after a match, so the time taken does not
+    reveal the position of a relationship in the store. At most
+    `pairing.MAX_RELATIONSHIPS` comparisons, so this stays constant-ish and
+    cheap; there is no per-request cache, because a revoked credential must stop
+    working immediately rather than at the end of a cache window.
+    """
+    found = None
+    for relationship_id in _pairing.relationships():
+        try:
+            record = _pairing.authorise(relationship_id, credential)
+        except pairing_module.PairingError:
+            continue
+        found = found or record
+    return found
+
+
+def _job_guard(authorization: str | None, contract: str | None):
+    """Job-route authority. Returns (relationship record, None) or (None, refusal).
+
+    The bootstrap token is deliberately rejected here. It is mounted into the
+    Pod for probes and is visible to anything that can read the Deployment's
+    Secret reference; letting it dispatch work would make pairing decorative.
+    """
+    supplied = _bearer(authorization)
+    denied = _failure("permission_denied",
+                      "dispatched work requires a paired relationship credential",
+                      False, 401)
+    if not supplied:
+        return None, denied
+    record = _identify(supplied)
+    if record is None:
+        return None, denied
+    if (refusal := _contract_guard(contract)) is not None:
+        return None, refusal
+    return record, None
 
 
 def _closed() -> JSONResponse | None:
@@ -184,7 +267,14 @@ def _node(observed: bool) -> dict:
             loaded = runtime.MODEL
     # Capability is advertised only when this worker could actually accept work.
     eligible = bool(models) and not missing_prerequisites()
-    active = sum(1 for a in _attempts.values() if a["state"] in {"queued", "running"})
+    # Queue depth is an observation of Redis, and stays `None` when it cannot be
+    # observed. A restarted API reporting 0 while work runs would be a
+    # measurement the coordinator routes on and that was never true.
+    active = None
+    if _receipt_backend is not None:
+        depths = [_receipt_backend.active_attempts(relationship_id)
+                  for relationship_id in _pairing.relationships()]
+        active = sum(depths) if depths else 0
     return v1.Node(
         contract_version=v1.CONTRACT_VERSION, node_id=NODE_ID,
         display_name=DISPLAY_NAME, app_version=APP_VERSION,
@@ -214,44 +304,72 @@ async def capabilities(authorization: str | None = Header(None),
                                   headers={VERSION_HEADER: v1.CONTRACT_VERSION})
 
 
+# ---------------------------------------------------------------- pairing ---
+
 @app.post("/v1/pairing/confirm")
-async def pairing_confirm():
-    return _failure("permission_denied",
-                    "pairing is a recorded decision, not an implementation", False, 501)
+async def pairing_confirm(request: Request,
+                          x_aegisforge_contract: str | None = Header(None)):
+    """Redeem a one-time code for this relationship's credential.
+
+    Deliberately **not** behind the bootstrap token. Its authority is the
+    short-lived single-use code, which reached the coordinator out of band and
+    is presented inside the already-pinned TLS channel — OD-06's whole point is
+    that a human confirmed the certificate fingerprint before this call.
+
+    The credential is returned once and never again. The worker keeps only a
+    salted hash, so this response cannot be reconstructed from worker state.
+    """
+    if (refusal := _contract_guard(x_aegisforge_contract)) is not None:
+        return refusal
+    raw = await _read_bounded(request)
+    if raw is None:
+        return _failure("invalid_request", "request body is too large", False, 413)
+    try:
+        body = json.loads(raw or b"{}")
+        relationship_id = _ID.validate_python(body["relationship_id"])
+        workspace_id = _ID.validate_python(body["workspace_id"])
+        code = body["pairing_code"]
+    except Exception:                                          # noqa: BLE001
+        return _failure("invalid_request",
+                        "relationship_id, workspace_id and pairing_code are required",
+                        False, 422)
+    try:
+        credential = _pairing.redeem(code, relationship_id=relationship_id,
+                                     workspace_id=workspace_id)
+    except pairing_module.PairingError as exc:
+        status = 409 if exc.code == "idempotency_conflict" else 403
+        return _failure(exc.code, exc.message, False, status)
+    # The only place the plaintext exists outside the coordinator's Keychain.
+    return JSONResponse(
+        status_code=201,
+        content={"relationship_id": relationship_id, "credential": credential,
+                 "node_id": NODE_ID, "contract_version": v1.CONTRACT_VERSION},
+        headers={VERSION_HEADER: v1.CONTRACT_VERSION, "Cache-Control": "no-store"})
 
 
 @app.delete("/v1/pairing/{relationship_id}")
-async def pairing_revoke(relationship_id: str):
-    return _failure("permission_denied",
-                    "pairing revocation is not implemented", False, 501)
+async def pairing_revoke(relationship_id: str,
+                         authorization: str | None = Header(None),
+                         x_aegisforge_contract: str | None = Header(None)):
+    """Delete the stored hash and fence work in flight.
 
-
-# ---------------------------------------------------------------- attempt ---
-
-def _as_attempt(record: dict) -> v1.Attempt:
-    """Build the contract record, which validates it. Extra fields are forbidden
-    and a terminal state must carry a finish timestamp and exactly one reason."""
-    env = record["envelope"]
-    return v1.Attempt(
-        contract_version=v1.CONTRACT_VERSION, workspace_id=env.workspace_id,
-        job_id=env.job_id, step_id=env.step_id, attempt_id=env.attempt_id,
-        retry_of=None, node_id=NODE_ID, model=record["model"],
-        state=record["state"], route_reason=record["route_reason"],
-        created_at=record["created_at"], started_at=record["started_at"],
-        finished_at=record["finished_at"], queue_ms=record["queue_ms"],
-        runtime_ms=record["runtime_ms"], error=record["error"], artifacts=[])
-
-
-def _set_state(record: dict, state: str, error: dict | None = None) -> None:
-    """Maintain the timestamps the Attempt validator requires."""
-    stamp = _now()
-    if state in {"running", "validating", "completed"} and record["started_at"] is None:
-        record["started_at"] = stamp
-    if state in v1.TERMINAL_ATTEMPT_STATES:
-        record["finished_at"] = record["finished_at"] or stamp
-    record["state"] = state
-    record["error"] = error
-    _as_attempt(record)          # raises before an invalid record is served
+    A relationship may revoke only itself: presenting relationship A's
+    credential to delete relationship B is refused as if B did not exist.
+    """
+    record, refusal = _job_guard(authorization, x_aegisforge_contract)
+    if refusal is not None:
+        return refusal
+    if record["relationship_id"] != relationship_id:
+        return _failure("permission_denied",
+                        "a credential may revoke only its own relationship",
+                        False, 403)
+    _pairing.revoke(relationship_id)
+    # Fence first-class: the relationship-scoped cancel key stops attempts
+    # already running in the executor Pod. A loop over process memory would
+    # have fenced nothing — the work is not in this process.
+    if _receipt_backend is not None:
+        _receipt_backend.revoke_relationship(relationship_id)
+    return Response(status_code=204, headers={VERSION_HEADER: v1.CONTRACT_VERSION})
 
 
 # ------------------------------------------------------------- admission ---
@@ -272,8 +390,8 @@ def _unsupported(envelope: v1.JobEnvelope) -> str | None:
         return "this envelope targets a different node"
     if envelope.relationship_id is None:
         return "a dispatched envelope must carry a relationship"
-    if envelope.relationship_id not in _relationships:
-        # Verification, not merely presence. Empty registry means always closed.
+    if not _pairing.is_active(envelope.relationship_id):
+        # Verification, not merely presence. An empty or revoked store closes.
         return "this relationship has not been confirmed by pairing"
     return None
 
@@ -308,7 +426,7 @@ async def submit(request: Request,
                  idempotency_key: str | None = Header(None),
                  content_type: str | None = Header(None),
                  content_encoding: str | None = Header(None)):
-    denied = _guard(authorization, x_aegisforge_contract)
+    relationship, denied = _job_guard(authorization, x_aegisforge_contract)
     if denied:
         return denied
     # Fail closed before anything else. No 202 without a durable receipt and a
@@ -339,6 +457,16 @@ async def submit(request: Request,
 
     if (reason := _unsupported(envelope)) is not None:
         return _failure("invalid_request", reason, False, 422)
+    if envelope.relationship_id != relationship["relationship_id"]:
+        # The credential that authenticated is the one whose work this must be.
+        # Without this, any paired coordinator could dispatch into another
+        # relationship's queue and read its events.
+        return _failure("permission_denied",
+                        "this envelope belongs to a different relationship",
+                        False, 403)
+    if envelope.workspace_id != relationship["workspace_id"]:
+        return _failure("permission_denied",
+                        "this envelope belongs to a different workspace", False, 403)
     if envelope.cancel_requested:
         return _failure("cancelled_by_user",
                         "this envelope was already cancelled before dispatch", False, 409)
@@ -348,293 +476,225 @@ async def submit(request: Request,
                         False, 409)
 
     body_digest = hashlib.sha256(raw).hexdigest()
-    async with _lock:
-        seen = _idempotency.get(scope)
-        if seen is not None:
-            if seen["body"] != body_digest:
-                return _failure("idempotency_conflict",
-                                "this key was used with a different request body",
-                                False, 409)
-            return JSONResponse(status_code=202, content=seen["attempt"],
-                                headers={VERSION_HEADER: v1.CONTRACT_VERSION})
-        if envelope.attempt_id in _attempts:
-            return _failure("idempotency_conflict", "attempt already accepted",
-                            False, 409)
-        active = sum(1 for a in _attempts.values() if a["state"] in {"queued", "running"})
-        if active >= MAX_ACTIVE:
-            return _failure("unavailable", "worker is at capacity", True, 429)
-        probe = runtime.probe()
-        if not probe["reachable"]:
-            return _failure("unavailable", "the local model runtime is not answering",
-                            True, 503)
+    relationship_id = relationship["relationship_id"]
 
-        record = register(envelope)
-        payload = _as_attempt(record).model_dump()
-        _idempotency[scope] = {"body": body_digest, "attempt": payload}
-        while len(_idempotency) > MAX_RETAINED:
-            _idempotency.popitem(last=False)
-        _evict_terminal()
+    # Capacity comes from Redis, not from a counter this process keeps. A
+    # restarted API had a queue depth of zero while work was running, and a
+    # stale dictionary entry could hold a slot against a finished attempt for
+    # the life of the process.
+    #
+    # There is deliberately NO "this attempt is already known" refusal here. A
+    # client that retries after a lost response sends the same envelope under
+    # the same key, and rejecting that would turn the retry idempotency exists
+    # for into a 409. `enqueue` distinguishes the two cases — same key and same
+    # body replays the original receipt, same key and a different body
+    # conflicts — and a duplicate that reaches the stream anyway is suppressed
+    # by the executor's lease and terminal marker.
+    if _receipt_backend.active_attempts(relationship_id) >= MAX_ACTIVE:
+        return _failure("unavailable", "worker is at capacity", True, 429)
 
-    asyncio.create_task(_execute(envelope.attempt_id, remaining))
-    return JSONResponse(status_code=202, content=payload,
+    payload = _attempt_record(envelope, "queued").model_dump()
+
+    # THE RECEIPT, committed atomically. Nothing below this line may return 202
+    # unless the envelope is in the dispatch stream, and nothing may return an
+    # error once it is: `enqueue` writes the entry and its acceptance together.
+    try:
+        stored = _receipt_backend.enqueue(
+            envelope, scope=scope, body_digest=body_digest,
+            idempotency_key=idempotency_key, epoch=_pairing.epoch(),
+            attempt_payload=payload)
+    except dispatch_module.DispatchError as exc:
+        return _failure(exc.code, exc.message, exc.retryable, exc.status)
+
+    return JSONResponse(status_code=202, content=stored,
                         headers={VERSION_HEADER: v1.CONTRACT_VERSION})
 
 
-def register(envelope: v1.JobEnvelope) -> dict:
-    """Create the in-memory attempt record. Not a durable receipt."""
-    record = {
-        "envelope": envelope, "state": "queued",
-        "route_reason": "worker: accepted for local execution",
-        "created_at": _now(), "started_at": None, "finished_at": None,
-        "queue_ms": None, "runtime_ms": None, "error": None, "model": None,
-        "job_id": envelope.job_id, "workspace_id": envelope.workspace_id,
-        "sequence": 0, "output": "", "cancelled": False, "metrics": {},
-    }
-    _as_attempt(record)
-    _attempts[envelope.attempt_id] = record
-    _streams[envelope.attempt_id] = asyncio.Queue(maxsize=STREAM_QUEUE)
-    return record
-
-
-def _evict_terminal() -> None:
-    """Bound retention by dropping finished attempts only — never active work."""
-    finished = [k for k, a in _attempts.items()
-                if a["state"] not in {"queued", "running"}]
-    while len(_attempts) > MAX_RETAINED and finished:
-        key = finished.pop(0)
-        _attempts.pop(key, None)
-        _streams.pop(key, None)
-
-
-# ------------------------------------------------------------- execution ---
-
-async def _emit(attempt_id: str, payload: dict) -> None:
-    record = _attempts.get(attempt_id)
-    queue = _streams.get(attempt_id)
-    if record is None or queue is None:
-        return
-    record["sequence"] += 1
-    event = v1.Event(
-        contract_version=v1.CONTRACT_VERSION, workspace_id=record["workspace_id"],
-        job_id=record["job_id"], attempt_id=attempt_id, event_id=str(uuid.uuid4()),
-        sequence=record["sequence"], producer_node_id=NODE_ID, producer="worker",
-        occurred_at=_now(), data=payload)
-    try:
-        await asyncio.wait_for(queue.put(v1.sse_frame(event)), EMIT_TIMEOUT)
-    except (asyncio.TimeoutError, asyncio.QueueFull):
-        record["overflowed"] = True
-
-
-async def _execute(attempt_id: str, envelope_budget: float) -> None:
-    record = _attempts.get(attempt_id)
-    if record is None:
-        return
-    env = record["envelope"]
-
-    # ONE absolute deadline for the whole attempt: the earlier of the envelope's
-    # remaining time and its requested runtime_seconds. Every wait derives from
-    # it, so a slow stream cannot extend the budget one read at a time.
-    budget = min(envelope_budget, float(env.limits.runtime_seconds))
-    deadline = time.monotonic() + max(0.0, budget)
-    output_cap = env.limits.output_bytes
-
-    await _emit(attempt_id, {"kind": "attempt.state", "previous": None,
-                             "current": "queued"})
-    _set_state(record, "running")
-    await _emit(attempt_id, {"kind": "attempt.state", "previous": "queued",
-                             "current": "running"})
-
-    loop = asyncio.get_running_loop()
-    relay: asyncio.Queue = asyncio.Queue(maxsize=RELAY_QUEUE)
-    stop = threading.Event()
-
-    def hand_off(item) -> bool:
-        """Bounded put. Returns False when the consumer is gone or out of time."""
-        left = deadline - time.monotonic()
-        if left <= 0 or stop.is_set():
-            return False
-        future = asyncio.run_coroutine_threadsafe(relay.put(item), loop)
-        try:
-            future.result(timeout=left)
-            return True
-        except Exception:                                      # noqa: BLE001
-            future.cancel()
-            return False
-
-    def produce():
-        try:
-            for item in runtime.stream_chat(
-                    [{"role": "user", "content": env.original_request}],
-                    should_cancel=lambda: record["cancelled"] or stop.is_set()
-                    or time.monotonic() >= deadline,
-                    timeout=max(0.5, deadline - time.monotonic())):
-                if not hand_off(item):
-                    return
-        except Exception as exc:                               # noqa: BLE001
-            hand_off(("raised", exc))
-        finally:
-            hand_off(None)
-
-    producer = loop.run_in_executor(None, produce)
-    metrics, failure = {}, None
-    started = time.monotonic()
-    try:
-        while True:
-            left = deadline - time.monotonic()
-            if left <= 0:
-                raise asyncio.TimeoutError
-            item = await asyncio.wait_for(relay.get(), timeout=left)
-            if item is None:
-                break
-            kind, payload = item
-            if kind == "delta":
-                record["output"] += payload
-                if len(record["output"].encode("utf-8")) > output_cap:
-                    failure = ("output_bytes", None)
-                    break
-                for i in range(0, len(payload), 2048):
-                    await _emit(attempt_id, {"kind": "output.delta",
-                                             "text": payload[i:i + 2048]})
-            elif kind == "cancelled":
-                record["cancelled"] = True
-                break
-            elif kind == "done":
-                metrics = payload
-            elif kind == "raised":
-                failure = ("raised", payload)
-                break
-    except asyncio.TimeoutError:
-        failure = ("deadline", None)
-    finally:
-        stop.set()                       # tell the producer to leave
-        try:
-            await asyncio.wait_for(asyncio.shield(producer), timeout=PRODUCER_JOIN)
-        except Exception:                                      # noqa: BLE001
-            pass          # bounded: a stuck producer must not hold the attempt
-
-    record["metrics"] = metrics
-    record["runtime_ms"] = metrics.get("runtime_ms") or int(
-        (time.monotonic() - started) * 1000)
-
-    # Cancellation fences a later completion.
-    if record["cancelled"]:
-        await _terminal(attempt_id, "cancelled", {
-            "code": "cancelled_by_user", "message": "cancelled by the coordinator",
-            "retryable": True})
-        return
-    if failure is not None:
-        kind, detail = failure
-        reason = {
-            "deadline": {"code": "deadline_exceeded",
-                         "message": "the attempt deadline was reached; partial output retained",
-                         "retryable": True},
-            "output_bytes": {"code": "validation_failed",
-                             "message": f"output exceeded the requested {output_cap}-byte limit",
-                             "retryable": False},
-        }.get(kind, {"code": "unavailable", "message": str(detail)[:256],
-                     "retryable": True})
-        await _terminal(attempt_id, "failed", reason)
-        return
-
-    problem = _validate_output(record, metrics)
-    if problem is not None:
-        await _terminal(attempt_id, "failed", problem)
-        return
-
-    _set_state(record, "validating")
-    await _emit(attempt_id, {"kind": "attempt.state", "previous": "running",
-                             "current": "validating"})
-    await _terminal(attempt_id, "completed", None)
-
-
-def _validate_output(record: dict, metrics: dict) -> dict | None:
-    """Only a validated output after a confirmed normal stop may complete."""
-    reason = metrics.get("done_reason")
-    if reason != "stop":
-        detail = {
-            "context": "the context window was reached",
-            "output": "the reply token limit was reached",
-            "context_and_output": "both the context window and the reply limit were reached",
-        }.get(metrics.get("limit_reason"),
-              f"the runtime stopped with reason {reason or 'unreported'}")
-        return {"code": "validation_failed",
-                "message": f"incomplete reply: {detail}; partial output retained",
-                "retryable": True}
-    if "text.nonempty" in record["envelope"].output.validators \
-            and not record["output"].strip():
-        return {"code": "validation_failed",
-                "message": "the runtime returned no visible output", "retryable": True}
-    return None
-
-
-async def _terminal(attempt_id: str, state: str, error: dict | None) -> None:
-    record = _attempts.get(attempt_id)
-    if record is None:
-        return
-    previous = record["state"]
-    _set_state(record, state, error)
-    await _emit(attempt_id, {"kind": "attempt.state", "previous": previous,
-                             "current": state})
-    queue = _streams.get(attempt_id)
-    if queue is not None:
-        try:
-            await asyncio.wait_for(queue.put(None), EMIT_TIMEOUT)
-        except (asyncio.TimeoutError, asyncio.QueueFull):
-            pass
-    async with _lock:
-        _evict_terminal()
-
-
 # ----------------------------------------------------------------- reads ---
+#
+# NOTHING HERE CONSULTS PROCESS MEMORY. Execution moved to the executor Pod at
+# C06 and the receipt lives in Redis, so an API Pod that restarts mid-attempt
+# must still answer for work it no longer remembers. Every route below resolves
+# the attempt through `find_attempt`, which reads the dispatch stream the
+# receipt was written to. A dictionary here would answer 404 for running work.
 
-def _scoped(attempt_id: str, job_id: str) -> dict | None:
-    record = _attempts.get(attempt_id)
-    # The attempt query stops a delayed poll or cancel targeting a newer retry.
-    return record if record and record["job_id"] == job_id else None
+
+def _resolve(job_id: str, attempt_id: str, relationship: dict):
+    """The envelope this worker admitted, or None if it never did.
+
+    Also the authorization check: an envelope belongs to exactly one
+    relationship, workspace and job, so a caller holding relationship A's
+    credential cannot read or cancel B's attempt by guessing its ID.
+    """
+    if _receipt_backend is None:
+        return None
+    try:
+        envelope = _receipt_backend.find_attempt(
+            relationship["relationship_id"], attempt_id)
+    except dispatch_module.DispatchError:
+        return None
+    if envelope is None or envelope.job_id != job_id:
+        return None
+    if (envelope.relationship_id != relationship["relationship_id"]
+            or envelope.workspace_id != relationship["workspace_id"]):
+        return None
+    return envelope
+
+
+def _attempt_record(envelope: v1.JobEnvelope, state: str) -> v1.Attempt:
+    """Build the contract record from the envelope plus the observed state.
+
+    Reconstructed rather than remembered: the envelope is durable and the state
+    comes from the executor's event log, so the same answer survives a restart.
+    """
+    stamp = _now()
+    started = stamp if state in {"running", "validating", "completed"} else None
+    finished = stamp if state in v1.TERMINAL_ATTEMPT_STATES else None
+    return v1.Attempt(
+        contract_version=v1.CONTRACT_VERSION, workspace_id=envelope.workspace_id,
+        job_id=envelope.job_id, step_id=envelope.step_id,
+        attempt_id=envelope.attempt_id, retry_of=None, node_id=NODE_ID,
+        model=None, state=state,
+        route_reason="worker: enqueued for executor dispatch",
+        created_at=envelope.created_at, started_at=started,
+        finished_at=finished, queue_ms=None, runtime_ms=None,
+        error=_stop_reason(state), artifacts=[])
+
+
+def _observed_state(relationship_id: str, attempt_id: str) -> str:
+    """The attempt's state, derived from the executor's own events.
+
+    "queued" when the log is empty: an admitted attempt the executor has not
+    picked up yet has genuinely not started, and inventing a terminal state
+    would be a claim about work that has not happened.
+    """
+    if _receipt_backend is None:
+        return "queued"
+    try:
+        events = _receipt_backend.read_events(relationship_id, attempt_id,
+                                              admitted=True)
+    except dispatch_module.DispatchError:
+        return "queued"
+    state = "queued"
+    for event in events:
+        if event.get("data", {}).get("kind") == "attempt.state":
+            state = event["data"]["current"]
+    return state
+
+
+def _stop_reason(state: str) -> dict | None:
+    """The Attempt validator requires exactly one typed reason on a stop.
+
+    The executor reports the state change; the reason here is the generic one
+    for that state, because the API did not observe the cause. It never claims
+    `cancelled_by_user` for a failure — the contract forbids that pairing.
+    """
+    return {
+        "cancelled": {"code": "cancelled_by_user",
+                      "message": "cancelled before completion", "retryable": True},
+        "failed": {"code": "internal_error",
+                   "message": "the executor reported a failed attempt",
+                   "retryable": True},
+        "interrupted": {"code": "worker_lost",
+                        "message": "the executor stopped without finishing",
+                        "retryable": True},
+    }.get(state)
 
 
 @app.get("/v1/jobs/{job_id}")
 async def poll(job_id: str, attempt_id: str = Query(...),
                authorization: str | None = Header(None),
                x_aegisforge_contract: str | None = Header(None)):
-    denied = _guard(authorization, x_aegisforge_contract)
+    relationship, denied = _job_guard(authorization, x_aegisforge_contract)
     if denied:
         return denied
     if (shut := _closed()) is not None:
         return shut
-    record = _scoped(attempt_id, job_id)
-    if record is None:
+    envelope = _resolve(job_id, attempt_id, relationship)
+    if envelope is None:
         return _failure("unavailable", "no such attempt for this job", False, 404)
+    state = _observed_state(relationship["relationship_id"], attempt_id)
     # Exactly the contract's Attempt: no metrics, no counts, no extra fields.
-    return JSONResponse(_as_attempt(record).model_dump(),
+    return JSONResponse(_attempt_record(envelope, state).model_dump(),
                         headers={VERSION_HEADER: v1.CONTRACT_VERSION})
 
 
 @app.get("/v1/jobs/{job_id}/events")
-async def events(job_id: str, attempt_id: str = Query(...),
+async def events(job_id: str, attempt_id: str = Query(...), after: int = Query(0),
                  authorization: str | None = Header(None),
                  x_aegisforge_contract: str | None = Header(None)):
-    denied = _guard(authorization, x_aegisforge_contract)
+    """Stream this attempt's events until it reaches a terminal state.
+
+    **This waits.** A single snapshot of the log was the earlier behaviour and
+    it was wrong: immediately after submission the log is empty or holds only
+    `queued`, so the coordinator saw a stream end with no terminal state and
+    marked perfectly good work `interrupted`. The executor is a different Pod,
+    so there is no in-process queue to attach to; the connection is held open
+    and the log is re-read instead.
+
+    Three bounds, because an unbounded wait is its own failure:
+
+    * the attempt's own `deadline_at` — the work cannot outlive it;
+    * `STREAM_IDLE_LIMIT` with no new event, which catches an executor that
+      died between its last event and its terminal one;
+    * the cancellation key, so a cancelled attempt stops streaming promptly
+      rather than waiting out the deadline.
+
+    `after` makes it resumable: a coordinator that reconnects passes the last
+    sequence it persisted and receives only what it missed, so a reconnect
+    cannot duplicate output.
+    """
+    relationship, denied = _job_guard(authorization, x_aegisforge_contract)
     if denied:
         return denied
     if (shut := _closed()) is not None:
         return shut
-    record = _scoped(attempt_id, job_id)
-    if record is None:
+    envelope = _resolve(job_id, attempt_id, relationship)
+    if envelope is None:
+        # No receipt at all. Distinct from an admitted attempt with no events
+        # yet, which is handled below by waiting rather than refusing.
+        try:
+            _receipt_backend.read_events(relationship["relationship_id"], attempt_id)
+        except dispatch_module.DispatchError as exc:
+            return _failure(exc.code, exc.message, exc.retryable, exc.status)
         return _failure("unavailable", "no such attempt for this job", False, 404)
-    queue = _streams.get(attempt_id)
-    if queue is None:
-        # One consumptive stream, no retained cursor. Replay arrives with AF-005.
-        return _failure("events_expired",
-                        "this attempt's stream is finished; replay arrives with AF-005",
-                        False, 410)
+
+    relationship_id = relationship["relationship_id"]
+    budget = min(_seconds_until(envelope.deadline_at), STREAM_WALL_LIMIT)
 
     async def stream():
+        cursor = max(0, after)
+        deadline = time.monotonic() + max(0.0, budget)
+        quiet_since = time.monotonic()
         while True:
-            frame = await queue.get()
-            if frame is None:
+            try:
+                pending = _receipt_backend.read_events(
+                    relationship_id, attempt_id, after_sequence=cursor,
+                    admitted=True)
+            except dispatch_module.DispatchError:
+                return          # Redis went away; the coordinator sees the cut
+            for payload in pending:
+                try:
+                    event = v1.Event.model_validate(payload)
+                except Exception:                              # noqa: BLE001
+                    continue    # never forward a record the contract rejects
+                cursor = max(cursor, event.sequence)
+                quiet_since = time.monotonic()
+                yield v1.sse_frame(event)
+            state = _observed_state(relationship_id, attempt_id)
+            if state in v1.TERMINAL_ATTEMPT_STATES:
                 return
-            yield frame
+            now = time.monotonic()
+            if now >= deadline or now - quiet_since > STREAM_IDLE_LIMIT:
+                return
+            try:
+                if _receipt_backend.cancelled(relationship_id, attempt_id):
+                    # Keep reading briefly so the executor's own cancelled
+                    # event is delivered rather than cut off mid-flight.
+                    deadline = min(deadline, now + STREAM_POLL_SECONDS * 4)
+            except dispatch_module.DispatchError:
+                return
+            await asyncio.sleep(STREAM_POLL_SECONDS)
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-store",
@@ -645,13 +705,21 @@ async def events(job_id: str, attempt_id: str = Query(...),
 async def cancel(job_id: str, attempt_id: str = Query(...),
                  authorization: str | None = Header(None),
                  x_aegisforge_contract: str | None = Header(None)):
-    denied = _guard(authorization, x_aegisforge_contract)
+    """Record the cancellation where the executor will see it.
+
+    Setting a flag in this process would cancel nothing: the work is running in
+    another Pod, and after an API restart this process never admitted it at all.
+    The Redis key is the cancellation boundary, and the executor polls it.
+    """
+    relationship, denied = _job_guard(authorization, x_aegisforge_contract)
     if denied:
         return denied
     if (shut := _closed()) is not None:
         return shut
-    record = _scoped(attempt_id, job_id)
-    if record is None:
+    if _resolve(job_id, attempt_id, relationship) is None:
         return _failure("unavailable", "no such attempt for this job", False, 404)
-    record["cancelled"] = True
+    try:
+        _receipt_backend.request_cancel(relationship["relationship_id"], attempt_id)
+    except dispatch_module.DispatchError as exc:
+        return _failure(exc.code, exc.message, exc.retryable, exc.status)
     return Response(status_code=202, headers={VERSION_HEADER: v1.CONTRACT_VERSION})

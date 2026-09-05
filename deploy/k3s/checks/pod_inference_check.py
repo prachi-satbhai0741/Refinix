@@ -28,8 +28,19 @@ EXIT_UNREACHABLE = 2
 EXIT_DEADLINE = 3
 
 
-class Deadline(Exception):
-    """Raised from SIGALRM so a blocked read is actually interrupted."""
+class Deadline(BaseException):
+    """Raised from SIGALRM so a blocked read is actually interrupted.
+
+    BaseException, not Exception, and that is the whole point: the raise lands
+    inside the adapter, whose `except Exception` handlers (runtime.py:50, 61,
+    68) would otherwise catch it and return a normal error. The deadline would
+    then be reported as an ordinary failure, or not enforced at all. Deriving
+    from BaseException makes it pass through, exactly as KeyboardInterrupt
+    does, while `except Deadline` below still catches it by name.
+
+    This is fixed at the check boundary on purpose: the C04 worker image is
+    frozen and must not be rebuilt to make a check work.
+    """
 
 
 def _arm(seconds: float) -> None:

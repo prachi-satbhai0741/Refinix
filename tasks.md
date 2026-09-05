@@ -57,10 +57,10 @@ identifies human actions by **device role** — `macOS coordinator`, `Ubuntu
 worker` — or by **requester** for acceptance, never by team member.
 
 - **Execution order and authorisation scope are separate concerns.** Work
-  proceeds sequentially through the chunks, one at a time. Authorisation may
-  cover a single chunk or a **named range**; progression through an authorised
-  range happens only after each chunk's required acceptance gate clears.
-  Authorising C03 does not authorise C04 unless the range says so.
+  follows the [grouped execution plan](#grouped-execution-plan): independent
+  preparation and implementation may overlap, while dependent device actions
+  and acceptance gates stay ordered. Authorisation may cover a single chunk or
+  a **named range**. Authorising C03 does not authorise C04 unless the range says so.
 - Within an authorised scope, resolve routine implementation questions from
   repository evidence, the established requirements and authoritative upstream
   documentation. **Those questions are not human checkpoints** and must not be
@@ -239,19 +239,24 @@ Progress depends on these conditions. The internal demonstration target is
 **8–9 September 2026**; a missed gate changes what can be demonstrated, not
 the evidence required to call it complete.
 
-**Current scope: C05 — Cluster deployment and integration.** The requester accepted C04 on 2026-09-04. Deployment assets are prepared in [`deploy/k3s`](deploy/k3s/) pinned to the C04 manifest digest `sha256:a1eb434c…`, with the exact host commands in [the deployment handoff](docs/c05-ubuntu-deployment-handoff.md). K3s is installed without Traefik or ServiceLB so it binds no port 80/443 and leaves Jenkins on 8080 untouched. **Installation and deployment remain at the Ubuntu human checkpoint; nothing has been executed.**
+**Current scope: C05 — Cluster deployment and integration.** The requester accepted C04 on 2026-09-04. Deployment assets are in [`deploy/k3s`](deploy/k3s/) pinned to the C04 manifest digest `sha256:a1eb434c…`, with host commands in [the deployment handoff](docs/c05-ubuntu-deployment-handoff.md). K3s runs without Traefik or ServiceLB so it binds no port 80/443 and leaves Jenkins on 8080 untouched.
+
+**Partially executed on 2026-09-04. Steps A, B and D are complete; E onward are not.** The Ubuntu host was found with K3s **already installed** at the pinned `v1.36.4+k3s1` but stock-configured — no `--disable`, no `nodeport-addresses`, and 6443/10250 open to the LAN. Handoff steps C and D were therefore not run as written; the settings were applied through `/etc/rancher/k3s/config.yaml` and the cluster restarted, which the handoff now records as **D-adapt**. Recorded evidence: guard rules present *after* the restart, `nc` to 6443 from the Mac timing out where it previously connected, CoreDNS rolled out, node Ready, Jenkins/nginx/Ollama untouched. Step F applied the namespace, both Secrets, Redis and the worker; **the worker Pod is not running** — the Deployment references the image by digest while the archive imports under a tag, corrected in the handoff's step F. **The host is now powered down and off this network, so C05 cannot progress.**
 
 **A gate distinction to settle:** C05's row lists *one real worker-model response*. Step 7e of the handoff produces one **through the worker's runtime adapter inside the Pod**, without opening dispatch. A response through the contract's *public job routes* additionally needs OD-06 pairing and the AF-005 receipt, neither implemented. **Ready Pods plus adapter-level inference is not completed integration.** Whether the gate means the adapter-level response or the dispatched one is a requester decision.
 
-The worker speaks plain HTTP and pinned TLS belongs to OD-06, so C05 keeps the Kubernetes API and the worker NodePort **closed to the LAN** and verifies from the node itself; LAN exposure arrives with pairing.
+The worker speaks plain HTTP and pinned TLS belongs to OD-06, so C05 keeps the Kubernetes API and the worker NodePort **closed to the LAN** and verifies from the node itself; LAN exposure arrives with pairing. **Reviewer decision, 2026-09-04:** the documented dispatch path is Mac → authenticated worker Service → Redis → executor → Mac, with Redis internal. `nodeport-addresses=127.0.0.1/32` therefore stands for C05, and **C06 must introduce controlled LAN access to 30443** with pairing, certificate pinning, and matching forwarding and firewall controls — see [architecture](docs/architecture.md) and [security](docs/security.md).
+
+The cluster guard covers **6443 and 10250 on both IPv4 and IPv6**. The recorded Mac denial exercised IPv4 6443 only; the 10250 and IPv6 rules were added afterwards and are **not yet proven on hardware**.
 
 ---
 
 **C04 — Worker/API implementation and image build (accepted 2026-09-04).** The requester
 accepted C03 on 2026-09-04 and assigned implementation to Claude, with Codex
-orchestrating and reviewing. The existing authorisation is **C03 through C13 sequentially**,
-covering implementation, review fixes and proportionate offline checks on
-existing dependencies. Progression still needs each chunk's acceptance gate.
+orchestrating and reviewing. The authorisation covers **C03 through C13**,
+including implementation, review fixes and proportionate offline checks on
+existing dependencies. The requester subsequently approved the grouped
+execution plan below; required acceptance gates still apply.
 
 Ubuntu-to-Mac connectivity passed with zero packet loss. The worker API is
 implemented in [`backend/worker`](backend/worker/README.md) against the frozen
@@ -407,10 +412,10 @@ recorded the then-pending acceptance gate; requester acceptance has since cleare
 | C04 — Worker image build | C03 cleared | **AF-003, AF-002 preparation** — Worker API implemented in [`backend/worker`](backend/worker/README.md); build assets in [`backend/worker-image`](backend/worker-image/README.md); reviewed build and digest-inspection commands in [the handoff](docs/c04-ubuntu-build-handoff.md). | **Ubuntu worker:** run the reviewed image build and report build output, immutable image digest, architecture and provenance. | Agents inspect the actual build result and prepare a deployment pinned to that digest. Build failure stays in C04; a Dockerfile alone is not image evidence. |
 | C05 — Cluster deployment and integration | C04 cleared | **AF-001–AF-004 integration** — Manifests in [`deploy/k3s`](deploy/k3s/) pinned to the C04 digest, with 16 offline invariant checks; host commands in [the handoff](docs/c05-ubuntu-deployment-handoff.md). | **Ubuntu worker:** provision and apply the reviewed cluster commands. **macOS coordinator:** perform the coordinator acceptance steps supplied for this setup. | Ready Pods, internal-only Redis, one real worker-model response, persisted coordinator metadata and shared-version consumers. Pass the C05 integration gate before C06. |
 | C06 — Distributed execution | C05 cleared | **AF-005–AF-007** — Implement Redis dispatch/leases/receipt, routing, SSE replay, cancellation, recovery, preflight and truthful fallback. | **macOS coordinator and Ubuntu worker:** connect and explicitly pair the two devices, apply the reviewed trusted-LAN settings, and perform the documented disconnect/cancel exercise. | Actual Mac -> Service -> Redis -> executor -> Mac completion, correct route reason, and usable canonical history after cluster loss. Pass the C06 distributed-execution gate. |
-| C07 — Workflow inputs and setup | C06 cleared | **AF-008–AF-011 preparation** — Prepare synthetic scan/SOP/expected-result and Python code fixtures, their checks, and only the additional model/dependency setup the two workflows require on the Mac/Ubuntu configuration. | **Requester:** approve fixture provenance and allowed validation commands. **macOS coordinator:** select the coordinator inputs. **Ubuntu worker:** install only reviewed missing workflow packages/models. | Source hashes, expected extraction/citation examples, selected repository/base and commands, plus verified installed artifacts. Another execution device needs a measured need and a new device-based setup checkpoint. |
-| C08 — Documents workflow | C07 cleared | **AF-008–AF-009** — Implement real rendering/OCR, uncertainty, page mapping, local retrieval, cited drafting, DOCX creation and artifact checks on the two-device configuration. | **macOS coordinator:** open the Word output and compare its extracted facts and citations against the approved scan/SOP. | Openable Word output with checksum, resolvable citations and honest missing values. Fix discrepancies before proceeding to Code. |
-| C09 — Code workflow | C08 cleared | **AF-010–AF-011** — Implement bounded repository context, patch generation and restricted validation Jobs. Reuse approved images where suitable; a new image needing a build creates another checkpoint before deployment. | **Ubuntu worker:** apply the reviewed sandbox configuration and run the approved host steps. **macOS coordinator:** inspect the patch and validation results on the approved fixture. | Applicable patch, observed approved-command result, enforced limits/network isolation and cleanup; canonical repository unchanged. Pass the C09 signature-workflow gate. |
-| C10 — Concurrent workflows and approvals | C09 cleared | **AF-012–AF-014** — Implement concurrent workflows, exact-action approvals, durable final-write recovery and evidence-backed Proof Cards. | **macOS coordinator:** choose the output destination, exercise approve/deny/expiry, and inspect both workflows and the displayed proof against the observed results. | Concurrent progress with separate attempts/artifacts; denial writes nothing; approval writes once; no inferred health, timing or network measurements. |
+| C07 — Workflow inputs and setup | C05 cleared for independent preparation; C06 cleared for device setup and acceptance | **AF-008–AF-011 preparation** — Prepare synthetic scan/SOP/expected-result and Python code fixtures, their checks, and only the additional model/dependency setup the two workflows require on the Mac/Ubuntu configuration. | **Requester:** approve fixture provenance and allowed validation commands. **macOS coordinator:** select the coordinator inputs. **Ubuntu worker:** install only reviewed missing workflow packages/models. | Source hashes, expected extraction/citation examples, selected repository/base and commands, plus verified installed artifacts. Another execution device needs a measured need and a new device-based setup checkpoint. |
+| C08 — Documents workflow | C07 cleared; implementation alongside C09 | **AF-008–AF-009** — Implement real rendering/OCR, uncertainty, page mapping, local retrieval, cited drafting, DOCX creation and artifact checks on the two-device configuration. | **macOS coordinator:** open the Word output and compare its extracted facts and citations against the approved scan/SOP. | Openable Word output with checksum, resolvable citations and honest missing values. Fix discrepancies before accepting the combined C08/C09 result. |
+| C09 — Code workflow | C07 cleared for implementation; C08 cleared before combined acceptance | **AF-010–AF-011** — Implement bounded repository context, patch generation and restricted validation Jobs. Reuse approved images where suitable; a new image needing a build creates another checkpoint before deployment. | **Ubuntu worker:** apply the reviewed sandbox configuration and run the approved host steps. **macOS coordinator:** inspect the patch and validation results on the approved fixture. | Applicable patch, observed approved-command result, enforced limits/network isolation and cleanup; canonical repository unchanged. Pass the C09 signature-workflow gate. |
+| C10 — Concurrent workflows and approvals | C08 and C09 cleared | **AF-012–AF-014** — Implement concurrent workflows, exact-action approvals, durable final-write recovery and evidence-backed Proof Cards. | **macOS coordinator:** choose the output destination, exercise approve/deny/expiry, and inspect both workflows and the displayed proof against the observed results. | Concurrent progress with separate attempts/artifacts; denial writes nothing; approval writes once; no inferred health, timing or network measurements. |
 | C11 — Offline evidence | C10 cleared | **AF-015** — Prepare reviewed Pod/host network controls, rollback commands and independent observation for the real concurrent run. | **Ubuntu worker:** apply the host and cluster network controls. **macOS coordinator:** apply the coordinator network controls. **A separate observing device on the same LAN:** record the named device, interface and time window using the reviewed observation procedure. | Actual concurrent outputs plus enforcement and observation evidence for the specified scope. Preserve trusted LAN traffic and pass the C11 concurrent/offline gate; absent evidence remains unavailable. |
 | C12 — Recovery and measurements | C11 cleared | **AF-016–AF-017** — Prepare bounded failure drills and comparable standalone/distributed measurements; inspect results and repair confirmed recovery defects. | **macOS coordinator and Ubuntu worker:** perform the reviewed restart, disconnect, Pod, Redis and cluster operations, and record timing, resources, quality and failure outcomes. | Canonical history survives, stale attempts are fenced, no duplicate final writes, and reproducible cold/warm results on the named devices. Rerun affected checks after fixes. |
 | C13 — Candidate acceptance | C12 cleared | **AF-018–AF-019** — Codex reviews the integrated source/evidence; Claude fixes remaining defects and prepares the frozen demo instructions and claim list. | **macOS coordinator:** operate three clean-start runs, record a backup, and inspect the artifacts and demo clarity. **Ubuntu worker:** operate the cluster. **Requester:** compare the results with the recorded evidence, check the selected model/runtime provenance, accept the candidate and coordinate human Git promotion. | Three successful runs on the same documented setup, backup recording, honest claims, independent review and requester acceptance. This closes the alpha, not the later finals scope. |
@@ -420,6 +425,26 @@ C01 reviews the shared draft, C02 resolves setup/security decisions, and C03–C
 prove its consumers. Dependency preparation may use that reviewed draft; neither
 AF-001 nor a dependent integration gate becomes verified before its full evidence
 exists. Do not claim a contract freeze from schema checks alone.
+
+## Grouped execution plan
+
+Requester-approved order for the remaining work; C05 must pass first:
+
+- **C06 + C07:** build and verify distributed execution while independently
+  preparing C07 fixtures, expected results and the dependency plan. C07 device
+  setup and acceptance wait for C06 and their existing approvals.
+- **C08 + C09:** after C07 passes, implement Documents and Code in parallel
+  against agreed job, event, artifact and permission interfaces. Coordinate
+  shared-file edits; verify each workflow separately and both before C10.
+- **C10:** integrate concurrent workflows and approvals after both workflows pass.
+- **C11–C13:** prepare one final validation session after C10, then execute
+  offline evidence, recovery/measurements and candidate rehearsals in order.
+  Repair failures before proceeding; retain device actions, three clean-start
+  rehearsals and requester acceptance. A shared session does not combine the gates.
+
+UI design may proceed alongside implementation; integrate it with the existing
+frontend and contracts. Reuse valid check results and shared setup to reduce
+waiting; grouping does not promise a fixed completion time.
 
 ## Verification and team explanation
 
@@ -475,7 +500,8 @@ inference completes, and stopping the cluster leaves the Mac workspace and its
 canonical history usable.
 
 While C06 is unverified, preserve the standalone baseline and repair the
-existing distributed path before C07. Infrastructure expansion remains blocked. Do not add nodes, replicas, Helm,
+existing distributed path before C07 device setup or acceptance. Independent
+C07 preparation may overlap as described above. Infrastructure expansion remains blocked. Do not add nodes, replicas, Helm,
 Ingress, another broker, or another runtime to repair an unproven single path.
 
 ### AF-008–AF-011 — Signature workflows

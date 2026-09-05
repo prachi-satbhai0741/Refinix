@@ -3,6 +3,11 @@
 # The image is pinned by the manifest digest produced by the C04 Ubuntu build
 # and imported into containerd from the preserved archive. imagePullPolicy is
 # Never: this node must not reach a registry to run it.
+#
+# C06 adds TLS at this listener rather than a sidecar or an Ingress: uvicorn is
+# already in the image and terminates TLS with two flags, so the pinned OD-06
+# certificate needs no new component, no new port and no new build dependency.
+# The coordinator trusts that certificate and nothing else.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -20,6 +25,29 @@ data:
   AEGIS_NUM_PREDICT: "2048"
   AEGIS_NODE_NAME: "ubuntu-worker"
   AEGIS_MAX_ACTIVE: "2"
+  # AF-005. Without an address the job routes stay fail-closed, which is the
+  # correct pre-C06 state; with one, the API writes the durable receipt before
+  # it answers 202.
+  AEGIS_REDIS_HOST: "redis"
+  AEGIS_REDIS_PORT: "6379"
+  # OD-06 pairing state, on the PVC below so a restart does not silently
+  # unpair the coordinator.
+  AEGIS_PAIRING_STATE: "/var/lib/aegisforge/pairing.json"
+---
+# OD-06 needs the relationship hashes to survive a Pod restart. 64Mi because
+# the file holds at most sixteen relationship records; local-path is K3s's
+# built-in provisioner, already present, so this adds no component.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: worker-state
+  namespace: aegisforge
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 64Mi
 ---
 apiVersion: v1
 kind: Service
@@ -71,6 +99,14 @@ spec:
           # backend/worker-image/provenance.json and architecture.md 8.1.
           image: docker.io/library/aegisforge-worker@sha256:a1eb434c91ff5e51a095ccbdc5becd10e98a099a281302ef68e86b531543a295
           imagePullPolicy: Never
+          # TLS terminated by uvicorn itself. The image's CMD serves plain HTTP,
+          # which was correct while the port was closed to the LAN; C06 opens it
+          # to the confirmed Mac address, so the listener must be the pinned
+          # OD-06 certificate from the first byte.
+          command: ["python", "-m", "uvicorn", "backend.worker.app:app",
+                    "--host", "0.0.0.0", "--port", "8443", "--no-server-header",
+                    "--ssl-certfile", "/etc/aegisforge/tls/tls.crt",
+                    "--ssl-keyfile", "/etc/aegisforge/tls/tls.key"]
           ports:
             - containerPort: 8443
               name: worker
@@ -88,6 +124,11 @@ spec:
                 secretKeyRef:
                   name: worker-credential
                   key: node-id
+            - name: AEGIS_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credential
+                  key: password
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -103,6 +144,11 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: state
+              mountPath: /var/lib/aegisforge
+            - name: tls
+              mountPath: /etc/aegisforge/tls
+              readOnly: true
           # Authenticated exec probes. An httpGet probe cannot send the bearer
           # credential or the contract header, so /v1/health would answer 401
           # and Kubernetes would restart a healthy Pod forever. Running inside
@@ -120,13 +166,25 @@ spec:
                 - python
                 - -c
                 - |
-                  import os, sys, urllib.request
+                  import os, ssl, sys, urllib.request
                   request = urllib.request.Request(
-                      "http://127.0.0.1:8443/v1/health",
+                      "https://127.0.0.1:8443/v1/health",
                       headers={
                           "Authorization": "Bearer " + os.environ["AEGIS_WORKER_TOKEN"],
                           "X-AegisForge-Contract": "1.0"})
-                  with urllib.request.urlopen(request, timeout=3) as response:
+                  # The probe talks to this container's own loopback, inside
+                  # the Pod's network namespace, so there is no peer to
+                  # authenticate: the certificate is self-signed and names an
+                  # address, not a host. Verification here would fail on a
+                  # correctly configured worker. The COORDINATOR is where the
+                  # certificate is pinned and verified, and that check is not
+                  # weakened by this one.
+                  unverified = ssl._create_unverified_context()
+                  # 15s clears the ~13s worst case below and stays under
+                  # timeoutSeconds: 20. A 3s budget failed a healthy Pod
+                  # in exactly the state the comment calls normal.
+                  with urllib.request.urlopen(request, timeout=15,
+                                              context=unverified) as response:
                       sys.exit(0 if response.status == 200 else 1)
             # /v1/health calls runtime.probe(), which makes three HTTP calls
             # with 3s + 5s + 5s timeouts — about 13s worst case when the runtime
@@ -148,6 +206,16 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: state
+          persistentVolumeClaim:
+            claimName: worker-state
+        - name: tls
+          secret:
+            # Created by the operator from the worker's own self-signed
+            # certificate. NEVER committed: the private key is the worker's
+            # identity, and the coordinator pins the public half by hand.
+            secretName: worker-tls
+            defaultMode: 0440
 ---
 # The worker is reachable only on its contract port, and may talk only to Redis
 # plus the runtime host named in the ConfigMap.

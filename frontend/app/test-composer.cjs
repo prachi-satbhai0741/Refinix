@@ -88,7 +88,9 @@ function page({ bridge } = {}) {
       /* app.js evaluates matchMedia at module scope: the panel breakpoints and
          the theme's system preference. Answering "no match" gives the wide
          window and the light default, both of which are ordinary states. */
-      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+      matchMedia: () => ({ matches: false, addEventListener() {},
+                           removeEventListener() {}, addListener() {},
+                           removeListener() {} }),
     },
     navigator: {},
     fetch: (path, options) => new Promise((resolve, reject) => requests.push({

@@ -22,7 +22,7 @@ from unicodedata import category
 
 from backend.contracts import v1
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # ponytail: one coordinator database; use per-database locks if hosting several.
 LOCK = threading.RLock()
@@ -245,6 +245,26 @@ CREATE TABLE IF NOT EXISTS document_pages (
 );
 -- Generated documents. They live in coordinator-owned storage until an export
 -- is approved; `state` never says exported without an approval row.
+-- OD-06 relationships. NON-SECRET METADATA ONLY.
+-- The credential lives in the macOS Keychain (see coordinator/pairing.py) and
+-- must never be written here: this file is copied, backed up and inspected, and
+-- a bearer token in it would travel with every copy. The columns are chosen so
+-- that the whole row can be shown in the UI without redaction.
+CREATE TABLE IF NOT EXISTS relationships (
+    relationship_id TEXT PRIMARY KEY,
+    workspace_id    TEXT NOT NULL,
+    node_id         TEXT NOT NULL,
+    display_name    TEXT NOT NULL,
+    address         TEXT NOT NULL,
+    port            INTEGER NOT NULL,
+    fingerprint     TEXT NOT NULL,
+    certificate_pem TEXT NOT NULL,
+    state           TEXT NOT NULL CHECK (state IN ('paired', 'revoked')),
+    paired_at       TEXT NOT NULL,
+    revoked_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS relationships_by_workspace
+    ON relationships(workspace_id, state);
 CREATE TABLE IF NOT EXISTS artifacts (
     artifact_id  TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
@@ -305,6 +325,10 @@ def connect(path: Path) -> sqlite3.Connection:
         # Which capability a request ran under. Older jobs keep NULL, meaning
         # ordinary Chat, rather than being relabelled.
         conn.execute("ALTER TABLE jobs ADD COLUMN skill_id TEXT")
+    if "relationship_id" not in existing:
+        # Which paired relationship an attempt ran through. NULL means local,
+        # which is what every attempt before C06 actually was.
+        conn.execute("ALTER TABLE attempts ADD COLUMN relationship_id TEXT")
     if "reasoning_json" not in existing:
         # The model and reasoning value a request actually ran with. Older
         # attempts keep NULL rather than being back-filled with a guess.
@@ -1529,6 +1553,119 @@ def append_event(conn, *, job_id, attempt_id, node_id, data: dict) -> dict:
              "coordinator", event.occurred_at, event.data.model_dump_json()),
         )
     return json.loads(event.model_dump_json())
+
+
+# --------------------------------------------------------------------------
+# OD-06 relationships. Metadata only — the credential is in the Keychain.
+# --------------------------------------------------------------------------
+
+@serialized
+def record_relationship(conn, *, relationship_id, workspace_id, node_id,
+                        display_name, address, port, fingerprint,
+                        certificate_pem) -> str:
+    """Store the non-secret half of a completed pairing.
+
+    The ID is supplied, not generated: the worker minted its credential against
+    the ID the coordinator sent it, so a locally generated second ID would not
+    match the one the credential authorises.
+
+    Called only after the worker has returned a credential and that credential
+    has been stored in the Keychain. Recording first would leave a row claiming
+    a pairing that has no usable credential behind it.
+    """
+    with conn:
+        conn.execute(
+            "INSERT INTO relationships(relationship_id, workspace_id, node_id,"
+            " display_name, address, port, fingerprint, certificate_pem, state,"
+            " paired_at, revoked_at) VALUES (?,?,?,?,?,?,?,?, 'paired', ?, NULL)",
+            (relationship_id, workspace_id, node_id, display_name, address,
+             int(port), fingerprint, certificate_pem, now()))
+    return relationship_id
+
+
+def active_relationship(conn, workspace_id: str) -> dict | None:
+    """The paired worker for this workspace, or None.
+
+    One active relationship per workspace: C06 pairs two devices, and a chooser
+    between several workers is post-C11 scope. The newest paired row wins so a
+    re-pair after a worker rebuild takes effect without a manual cleanup.
+    """
+    row = conn.execute(
+        "SELECT * FROM relationships WHERE workspace_id=? AND state='paired'"
+        " ORDER BY paired_at DESC LIMIT 1", (workspace_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_relationship(conn, relationship_id: str, workspace_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM relationships WHERE relationship_id=? AND workspace_id=?",
+        (relationship_id, workspace_id)).fetchone()
+    return dict(row) if row else None
+
+
+def list_relationships(conn, workspace_id: str) -> list[dict]:
+    return [dict(row) for row in conn.execute(
+        "SELECT * FROM relationships WHERE workspace_id=? ORDER BY paired_at DESC",
+        (workspace_id,)).fetchall()]
+
+
+@serialized
+def revoke_relationship(conn, relationship_id: str, workspace_id: str) -> bool:
+    """Mark revoked; never delete.
+
+    The row is history: attempts reference it, and deleting it would make a
+    completed job look as if it had run nowhere.
+    """
+    with conn:
+        changed = conn.execute(
+            "UPDATE relationships SET state='revoked', revoked_at=?"
+            " WHERE relationship_id=? AND workspace_id=? AND state='paired'",
+            (now(), relationship_id, workspace_id)).rowcount
+    return bool(changed)
+
+
+@serialized
+def set_attempt_relationship(conn, attempt_id: str, relationship_id: str) -> None:
+    with conn:
+        conn.execute("UPDATE attempts SET relationship_id=? WHERE attempt_id=?",
+                     (relationship_id, attempt_id))
+
+
+@serialized
+def fence_relationship_attempts(conn, relationship_id: str, node_id: str) -> list[str]:
+    """Stop work in flight for a revoked relationship.
+
+    `security.md` 4.1 requires revocation to fence running attempts rather than
+    only refusing new ones. Each is moved to `interrupted` with a typed reason
+    and its job follows, so the canonical history says what happened instead of
+    leaving a job that claims to still be running.
+    """
+    stopped = []
+    rows = conn.execute(
+        "SELECT attempt_id, job_id, state FROM attempts"
+        " WHERE relationship_id=? AND state IN ('queued','running','validating')",
+        (relationship_id,)).fetchall()
+    for row in rows:
+        error = {"code": "permission_denied",
+                 "message": "the pairing was revoked while this attempt was running",
+                 "retryable": False}
+        set_attempt_state(conn, row["attempt_id"], "interrupted", error=error)
+        append_event(conn, job_id=row["job_id"], attempt_id=row["attempt_id"],
+                     node_id=node_id,
+                     data={"kind": "attempt.state", "previous": row["state"],
+                           "current": "interrupted"})
+        job = conn.execute("SELECT state FROM jobs WHERE job_id=?",
+                           (row["job_id"],)).fetchone()
+        if job and job["state"] not in v1.TERMINAL_JOB_STATES | {"interrupted"}:
+            following = ("interrupted" if "interrupted" in
+                         v1.JOB_TRANSITIONS.get(job["state"], set()) else "failed")
+            set_job_state(conn, row["job_id"], following)
+            append_event(conn, job_id=row["job_id"], attempt_id=None,
+                         node_id=node_id,
+                         data={"kind": "job.state", "previous": job["state"],
+                               "current": following})
+        stopped.append(row["attempt_id"])
+    return stopped
 
 
 @serialized

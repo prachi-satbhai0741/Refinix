@@ -136,6 +136,42 @@
           </div>
           <p class="card-lead" id="c-others-lead">—</p>
           <dl class="facts" id="c-others-facts"></dl>
+          <div class="card-actions" id="c-others-actions"></div>
+          <!-- The self-test result. Empty until the button is pressed: it
+               sends a real request and must never run on its own. -->
+          <div class="selftest" id="c-selftest"></div>
+          <!-- Pairing needs two values a person reads off the worker screen and
+               types here. They deliberately do not arrive over the network:
+               confirming the fingerprint by eye is what makes the pin mean
+               anything. Neither value is stored by this page. -->
+          <form class="pair-form" id="pair-form" hidden>
+            <label for="pair-address">Worker address</label>
+            <input id="pair-address" name="address" type="text" autocomplete="off"
+                   spellcheck="false" placeholder="192.168.1.20">
+            <label for="pair-port">Port</label>
+            <input id="pair-port" name="port" type="text" inputmode="numeric"
+                   autocomplete="off" value="30443">
+            <label for="pair-fingerprint">Certificate fingerprint (SHA-256)</label>
+            <textarea id="pair-fingerprint" name="fingerprint" rows="2"
+                      autocomplete="off" spellcheck="false"
+                      placeholder="AB:CD:… — compare it against the worker screen"></textarea>
+            <label for="pair-certificate">Worker certificate (PEM)</label>
+            <textarea id="pair-certificate" name="certificate_pem" rows="4"
+                      autocomplete="off" spellcheck="false"
+                      placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+            <label for="pair-code">One-time pairing code</label>
+            <input id="pair-code" name="pairing_code" type="text"
+                   autocomplete="off" spellcheck="false">
+            <p class="card-note" id="pair-note">
+              The code is single-use and expires. The credential the worker
+              returns is stored in your macOS Keychain, never in Refinix's
+              database.
+            </p>
+            <div class="card-actions">
+              <button type="submit" class="btn" id="pair-submit">Connect</button>
+              <button type="button" class="btn" id="pair-cancel">Cancel</button>
+            </div>
+          </form>
         </section>
 
         <section class="card" id="work">

@@ -1,0 +1,22 @@
+# LAN-side listener that forwards to the worker's loopback NodePort.
+#
+# This exists because NodePort traffic is DNATed and forwarded and therefore
+# never traverses INPUT: iptables cannot restrict it. Keeping
+# nodeport-addresses=127.0.0.1/32 and putting an ordinary host socket in front
+# of it makes INPUT the correct chain again, so one Mac address can be
+# permitted and everything else dropped.
+#
+# Requires the guard, so the socket cannot listen without its restriction.
+[Unit]
+Description=AegisForge LAN forwarder to the worker's loopback NodePort
+Requires=aegisforge-worker-guard.service
+After=aegisforge-worker-guard.service
+
+[Socket]
+# Replaced with the observed LAN address at install time. A bare port would
+# bind every interface, including IPv6, which this deliberately does not.
+ListenStream=LAN_ADDRESS:30443
+BindIPv6Only=ipv6-only
+
+[Install]
+WantedBy=sockets.target
