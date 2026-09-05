@@ -22,13 +22,8 @@ COPY backend/contracts/ /app/backend/contracts/
 COPY backend/worker/ /app/backend/worker/
 COPY backend/worker-image/provenance.json /app/provenance.json
 
-# Offline build-time checks. --network=none proves they contact nothing.
 # Offline behavioural checks. --network=none proves they contact nothing.
-# AEGIS_WORKER_TOKEN is a build-time value for the tests only; the runtime
-# credential is supplied at deployment and this one never reaches the image.
-RUN --network=none AEGIS_WORKER_TOKEN=build-time-check-token-not-a-secret-000000 \
-    AEGIS_NODE_ID=22222222-2222-4222-8222-222222222222 \
-    python -m unittest -q \
+RUN --network=none python -m unittest -q \
       backend.contracts.test_contracts \
       backend.worker.test_worker_runtime \
       backend.worker.test_worker_app \

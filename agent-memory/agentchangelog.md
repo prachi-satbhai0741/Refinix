@@ -1495,3 +1495,17 @@ work. No repository file change means no changelog entry.
 - changes: Restored canonical job completion to the pass predicate, added the failed-job regression, and aligned the HTTP submission docstring with its conservative ambiguity boundary.
 - verification: `.venv/bin/python -B -m unittest backend.coordinator.test_dispatch` passed 68 tests; `git diff --check` passed. The system Python attempt did not execute tests because it lacks Pydantic.
 - remaining: The C06 image build and all Mac/Ubuntu device gates remain unrun. No Git write, build, install, deployment or device action occurred.
+
+<a id="ac-20260905-011"></a>
+## AC-20260905-011 — Worker image build no longer exposes test identity values
+- prompt_id: [UP-20260905-011](userprompts.md#up-20260905-011)
+- date: 2026-09-05
+- status: implemented; Ubuntu rebuild pending
+- scope: c06, dockerfile, secrets, image-build
+- tags: c06, dockerfile, credentials, image-build, test-boundary
+- aliases: dummy token in build history, coordinator import missing, Ubuntu C06 build failure
+- paths: backend/worker-image/Dockerfile, backend/worker/test_executor.py, agent-memory/
+- summary: Removed fixed test identity values from the Docker build command and removed a redundant worker test dependency on coordinator-only source.
+- changes: The image build now invokes the offline suites without inline token or node-ID values; `test_worker_app` continues to install its own non-secret fixtures before importing the guarded app. The redundant cross-package assertion was removed from `test_executor`; the coordinator suite already exercises `internal_error` as receipt-unknown and `redis_lost` as definite.
+- verification: Source inspection confirmed runtime credentials remain `secretKeyRef` values, TLS remains in the `worker-tls` Secret, and no Dockerfile token or node-ID value remains. No tests or image build were run locally; the Ubuntu rebuild is authoritative.
+- remaining: Commit and push these two source corrections, pull them on Ubuntu, then rerun the C06 image build. All later C06 device gates remain pending.

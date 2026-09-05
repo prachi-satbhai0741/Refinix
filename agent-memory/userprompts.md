@@ -1049,3 +1049,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Run only the affected coordinator test module and `git diff --check`.
 - follow_up_to: [UP-20260905-009](#up-20260905-009)
 - linked_changes: [AC-20260905-010](agentchangelog.md#ac-20260905-010)
+
+<a id="up-20260905-011"></a>
+## UP-20260905-011 — Remove test credentials from the worker image build
+- date: 2026-09-05
+- status: implemented; Ubuntu rebuild pending
+- scope: c06, dockerfile, secrets, image-build
+- tags: c06, dockerfile, credentials, image-build, test-boundary
+- aliases: dummy token in build history, coordinator import missing, Ubuntu C06 build failure
+- paths: backend/worker-image/Dockerfile, backend/worker/test_executor.py, agent-memory/
+- summary: Remove dummy identity values from the Dockerfile and keep the worker image build independent of coordinator-only source.
+- request: Ensure generated IDs and tokens stay in secret storage rather than appearing in the Dockerfile after the Ubuntu C06 build exposed fixed test values.
+- constraints: Preserve runtime Kubernetes Secret and TLS-file handling; fix only the failed image-build boundary without adding secret infrastructure.
+- acceptance: The Dockerfile contains no token or node-ID value, and its worker-only offline suite does not import uncopied coordinator code.
+- verification_authorization: No local test rerun requested; the authoritative check is the next Ubuntu image rebuild.
+- follow_up_to: [UP-20260905-010](#up-20260905-010)
+- linked_changes: [AC-20260905-011](agentchangelog.md#ac-20260905-011)

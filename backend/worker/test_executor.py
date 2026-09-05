@@ -426,14 +426,6 @@ class TestAmbiguousCommit(Base):
             self.enqueue(env)
         self.assertEqual(caught.exception.code, "internal_error")
 
-    def test_the_unknown_code_is_not_one_the_coordinator_calls_definite(self):
-        """The two halves have to agree, or the boundary is decorative."""
-        from backend.coordinator import dispatch as coordinator_dispatch
-        self.assertNotIn("internal_error",
-                         coordinator_dispatch.DEFINITE_REFUSALS)
-        self.assertIn("redis_lost", coordinator_dispatch.DEFINITE_REFUSALS)
-
-
 class TestEventReplay(Base):
     def test_events_replay_in_sequence_order(self):
         env = envelope()
