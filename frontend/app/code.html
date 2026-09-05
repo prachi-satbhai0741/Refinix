@@ -16,9 +16,8 @@
       <a class="surface-link" aria-current="page" href="/code.html">Code</a>
     </div>
     <div class="nav-list">
-      <p class="lbl nav-list-h">Sections</p>
-      <a class="nav-item" href="#status">Availability</a>
-      <a class="nav-item" href="#access">Access modes</a>
+      <p class="lbl nav-list-h">Projects</p>
+      <div id="repo-list"></div>
     </div>
     <div class="nav-foot">
       <a class="nav-secondary" href="/control.html">Settings</a>
@@ -39,53 +38,89 @@
         </svg>
       </button>
       <h1 class="head-title">Code</h1>
-      <span class="chip chip-unknown">not available yet</span>
       <div class="head-spacer"></div>
+      <button class="rail-toggle" id="rail-toggle" aria-expanded="false"
+              aria-controls="rail">Details</button>
     </header>
 
-    <div class="body">
-      <div class="cards">
-        <section class="card span-2" id="status">
-          <h2>Working in a project folder</h2>
-          <p class="card-lead">Code will let Refinix read a project on this
-             computer and propose changes to it.</p>
-          <p><strong>It does not do that yet.</strong> Nothing on this computer
-             can be read or edited from this screen, and no folder has been
-             connected. Chat is the working surface today.</p>
-          <p class="lbl">This screen exists so the destination is real and its
-             state is honest, not so the feature can be implied.</p>
-        </section>
+    <div id="notices" role="status" aria-live="polite"></div>
 
-        <section class="card span-2" id="access">
-          <h2>Access modes</h2>
-          <p class="card-lead">When Code arrives, you will choose how much it may
-             do on its own. These are the planned modes, written down so the
-             decision is visible early.</p>
-          <ul class="mode-list">
-            <li>
-              <span class="mode-name">Partial access</span>
-              <span class="mode-body">Safe, bounded actions happen automatically.
-                Anything that changes a file asks you first.</span>
-            </li>
-            <li>
-              <span class="mode-name">Full access</span>
-              <span class="mode-body">Workspace edits and project commands happen
-                automatically. Destructive actions, installations and Git writes
-                still ask you.</span>
-            </li>
-            <li>
-              <span class="mode-name">Ask before actions</span>
-              <span class="mode-body">Nothing happens until you approve it.</span>
-            </li>
-          </ul>
-          <p class="warn-line">There is deliberately no selector here. A control
-             that looked like it set a permission would imply an enforcement
-             that does not exist yet, and choosing a mode would change nothing.
-             The selector arrives with the enforcement that backs it.</p>
-        </section>
-      </div>
+    <!-- Results are chronological, like a conversation. There are no permanent
+         Access mode / Proposed change / What Refinix did dashboard panels:
+         access lives in the composer, proposals and diffs arrive here as
+         results, approvals appear inline where the work paused, and the audit
+         history sits under Details. -->
+    <div class="thread" id="thread">
+      <article class="turn turn-agent" id="intro">
+        <div class="prose">
+          <p>Choose a project folder, pick the files to change, and describe the
+             edit. You see the complete diff before anything is written.</p>
+          <p class="lbl">Refinix replaces the contents of existing text files you
+             select. Creating, deleting or renaming files, running project
+             commands, using Git and installing anything are <strong>not
+             available</strong> in any access mode.</p>
+        </div>
+      </article>
     </div>
+
+    <button class="jump-latest" id="jump-latest" hidden>Jump to latest</button>
+
+    <form class="composer" id="code-composer">
+      <!-- The project chooser sits immediately above the prompt box. -->
+      <div class="project-row">
+        <button class="project-chooser" type="button" id="connect-btn">
+          <span class="project-icon" aria-hidden="true"></span>
+          <span id="project-name">Choose project</span>
+        </button>
+        <button class="project-switch" type="button" id="switch-btn" hidden>Switch</button>
+        <span class="lbl" id="selection-hint">No files selected</span>
+      </div>
+
+      <div class="composer-box" id="composer-box">
+        <ul class="attachments" id="code-context" hidden
+            aria-label="Files selected as context"></ul>
+
+        <div class="composer-line">
+          <label class="visually-hidden" for="code-input">Describe the change</label>
+          <textarea class="composer-input" id="code-input" rows="1"
+                    placeholder="Describe the change you want in the selected files."></textarea>
+        </div>
+        <p class="skill-status" id="code-status" hidden></p>
+
+        <div class="composer-bar">
+          <button class="round-btn" type="button" id="plus-btn"
+                  aria-haspopup="menu" aria-expanded="false"
+                  aria-label="Choose files to include">+</button>
+          <!-- The access selector lives here, lower-left, beside +. -->
+          <button class="mode-pill" type="button" id="mode-pill"
+                  aria-haspopup="menu" aria-expanded="false" hidden>
+            <span id="mode-name">—</span>
+          </button>
+          <div class="head-spacer"></div>
+          <button class="model-pill" type="button" id="model-pill"
+                  aria-haspopup="dialog" aria-expanded="false" hidden>
+            <span class="model-name" id="model-name">—</span>
+            <span class="model-reasoning" id="model-reasoning" hidden>Reasoning</span>
+          </button>
+          <button class="btn btn-stop" type="button" id="code-stop" hidden>Stop</button>
+          <button class="btn btn-primary" type="submit" id="code-send">Propose</button>
+        </div>
+      </div>
+    </form>
   </main>
+
+  <aside class="rail" id="rail">
+    <section class="rail-sec">
+      <span class="lbl">Advanced — what Refinix did</span>
+      <ul class="cap-list" id="audit-list"></ul>
+    </section>
+    <section class="rail-sec">
+      <details class="quiet">
+        <summary class="lbl">Not available in any mode</summary>
+        <ul class="cap-list" id="unavailable-list"></ul>
+      </details>
+    </section>
+  </aside>
 </div>
 <div class="panel-scrim" id="scrim"></div>
 <script type="module" src="/app.js"></script>

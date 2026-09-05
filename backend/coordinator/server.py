@@ -23,7 +23,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from backend.contracts import v1
-from backend.coordinator import context, db, runtime
+from backend.coordinator import (code_service, context, db, docflow, docgen,
+                                 documents, policy, repo, retrieval, runtime)
+
+repo_errors = repo.RepositoryError
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -61,24 +64,42 @@ CAPABILITIES = (
      "needs_runtime": True,
      "summary": "Ask a question or describe a task in plain language."},
     {"id": "read-document", "name": "Read a document", "icon": "document",
-     "kind": "skill", "needs_runtime": True, "implemented": False,
-     "summary": "Read a scanned or digital document and answer questions about it.",
-     "setup": "Document reading is not implemented yet. Files you attach are "
-              "saved and listed here, and nothing reads them."},
+     "kind": "document", "needs_runtime": True, "needs_documents": True,
+     "summary": "Read the files you attach and answer from them, citing pages.",
+     "detail_available": "Attach files with +, then ask. Only the files on that "
+                         "one request are read."},
     {"id": "write-document", "name": "Write a document", "icon": "compose",
-     "kind": "skill", "needs_runtime": True, "implemented": False,
-     "summary": "Produce a formatted document from a request.",
-     "setup": "Document generation is not implemented yet."},
+     "kind": "document", "needs_runtime": True, "needs_documents": True,
+     "needs_docx": True,
+     "summary": "Draft an approval note from an inspection report and its SOPs.",
+     "detail_available": "Attach the report first, then any supporting "
+                         "documents. The draft is a Word file kept on this "
+                         "computer until you approve an export."},
     {"id": "search-documents", "name": "Search my documents", "icon": "search",
-     "kind": "skill", "needs_runtime": True, "implemented": False,
-     "summary": "Find an answer across documents you have added.",
-     "setup": "Document search is not implemented yet."},
+     "kind": "document", "needs_runtime": False, "needs_documents": True,
+     "needs_search": True,
+     "summary": "Find wording across the files you attach, with the page it came from.",
+     "detail_available": "Attach files with +, then say what to look for. "
+                         "Matching is by words, not meaning."},
     {"id": "code", "name": "Work in a repository", "icon": "code",
-     "kind": "skill", "needs_runtime": True, "implemented": False,
-     "summary": "Read and change files in a project folder.",
-     "setup": "Repository work is not implemented yet, and no access mode is "
-              "enforced. Nothing on this computer can be edited from Refinix."},
+     "kind": "surface", "needs_runtime": True,
+     "summary": "Edit existing text files in a folder you connect, with a diff "
+                "you review and an access mode Refinix enforces.",
+     "detail_available": "Open Code to connect a folder. Creating, deleting and "
+                         "renaming files, project commands and Git are not "
+                         "available."},
 )
+
+
+def _as_payload(query: dict) -> dict:
+    """One-value view of a query string, so `_text` validates GET the same way."""
+    return {key: values[0] for key, values in query.items() if values}
+
+
+def docgen_available() -> bool:
+    """Writing a .docx needs only the standard library here, but the check is
+    real rather than assumed: it is what the capability row reports."""
+    return hasattr(docgen, "write_docx") and hasattr(docgen, "validate")
 
 
 class RequestError(ValueError):
@@ -135,6 +156,9 @@ class Coordinator:
         # Filled in by the desktop shell; empty when the coordinator was
         # started from the command line.
         self.desktop: dict = {}
+        # The Code surface's backend. Every repository operation goes through
+        # its single policy gate; no HTTP handler evaluates an access mode.
+        self.code = code_service.CodeService(self)
         self.repaired = db.reconcile_on_start(self.conn, self.node_id)
 
     def _identity(self, key) -> str:
@@ -168,7 +192,8 @@ class Coordinator:
         self.hub.publish(event)
 
     @db.serialized
-    def submit(self, chat_id: str, text: str, draft_id: str | None = None) -> str:
+    def submit(self, chat_id: str, text: str, draft_id: str | None = None,
+               skill_id: str | None = None) -> str:
         """Persist the job before any work starts, so a crash leaves a record."""
         if not self.conn.execute("SELECT 1 FROM chats WHERE chat_id=? AND workspace_id=?",
                                  (chat_id, self.workspace_id)).fetchone():
@@ -176,15 +201,25 @@ class Coordinator:
         if any(j["state"] not in v1.TERMINAL_JOB_STATES | {"interrupted"}
                for j in self.jobs(chat_id, limit=-1)):
             raise RequestError("wait for this conversation's reply or cancel it first", 409)
+        # The skill is chosen before the request is sent and is stored with the
+        # job, so a reopened conversation and an export both say which
+        # capability read which files. It is not UI-only state.
+        if skill_id is not None:
+            known = {row["id"]: row for row in self.capabilities()}
+            row = known.get(skill_id)
+            if row is None or row.get("kind") not in ("document",):
+                raise RequestError("that skill is not available on this computer", 400)
+            if row["state"] != "available":
+                raise RequestError(row["detail"], 409)
         job_id = db.create_job(self.conn, workspace_id=self.workspace_id,
-                               chat_id=chat_id, request=text)
+                               chat_id=chat_id, request=text, skill_id=skill_id)
         message_id = db.add_message(self.conn, chat_id, "user", text, job_id=job_id)
         # The selection travels with the request it was made for. Nothing reads
         # the files, and the reply is produced from the typed text alone.
         db.bind_attachments(self.conn, draft_id or chat_id, chat_id, message_id)
         self._emit(job_id, None, {"kind": "job.state", "previous": None,
                                   "current": "created"})
-        threading.Thread(target=self._run, args=(job_id, chat_id),
+        threading.Thread(target=self._run, args=(job_id, chat_id, skill_id),
                          daemon=True).start()
         return job_id
 
@@ -193,7 +228,7 @@ class Coordinator:
         self._emit(job_id, None, {"kind": "job.state", "previous": previous,
                                   "current": following})
 
-    def _run(self, job_id: str, chat_id: str):
+    def _run(self, job_id: str, chat_id: str, skill_id: str | None = None):
         attempt_id = None
         try:
             for previous, following in (("created", "context_preparing"),
@@ -210,6 +245,10 @@ class Coordinator:
                 self.conn, job_id=job_id, node_id=self.node_id,
                 route_reason="local coordinator: no paired worker in C03",
             )
+            # Read once, here. A later change to the switch cannot reach an
+            # attempt that has already recorded what it runs with.
+            reasoning = db.get_reasoning(self.conn, runtime.MODEL)
+            db.set_attempt_reasoning(self.conn, attempt_id, runtime.MODEL, reasoning)
             self._emit(job_id, attempt_id, {"kind": "attempt.state",
                                             "previous": None, "current": "queued"})
             db.set_attempt_selection(self.conn, attempt_id, selection.as_dict())
@@ -228,18 +267,39 @@ class Coordinator:
                     "retryable": True})
                 return
 
+            if skill_id in docflow.DOCUMENT_SKILLS:
+                # A document skill replaces the ordinary chat turn: it reads
+                # this request's attachments, then answers or writes from them.
+                messages, prepared, extra = self._document_stage(
+                    job_id, chat_id, skill_id, messages)
+                if messages is None:
+                    # The skill produced its own answer without the model.
+                    self._finish_document(job_id, chat_id, attempt_id, extra,
+                                          reasoning)
+                    return
+            else:
+                prepared, extra = None, {}
+
             collected, metrics = [], {}
+            thinking_seen = False
             for kind, payload in runtime.stream_chat(
-                    messages,
+                    messages, think=reasoning,
                     should_cancel=lambda: self.is_cancelled(job_id)
                     or self.stopping.is_set()):
-                if kind == "delta":
+                if kind == "thinking":
+                    # Progress only. Never collected, never persisted, never
+                    # shown as the reply.
+                    thinking_seen = True
+                elif kind == "delta":
                     collected.append(payload)
-                    db.append_output(self.conn, attempt_id, payload)
-                    # The contract caps a delta at 2048 characters.
-                    for i in range(0, len(payload), 2048):
-                        self._emit(job_id, attempt_id,
-                                   {"kind": "output.delta", "text": payload[i:i + 2048]})
+                    # Document replies use strict JSON internally. Never save
+                    # or publish that implementation format as the answer.
+                    if skill_id not in docflow.DOCUMENT_SKILLS:
+                        db.append_output(self.conn, attempt_id, payload)
+                        # The contract caps a delta at 2048 characters.
+                        for i in range(0, len(payload), 2048):
+                            self._emit(job_id, attempt_id,
+                                       {"kind": "output.delta", "text": payload[i:i + 2048]})
                 elif kind == "cancelled":
                     self._stop(job_id, attempt_id, "cancelled", "running", {
                         "code": "cancelled_by_user",
@@ -256,19 +316,50 @@ class Coordinator:
             self._advance_job(job_id, "validating", "running")
 
             answer = "".join(collected)
+            reason = metrics.get("done_reason")
+            if skill_id in docflow.DOCUMENT_SKILLS and reason != "stop":
+                self._stop(job_id, attempt_id, "failed", "validating", {
+                    "code": "validation_failed",
+                    "message": ("The document reply was incomplete and was discarded; "
+                                f"runtime stop reason: {reason or 'not reported'}."),
+                    "retryable": True})
+                return
+            if skill_id in docflow.DOCUMENT_SKILLS and answer.strip():
+                try:
+                    answer = self._document_answer(
+                        job_id, chat_id, attempt_id, skill_id, answer, prepared,
+                        extra)
+                except docflow.Cancelled:
+                    self._stop(job_id, attempt_id, "cancelled", "running", {
+                        "code": "cancelled_by_user",
+                        "message": "cancelled while the document was being prepared",
+                        "retryable": True})
+                    return
+                except docflow.WorkflowError as exc:
+                    self._stop(job_id, attempt_id, "failed", "running", {
+                        "code": "validation_failed",
+                        "message": str(exc)[:256], "retryable": True})
+                    return
             if not answer.strip():
                 # An empty answer is a failure, not a successful blank reply.
+                if thinking_seen and reasoning:
+                    raise runtime.RuntimeUnavailable(
+                        "Reasoning used the reply budget before producing an "
+                        "answer. Turn Reasoning off or shorten the request.")
                 raise runtime.RuntimeUnavailable(
                     "the runtime returned no visible output")
 
             with db.LOCK:
                 if self.is_cancelled(job_id):
+                    artifact = extra.get("_artifact")
+                    if artifact:
+                        db.delete_artifact(self.conn, db.artifacts_root(self.state_path),
+                                           artifact["artifact_id"], self.workspace_id)
                     self._stop(job_id, attempt_id, "cancelled", "validating", {
                         "code": "cancelled_by_user",
                         "message": "cancelled before the response was saved",
                         "retryable": True})
                     return
-                reason = metrics.get("done_reason")
                 if reason != "stop":
                     if reason == "length":
                         # Keep the partial reply in history so the user can continue it.
@@ -295,12 +386,35 @@ class Coordinator:
                         "code": "validation_failed", "message": message[:256],
                         "retryable": True})
                     return
+                if skill_id in docflow.DOCUMENT_SKILLS:
+                    db.append_output(self.conn, attempt_id, answer)
+                    for i in range(0, len(answer), 2048):
+                        self._emit(job_id, attempt_id,
+                                   {"kind": "output.delta", "text": answer[i:i + 2048]})
+                    artifact = extra.get("_artifact")
+                    if artifact:
+                        self._emit(job_id, attempt_id, {
+                            "kind": "artifact.created",
+                            "artifact": {"resource_id": artifact["artifact_id"],
+                                         "sha256": artifact["sha256"],
+                                         "size_bytes": artifact["byte_size"],
+                                         "media_type": artifact["media_type"]}})
                 db.add_message(self.conn, chat_id, "assistant", answer, job_id=job_id)
                 db.set_attempt_state(self.conn, attempt_id, "completed",
                                      runtime_ms=metrics.get("total_ms"))
                 self._emit(job_id, attempt_id, {"kind": "attempt.state",
                                                 "previous": "validating", "current": "completed"})
                 self._advance_job(job_id, "completed", "validating")
+        except docflow.Cancelled:
+            self._stop(job_id, attempt_id, "cancelled", None, {
+                "code": "cancelled_by_user",
+                "message": "cancelled while the documents were being prepared",
+                "retryable": True})
+        except docflow.WorkflowError as exc:
+            # A refusal the person can act on, not an internal error.
+            self._stop(job_id, attempt_id, "failed", None, {
+                "code": "validation_failed", "message": str(exc)[:256],
+                "retryable": True})
         except runtime.RuntimeUnavailable as exc:
             self._stop(job_id, attempt_id, "failed", None, {
                 "code": "unavailable", "message": str(exc)[:256], "retryable": True})
@@ -312,6 +426,233 @@ class Coordinator:
         finally:
             with self._cancel_lock:
                 self._cancelled.discard(job_id)
+
+    # ---- context estimate -----------------------------------------------
+
+    def context_estimate(self, chat_id: str | None, draft: str = "") -> dict:
+        """What the next request would cost, from the one estimator we have.
+
+        `context.select` is the single source of truth — the same code that
+        decides what actually gets sent. The page renders this; it never counts
+        tokens of its own, so the indicator and the request can never disagree.
+        """
+        history = self.chat_messages(chat_id) if chat_id else []
+        draft = draft if isinstance(draft, str) else ""
+        # The draft is the message that would be sent next, so it belongs in
+        # the estimate: an indicator that ignored what you are typing would be
+        # wrong exactly when it matters.
+        pending = list(history)
+        if draft.strip():
+            pending.append({"message_id": "__draft__", "role": "user", "text": draft})
+        _messages, selection = context.select(
+            pending, window=runtime.NUM_CTX, output_allowance=runtime.NUM_PREDICT)
+        used = selection.estimated_input_tokens
+        budget = selection.input_budget_tokens
+        share = (used / budget) if budget else 0.0
+        if not selection.newest_fits:
+            level = "over"
+        elif selection.omitted_count:
+            level = "omitting"
+        elif share >= 0.8:
+            level = "near"
+        else:
+            level = "ok"
+        return {
+            "used_tokens": used,
+            "budget_tokens": budget,
+            "context_window": selection.context_window,
+            "reply_allowance": selection.output_allowance,
+            "omitted_count": selection.omitted_count,
+            "newest_fits": selection.newest_fits,
+            "level": level,
+            "counting_method": selection.counting_method,
+            "estimate": True,
+            "note": selection.note,
+            "draft_counted": bool(draft.strip()),
+            "policy": ("Older complete exchanges are left out of a request when "
+                       "it will not fit. Saved history is never changed."),
+        }
+
+    # ---- artifacts --------------------------------------------------------
+
+    def request_export(self, artifact_id: str) -> dict:
+        """Ask for permission to copy a generated document out of storage.
+
+        Nothing leaves coordinator-owned storage on the strength of having been
+        generated: the export is a separate, recorded decision bound to this
+        exact artifact's digest.
+        """
+        artifact = db.public_artifact(self.conn, artifact_id, self.workspace_id)
+        if artifact is None:
+            raise RequestError("that document no longer exists", 404)
+        approval = db.request_approval(
+            self.conn, workspace_id=self.workspace_id, repo_id=artifact_id,
+            proposal_id=None, action="artifact.export",
+            target=artifact["filename"], action_sha256=artifact["sha256"],
+            payload={"artifact_id": artifact_id, "summary":
+                     f"Save {artifact['filename']} outside Refinix's storage.",
+                     "paths": [artifact["filename"]],
+                     "repo_name": artifact["filename"]})
+        return {"needs_approval": approval, "artifact": artifact}
+
+    # ---- documents ------------------------------------------------------
+
+    def _request_sources(self, chat_id: str, job_id: str):
+        """The attachments that travelled with this one request, and only those.
+
+        Ordinary Chat reads nothing. A document skill reads exactly the files
+        bound to its own message — not the conversation's earlier files, and
+        never anything else on the computer.
+        """
+        message = self.conn.execute(
+            "SELECT message_id FROM messages WHERE job_id=? AND role='user'"
+            " ORDER BY created_at, rowid LIMIT 1", (job_id,)).fetchone()
+        if message is None:
+            return None, []
+        return message["message_id"], db.list_attachments(
+            self.conn, message_id=message["message_id"])
+
+    def _document_stage(self, job_id, chat_id, skill_id, messages):
+        """Extract, then either build a prompt or answer without the model."""
+        cancel = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
+        message_id, attachments = self._request_sources(chat_id, job_id)
+        prepared = docflow.prepare_sources(
+            self, chat_id=chat_id, message_id=message_id, job_id=job_id,
+            attachments=attachments, should_cancel=cancel)
+        if not attachments:
+            raise docflow.WorkflowError(
+                "no_attachments",
+                "Attach the files to read with the + button, then send the "
+                "request again. This skill only reads files you send with it.")
+        if not prepared.usable:
+            reasons = "; ".join(f"{s['filename']}: {s['reason']}"
+                                for s in prepared.skipped) or "no readable text was found"
+            raise docflow.WorkflowError("unreadable", f"Nothing could be read — {reasons}.")
+
+        question = self.conn.execute(
+            "SELECT original_request FROM jobs WHERE job_id=?", (job_id,)).fetchone()[0]
+
+        if skill_id == docflow.SEARCH_SKILL:
+            # Search needs no model: it answers from the index directly.
+            try:
+                passages = retrieval.search(
+                    self.conn, workspace_id=self.workspace_id,
+                    source_ids=[s["source_id"] for s in prepared.sources],
+                    question=question)
+            except retrieval.RetrievalError as exc:
+                raise docflow.WorkflowError(exc.code, str(exc)) from exc
+            return None, prepared, {"answer": docflow.search_answer(
+                question, passages, prepared), "prepared": prepared}
+
+        if skill_id == docflow.READ_SKILL:
+            built, notes, citation_sources = docflow.read_messages(
+                question, prepared.sources)
+            return built, prepared, {"notes": notes, "prepared": prepared,
+                                     "citation_sources": citation_sources}
+
+        # write-document: the report is the first attachment, the rest are SOPs.
+        report, *supporting = prepared.sources
+        passages = []
+        if supporting:
+            try:
+                passages = retrieval.search(
+                    self.conn, workspace_id=self.workspace_id,
+                    source_ids=[s["source_id"] for s in supporting],
+                    question=question)
+            except retrieval.RetrievalError:
+                passages = []          # no passages is a truthful outcome
+        budget = docflow.MAX_CONTEXT_CHARS
+        pages, _trimmed = docflow.bounded_pages(report, budget)
+        built = docflow.approval_note_messages(
+            question, passages, [(report, pages)])
+        allowed_pages = {report["source_id"]: {p["number"] for p in pages}}
+        for passage in passages:
+            allowed_pages.setdefault(passage.source_id, set()).add(passage.page)
+        citation_sources = [
+            {**source, "pages": [page for page in source["pages"]
+                                  if page["number"] in allowed_pages[source["source_id"]]]}
+            for source in prepared.sources if source["source_id"] in allowed_pages]
+        return built, prepared, {"passages": passages, "report": report,
+                                 "prepared": prepared,
+                                 "citation_sources": citation_sources}
+
+    def _document_answer(self, job_id, chat_id, attempt_id, skill_id, answer,
+                         prepared, extra):
+        """Turn the model's reply into the skill's real result."""
+        if self.is_cancelled(job_id) or self.stopping.is_set():
+            raise docflow.Cancelled()
+        if skill_id == docflow.READ_SKILL:
+            parsed = docflow.parse_read_answer(
+                answer, extra.get("citation_sources", []))
+            return docflow.read_answer(parsed, prepared, extra.get("notes", []))
+
+        note = docflow.parse_approval_note(
+            answer, extra.get("citation_sources", []))
+        if self.is_cancelled(job_id) or self.stopping.is_set():
+            raise docflow.Cancelled()
+
+        root = db.artifacts_root(self.state_path)
+        stored = f"{db.new_id()}.docx"
+        blocks = docflow.note_blocks(note, prepared.sources, extra.get("passages", []))
+        try:
+            written = docgen.write_docx(root / stored,
+                                        title=note["title"], blocks=blocks)
+        except docgen.ArtifactError as exc:
+            raise docflow.WorkflowError(exc.code, str(exc)) from exc
+        validation = docgen.validate(root / stored)
+        if not validation["readable"]:
+            (root / stored).unlink(missing_ok=True)
+            raise docflow.WorkflowError(
+                "unreadable_artifact",
+                "The generated document did not pass its structure check, so it "
+                "was discarded: " + "; ".join(validation["problems"])[:200])
+        if self.is_cancelled(job_id) or self.stopping.is_set():
+            # Cancelled after writing: the file is removed rather than left as
+            # a result nobody asked to keep.
+            (root / stored).unlink(missing_ok=True)
+            raise docflow.Cancelled()
+
+        try:
+            artifact = db.record_artifact(
+                self.conn, workspace_id=self.workspace_id, chat_id=chat_id,
+                job_id=job_id, attempt_id=attempt_id, workflow=docflow.WORKFLOW,
+                filename=docgen.safe_filename(note["title"]), stored_name=stored,
+                media_type=written["media_type"], byte_size=written["byte_size"],
+                sha256=written["sha256"], validation=validation,
+                citations=docflow.citation_list(note))
+        except Exception:
+            (root / stored).unlink(missing_ok=True)
+            raise
+        if self.is_cancelled(job_id) or self.stopping.is_set():
+            db.delete_artifact(self.conn, root, artifact["artifact_id"],
+                               self.workspace_id)
+            raise docflow.Cancelled()
+        extra["_artifact"] = artifact
+        return docflow.artifact_answer(note, artifact, prepared,
+                                       extra.get("passages", []))
+
+    def _finish_document(self, job_id, chat_id, attempt_id, extra, reasoning):
+        """Complete a skill that answered without calling the model."""
+        answer = extra["answer"]
+        with db.LOCK:
+            if self.is_cancelled(job_id):
+                self._stop(job_id, attempt_id, "cancelled", "running", {
+                    "code": "cancelled_by_user",
+                    "message": "cancelled from the local interface",
+                    "retryable": True})
+                return
+            db.append_output(self.conn, attempt_id, answer)
+            db.add_message(self.conn, chat_id, "assistant", answer, job_id=job_id)
+            db.set_attempt_state(self.conn, attempt_id, "validating")
+            self._emit(job_id, attempt_id, {"kind": "attempt.state",
+                                            "previous": "running",
+                                            "current": "validating"})
+            self._advance_job(job_id, "validating", "running")
+            db.set_attempt_state(self.conn, attempt_id, "completed")
+            self._emit(job_id, attempt_id, {"kind": "attempt.state",
+                                            "previous": "validating",
+                                            "current": "completed"})
+            self._advance_job(job_id, "completed", "validating")
 
     @db.serialized
     def _stop(self, job_id, attempt_id, state, previous, error):
@@ -357,8 +698,17 @@ class Coordinator:
             (chat_id,))]
         if with_attachments:
             by_message = db.attachments_by_message(self.conn, chat_id)
+            # A reopened conversation and an export both need to say which
+            # skill read which files, so the skill travels with the message.
+            skills = {r["job_id"]: r["skill_id"] for r in self.conn.execute(
+                "SELECT job_id, skill_id FROM jobs WHERE chat_id=?", (chat_id,))}
+            artifacts = {}
+            for artifact in db.artifacts_for_chat(self.conn, self.workspace_id, chat_id):
+                artifacts.setdefault(artifact["job_id"], []).append(artifact)
             for row in rows:
                 row["attachments"] = by_message.get(row["message_id"], [])
+                row["skill_id"] = skills.get(row["job_id"])
+                row["artifacts"] = artifacts.get(row["job_id"], [])
         return rows
 
     @db.serialized
@@ -393,15 +743,37 @@ class Coordinator:
         return {"job": dict(job), "attempts": attempts, "events": events}
 
     def capabilities(self, runtime_state: dict | None = None) -> list[dict]:
-        """Observed capability state. `available` requires both observations."""
+        """Observed capability state. `available` requires every observation.
+
+        A document skill is available only when the parsers it needs exist on
+        this computer. A missing parser, OCR engine or search index disables
+        that one skill and nothing else — Chat and Code stay usable.
+        """
         state = runtime_state if runtime_state is not None else runtime.probe()
         model_installed = runtime.MODEL in (state.get("models") or [])
+        reading = documents.capability_summary()
+        searchable = retrieval.fts_available(self.conn)
         rows = []
         for entry in CAPABILITIES:
             row = dict(entry)
             if entry.get("implemented") is False:
                 row["state"] = "unavailable"
                 row["detail"] = entry["setup"]
+            elif entry.get("kind") == "document":
+                blocked = self._document_blockers(entry, reading, searchable,
+                                                  state, model_installed)
+                row["formats"] = reading["supported"]
+                row["unavailable_reasons"] = reading["unavailable"]
+                row["state"] = "blocked" if blocked else "available"
+                row["detail"] = blocked[0] if blocked else entry["detail_available"]
+                if blocked:
+                    row["setup"] = blocked[0]
+            elif entry.get("kind") == "surface":
+                # Implemented, but it needs the runtime like everything else.
+                row["state"] = "available" if state.get("reachable") and model_installed else "blocked"
+                row["detail"] = (entry["detail_available"] if row["state"] == "available"
+                                 else "The AI engine or the configured model is not "
+                                      "ready, so Code cannot propose changes yet.")
             elif not state.get("reachable"):
                 row["state"] = "blocked"
                 row["detail"] = ("The AI engine on this computer did not answer, "
@@ -417,6 +789,24 @@ class Coordinator:
                 row["detail"] = "Runs on this computer."
             rows.append(row)
         return rows
+
+    @staticmethod
+    def _document_blockers(entry, reading, searchable, state, model_installed) -> list[str]:
+        """Every reason this one skill cannot run, in the order to show them."""
+        blocked = []
+        if entry.get("needs_runtime") and not state.get("reachable"):
+            blocked.append("The AI engine on this computer did not answer.")
+        elif entry.get("needs_runtime") and not model_installed:
+            blocked.append(f"The configured model {runtime.MODEL} is not installed "
+                           "on this computer.")
+        if entry.get("needs_search") and not searchable:
+            blocked.append("This computer's SQLite build has no full-text search, "
+                           "so documents cannot be searched.")
+        if entry.get("needs_documents") and not reading["supported"]:
+            blocked.append("No document format can be read on this computer.")
+        if entry.get("needs_docx") and not docgen_available():
+            blocked.append("Word documents cannot be written on this computer.")
+        return blocked
 
     def status(self):
         with db.LOCK:
@@ -434,12 +824,35 @@ class Coordinator:
             "runtime": runtime_state,
             "model_configured": runtime.MODEL,
             "model_installed": runtime.MODEL in (runtime_state.get("models") or []),
+            # The approved model, and the reasoning choice that applies to it.
+            # Only models this build actually supports are offered; a name in
+            # the runtime's tag list is not approval to use it.
+            "models": [{
+                "id": runtime.MODEL,
+                "reasoning": db.get_reasoning(self.conn, runtime.MODEL),
+                "installed": runtime.MODEL in (runtime_state.get("models") or []),
+                "reasoning_note": "Reasoning gives the model room to work through "
+                                  "a problem before answering. It is slower and "
+                                  "can use the whole reply budget.",
+            }],
             "capabilities": self.capabilities(runtime_state),
             "attachments": {
                 "max_bytes": db.MAX_ATTACHMENT_BYTES,
                 "max_files": db.MAX_ATTACHMENTS_PER_REQUEST,
                 "accepted": sorted({k.lstrip(".") for k in db.ATTACHMENT_TYPES}),
-                "processing": "Files are saved and listed. Nothing reads them yet.",
+                # Plain Chat still reads nothing. A document skill reads only
+                # the files sent with its own request.
+                "processing": "Plain Chat does not read attachments. Choose a "
+                              "document skill with + to have the files on that "
+                              "request read.",
+            },
+            "documents": {
+                **documents.capability_summary(),
+                "search": retrieval.METHOD if retrieval.fts_available(self.conn)
+                          else None,
+                "search_note": retrieval.METHOD_NOTE,
+                "generates": ["docx"] if docgen_available() else [],
+                "workflow": docflow.WORKFLOW,
             },
             "bounded": {"num_ctx": runtime.NUM_CTX,
                         "num_predict": runtime.NUM_PREDICT,
@@ -456,7 +869,7 @@ class Coordinator:
             "jobs_by_state": counts,
             "repaired_on_start": len(self.repaired),
             "surfaces": {"chat": "available", "settings": "available",
-                         "code": "unavailable"},
+                         "code": "available"},
             # Every value below needs evidence this chunk cannot produce.
             "unavailable": {
                 "workers": "no worker is paired; C06 establishes pairing",
@@ -553,6 +966,66 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _artifact_export(self, c, payload):
+        """Send a generated document only after an approval was recorded.
+
+        The approval is claimed here, one-shot and bound to this artifact's
+        digest, so a request that was approved once cannot be replayed and an
+        artifact that was never approved cannot be downloaded at all.
+        """
+        artifact_id = self._text(payload, "artifact_id", 36)
+        approval_id = self._text(payload, "approval_id", 36)
+        artifact = db.public_artifact(c.conn, artifact_id, c.workspace_id)
+        if artifact is None:
+            raise RequestError("that document no longer exists", 404)
+        root = db.artifacts_root(c.state_path)
+        path = db.artifact_path(c.conn, root, artifact_id, c.workspace_id)
+        if path is None:
+            raise RequestError("that document is no longer stored", 404)
+        data = path.read_bytes()
+        # The digest is re-checked at the moment of sending, so a file that
+        # changed under the record is not exported as though it had not.
+        import hashlib
+        if hashlib.sha256(data).hexdigest() != artifact["sha256"]:
+            raise RequestError("that document changed on disk and was not sent", 409)
+        try:
+            db.claim_approval(c.conn, approval_id, c.workspace_id,
+                              "artifact.export", artifact["sha256"],
+                              repo_id=artifact_id)
+        except db.ApprovalError as exc:
+            raise RequestError(str(exc), 409) from exc
+        self.send_response(200)
+        self.send_header("Content-Type", artifact["media_type"])
+        fallback = artifact["filename"].encode("ascii", "replace").decode().replace("?", "_")
+        self.send_header(
+            "Content-Disposition",
+            f'attachment; filename="{fallback}"; '
+            f"filename*=UTF-8''{quote(artifact['filename'], safe='')}")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+        self.wfile.flush()
+        db.set_artifact_state(c.conn, artifact_id, c.workspace_id, "exported")
+        db.record_audit(c.conn, workspace_id=c.workspace_id, repo_id=artifact_id,
+                        action="artifact.export", outcome="approved",
+                        approval_id=approval_id,
+                        detail={"filename": artifact["filename"],
+                                "sha256": artifact["sha256"]})
+
+    def _code(self, operation):
+        """Run one Code operation, turning a pending approval into a 202.
+
+        The handler carries no policy of its own: `CodeService` decides, and
+        this only translates the outcome into a response.
+        """
+        try:
+            self._json(operation())
+        except code_service.ApprovalNeeded as pending:
+            self._json({"needs_approval": pending.approval}, 202)
+        except repo_errors as exc:                     # noqa: B902
+            self._json({"error": str(exc), "code": exc.code}, 400)
+
     def _attach(self, c, payload):
         """Take one selected file into local storage. Nothing reads it.
 
@@ -619,6 +1092,15 @@ class Handler(BaseHTTPRequestHandler):
                 wanted = c.focus_requested.is_set()
                 c.focus_requested.clear()
                 self._json({"focus": wanted})
+            elif route == "/v1/artifacts":
+                self._json({"artifacts": db.artifacts_for_chat(
+                    c.conn, c.workspace_id, query["chat_id"][0])})
+            elif route == "/v1/code/state":
+                self._json(c.code.state((query.get("repo_id") or [None])[0]))
+            elif route == "/v1/code/files":
+                self._code(lambda: c.code.files(
+                    self._text(_as_payload(query), "repo_id", 36),
+                    (query.get("approval_id") or [None])[0]))
             elif route == "/v1/jobs/active":
                 self._json({"jobs": c.active_jobs()})
             elif route == "/v1/jobs":
@@ -636,11 +1118,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._sse()
             else:
                 self._static(route)
-        except ValueError as exc:
-            self._json({"error": str(exc)}, 400)
+        # Ordered most specific first. RequestError and CodeError both subclass
+        # ValueError, so a bare `except ValueError` above them would swallow
+        # their status — a 403 would answer 400 and a 404 would answer 400.
+        except code_service.CodeError as exc:
+            self._json({"error": str(exc), "code": exc.code}, exc.status)
         except RequestError as exc:
             self.close_connection = True
             self._json({"error": str(exc)}, exc.status)
+        except ValueError as exc:
+            self._json({"error": str(exc)}, 400)
         except KeyError as exc:
             self._json({"error": f"missing parameter {exc}"}, 400)
         except (ConnectionResetError, BrokenPipeError):
@@ -669,7 +1156,11 @@ class Handler(BaseHTTPRequestHandler):
                         or not isinstance(draft_text, str) or len(draft_text) > 16_384
                         or draft_text.strip() != text):
                     raise RequestError("invalid submitted draft")
-                job_id = c.submit(chat_id, text, draft_id=draft_id)
+                skill_id = payload.get("skill_id") or None
+                if skill_id is not None and (not isinstance(skill_id, str)
+                                             or len(skill_id) > 40):
+                    raise RequestError("invalid skill")
+                job_id = c.submit(chat_id, text, draft_id=draft_id, skill_id=skill_id)
                 # Clear only the version that was sent; newer typing survives.
                 db.clear_draft_if_matches(c.conn, draft_id, draft_text)
                 self._json({"job_id": job_id}, 202)
@@ -684,8 +1175,21 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"chat_id": chat_id, "pinned": pinned})
             elif route == "/v1/chat/delete":
                 chat_id = self._text(payload, "chat_id", 36)
-                db.delete_chat(c.conn, chat_id, c.attachments_root)
+                db.delete_chat(c.conn, chat_id, c.attachments_root,
+                               db.artifacts_root(c.state_path))
                 self._json({"deleted": chat_id})
+            elif route == "/v1/context":
+                chat_id = payload.get("chat_id") or None
+                if chat_id is not None:
+                    chat_id = self._text(payload, "chat_id", 36)
+                    if not c.conn.execute(
+                            "SELECT 1 FROM chats WHERE chat_id=? AND workspace_id=?",
+                            (chat_id, c.workspace_id)).fetchone():
+                        raise RequestError("unknown conversation", 404)
+                draft = payload.get("draft", "")
+                if not isinstance(draft, str) or len(draft) > 16_384:
+                    raise RequestError("draft must be text of at most 16384 characters")
+                self._json(c.context_estimate(chat_id, draft))
             elif route == "/v1/attachments":
                 self._json(self._attach(c, payload), 201)
             elif route == "/v1/attachment/delete":
@@ -696,6 +1200,48 @@ class Handler(BaseHTTPRequestHandler):
                 # A second launch asks the copy already running to come forward.
                 c.focus_requested.set()
                 self._json({"focus_requested": True}, 202)
+            elif route == "/v1/model/reasoning":
+                # Request-scoped switch, stored per model by the coordinator so
+                # it survives a restart and a fallback port.
+                model = self._text(payload, "model", 200)
+                if model != runtime.MODEL:
+                    raise RequestError("that model is not configured on this computer", 404)
+                enabled = payload.get("enabled")
+                if not isinstance(enabled, bool):
+                    raise RequestError("enabled must be true or false")
+                db.set_reasoning(c.conn, model, enabled)
+                self._json({"model": model, "reasoning": enabled})
+            elif route == "/v1/code/mode":
+                self._code(lambda: c.code.set_mode(
+                    self._text(payload, "repo_id", 36),
+                    self._text(payload, "mode", 20)))
+            elif route == "/v1/code/forget":
+                self._code(lambda: c.code.forget(self._text(payload, "repo_id", 36)))
+            elif route == "/v1/code/propose":
+                self._code(lambda: c.code.propose(
+                    self._text(payload, "repo_id", 36),
+                    self._text(payload, "request", 4000),
+                    payload.get("paths") or [],
+                    payload.get("approval_id") or None))
+            elif route == "/v1/code/apply":
+                self._code(lambda: c.code.apply(
+                    self._text(payload, "repo_id", 36),
+                    self._text(payload, "proposal_id", 36),
+                    payload.get("approval_id") or None))
+            elif route == "/v1/code/decision":
+                # Only an opaque id and a yes/no. No target, digest, mode,
+                # path or replacement content is accepted here.
+                self._code(lambda: c.code.decide(
+                    self._text(payload, "approval_id", 36),
+                    payload.get("approved")))
+            elif route == "/v1/artifact/approve-export":
+                self._json(c.request_export(self._text(payload, "artifact_id", 36)),
+                           202)
+            elif route == "/v1/artifact/export":
+                self._artifact_export(c, payload)
+            elif route == "/v1/code/cancel":
+                self._json({"cancelled": c.code.cancel(
+                    self._text(payload, "repo_id", 36))}, 202)
             elif route == "/v1/draft":
                 db.set_draft(c.conn, self._text(payload, "chat_id", 36),
                              str(payload.get("text", ""))[:16384])
@@ -709,6 +1255,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(exc)}, 409)
         except db.AttachmentRejected as exc:
             self._json({"error": str(exc)}, 422)
+        except code_service.CodeError as exc:
+            self._json({"error": str(exc), "code": exc.code}, exc.status)
         except RequestError as exc:
             self.close_connection = True
             self._json({"error": str(exc)}, exc.status)

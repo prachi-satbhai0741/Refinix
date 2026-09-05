@@ -477,3 +477,301 @@
   .cards { grid-template-columns: 1fr; padding: var(--sp-3); }
   .facts > div { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* ---- Execution 2: model pill, reasoning popover, Code -------------------- */
+
+/* One compact pill next to Send. It shortens with an ellipsis on a narrow
+   window rather than pushing the + button or Send out of reach. */
+.model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 14rem;
+  min-width: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.model-pill:hover,
+.model-pill[aria-expanded="true"] { border-color: var(--signal); color: var(--text); }
+
+.model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-reasoning {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--agent-soft);
+  color: var(--agent);
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.model-popover {
+  position: fixed;
+  z-index: 60;
+  width: min(22rem, 90vw);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.mp-name {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.mp-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.mp-label { font-size: 13px; color: var(--text); }
+
+.mp-switch {
+  min-width: 4.2rem;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mp-switch[aria-checked="true"] {
+  border-color: var(--st-enforced);
+  background: var(--st-enforced);
+  color: var(--text-invert);
+}
+
+.mp-switch:disabled { cursor: not-allowed; color: var(--text-faint); }
+.mp-note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text-faint); }
+
+/* ---- Code surface ------------------------------------------------------- */
+
+.file-list { display: grid; gap: 1px; padding: 0 var(--sp-2) var(--sp-3); }
+
+.file-row {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: 3px var(--sp-2);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.file-row:hover { background: var(--veil); }
+.file-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+
+.mode-choices { display: grid; gap: var(--sp-2); }
+
+.mode-choice {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: var(--sp-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mode-choice:hover { border-color: var(--text-faint); }
+.mode-choice[aria-checked="true"] {
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+
+.approval-card { border-color: var(--st-caution); }
+
+.diff-block { display: grid; gap: var(--sp-2); }
+.diff-path {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+/* Diffs stay square and scroll inside themselves; the page never scrolls
+   sideways because one line was long. */
+.diff {
+  margin: 0;
+  max-height: 24rem;
+  overflow: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-data);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre;
+  color: var(--text-dim);
+}
+
+.format-fallback { margin: .6em 0 0; color: var(--st-caution); }
+
+/* The Code thread holds cards, not chat turns. */
+#code-body { display: grid; gap: var(--sp-4); }
+.thread > .card, #code-body > .card { margin: 0 auto var(--sp-4); max-width: var(--read-width, 52rem); width: 100%; }
+
+/* ---- Execution 3: composer sizing, context meter, project row ----------- */
+
+/* The prompt box starts at one line and grows with the text. Height is set in
+   JavaScript from scrollHeight; these rules only bound and style it. */
+.composer-input {
+  min-height: 1.6em;
+  max-height: 260px;
+  resize: none;               /* sizing is automatic, never dragged */
+  overflow-y: hidden;         /* JavaScript turns this on past the maximum */
+  overflow-x: hidden;
+  word-break: break-word;
+  overflow-wrap: anywhere;    /* one long token must not widen the page */
+}
+
+.composer-box { min-width: 0; }
+.composer-line { min-width: 0; }
+.composer-bar { flex-wrap: wrap; row-gap: var(--sp-2); }
+
+/* ---- context meter ----------------------------------------------------- */
+
+.context-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.context-meter:hover { color: var(--text); border-color: var(--text-faint); }
+.context-meter[data-level="near"] { color: var(--st-caution); border-color: var(--st-caution); }
+.context-meter[data-level="omitting"],
+.context-meter[data-level="over"] { color: var(--st-fault); border-color: var(--st-fault); }
+.context-popover { width: min(26rem, 92vw); }
+
+/* ---- project row above the Code prompt --------------------------------- */
+
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 auto var(--sp-2);
+  max-width: var(--read-width, 52rem);
+  width: 100%;
+  min-width: 0;
+}
+
+.project-chooser {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 5px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.project-chooser:hover { color: var(--text); border-color: var(--signal); }
+.project-chooser[data-connected="true"] {
+  border-style: solid;
+  color: var(--text);
+  background: var(--veil);
+}
+
+.project-chooser > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-icon {
+  width: 8px; height: 8px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--text-faint);
+}
+
+.project-chooser[data-connected="true"] .project-icon { background: var(--st-enforced); }
+
+.project-switch {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.project-switch:hover { color: var(--text); border-color: var(--text-faint); }
+
+/* ---- access selector in the composer ----------------------------------- */
+
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 12rem;
+  min-width: 0;
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.mode-pill:hover, .mode-pill[aria-expanded="true"] {
+  color: var(--text);
+  border-color: var(--signal);
+}
+
+.mode-pill[data-mode="full"] { border-color: var(--st-caution); color: var(--st-caution); }
+
+.mode-menu button, .file-menu button { grid-template-columns: 14px 1fr; }
+.mode-menu [aria-checked="true"] .m-name { color: var(--text); font-weight: 600; }
+
+.file-menu { max-height: 24rem; overflow: auto; }
+.file-menu .file-list { max-height: 15rem; overflow: auto; padding: 0; }
+.file-menu .chat-search { margin: 0 var(--sp-2) var(--sp-2); width: auto; }
+
+.artifact-row .a-meta { color: var(--text-faint); }
+
+/* Code results are turns, so they inherit the thread's reading width. */
+#thread .card { margin: 0; }

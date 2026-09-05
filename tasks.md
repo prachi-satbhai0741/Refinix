@@ -169,9 +169,60 @@ generated Kubernetes explanation from a follow-up request. These are requester
 observations; no native screenshot was captured by the reviewer. Windows and
 Ubuntu packaging/launchers and native acceptance remain unfinished. C05 stays paused.
 
-**Execution 2 — repository editing and access-mode enforcement.** Not started.
+**Execution 2 — repository editing, access-mode enforcement and the Reasoning
+switch (implemented and Codex-reviewed 2026-09-05; requester acceptance
+pending).** Three deliverables:
 
-**Execution 3 — document understanding, retrieval and generation.** Not started.
+| Decision | What changed |
+|---|---|
+| Code surface | Connect one folder through the **native folder dialog**, select bounded UTF-8 text files, describe an edit, review a unified diff, apply. Existing-file replacement only. Creating, deleting and renaming files, project commands, Git, installs and network enablement are **denied in every mode**, Full included. |
+| Access modes | **Partial / Full / Ask before actions**, enforced by one pure function in `backend/coordinator/policy.py` that every repository operation passes through. A Full-access write is recorded as `allowed_automatically` with the mode that allowed it, never as a human approval nobody gave. |
+| Filesystem boundary | Descriptor-relative, no-follow traversal; identity verified again immediately before the write; same-directory temporary file replaced atomically with the original permission bits preserved. Short reads and short writes are looped to completion, and a stalled write leaves the original untouched. Where an OS cannot provide `dir_fd`, **the whole Code surface** is disabled and reported — reading included — rather than run on a weaker guarantee. |
+| Review completeness | The diff is never truncated. Apply writes exactly what the diff showed, or the proposal is refused, so a person can never authorise bytes they were not shown. |
+| Reasoning | Per-model **On/Off** in the composer's model pill, off by default, stored by the coordinator and snapshotted per attempt. Sets Ollama's top-level `think`; no Qwen `/think` prompt suffix. Reasoning text is never saved, searched or exported. |
+| Blank conversation pane | Repaired at its root cause: the thread is no longer cleared before the replacement is built, one message's formatter failure falls back to literal text, optional fields parse defensively, and a load generation token rejects a stale result even for the **same** chat. |
+
+**Codex review 2026-09-04 returned NEEDS FIX with seven findings; all seven are
+corrected and covered by regressions** — Ask-mode listing was unusable, a
+selection could survive a project switch, a late file list could land under
+another project, a short write could truncate a file, a truncated diff could
+authorise unseen bytes, the unsupported-platform note contradicted the code,
+and the policy matrix disagreed with the audit. Reading files and sending them
+to the model are now one action, `repo.read_and_propose`, so the matrix, the
+approval and the recorded outcome say the same thing.
+
+**Not part of Execution 2, and not claimed:** no sandboxed execution, no worker
+dispatch, and no claim about the 4B model's coding quality.
+The packaged app still carries the Execution 1 build until it is rebuilt.
+
+**Execution 3 — document understanding, retrieval and generation (implemented
+and Codex-reviewed in source 2026-09-05; requester acceptance pending).**
+Document work stays a selectable skill inside Chat; there is no new top-level
+page and the navigation is still Chat | Code with Settings secondary.
+
+| Decision | What changed |
+|---|---|
+| Reading | `.txt`, `.md`, `.csv`, `.json` and **`.docx`** are read with the standard library — a `.docx` is a ZIP of OOXML. Pages stay separate, the digest recorded at intake is re-verified before parsing, and a page count Word did not write stays **missing** rather than becoming 1. |
+| PDF and OCR | **Unavailable and reported so.** No PDF parser and no OCR engine are installed, and the standard library has neither. The capability probe names the missing prerequisite; nothing invents text for a scan, and text extraction is never called OCR. |
+| Retrieval | Keyword search over SQLite FTS5, scoped to the request's own sources, bounded, round-robin across sources so one document cannot flood the context, deterministic ordering. **Labelled keyword search, not semantic** — OD-07 is unresolved and no embedding model is provisioned. |
+| Citations | Every citation is re-checked against the selected sources and their real pages before it is shown. One that does not resolve becomes a visible unresolved item, never a rendered reference. |
+| Generation | `inspection_report_to_approval_note` writes a **real `.docx`** with `zipfile` and OOXML, reopens it to check its structure, and records filename, media type, size, SHA-256, workflow, job, attempt and validation result. No renamed HTML or text. |
+| Artifacts | Kept in `~/.aegisforge/artifacts/`, written atomically, never overwriting. Copying one out needs a **recorded one-shot approval bound to its digest**. |
+| Attachments | Plain Chat still reads nothing. A supported document skill reads **only the files sent with its own request**. The skill is stored on the job, so a reopened conversation and an export both say which skill read which files. |
+| Context indicator | A compact `Context ≈ 3.2k / 5.2k` pill in the Chat composer, fed by `/v1/context`, which calls `context.py` — the same estimator the request uses. No second counter in JavaScript. It warns before turns are omitted and says they stay saved. |
+| Code composer | The three permanent dashboard panels are **gone**. Access is a pill in the composer using Codex-style labels over the unchanged backend ids (`ask` → Ask for approval, `partial` → Approve for me, `full` → Full access); proposals and complete diffs arrive as chronological results; approvals appear inline; the audit sits under Details. A `Choose project` row sits above the prompt and uses the native folder dialog. |
+| Prompt boxes | Both composers start at one line, grow, cap, scroll inside themselves and shrink again. |
+
+**Combined Codex review passed for source and offline checks on 2026-09-05.**
+The repaired tree passed 288 coordinator tests, 60 browser-side tests, 17
+packaging checks, Python/JavaScript syntax checks and `git diff --check`. The
+review also closed four low-severity security findings plus five local
+defence/privacy defects. OCR quality, model output quality, whether a generated
+`.docx` opens in Word, packaged-app behaviour and requester acceptance remain
+unverified. **C08, AF-008 and AF-009 are not marked verified**, and the
+distributed Documents workflow remains later work. `desktop/dist/Refinix.app`
+still contains the Execution 1 build: E2 and E3 require a rebuild before native
+acceptance.
 
 ## Numbered execution tasks
 

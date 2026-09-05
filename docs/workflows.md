@@ -137,6 +137,14 @@ Chat remains usable on this device when no paired compute is available.
 
 ## 5. Documents workflow
 
+**Desktop Execution 3 implements a single-device subset of this**, in source and
+untested: reading is `.txt`, `.md`, `.csv`, `.json` and `.docx` with the
+standard library; PDF and OCR are reported unavailable with their missing
+prerequisite; retrieval is keyword matching over SQLite FTS5, labelled as such
+because OD-07 is unresolved; generation writes a real `.docx` validated by
+reopening it. Steps below that involve a second node, sandboxed validation or
+worker dispatch remain later work and are not implemented.
+
 The first fixed document workflow is
 inspection_report_to_approval_note:
 
@@ -177,6 +185,14 @@ directly to the canonical repository.
 ## 7. Action and approval policy
 
 The prototype uses one safe default policy:
+
+Execution 2 implements the first enforced subset of this table for the Code
+surface, in `backend/coordinator/policy.py`. It offers three named modes —
+Partial access, Full access, Ask before actions — over four actions:
+`repo.list`, `repo.read`, `model.propose`, `canonical.write`. Everything else
+in the rows below, and every action in the Denied row, stays denied in all
+three modes. Sandboxed validation is not implemented and reports itself
+unavailable rather than appearing automatic.
 
 | Action | Behaviour |
 |---|---|

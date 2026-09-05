@@ -10,6 +10,7 @@ function page() {
   const nodes = new Map(), requests = [], notices = [];
   const node = (id) => {
     if (!nodes.has(id)) nodes.set(id, { value: '', hidden: false, clears: 0,
+      style: {}, scrollHeight: 24,
       replaceChildren() { this.clears++; } });
     return nodes.get(id);
   };

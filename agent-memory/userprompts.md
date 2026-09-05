@@ -828,6 +828,73 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260904-014](#up-20260904-014)
 - linked_changes: [AC-20260904-016](agentchangelog.md#ac-20260904-016)
 
+<a id="up-20260904-016"></a>
+## UP-20260904-016 — Group remaining execution work and defer routine documentation
+- date: 2026-09-04
+- tags: grouped-execution, parallel-work, review-fixes, documentation-deferral
+- aliases: C06 with C07, C08 with C09, C11 through C13 together, small fixes by Codex
+- paths: tasks.md, agent-memory/
+- summary: Requester approved the discussed grouped execution plan and asked to save a code-focused review policy for the remaining C tasks.
+- request: Overlap independent work, give Claude one complete execution brief for substantial code corrections, let Codex implement small code fixes, and defer routine documentation corrections until all C tasks are implemented.
+- constraints: Update the plan now; no C06 implementation, host actions or Git writes. Preserve C05 work and required device/safety gates; this is not permission to skip validation.
+- follow_up_to: [UP-20260904-015](#up-20260904-015)
+- linked_changes: [AC-20260904-017](agentchangelog.md#ac-20260904-017)
+
+<a id="up-20260904-017"></a>
+## UP-20260904-017 — Triage Claude's desktop follow-up review
+- date: 2026-09-04
+- tags: refinix, packaging, review-fixes, artifact-validation
+- aliases: raw backend copied into bundle, extra cached wheel, missing acceptance records
+- paths: desktop/setup_py2app.py, desktop/setup-macos.command, desktop/test_packaging.py, agent-memory/
+- summary: Requester supplied Claude's desktop review for verification under the standing policy to fix small code issues directly and defer routine documentation cleanup.
+- constraints: Preserve the running app, C05 changes and user data; no new dependencies, Git writes or full-suite reruns. Build a separate artifact to verify the packaging correction.
+- follow_up_to: [UP-20260904-016](#up-20260904-016)
+
+<a id="up-20260904-018"></a>
+## UP-20260904-018 — Execution 2: repository editing, access modes and reasoning switch
+- date: 2026-09-04
+- status: in-progress
+- scope: implementation, code-surface, access-policy, runtime, frontend
+- tags: execution-2, repository-editing, access-modes, approvals, reasoning, blank-conversation
+- aliases: code surface, partial full ask, think true false, model pill, blank chat pane
+- paths: backend/coordinator/, desktop/, frontend/app/, tasks.md, docs/
+- summary: Implement the Code repository-editing workflow with coordinator-enforced Partial/Full/Ask access modes, a per-model Reasoning On/Off composer control that sets Ollama's top-level think field, and repair the blank conversation pane at its shared render root cause.
+- request: Build the three deliverables from current source, add focused offline checks over synthetic repositories, keep records truthful, and return a reviewable handoff.
+- constraints: Edits limited to the deliverables; offline checks with existing dependencies; one bounded live Ollama check only if it is already reachable with the model installed; bundle rebuild only if Refinix is not running and needs no install. No Git/GitHub writes, installs, downloads, deployments, service or network changes, C05 or Ubuntu action, subagents, or dependency additions. Preserve every pre-existing dirty hunk.
+- acceptance: Existing-file text edits inside an explicitly connected folder are proposed, diffed, policy-checked and atomically applied; reasoning is request-scoped and persisted per model; conversations never blank on a render or refresh failure.
+- verification_authorization: Implementation, offline checks with synthetic repositories and temporary databases, and one bounded local runtime smoke check.
+- follow_up_to: [UP-20260904-017](#up-20260904-017)
+- linked_changes: [AC-20260904-019](agentchangelog.md#ac-20260904-019)
+
+<a id="up-20260905-001"></a>
+## UP-20260905-001 — Execution 2 correction pass from the Codex review
+- date: 2026-09-05
+- status: in-progress
+- scope: implementation, code-surface, access-policy, filesystem, frontend
+- tags: execution-2, review-fixes, ask-mode, short-io, diff-truncation, platform-gate
+- aliases: codex needs fix, listing approval, stale repository, partial write, complete diff
+- paths: backend/coordinator/, frontend/app/, tasks.md, agent-memory/
+- summary: Fix the seven verified findings from the Codex review of Execution 2 and add regressions for each, keeping the execution pending re-review and requester acceptance.
+- request: Make Ask-mode listing usable, make repository activation state-safe, handle short filesystem I/O, stop applying content the diff did not show, fail closed consistently where the platform cannot contain a folder, and make the policy matrix and audit agree.
+- constraints: No packaged-app rebuild, installs, downloads, model or network services, Git/GitHub writes, C05 or Ubuntu action. Preserve every unrelated dirty hunk.
+- acceptance: Each finding has a regression that fails without its fix, and the required suites pass.
+- verification_authorization: Implementation and offline checks with synthetic repositories and temporary databases.
+- follow_up_to: [UP-20260904-018](#up-20260904-018)
+- linked_changes: [AC-20260905-001](agentchangelog.md#ac-20260905-001)
+
+<a id="up-20260905-002"></a>
+## UP-20260905-002 — Execution 3: document understanding, retrieval and generation
+- date: 2026-09-05
+- status: in-progress
+- scope: implementation, documents, retrieval, artifacts, ui
+- tags: execution-3, document-skills, extraction, fts, docx, code-composer, context-indicator
+- aliases: read a document, search my documents, write a document, codex composer, context estimate
+- paths: backend/coordinator/, frontend/app/, docs/, tasks.md, agent-memory/
+- summary: Implement the three document skills inside Chat over the existing attachment intake, add bounded local retrieval with resolvable citations and a real .docx generation workflow, add a context-window indicator to the composer, and rebuild the Code surface around a Codex-style composer.
+- request: Build Execution 3 completely in source, preserve the unfinished Execution 2 work and the C05 dirty tree, add focused tests, and hand back exact verification and rebuild commands.
+- constraints: Source only. No test runs, installs, downloads, model calls, service starts, bundle rebuild, deployment or Git writes. Document work stays a skill inside Chat; no new top-level page and no expansion into C05-C09 or worker dispatch.
+- acceptance: A selected document skill reads only that request's attachments, retrieval cites a real source and page, a structurally valid .docx is produced under coordinator storage, and export needs a recorded approval.
+- verification_authorization: None. Tests are written but not run; the requester runs them.
 <a id="up-20260905-001"></a>
 ## UP-20260905-001 — Neutral black palette, ChatGPT/Claude register, and collapsible walls
 - date: 2026-09-05
@@ -850,6 +917,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - linked_changes: [AC-20260905-002](agentchangelog.md#ac-20260905-002)
 
 <a id="up-20260905-003"></a>
+## UP-20260905-003 — Review and repair Refinix Executions 2 and 3
+- date: 2026-09-05
+- status: completed
+- scope: review, execution-2, execution-3, correction
+- tags: refinix, code-surface, document-skills, security-review, review-fixes
+- aliases: combined codex review, solve all bugs, execute e2 e3 fixes
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Requester authorised a complete combined review of Claude's Execution 2 and Execution 3 implementation and direct repair of verified defects.
+- constraints: Preserve unrelated C05 work; no Git/GitHub writes, installs, downloads, model calls, service starts, packaged-app rebuild, deployment or Ubuntu action.
+- acceptance: Repair confirmed Code and Documents correctness, security and UI defects; run proportionate isolated checks; report remaining native requester gates truthfully.
+- verification_authorization: Implementation and offline checks with existing dependencies, synthetic repositories and temporary databases.
+- follow_up_to: [UP-20260905-002](#up-20260905-002)
+- linked_changes: [AC-20260905-003](agentchangelog.md#ac-20260905-003)
 ## UP-20260905-003 — Dark wine red for every failure and error state
 - date: 2026-09-05
 - tags: refinix, palette, fault, wine-red, error-state
