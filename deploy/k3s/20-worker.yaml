@@ -126,7 +126,10 @@ spec:
                       headers={
                           "Authorization": "Bearer " + os.environ["AEGIS_WORKER_TOKEN"],
                           "X-AegisForge-Contract": "1.0"})
-                  with urllib.request.urlopen(request, timeout=3) as response:
+                  # 15s clears the ~13s worst case below and stays under
+                  # timeoutSeconds: 20. A 3s budget failed a healthy Pod
+                  # in exactly the state the comment calls normal.
+                  with urllib.request.urlopen(request, timeout=15) as response:
                       sys.exit(0 if response.status == 200 else 1)
             # /v1/health calls runtime.probe(), which makes three HTTP calls
             # with 3s + 5s + 5s timeouts — about 13s worst case when the runtime

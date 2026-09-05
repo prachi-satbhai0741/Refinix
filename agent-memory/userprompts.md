@@ -963,6 +963,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - linked_changes: [AC-20260905-005](agentchangelog.md#ac-20260905-005)
 
 <a id="up-20260905-006"></a>
+## UP-20260905-006 — Correct the C05 denied isolation probe for kube-router rejection
+- date: 2026-09-05
+- status: implemented; requester verification pending
+- scope: c05, correction, network-policy, checks
+- tags: c05, netpolicy, kube-router, isolation-probe, exit-codes
+- aliases: connection refused is not a failure, blocked-by-policy, denied probe exit 7, reject icmp-port-unreachable
+- paths: deploy/k3s/checks/netpolicy-denied.yaml, deploy/k3s/checks/netpolicy-allowed.yaml, deploy/k3s/test_manifests.py, docs/c05-ubuntu-deployment-handoff.md
+- summary: Ubuntu step G showed the allowed probe reaching Redis and the denied probe refused immediately by an explicit kube-router REJECT rule, so the denied probe must treat rejection as a policy denial rather than assuming a denial always times out.
+- request: Make the smallest root-cause correction so timeout exit 124 and Connection refused both report one stable RESULT=blocked-by-policy prefix at exit 7, keep PONG at POLICY-NOT-ENFORCED exit 1, keep every non-network error a failure, leave the allowed probe unweakened, replace the over-general shared test assertion with focused ones, and update step G.
+- constraints: One bounded correction; preserve every unrelated dirty-tree change; no Git/GitHub writes, installs, deployments, network calls or credential access. No new handoff document and no tasks.md edit yet.
+- acceptance: Both denial mechanisms exit 7 under one matchable prefix, allowed-path refusal stays exit 9, the allowed-first pairing is documented, and `python3 -B deploy/k3s/test_manifests.py` passes.
+- verification_authorization: Implementation plus the two named offline checks.
+- follow_up_to: [UP-20260904-004](#up-20260904-004)
 ## UP-20260905-006 — Bring the new Code and composer surfaces onto our design system
 - date: 2026-09-05
 - tags: refinix, design-integration, code-surface, composer, parallel-work
