@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Refinix — private agent workbench for confidential industrial work</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=IBM+Plex+Mono:wght@400;500;600&family=Michroma&family=Spectral:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Bodoni+Moda:opsz,wght@6..96,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=Michroma&family=Pixelify+Sans:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="site.css">
 </head>
 <body>
@@ -14,28 +14,67 @@
 <script>document.documentElement.classList.add('js');</script>
 
 <!--
-  Rokunin Sync symbol — STAND-IN, drawn from the supplied logo, not the real
-  artwork. Three rotating arrows around a pinwheel. Replace with
-  assets/rokunin-sync-mark.png when it lands; see assets/README.md.
+  The Refinix mark: three curved arrows around an inner pinwheel, drawn to the
+  supplied artwork. Geometry is generated rather than eyeballed, so the arcs
+  actually meet their arrowheads; viewBox 0 0 120 120, centre 60,60.
+
+  It is filled with a brushed-steel ramp rather than currentColor. Two ramps,
+  tilted against each other, so the outer ring and the inner blades catch light
+  from slightly different angles the way struck metal does — a single gradient
+  across the whole mark reads as flat foil.
+
+  The symbol is name-neutral, so it serves as both the Refinix product mark and
+  the Rokunin Sync team mark. #rk-mark stays as an alias for the surfaces that
+  reference it by that name.
 -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-  <symbol id="rk-mark" viewBox="0 0 120 120">
-    <g fill="none" stroke="currentColor" stroke-width="9">
-      <g><path d="M107,67 A48,48 0 0 1 64,108"/></g>
-      <g transform="rotate(120 60 60)"><path d="M107,67 A48,48 0 0 1 64,108"/></g>
-      <g transform="rotate(240 60 60)"><path d="M107,67 A48,48 0 0 1 64,108"/></g>
+  <defs>
+    <linearGradient id="rfx-steel" x1="0" y1="0" x2="0.18" y2="1">
+      <stop offset="0%"   stop-color="#FFFFFF"/>
+      <stop offset="11%"  stop-color="#E8EDF1"/>
+      <stop offset="25%"  stop-color="#B4BDC5"/>
+      <stop offset="39%"  stop-color="#79828B"/>
+      <stop offset="49%"  stop-color="#464E57"/>
+      <stop offset="52%"  stop-color="#2A3037"/>
+      <stop offset="62%"  stop-color="#737C85"/>
+      <stop offset="76%"  stop-color="#BAC3CA"/>
+      <stop offset="89%"  stop-color="#F2F6F8"/>
+      <stop offset="100%" stop-color="#A5AEB6"/>
+    </linearGradient>
+    <linearGradient id="rfx-steel-2" x1="0.1" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#F6F9FB"/>
+      <stop offset="18%"  stop-color="#C6CED5"/>
+      <stop offset="38%"  stop-color="#858E97"/>
+      <stop offset="50%"  stop-color="#3B424A"/>
+      <stop offset="64%"  stop-color="#8D959D"/>
+      <stop offset="82%"  stop-color="#DDE3E8"/>
+      <stop offset="100%" stop-color="#8F979F"/>
+    </linearGradient>
+  </defs>
+
+  <symbol id="rfx-mark" viewBox="0 0 120 120">
+    <!-- outer ring: three curved arrows -->
+    <g fill="url(#rfx-steel)" stroke="#0B0D10" stroke-width="0.7" stroke-linejoin="round">
+      <path d="M116.19 65.91 A56.5 56.5 0 0 1 60 116.5 L60 125 L45.24 108.29 L60 96 L60 104.5 A44.5 44.5 0 0 0 104.26 64.65 Z"/>
+      <path d="M26.79 105.71 A56.5 56.5 0 0 1 11.07 31.75 L3.71 27.5 L25.56 23.07 L28.82 42 L21.46 37.75 A44.5 44.5 0 0 0 33.84 96 Z"/>
+      <path d="M37.02 8.38 A56.5 56.5 0 0 1 108.93 31.75 L116.29 27.5 L109.21 48.64 L91.18 42 L98.54 37.75 A44.5 44.5 0 0 0 41.9 19.35 Z"/>
     </g>
-    <g fill="currentColor">
-      <g><path d="M47,111 L66,119 L63,96 Z"/></g>
-      <g transform="rotate(120 60 60)"><path d="M47,111 L66,119 L63,96 Z"/></g>
-      <g transform="rotate(240 60 60)"><path d="M47,111 L66,119 L63,96 Z"/></g>
+    <!-- inner pinwheel: three bent blades spiralling to the centre -->
+    <g fill="url(#rfx-steel-2)" stroke="#0B0D10" stroke-width="0.7" stroke-linejoin="round">
+      <path d="M96.2 79.25 Q70.75 97.49 46.41 87.86 L44.66 91.46 L45.03 71.7 L58.68 62.7 L56.93 66.29 Q63.31 71.54 73.24 67.04 Z"/>
+      <path d="M25.23 81.73 Q22.16 50.57 42.67 34.3 L40.43 30.98 L57.36 41.18 L58.32 57.51 L56.09 54.2 Q48.36 57.1 47.28 67.95 Z"/>
+      <path d="M58.57 19.02 Q87.09 31.95 90.92 57.84 L94.91 57.56 L77.62 67.12 L62.99 59.79 L66.98 59.51 Q68.34 51.37 59.48 45.01 Z"/>
     </g>
-    <g fill="currentColor">
-      <g><path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z"/></g>
-      <g transform="rotate(120 60 60)"><path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z"/></g>
-      <g transform="rotate(240 60 60)"><path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z"/></g>
+    <!-- the engraved hatching on each blade face -->
+    <g stroke="#12151A" stroke-width="1.1" stroke-linecap="round" opacity=".7" fill="none">
+      <path d="M75.83 75.28 L87.33 86.4 M71.06 77.03 L79.01 89.27 M66.36 77.48 L70.88 89.88 M62.06 76.77 L63.5 88.49"/>
+      <path d="M38.85 66.06 L23.47 70.47 M39.73 61.06 L25.15 61.83 M41.68 56.77 L28.68 54.48 M44.44 53.4 L33.58 48.79"/>
+      <path d="M65.32 38.65 L69.19 23.13 M69.22 41.91 L75.84 28.9 M71.96 45.75 L80.44 35.64 M73.5 49.83 L82.92 42.73"/>
     </g>
   </symbol>
+
+  <!-- alias: chat.html and the app surfaces reference the mark by this name -->
+  <symbol id="rk-mark" viewBox="0 0 120 120"><use href="#rfx-mark"/></symbol>
 </svg>
 
 <!--
@@ -56,7 +95,6 @@
 <div class="atmos" aria-hidden="true"></div>
 <canvas class="grain" aria-hidden="true"></canvas>
 
-<p class="sample-strip">Design reference &middot; sample content &middot; no release exists yet</p>
 
 <!-- SVG turbulence used by the glitch on exit -->
 <svg width="0" height="0" aria-hidden="true" style="position:absolute">
@@ -68,6 +106,40 @@
     <feDisplacementMap in="SourceGraphic" in2="n" xChannelSelector="R" yChannelSelector="G" scale="0">
       <animate attributeName="scale" dur="1s" begin="indefinite" values="0; 90; 26; 0" fill="freeze"/>
     </feDisplacementMap>
+  </filter>
+
+  <!-- Pixel corruption for the figure on the page.
+       The trick is the discrete transfer: quantising the turbulence into flat
+       steps makes the displacement move in BLOCKS rather than flowing, which
+       is what reads as pixels breaking up. Smooth turbulence gives a liquid
+       warp, and stacked clip-path bands give a slice tear - neither looks
+       digital. The channel offsets add the colour fringing a real signal
+       fault produces. -->
+  <filter id="pixglitch" x="-14%" y="-14%" width="128%" height="128%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.05 0.17" numOctaves="1" seed="3" result="n">
+      <animate attributeName="seed" dur="0.52s" begin="indefinite"
+               values="3;19;7;26;12" fill="freeze"/>
+    </feTurbulence>
+    <feComponentTransfer in="n" result="q">
+      <feFuncR type="discrete" tableValues="0 0.3 0.58 0.8 1"/>
+      <feFuncG type="discrete" tableValues="0 0.42 0.74 1"/>
+    </feComponentTransfer>
+    <feDisplacementMap in="SourceGraphic" in2="q" xChannelSelector="R" yChannelSelector="G"
+                       scale="0" result="d">
+      <animate attributeName="scale" dur="0.52s" begin="indefinite"
+               values="0;23;7;17;0" fill="freeze"/>
+    </feDisplacementMap>
+    <feOffset in="d" dx="-3" result="ro"/>
+    <feColorMatrix in="ro" type="matrix" result="rc"
+      values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0"/>
+    <feOffset in="d" dx="3" result="bo"/>
+    <feColorMatrix in="bo" type="matrix" result="bc"
+      values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .5 0"/>
+    <feMerge>
+      <feMergeNode in="rc"/>
+      <feMergeNode in="bc"/>
+      <feMergeNode in="d"/>
+    </feMerge>
   </filter>
 </svg>
 
@@ -88,7 +160,17 @@
   <div class="deity-reveal" role="presentation"></div>
   <span class="eye eye-l"></span>
   <span class="eye eye-r"></span>
-  <div class="intro-mark"><p class="wordmark">REFINIX</p></div>
+  <!-- The stacked lockup: mark over wordmark, as supplied. The <img> is a swap
+       hook — drop a rendered assets/refinix-lockup-v.png in and it replaces the
+       drawn lockup wholesale; until then it removes itself and the SVG shows. -->
+  <div class="intro-mark">
+    <img class="intro-lockup" src="assets/refinix-lockup-v.png" alt="Refinix"
+         onerror="this.remove()">
+    <div class="lockup lockup-v">
+      <svg class="lockup-mark" viewBox="0 0 120 120" aria-hidden="true"><use href="#rfx-mark"/></svg>
+      <p class="wordmark">REFINIX</p>
+    </div>
+  </div>
   <button class="enter" id="enter" type="button">
     <span>Get started</span>
     <span class="go">
@@ -104,8 +186,13 @@
 <div class="nav-shell">
   <nav class="nav">
     <a class="nav-brand" href="#">
-      <svg class="mark" aria-hidden="true"><use href="#rk-mark"/></svg>
-      Refinix <span class="chip">Pre-release</span>
+      <img class="brand-lockup" src="assets/refinix-lockup-h.png" alt="Refinix"
+           onerror="this.remove()">
+      <span class="lockup lockup-h">
+        <svg class="lockup-mark" viewBox="0 0 120 120" aria-hidden="true"><use href="#rfx-mark"/></svg>
+        <span class="wordmark">Refinix</span>
+      </span>
+      <span class="chip">Pre-release</span>
     </a>
     <div class="nav-links">
       <a href="#proof">Proof</a>
@@ -125,11 +212,14 @@
     <section class="hero">
       <div class="reveal">
         <p class="eyebrow"><b>Apache-2.0</b> &middot; Air-gapped &middot; Open-weight models</p>
-        <h1>Nothing leaves the machine.</h1>
+        <!-- Six words in three pairs. The spans are the line breaks: at this size
+             the browser's own wrapping would put four words on the first line and
+             strand the last, and the pairing is the point of the setting. -->
+        <h1><span>Sovereign intelligence,</span><span>behind your</span><span>own walls.</span></h1>
         <p class="lede">
           A private agent workbench for confidential industrial work — chat, documents
-          and code, running on hardware you already own. <strong>The proof is a counter
-          you can read</strong>, not a promise in a brochure.
+          and code, running entirely on hardware inside your perimeter.
+          <strong>The proof is a live counter at zero</strong>, not a promise in a brochure.
         </p>
 
         <div class="cta-row">
@@ -183,161 +273,12 @@
     </div>
   </div>
 
-  <!-- =============================================================== proof -->
+  <!-- ===================================================== the long middle
+       Order set by the owner: download first, then approach, product, what
+       it does, the evidence rule, and the counts. -->
   <div class="wrap">
-    <section class="sec" id="proof">
-      <div class="split" style="margin-bottom:56px">
-        <div class="reveal">
-          <p class="label">The evidence rule</p>
-          <h2 class="sec-h">A claim, an observation, and a blank are three different things.</h2>
-          <p class="sec-lede" style="margin-bottom:0">
-            Most tools show you a green tick. Refinix will not, because a green tick
-            cannot tell you whether a control is running or whether anyone was
-            watching. <strong>Every figure names its source, and a missing source
-            stays visibly missing.</strong>
-          </p>
-        </div>
-
-        <!-- ============ PLATE II — the owl ============ -->
-        <figure class="plate reveal d2">
-          <svg viewBox="0 0 400 400" role="img"
-               aria-label="An Athenian tetradrachm: the owl of Athena with an olive sprig and crescent.">
-            <g fill="none" stroke="var(--ink-dim)">
-              <circle cx="200" cy="200" r="178" stroke-width="1.3"/>
-              <circle cx="200" cy="200" r="168" stroke-width=".8" opacity=".5"/>
-            </g>
-            <!-- beaded rim -->
-            <g transform="translate(200,200)" fill="var(--ink-dim)" opacity=".7">
-              <g><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(15)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(30)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(45)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(60)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(75)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(90)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(105)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(120)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(135)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(150)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(165)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(180)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(195)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(210)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(225)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(240)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(255)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(270)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(285)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(300)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(315)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(330)"><circle cy="-173" r="2.6"/></g>
-              <g transform="rotate(345)"><circle cy="-173" r="2.6"/></g>
-            </g>
-
-            <!-- olive sprig -->
-            <g fill="none" stroke="var(--ink-dim)" stroke-width="1.4" opacity=".9">
-              <path d="M74,104 C96,86 126,80 152,86"/>
-              <path d="M84,98  C80,86 84,74 94,70  C98,80 95,92 84,98 Z"/>
-              <path d="M104,90 C101,78 106,67 116,64 C119,74 115,85 104,90 Z"/>
-              <path d="M126,85 C124,73 130,63 140,61  C142,71 137,81 126,85 Z"/>
-              <circle cx="97" cy="106" r="5"/>
-              <circle cx="119" cy="99" r="5"/>
-            </g>
-            <!-- crescent -->
-            <g fill="none" stroke="var(--ink-dim)" stroke-width="1.6" opacity=".9">
-              <path d="M300,86 C286,96 284,118 296,132 C276,128 264,108 272,90 C278,78 290,74 300,86 Z"/>
-            </g>
-
-            <!-- owl -->
-            <g fill="var(--ground)" stroke="var(--ink)" stroke-width="2.4" stroke-linejoin="round">
-              <path d="M200,132
-                       C232,132 252,152 252,180
-                       C252,196 246,208 238,216
-                       C252,230 260,254 260,280
-                       C260,312 234,336 200,336
-                       C166,336 140,312 140,280
-                       C140,254 148,230 162,216
-                       C154,208 148,196 148,180
-                       C148,152 168,132 200,132 Z"/>
-            </g>
-            <!-- ear tufts -->
-            <g fill="var(--ground)" stroke="var(--ink)" stroke-width="2.2" stroke-linejoin="round">
-              <path d="M160,142 C150,126 152,112 164,108 C170,120 168,134 160,142 Z"/>
-              <path d="M240,142 C250,126 248,112 236,108 C230,120 232,134 240,142 Z"/>
-            </g>
-            <!-- eyes -->
-            <g class="owl-eye">
-              <circle cx="178" cy="176" r="17" fill="var(--ember)" opacity=".85"/>
-              <circle cx="222" cy="176" r="17" fill="var(--ember)" opacity=".85"/>
-              <circle cx="178" cy="176" r="17" fill="none" stroke="var(--ink)" stroke-width="2.4"/>
-              <circle cx="222" cy="176" r="17" fill="none" stroke="var(--ink)" stroke-width="2.4"/>
-              <circle cx="178" cy="176" r="6" fill="var(--ink)"/>
-              <circle cx="222" cy="176" r="6" fill="var(--ink)"/>
-            </g>
-            <!-- beak -->
-            <g fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linejoin="round">
-              <path d="M200,186 L208,206 L200,212 L192,206 Z"/>
-            </g>
-            <!-- breast feathering -->
-            <g fill="none" stroke="var(--ink-dim)" stroke-width="1.15" opacity=".8">
-              <path d="M172,238 C180,246 190,246 198,238"/>
-              <path d="M202,238 C210,246 220,246 228,238"/>
-              <path d="M162,258 C170,266 180,266 188,258"/>
-              <path d="M192,258 C200,266 210,266 218,258"/>
-              <path d="M222,258 C230,266 238,264 242,258"/>
-              <path d="M158,280 C166,288 176,288 184,280"/>
-              <path d="M188,280 C196,288 206,288 214,280"/>
-              <path d="M218,280 C226,288 236,288 242,280"/>
-              <path d="M166,302 C174,310 184,310 192,302"/>
-              <path d="M196,302 C204,310 214,310 222,302"/>
-              <path d="M226,302 C232,308 238,308 240,304"/>
-            </g>
-            <!-- wing edges -->
-            <g fill="none" stroke="var(--ink)" stroke-width="1.7" opacity=".9">
-              <path d="M162,222 C150,248 148,282 158,310"/>
-              <path d="M238,222 C250,248 252,282 242,310"/>
-            </g>
-            <!-- feet -->
-            <g fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round">
-              <path d="M184,336 L184,350 M176,350 L192,350"/>
-              <path d="M216,336 L216,350 M208,350 L224,350"/>
-            </g>
-
-            <!-- legend -->
-            <g fill="var(--ink-dim)" font-family="Spectral, serif" font-size="27"
-               letter-spacing="3" opacity=".9">
-              <text x="296" y="196">Α</text>
-              <text x="296" y="228">Θ</text>
-              <text x="296" y="260">Ε</text>
-            </g>
-          </svg>
-        </figure>
-      </div>
-
-      <div class="claims">
-        <article class="claim reveal">
-          <span class="claim-tag">Enforced</span>
-          <h3>A named control is active</h3>
-          <p>The host firewall ruleset is loaded and blocking. The layer doing the
-             enforcing is named alongside the claim, every time.</p>
-        </article>
-        <article class="claim reveal d1">
-          <span class="claim-tag">Observed</span>
-          <h3>A named observer saw a count</h3>
-          <p>Zero public outbound flows in a stated window, on stated interfaces.
-             A count without an observer and a window is not published at all.</p>
-        </article>
-        <article class="claim claim-unknown reveal d2">
-          <span class="claim-tag">Unavailable</span>
-          <h3>There is no evidence</h3>
-          <p>No observer installed on this host. Shown as missing, never as a zero
-             and never as green, because absence is not proof.</p>
-        </article>
-      </div>
-    </section>
-
     <!-- =========================================================== statement -->
-    <section class="sec" style="padding-top:0">
+    <section class="sec">
       <p class="label reveal">Design approach</p>
       <h2 class="statement reveal d1">Nothing leaves.<span>Everything is recorded.</span></h2>
 
@@ -371,11 +312,22 @@
 
     <!-- ============================================================ surfaces -->
     <section class="sec" id="surfaces" style="padding-top:0">
+      <!-- The sun ornament. It sits in the band of empty page beside the
+           heading — measured at 729x233 on a 1440 screen — and it is positioned
+           absolutely so it fills that emptiness rather than adding to it. In
+           normal flow it was pushing the page 203px taller, which is the
+           opposite of what an ornament in a gap is for.
+
+           It removes itself if the file is absent, exactly like the lockups,
+           so the page is never left with a broken-image icon mid-section. -->
+      <figure class="sun" aria-hidden="true">
+        <img src="assets/sun.png" alt="" onerror="this.closest('.sun').remove()">
+      </figure>
       <p class="label reveal">The product</p>
       <h2 class="sec-h reveal d1">Four surfaces, one harness.</h2>
       <p class="sec-lede reveal d1">
-        Pick a surface to see what it actually shows. Every value below is sample
-        content — none of it is a measurement.
+        Pick a surface to see what it shows. Every value below is sample content,
+        not a measurement.
       </p>
 
       <div class="demo reveal d2">
@@ -418,7 +370,7 @@
               <div class="kv"><span>Overridable</span><b>yes</b></div>
               <h4 style="margin-top:10px">State</h4>
               <div class="kv"><span>Job</span><b>running</b></div>
-              <div class="kv"><span>Attempt</span><b>1 of 3</b></div>
+              <div class="kv"><span>Attempt</span><b>1</b></div>
             </div>
           </div>
 
@@ -574,39 +526,98 @@
       <h2 class="sec-h reveal d1">Built for the work a plant actually generates.</h2>
       <p class="sec-lede reveal d1">
         Approval notes, inspection reports, engineering calculations, internal tooling
-        code, and drawings that arrive as scans rather than files.
+        code, and drawings that arrive as scans.
       </p>
 
       <div class="caps">
         <article class="cap-row reveal">
           <span class="cap-n">01</span>
           <h3>Read what is on paper</h3>
-          <p>Scanned inspection reports, handwritten annotations, P&amp;IDs and
-             photographs, through on-device OCR and vision models. Findings keep their
-             page numbers, so every claim in a draft traces back to the sheet it came from.</p>
+          <p>Scanned reports, handwritten annotations, P&amp;IDs and photographs, through
+             on-device OCR and vision. Findings keep their page numbers, so a draft
+             traces back to the sheet.</p>
         </article>
         <article class="cap-row reveal">
           <span class="cap-n">02</span>
           <h3>Ground it in your own manuals</h3>
           <p>A local retrieval connector over your SOPs, standards and past
-             correspondence. Citations point at documents on your own disks, and the
-             index never leaves them.</p>
+             correspondence. Citations point at your own disks, and the index never
+             leaves them.</p>
         </article>
         <article class="cap-row reveal">
           <span class="cap-n">03</span>
           <h3>Produce the actual deliverable</h3>
-          <p>Approval notes, spreadsheets and decks that open correctly in the tools your
-             organisation already uses — <code>.docx</code>, <code>.xlsx</code>,
-             <code>.pptx</code> — plus code changes validated in a sandbox with
-             networking switched off.</p>
+          <p>Approval notes, spreadsheets and decks that open correctly as
+             <code>.docx</code>, <code>.xlsx</code> and <code>.pptx</code> — plus code
+             changes validated in a sandbox with networking off.</p>
         </article>
         <article class="cap-row reveal">
           <span class="cap-n">04</span>
           <h3>Use the machines you have</h3>
-          <p>One workstation is a complete installation. Pair a second trusted device and
-             the coordinator can route a vision job there while a coding job runs here.
-             One job, one model, one device — never split weights across machines, so the
-             audit trail stays simple enough to check.</p>
+          <p>One workstation is a complete installation. Pair a second trusted device
+             and a vision job can run there while a coding job runs here — one job, one
+             model, one device, never weights split across machines.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============================================================== proof -->
+    <section class="sec" id="proof" style="padding-top:0">
+      <div class="split" style="margin-bottom:56px">
+        <div class="reveal">
+          <p class="label">The evidence rule</p>
+          <h2 class="sec-h">A claim, an observation and a blank are three different things.</h2>
+          <p class="sec-lede">
+            A green tick cannot tell you whether a control is running, or whether
+            anyone was watching. So Refinix does not draw one.
+          </p>
+          <!-- The rule itself, as three lines rather than three paragraphs. The
+               numerals carry the state colours, so the system the cards below use
+               is introduced here before it is used. -->
+          <ol class="rule">
+            <li>Every figure names its source.</li>
+            <li>A missing source stays visibly missing.</li>
+            <li>No fourth state quietly means <em>probably fine</em>.</li>
+          </ol>
+        </div>
+
+        <!-- ============ the supplied motion clip, in place of the owl ============
+             Copied into assets byte-for-byte — no transcode, so no generation of
+             loss and the source frame rate is whatever the file already carries.
+             Paused while off screen: the page has a second clip on the intro and
+             decoding both at once is what costs frames. -->
+        <figure class="plate plate-clip reveal d2">
+          <video class="evidence-clip" autoplay muted loop playsinline preload="metadata"
+                 aria-label="Motion graphic: configuration and measurement icons animating.">
+            <source src="assets/evidence-loop.mp4" type="video/mp4">
+          </video>
+        </figure>
+      </div>
+
+      <!-- Three states, three treatments, no shared colour. The old copy
+           described the hatching; these cards draw it, so the third card is
+           legibly a different kind of thing before a word of it is read. -->
+      <div class="claims">
+        <article class="claim claim-enforced reveal">
+          <span class="claim-tag">Enforced</span>
+          <h3>A named control is active</h3>
+          <p>The host firewall ruleset is loaded and blocking, and the layer doing
+             the enforcing is named beside the claim.</p>
+          <p class="claim-src">nftables &middot; inet/filter</p>
+        </article>
+        <article class="claim claim-observed reveal d1">
+          <span class="claim-tag">Observed</span>
+          <h3>A named observer saw a count</h3>
+          <p>Zero public outbound flows, on stated interfaces, in a stated window.
+             No observer and no window means no figure.</p>
+          <p class="claim-src">flow-probe &middot; 24 h window</p>
+        </article>
+        <article class="claim claim-unknown reveal d2">
+          <span class="claim-tag">Unavailable</span>
+          <h3>There is no evidence</h3>
+          <p>No observer installed on this host. Drawn as missing &mdash; never as a
+             zero, because absence is not proof.</p>
+          <p class="claim-src">no source</p>
         </article>
       </div>
     </section>
@@ -615,8 +626,8 @@
     <section class="sec" style="padding-top:0">
       <div class="stats">
         <div class="stat reveal">
-          <b>1</b><span>Machine is a complete installation</span>
-          <em>Pairing is optional and reversible</em>
+          <b>2</b><span>Execution targets without leaving your policy boundary</span>
+          <em>This device, or a trusted paired device</em>
         </div>
         <div class="stat reveal d1">
           <b>4</b><span>Surfaces over one harness</span>
@@ -632,137 +643,19 @@
         </div>
       </div>
     </section>
-
-    <!-- ================================================================= get -->
-    <section class="sec" id="get" style="padding-top:0">
-      <div class="split" style="margin-bottom:52px">
-        <div class="reveal">
-          <p class="label">Get started</p>
-          <h2 class="sec-h">Install it, then verify it.</h2>
-          <p class="sec-lede" style="margin-bottom:0">
-            Every build ships with a checksum and a signed manifest. Air-gapped sites
-            install from verified removable media or an internal mirror — the installer
-            never needs this website to reach the plant.
-          </p>
-        </div>
-
-        <!-- ============ PLATE IV — the labyrinth ============ -->
-        <figure class="plate reveal d2">
-          <svg viewBox="0 0 360 360" role="img"
-               aria-label="A classical labyrinth: concentric circuits with a single sealed path.">
-            <g fill="none" stroke="var(--ink-dim)" stroke-width="2" stroke-linecap="round">
-              <circle cx="180" cy="180" r="150" stroke-dasharray="900 42" transform="rotate(80 180 180)"/>
-              <circle cx="180" cy="180" r="132" stroke-dasharray="790 40" transform="rotate(200 180 180)"/>
-              <circle cx="180" cy="180" r="114" stroke-dasharray="678 38" transform="rotate(320 180 180)"/>
-              <circle cx="180" cy="180" r="96"  stroke-dasharray="567 36" transform="rotate(45 180 180)"/>
-              <circle cx="180" cy="180" r="78"  stroke-dasharray="456 34" transform="rotate(160 180 180)"/>
-              <circle cx="180" cy="180" r="60"  stroke-dasharray="345 32" transform="rotate(275 180 180)"/>
-              <circle cx="180" cy="180" r="42"  stroke-dasharray="234 30" transform="rotate(20 180 180)"/>
-            </g>
-            <!-- the glimmer traces the outermost circuit, always returning -->
-            <circle class="glimmer" cx="180" cy="180" r="150" fill="none"
-                    stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"
-                    stroke-dasharray="26 916" opacity=".85"/>
-            <!-- centre -->
-            <g fill="none" stroke="var(--ink)" stroke-width="2.2">
-              <circle cx="180" cy="180" r="20"/>
-              <path d="M180,164 L180,196 M164,180 L196,180" opacity=".5"/>
-            </g>
-            <g fill="none" stroke="var(--ink-dim)" stroke-width="1" opacity=".55">
-              <circle cx="180" cy="180" r="164"/>
-            </g>
-          </svg>
-        </figure>
-      </div>
-
-      <p class="notice reveal">
-        <b>No public release yet.</b> Refinix is in development against Smart India
-        Hackathon problem statement SIH26117. This page is the design for the
-        distribution surface; the builds below are placeholders, and the version
-        numbers and checksums shown are not real.
-      </p>
-
-      <div class="builds">
-        <article class="build reveal">
-          <h3>Windows</h3>
-          <span class="req">Windows 10 / 11 &middot; x64</span>
-          <span class="req">16 GB RAM min &middot; NVIDIA GPU recommended</span>
-          <a class="btn" href="#" aria-disabled="true">Not yet released</a>
-        </article>
-        <article class="build reveal d1">
-          <h3>Linux</h3>
-          <span class="req">glibc 2.31+ &middot; x64</span>
-          <span class="req">16 GB RAM min &middot; CUDA or ROCm optional</span>
-          <a class="btn" href="#" aria-disabled="true">Not yet released</a>
-        </article>
-        <article class="build reveal d2">
-          <h3>macOS</h3>
-          <span class="req">macOS 13+ &middot; Apple silicon</span>
-          <span class="req">Unified memory 16 GB min</span>
-          <a class="btn" href="#" aria-disabled="true">Not yet released</a>
-        </article>
-        <article class="build reveal d3">
-          <h3>Offline bundle</h3>
-          <span class="req">Installer, models and manifest</span>
-          <span class="req">For air-gapped and mirrored sites</span>
-          <a class="btn" href="#" aria-disabled="true">Not yet released</a>
-        </article>
-      </div>
-
-      <div class="starts">
-        <div class="start reveal">
-          <h3>What a release will publish</h3>
-          <p>Installer per platform, a manifest listing every model with its licence and
-             hash, checksums, and a detached signature.</p>
-          <div class="term">
-            <div class="term-tabs">
-              <span class="term-tab" aria-selected="true">Release contents</span>
-              <button class="term-copy" type="button" data-copy>Copy</button>
-            </div>
-            <div class="term-body">
-              <div class="term-panel">
-<pre>refinix-&lt;version&gt;-&lt;platform&gt;.{msi,AppImage,dmg}
-refinix-&lt;version&gt;.manifest.json   <span class="cmt"># models, licences, hashes</span>
-refinix-&lt;version&gt;.sha256          <span class="cmt"># checksums</span>
-refinix-&lt;version&gt;.sha256.asc      <span class="cmt"># detached signature</span></pre>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="start reveal d1">
-          <h3>First run, offline</h3>
-          <p>Detects hardware, requires a main engine, resolves the smallest plan for the
-             capabilities you enable, and runs a real local self-test before opening.</p>
-          <div class="term">
-            <div class="term-tabs">
-              <span class="term-tab" aria-selected="true">Self-test</span>
-              <button class="term-copy" type="button" data-copy>Copy</button>
-            </div>
-            <div class="term-body">
-              <div class="term-panel">
-<pre><span class="pr">$</span> refinix selftest --offline
-<span class="cmt">main engine    ok    loaded, 1 completion</span>
-<span class="cmt">document pack  ok    ocr + vision resident</span>
-<span class="cmt">egress         enforced by host firewall</span>
-<span class="cmt">packet capture unavailable — observer absent</span></pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
   </div>
 
   <!-- ============================================================= closing -->
   <div class="wrap">
-    <section class="closing">
-      <div class="team-logo reveal" role="img" aria-label="Rokunin Sync" data-team-logo></div>
-      <p class="label reveal" style="justify-content:center">Built for SIH26117</p>
+    <section class="closing" id="get">
+      <div class="lockup lockup-v lockup-lg reveal" role="img" aria-label="Refinix">
+        <svg class="lockup-mark" viewBox="0 0 120 120" aria-hidden="true"><use href="#rfx-mark"/></svg>
+        <p class="wordmark">REFINIX</p>
+      </div>
       <h2 class="sec-h reveal d1" style="max-width:24ch">Confidential work deserves better than a policy nobody can check.</h2>
       <p class="sec-lede reveal d1">
-        Refinix is being built against the Mangalore Refinery and Petrochemicals
-        problem statement for Smart India Hackathon 2026, by team Rokunin Sync.
+        One local harness for chat, documents and code &mdash; every run recorded,
+        every figure sourced, and nothing leaving your perimeter.
       </p>
       <div class="cta-row reveal d2">
         <a class="btn btn-primary" href="#get">Download</a>
@@ -808,8 +701,6 @@ refinix-&lt;version&gt;.sha256.asc      <span class="cmt"># detached signature</
         <div class="team-logo" role="img" aria-label="Rokunin Sync" data-team-logo></div>
         <dl>
           <dd>Team Rokunin Sync</dd>
-          <dd>Smart India Hackathon 2026</dd>
-          <dd>Problem statement SIH26117</dd>
         </dl>
       </div>
     </div>
@@ -1083,20 +974,47 @@ refinix-&lt;version&gt;.sha256.asc      <span class="cmt"># detached signature</
   }
   window.__grainRecolour = function () { nets.forEach(function (n) { n.recolour(); }); };
 
-  /* ---- the figure tears every few seconds on the page ---- */
+  /* ---- the evidence clip plays only while it is on screen ----
+     The page can have two clips alive at once (this and the intro), and
+     decoding both is what costs frames. Nothing here re-encodes or rescales the
+     file — it is played exactly as supplied. */
+  var evClip = document.querySelector('.evidence-clip');
+  if (evClip) {
+    if (reduced) {
+      evClip.setAttribute('controls', '');
+    } else if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { evClip.play().catch(function () {}); }
+          else { evClip.pause(); }
+        });
+      }, { threshold: 0.01, rootMargin: '120px' }).observe(evClip);
+    } else {
+      evClip.play().catch(function () {});
+    }
+  }
+
+  /* ---- the figure corrupts every few seconds on the page ----
+     The SVG filter is restarted each burst so the block pattern differs every
+     time; without beginElement it would freeze on its last frame and every
+     burst would break up identically. */
   var pageArt = document.querySelector('.hero-art');
   if (pageArt && !reduced) {
+    var pixAnims = document.querySelectorAll('#pixglitch animate');
     setInterval(function () {
       if (document.hidden) return;
-      pageArt.classList.add('tear');
-      setTimeout(function () { pageArt.classList.remove('tear'); }, 520);
+      for (var p = 0; p < pixAnims.length; p++) { try { pixAnims[p].beginElement(); } catch (e) {} }
+      pageArt.classList.add('pixglitch');
+      setTimeout(function () { pageArt.classList.remove('pixglitch'); }, 520);
     }, 3000);
   }
 
   /* ---- intro gate ----
-     Clip, then glitch, then the deity holds for two seconds and withdraws to
-     the left. Each stage is a class on the container so the CSS owns the
-     motion and this only sequences it. */
+     Clip, then glitch, then the figure holds for 0.6s and travels right onto
+     its place in the page. Each stage is a class on the container so the CSS
+     owns the motion and this only sequences it. The rays and the lightning are
+     timed to finish inside that hold - see the cancel rules in site.css, since
+     an animated opacity cannot be overridden by a plain declaration. */
   var intro = document.getElementById('intro');
   var enter = document.getElementById('enter');
   if (intro && enter) {
@@ -1154,7 +1072,11 @@ refinix-&lt;version&gt;.sha256.asc      <span class="cmt"># detached signature</
             if (pageNet) pageNet.start();
             setTimeout(function () { intro.hidden = true; }, 900);
           }, 300);
-        }, 2000);
+          /* The hold. Shortening this alone would have cut the reveal off
+             mid-stroke — the arrival, the lightning and the blink were all
+             timed against the old 1300, and the bolts alone ran to 1.2s. They
+             are rescaled in site.css to finish inside this window. */
+        }, 600);
       }, 1000);
     };
     enter.addEventListener('click', leave);

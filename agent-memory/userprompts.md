@@ -557,7 +557,7 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - decisions: Control Room for application surfaces; Blueprint restricted to artifacts and the Proof Card; the public site is a separate bolder treatment; Chat built first.
 - follow_up_to: none
 - supersedes: none
-- linked_changes: [AC-20260903-013](agentchangelog.md#ac-20260903-013), [AC-20260903-014](agentchangelog.md#ac-20260903-014), [AC-20260903-015](agentchangelog.md#ac-20260903-015), [AC-20260903-016](agentchangelog.md#ac-20260903-016), [AC-20260903-017](agentchangelog.md#ac-20260903-017), [AC-20260903-018](agentchangelog.md#ac-20260903-018), [AC-20260903-019](agentchangelog.md#ac-20260903-019), [AC-20260903-020](agentchangelog.md#ac-20260903-020), [AC-20260903-021](agentchangelog.md#ac-20260903-021), [AC-20260903-022](agentchangelog.md#ac-20260903-022), [AC-20260903-023](agentchangelog.md#ac-20260903-023), [AC-20260903-024](agentchangelog.md#ac-20260903-024), [AC-20260903-025](agentchangelog.md#ac-20260903-025), [AC-20260903-026](agentchangelog.md#ac-20260903-026), [AC-20260903-027](agentchangelog.md#ac-20260903-027), [AC-20260903-028](agentchangelog.md#ac-20260903-028), [AC-20260903-029](agentchangelog.md#ac-20260903-029), [AC-20260903-030](agentchangelog.md#ac-20260903-030), [AC-20260903-031](agentchangelog.md#ac-20260903-031)
+- linked_changes: [AC-20260903-013](agentchangelog.md#ac-20260903-013), [AC-20260903-014](agentchangelog.md#ac-20260903-014), [AC-20260903-015](agentchangelog.md#ac-20260903-015), [AC-20260903-016](agentchangelog.md#ac-20260903-016), [AC-20260903-017](agentchangelog.md#ac-20260903-017), [AC-20260903-018](agentchangelog.md#ac-20260903-018), [AC-20260903-019](agentchangelog.md#ac-20260903-019), [AC-20260903-020](agentchangelog.md#ac-20260903-020), [AC-20260903-021](agentchangelog.md#ac-20260903-021), [AC-20260903-022](agentchangelog.md#ac-20260903-022), [AC-20260903-023](agentchangelog.md#ac-20260903-023), [AC-20260903-024](agentchangelog.md#ac-20260903-024), [AC-20260903-025](agentchangelog.md#ac-20260903-025), [AC-20260903-026](agentchangelog.md#ac-20260903-026), [AC-20260903-027](agentchangelog.md#ac-20260903-027), [AC-20260903-028](agentchangelog.md#ac-20260903-028), [AC-20260903-029](agentchangelog.md#ac-20260903-029), [AC-20260903-030](agentchangelog.md#ac-20260903-030), [AC-20260903-031](agentchangelog.md#ac-20260903-031), [AC-20260903-034](agentchangelog.md#ac-20260903-034), [AC-20260903-035](agentchangelog.md#ac-20260903-035), [AC-20260903-036](agentchangelog.md#ac-20260903-036), [AC-20260903-037](agentchangelog.md#ac-20260903-037)
 
 <a id="up-20260903-014"></a>
 ## UP-20260903-014 — Replace per-chunk questions with one input handover
@@ -895,6 +895,24 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Source only. No test runs, installs, downloads, model calls, service starts, bundle rebuild, deployment or Git writes. Document work stays a skill inside Chat; no new top-level page and no expansion into C05-C09 or worker dispatch.
 - acceptance: A selected document skill reads only that request's attachments, retrieval cites a real source and page, a structurally valid .docx is produced under coordinator storage, and export needs a recorded approval.
 - verification_authorization: None. Tests are written but not run; the requester runs them.
+<a id="up-20260905-001"></a>
+## UP-20260905-001 — Neutral black palette, ChatGPT/Claude register, and collapsible walls
+- date: 2026-09-05
+- tags: refinix, palette, neutral-black, glassmorphism, panel-collapse, chat-ui
+- aliases: background looks navy blue, make it black like chatgpt or claude, glassmorphism where it looks good, three line icon sidebar, collapse left and right panels, not only one section
+- paths: frontend/design/, frontend/app/, frontend/README.md
+- summary: Requester reported the application ground reading as navy blue in both the running app and the design reference, and asked for a neutral black palette in the ChatGPT/Claude register, glassmorphism applied selectively rather than everywhere, and a three-line control on each side that dismisses the left navigation and the right lifecycle rail so the middle window can be focused.
+- constraints: Apply across every surface including Control Center, not one screen. Glass only where it looks good. Perform the work carefully rather than quickly.
+- linked_changes: [AC-20260905-001](agentchangelog.md#ac-20260905-001)
+
+<a id="up-20260905-002"></a>
+## UP-20260905-002 — Apply the supplied Refinix lockup to the application surfaces
+- date: 2026-09-05
+- tags: refinix, brand, logo, wordmark, design-track
+- aliases: why the new logo aint updated here, apply the new logo, refinix metal lockup in the nav
+- paths: frontend/design/
+- summary: Requester noticed the design track's Chat surface still showed a drawn stand-in symbol with the product name set as text, while the running application already carried the supplied brushed-metal REFINIX lockup, and asked for the real logo to be applied.
+- constraints: none stated beyond applying the supplied mark.
 - follow_up_to: [UP-20260905-001](#up-20260905-001)
 - linked_changes: [AC-20260905-002](agentchangelog.md#ac-20260905-002)
 
@@ -912,3 +930,34 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Implementation and offline checks with existing dependencies, synthetic repositories and temporary databases.
 - follow_up_to: [UP-20260905-002](#up-20260905-002)
 - linked_changes: [AC-20260905-003](agentchangelog.md#ac-20260905-003)
+## UP-20260905-003 — Dark wine red for every failure and error state
+- date: 2026-09-05
+- tags: refinix, palette, fault, wine-red, error-state
+- aliases: red colour for failed or error things, dark wine red text or icon, apply across the website
+- paths: frontend/design/, frontend/app/
+- summary: Requester asked that wherever red marks a failure or error, the text or icon becomes a dark wine red, applied across the whole website rather than one surface.
+- constraints: Apply everywhere the failure red appears, including the public site.
+- follow_up_to: [UP-20260905-002](#up-20260905-002)
+- linked_changes: [AC-20260905-003](agentchangelog.md#ac-20260905-003)
+
+<a id="up-20260905-004"></a>
+## UP-20260905-004 — Fix the site's failing grey
+- date: 2026-09-05
+- tags: refinix, site, contrast, accessibility, ink-faint
+- aliases: fix that grey contrast issue on the site
+- paths: frontend/design/site.css
+- summary: Requester asked for the pre-existing grey contrast failure on the public site, reported alongside the wine-red change, to be fixed as well.
+- constraints: none stated.
+- follow_up_to: [UP-20260905-003](#up-20260905-003)
+- linked_changes: [AC-20260905-004](agentchangelog.md#ac-20260905-004)
+
+<a id="up-20260905-005"></a>
+## UP-20260905-005 — Narrow the metal ramps and fix everything else found
+- date: 2026-09-05
+- tags: refinix, site, contrast, accessibility, gradient-text, metal-ramp
+- aliases: narrow the ramps, fix all the issues in one go, dont ask again
+- paths: frontend/design/site.css
+- summary: Requester approved narrowing the brushed-metal gradient ramps so the clipped-to-text lockups meet contrast, and asked that every issue found be fixed in one pass without returning for approval.
+- constraints: Fix everything found; do not come back with questions.
+- follow_up_to: [UP-20260905-004](#up-20260905-004)
+- linked_changes: [AC-20260905-005](agentchangelog.md#ac-20260905-005)

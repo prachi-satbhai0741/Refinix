@@ -47,22 +47,62 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 
 /* ==================================================================== glass === */
-/* Applied to the frame and to containers, never to verbatim output or to a
-   document. A diff, a stdout pane, an artifact and the Proof Card stay opaque:
-   they are things you read literally, and refracted ground behind small
-   monospace text costs legibility for nothing.
+/* Glass is SPENT, not spread. One test decides it: is this thing floating over
+   the canvas, with the lit ground or the conversation showing past its edges?
+   If yes, the blur is doing real work. If no, glass only adds haze — and a
+   dozen hazy panels is how the previous build washed into a single tone.
  *
- * Two tiers on purpose. .glass carries the backdrop blur and belongs to
- * top-level surfaces; .veil is fill only, for containers already sitting on a
- * blurred parent. Blurring an already-blurred surface is expensive and shows
- * almost nothing, and this app can have a dozen panels on screen at once. */
+ * Earns glass — floats over the ground, and the thread dissolves into it
+ * (.thread is masked at both edges, so text fades out under these bands
+ * rather than stopping at a hard line):
+ *   .main-head    the header band
+ *   .composer-box the object you type into — NOT .composer around it. The
+ *                 band is the full width of the window and roughly 120px
+ *                 tall, so glassing it puts a grey slab across the bottom of
+ *                 every screen. Glass belongs on the object, and the band it
+ *                 sits in stays the page.
+ *   .gate         an approval, over whatever it interrupts
+ *   .dialog       a modal, over the page
+ *   .pick .side   onboarding and pairing cards, over the ground
+ *   .panel-toggle .jump-latest   floating controls
+ *
+ * Deliberately NOT glass, though it looks like a candidate: the user's own
+ * message bubble. .thread carries a mask, and a masked ancestor becomes a
+ * backdrop root — a backdrop-filter inside it samples nothing and silently
+ * degrades to a flat translucent fill. It gets an honest solid fill in
+ * chat.css instead of glass that only works until someone scrolls.
+ *
+ * Does NOT — a full-height wall with nothing behind it:
+ *   .nav .rail    flat, and darker than the canvas. This is the single change
+ *                 that stops the app reading as one washed sheet.
+ *
+ * Never — read literally, at 10-11px, where refraction costs legibility for
+ * nothing: a diff, a stdout pane, a meter, a dense claim table, the artifact
+ * document and the Proof Card.
+ *
+ * Two tiers, because blurring an already-blurred surface is expensive and
+ * shows almost nothing: --glass-* carries the blur, --veil-* is fill only. */
 
-.nav, .rail, .main-head,
-.composer, .gate, .panel, .dialog,
-.bubble, .pick, .side, .code-box {
+.main-head, .composer-box, .gate, .dialog,
+.pick, .side,
+.panel-toggle, .jump-latest {
   background: var(--glass-fill), var(--glass-base);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
+  border-color: var(--glass-edge);
+}
+
+/* The walls. Sunken relative to the canvas, the way a chat application seats
+   its sidebar: darker at the edges, the conversation lifted in the middle. */
+.nav, .rail {
+  background: var(--surface-sunken);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Containers sitting on the scrolling body: fill, no blur. */
+.panel, .code-box {
+  background: var(--veil);
   border-color: var(--glass-edge);
 }
 
@@ -73,12 +113,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   border-color: var(--glass-edge);
 }
 
-/* Panels lift off the ground; nested containers do not, or the page turns into
-   a pile of shadows. */
-.panel, .dialog, .gate, .pick, .side, .code-box {
-  box-shadow: var(--glass-hi), var(--glass-shadow);
-}
-.nav, .rail, .main-head, .composer, .bubble { box-shadow: var(--glass-hi); }
+/* Things that float lift off the ground; things that sit on it do not, or the
+   page turns into a pile of shadows. */
+.dialog, .gate, .pick, .side { box-shadow: var(--glass-hi), var(--glass-shadow); }
+.panel, .code-box { box-shadow: var(--glass-hi); }
+.main-head, .composer-box { box-shadow: var(--glass-hi); }
 
 /* Rows inside a veiled container carry no fill of their own — the container is
    the surface, the rows are just ruled lines across it. */
@@ -87,12 +126,61 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ============================================================== app frame === */
 
+/* The two wall widths are variables, and collapsing sets the variable rather
+   than rewriting the whole template. That matters because not every page has
+   three columns: frontend/app's Code and Settings are .app-plain, two-track
+   pages with no rail. Rewriting the template on collapse gave those a phantom
+   244px third track — 244px of the window handed to a panel that does not
+   exist. With track variables, .app-plain declares its own two-track template
+   once and both collapses keep working inside it. */
 .app {
   display: grid;
-  grid-template-columns: var(--nav-w) 1fr var(--rail-w);
+  --nav-track:  var(--nav-w);
+  --rail-track: var(--rail-w);
+  grid-template-columns: var(--nav-track) 1fr var(--rail-track);
   height: 100vh;
   height: 100dvh;
   min-height: 0;
+  transition: grid-template-columns var(--dur-panel) var(--ease);
+}
+
+/* ------------------------------------------------- collapsing the walls ---
+ * Either wall folds away so the conversation can have the window. The track
+ * itself goes to zero — the middle column genuinely gets the room, rather than
+ * the panel sliding over it as an overlay would.
+ *
+ * The panel fades faster than the track collapses (120ms against 220ms), which
+ * covers the one frame where its contents reflow at a narrow width. Its border
+ * has to go too: a 1px border on a zero-width track is still a 1px line, which
+ * reads as a seam nobody asked for.
+ *
+ * visibility is transitioned with a delay rather than set outright, so the
+ * fade is allowed to finish and a collapsed panel still leaves the tab order
+ * and the accessibility tree once it has. */
+.nav, .rail {
+  min-width: 0;
+  overflow: hidden;
+  transition:
+    opacity 120ms var(--ease),
+    visibility 0s linear var(--dur-panel),
+    border-color var(--dur-panel) var(--ease);
+}
+.app[data-nav="open"] .nav,
+.app[data-rail="open"] .rail {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.app[data-nav="closed"]  { --nav-track: 0px; }
+.app[data-rail="closed"] { --rail-track: 0px; }
+
+.app[data-nav="closed"] .nav,
+.app[data-rail="closed"] .rail {
+  opacity: 0;
+  visibility: hidden;
+  border-color: transparent;
+  pointer-events: none;
 }
 
 /* ------------------------------------------------------------------ nav --- */
@@ -104,29 +192,41 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   min-height: 0;
 }
 
+/* ------------------------------------------------------------- brand ---
+ * The supplied REFINIX lockup, not a drawn stand-in. It is brushed metal on a
+ * black ground and it is a raster, so it cannot recolour for the light theme
+ * the way the site's drawn lockups can — which is why the strip carries
+ * --brand-ground in BOTH themes. That is the same decision the application
+ * already made in refinix.css, and the two tracks now agree on it.
+ *
+ * The site (site.html) still draws its lockups. It has a genuinely light
+ * surface with no strip to sit the mark on, so the reasoning in
+ * assets/README.md still holds there and it is deliberately untouched. */
 .nav-brand {
   padding: var(--sp-3) var(--sp-4);
-  border-bottom: 1px solid var(--line);
+  background: var(--brand-ground);
+  border-bottom: 1px solid var(--brand-edge);
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 52px;
 }
-/* Rokunin Sync symbol — stand-in until the real asset lands, see
-   assets/README.md. --brand is a product mark, not a state signal, so it is
-   kept as its own token even though it now resolves to silver. Give it a
-   colour here and nowhere else if the team wants the mark to stand out. */
-.nav-brand .mark { width: 18px; height: 18px; flex: none; color: var(--brand); }
-.nav-brand b {
-  font-size: var(--fs-lg);
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+.brand-logo {
+  height: 24px;
+  width: auto;
+  max-width: 100%;
+  flex: 0 1 auto;
+  display: block;
+  object-fit: contain;
 }
+/* The build tag sits beside the mark, on the mark's own ground rather than the
+   nav's, so it needs a tier that holds contrast against near-black. */
 .nav-brand span {
   font-family: var(--font-data);
   font-size: var(--fs-micro);
-  color: var(--text-faint);
+  color: var(--brand-tag);
   white-space: nowrap;
+  flex: none;
 }
 
 .surfaces {
@@ -149,12 +249,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   text-decoration: none;
   transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
-.surface-link:hover { color: var(--text); background: var(--veil); }
+.surface-link:hover { color: var(--text); background: var(--wall-hover); }
 /* The active marker is an inset shadow, not a border: a 2px left border on a
-   rounded box bows around the corner instead of reading as a straight bar. */
+   rounded box bows around the corner instead of reading as a straight bar.
+   Which surface you are on is the one piece of navigation state worth a
+   colour, so it keeps the signal bar; individual conversations below do not. */
 .surface-link[aria-current="page"] {
   color: var(--text);
-  background: var(--veil);
+  background: var(--wall-active);
   box-shadow: inset 2px 0 0 var(--signal);
 }
 .surface-link .k {
@@ -180,12 +282,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.nav-item:hover { color: var(--text); background: var(--veil); }
-.nav-item[aria-current="true"] {
-  color: var(--text);
-  background: var(--veil);
-  box-shadow: inset 2px 0 0 var(--line);
-}
+/* A conversation row is a plain filled pill when it is the current one — no
+   bar, no colour. It is not a state claim, it is just where you are, and the
+   list is long enough that a marker per row would stripe the whole wall. */
+.nav-item:hover { color: var(--text); background: var(--wall-hover); }
+.nav-item[aria-current="true"] { color: var(--text); background: var(--wall-active); }
 .nav-item small {
   display: block;
   font-family: var(--font-data);
@@ -216,9 +317,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-5);
+  padding: var(--sp-2) var(--sp-4);
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
+  z-index: 3;
 }
 .main-head h1 {
   margin: 0;
@@ -228,8 +330,56 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 .head-spacer { flex: 1; }
+
+/* ------------------------------------------------------ panel toggles ---
+ * One on each end of the header, each folding the wall behind it. They are
+ * the only controls in the header that are always in the same place, so they
+ * are drawn as objects rather than as text: a 30px square, glass, with three
+ * rules inside it.
+ *
+ * The glyph reports state instead of just naming an action. When the panel is
+ * open all three rules are full width; when it is closed the middle rule
+ * retracts toward the window, so the button reads as "the wall is folded that
+ * way" at a glance. transform-origin is mirrored per side, which is why the
+ * two sides carry different classes rather than one shared one. */
+
+.panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+.panel-toggle:hover { color: var(--text); border-color: var(--text-faint); }
+.panel-toggle:active { background: var(--veil-sunken); }
+
+.panel-toggle svg { display: block; width: 16px; height: 16px; }
+.panel-toggle line {
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  transition: transform var(--dur) var(--ease);
+}
+.panel-toggle-left  line { transform-origin: 2.5px center; }
+.panel-toggle-right line { transform-origin: 13.5px center; }
+.panel-toggle[aria-expanded="false"] line:nth-of-type(2) { transform: scaleX(.5); }
+
+/* Belt and braces: every surface header carries a .head-spacer, which already
+   pushes this to the end, but a header built without one should still not
+   strand the toggle in the middle of the row. */
+.main-head .panel-toggle-right { margin-left: auto; }
 
 /* the scrolling body of a surface */
 .body {
@@ -498,16 +648,77 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .rows .unk .n { color: var(--st-unknown); }
 .rows .unk .k b { color: var(--text-dim); }
 
-/* ---------------------------------------------------------- responsive --- */
+/* ---------------------------------------------------------- responsive ---
+ * Narrow does not mean "gone". Both walls used to be display:none below their
+ * breakpoint, which silently removed the routing evidence and then the whole
+ * navigation with no way to ask for them back. They now become overlays driven
+ * by the same two toggles, so every control that exists at 1440 still exists
+ * at 375 — it just arrives over the conversation instead of beside it.
+ *
+ * A fixed-position grid item leaves the grid, so the track it occupied has to
+ * be removed as well or it stays behind as an empty column. Because collapsing
+ * only sets --nav-track / --rail-track, one plain .app rule per breakpoint is
+ * enough here — the collapse states keep working inside whichever template is
+ * in force. */
+
+/* Named .panel-scrim, NOT .scrim. pairing.css already owns .scrim for the
+   always-visible backdrop behind the pairing dialog, and it declares neither
+   opacity nor visibility — so a hidden-by-default .scrim here leaked straight
+   through and hid the entire pairing flow. Two different things needed two
+   different names. */
+.panel-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: var(--scrim);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--dur) var(--ease), visibility 0s linear var(--dur);
+}
 
 @media (max-width: 1180px) {
-  .app { grid-template-columns: var(--nav-w) 1fr; }
-  .rail { display: none; }
+  .app { grid-template-columns: var(--nav-track) 1fr; }
+
+  .rail {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: min(300px, 86vw);
+    z-index: 40;
+    overflow-y: auto;
+    border-left: 1px solid var(--line);
+    box-shadow: var(--glass-shadow);
+    transform: translateX(100%);
+    transition:
+      transform var(--dur-panel) var(--ease),
+      opacity 120ms var(--ease),
+      visibility 0s linear var(--dur-panel);
+  }
+  .app[data-rail="open"] .rail { transform: none; border-color: var(--line); }
+  .app[data-rail="open"] ~ .panel-scrim { opacity: 1; visibility: visible; transition-delay: 0s; }
 }
+
 @media (max-width: 760px) {
   .app { grid-template-columns: 1fr; }
-  .nav { display: none; }
+
+  .nav {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(300px, 86vw);
+    z-index: 41;
+    overflow-y: auto;
+    border-right: 1px solid var(--line);
+    box-shadow: var(--glass-shadow);
+    transform: translateX(-100%);
+    transition:
+      transform var(--dur-panel) var(--ease),
+      opacity 120ms var(--ease),
+      visibility 0s linear var(--dur-panel);
+  }
+  .app[data-nav="open"] .nav { transform: none; border-color: var(--line); }
+  .app[data-nav="open"] ~ .panel-scrim { opacity: 1; visibility: visible; transition-delay: 0s; }
+
   .body { padding: var(--sp-4); }
+  .main-head { padding: var(--sp-2) var(--sp-3); }
 }
 
 /* A theme swap must not animate. Transitioning colour across a token change

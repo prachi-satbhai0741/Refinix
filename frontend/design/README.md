@@ -100,15 +100,68 @@ Glass only reads as glass when there is something behind it worth blurring, so
 the app sits on three soft radial fields (`--atmo-*`) over the flat ground.
 Without them every panel is flat translucent grey.
 
-The same distinction that governs curves governs glass:
+Glass is **spent, not spread**. One test decides it:
 
-> **Glass on the frame and on containers. Opaque on verbatim output and on
-> documents.**
+> **Is this thing floating over the canvas, with the ground or the conversation
+> showing past its edges?**
 
-The nav, rail, header, composer, panels, cards and dialogs are glass. The diff,
-the stdout/stderr panes, the meters, the artifact and the Proof Card are not —
-you read those literally, and refracted ground behind 11px monospace costs
-legibility for nothing.
+Yes, so it earns glass: the header band, the composer *box*, the approval gate,
+a dialog, the onboarding and pairing cards, and the floating controls (the panel
+toggles and Jump to latest).
+
+No, so it stays flat: **the nav and the rail**. They are full-height walls with
+nothing moving behind them, and blurring them is what made the previous build
+read as one washed sheet. They are now opaque `--surface-sunken` — darker than
+the canvas, the way a chat application seats its sidebar.
+
+Never, because you read them literally at 10–11px: the diff, the stdout/stderr
+panes, the meters, dense claim tables, the artifact and the Proof Card.
+Refracted ground behind small monospace costs legibility for nothing.
+
+Two traps worth knowing:
+
+- **The composer band is not the composer box.** The band is the full width of
+  the window and ~120px tall, so glassing it puts a grey slab across the bottom
+  of every screen. Glass goes on the object; the band stays the page.
+- **A masked ancestor is a backdrop root.** `.thread` carries an edge mask, so a
+  `backdrop-filter` on anything inside it — the user's message bubble, for
+  instance — samples nothing and silently degrades to a flat translucent fill.
+  The bubble takes an honest solid `--bubble-fill` instead.
+
+`saturate()` stays near 100%. At 150% it multiplied every tint behind the glass,
+which was one of the three things making the app read navy.
+
+### Folding the walls
+
+Both the nav and the rail fold away, from a three-line control at each end of
+the surface header. `shell.js` drives it; `app.css` owns the appearance.
+
+On a wide window the **grid track itself goes to zero**, so the middle column
+genuinely gets the room. An overlay would cover the conversation rather than
+widen it, which is the opposite of what the control is for. The panel fades in
+120ms while the track takes 220ms, which hides the one frame where its contents
+reflow at a narrow width, and its border goes transparent — a 1px border on a
+zero-width track is still a 1px line.
+
+Below their breakpoints (1180px for the rail, 760px for the nav) the same
+control opens the wall as an **overlay with a scrim**, because at 375px there is
+no room to give. This replaced `display: none`, which had silently deleted the
+routing evidence and then the navigation itself with no way to ask for them
+back.
+
+The glyph reports state rather than naming an action: all three rules are full
+width when the wall is open, and the middle rule retracts toward the window when
+it is closed, mirrored per side.
+
+The state is remembered per panel **per surface** — a collapsed rail on Chat
+should not collapse it on Control Center, where it carries different evidence.
+Storage is guarded in both directions; a blocked `localStorage` just means both
+walls open.
+
+> The overlay backdrop is `.panel-scrim`, **not** `.scrim`. `pairing.css`
+> already owns `.scrim` for the always-visible backdrop behind the pairing
+> dialog and declares neither `opacity` nor `visibility`, so a hidden-by-default
+> `.scrim` leaked straight through it and hid the entire pairing flow.
 
 **Two tiers, for cost rather than looks.** `--glass-*` carries the backdrop blur
 and belongs to top-level surfaces; `--veil-*` is fill only, for containers
@@ -143,6 +196,7 @@ contrast for dark text, so the light fields are near-white pastels that lift.
 | `onboarding.css` / `onboarding.html` | First run, steps 1-3 — installation, main engine, capabilities |
 | `onboarding-install.html` | First run, steps 4-5 — the stated plan, and the self-test |
 | `pairing.css` / `pairing.html` | Pairing — code, both identities, terms, advertised capability |
+| `shell.js` | The only script in the track: folds the nav and rail away. Loaded by the four application surfaces |
 
 **Load order is always `tokens.css`, `app.css`, then the surface file.**
 Anything shared between surfaces belongs in `app.css`; a surface file carries
@@ -196,25 +250,39 @@ does not inherit the application's instrument-panel restraint.
 
 ### Surface system
 
-A near-black ground lit by three layered radial fields, with **glass panels**.
+A black ground lit by four layered radial fields, with **glass panels**.
 Nothing tiles and nothing rules the background.
 
-**Palette — black, silver, sky blue.** Values were measured off the reference
-implementation rather than guessed: its page ground is `#0A0A0A` with a cooler
-`rgb(13,16,23)` for raised panels, silver text at `#E6E8EA` and `#81858C`, and
-a blue family around `#4d6bfe` / `#73a3d2`.
+**Palette — black, silver, sky blue, violet, green.**
 
 | Role | Dark | Light |
 |---|---|---|
-| Ground / panel ground | `#09090A` / `#0D1017` | `#EEF1F5` / `#F7F9FB` |
-| Text, silver tiers | `#FFFFFF` `#E6E8EA` `#A8B0BC` `#81858C` | `#0C1119` `#26313F` `#4A5665` `#5E6A78` |
-| Accent — sky blue | `#7FB6E8` | `#2C6FA8` |
-| Enforced — the only green | `#74C79C` | `#1E6B4F` |
+| Ground / panel ground | `#070708` / `#0E0E10` | `#EEF1F5` / `#F7F9FB` |
+| Text, silver tiers | `#F4F5F7` `#D3D6DA` `#9AA0A8` `#767C85` | `#0C1119` `#26313F` `#4A5665` `#5E6A78` |
+| Metal ramp — `--silver-1..4` | `#FFFFFF` → `#5A616A` | inverted, `#5E666F` → `#171C22` |
+| Interactive — sky blue | `#8CC2F2` | `#26618F` |
+| Structure — violet | `#B497E8` | `#6742A8` |
+| Enforced — green | `#74D2A6` | `#1E6B4F` |
 | Team mark — the only orange | `#F08A24` | `#C96A0E` |
 
-Colour discipline: **sky blue carries every accent**, green appears on the
-*enforced* state and nowhere else, and orange is reserved for the Rokunin Sync
-mark. An earlier amber-accented palette was rejected in review.
+**The ground was blue-black and the page read navy.** Two things caused it
+together, and fixing either alone would not have been enough. The raised tiers
+were `#0D1017` and `#14181F` — blue-black rather than grey-black — and the
+atmosphere layer sat a `rgba(46,108,178,.52)` blue field over the top of them.
+The tiers now lift by luminance only, and no atmosphere field is above `.16`.
+
+Colour discipline, one job each, and the jobs do not overlap:
+
+| Colour | Means | Where |
+|---|---|---|
+| Sky blue | responds to a pointer | links, focus, hover, inline `code`, the *observed* state |
+| Violet | indexes structure | section numerals, footer headings, formula operators, the *unavailable* state |
+| Green | it actually happened | the *enforced* state, the shell prompt, completed steps, the zero-calls figure |
+| Silver | struck metal | the mark, the wordmark, the stat figures, the formula terms |
+
+The rule that keeps this legible is that **a numeral is not a link**, so the
+numerals wear violet rather than the blue that means clickable. An earlier
+amber-accented palette was rejected in review.
 
 **The glass recipe** needs four things together; dropping any one flattens it:
 
@@ -307,13 +375,190 @@ than watched, the labyrinth carries one travelling glimmer, and the ray field
 turns once every four minutes. All of it stops under
 `prefers-reduced-motion`, with the embers left lit.
 
+### The intro gate
+
+The clip is portrait in a landscape window, so the gutters either side used to
+sit flat black against a lit frame and the whole thing read as a video dropped
+into a hole. The fix is an **ambient wash**: a 40x72 canvas takes a downscaled
+copy of the current frame ten times a second, and is stretched and blurred
+across the whole viewport behind the network field. The horizontal stretch is
+the point — it drags the frame's own edge colour outward to meet the window, so
+the screen reads as one surface. A short feather on the clip's vertical edges
+removes the last hard line. Ten samples a second is nothing next to decoding
+the clip a second time, which is the obvious alternative and much more
+expensive.
+
+The sequence after **Get started**: 1.0s of video glitch, then the figure holds
+for **1.3s** under the storm, then it travels right onto its place in the page.
+
+**The rays and the lightning have to be cancelled, not overridden.** An animated
+property beats a plain declaration in the cascade, so
+`.intro.exiting .eye { opacity: 0 }` never won and the rays kept firing through
+the exit and the fade after it — the figure had gone and the light stayed. Both
+now carry `animation: none !important` on exit, and both strikes are timed to
+finish inside the hold rather than trailing past it.
+
+### The page glitch is blocks, not slices
+
+The figure on the page corrupts for ~0.5s every 3s. What makes it read as
+*pixels* failing rather than film tearing is where the displacement comes from:
+`#pixglitch` quantises its turbulence with `feFuncR/G type="discrete"`, so the
+image is pushed around in flat blocks instead of flowing. Smooth turbulence
+gives a liquid warp; stacked `clip-path` bands — the previous approach — slide
+whole horizontal strips, which is a film artefact. Three things stack: block
+displacement, a red/cyan channel split carried in the same filter, and a
+stepped jitter so the figure snaps between positions instead of sliding. The
+SVG animation is restarted with `beginElement()` each burst, or the pattern
+would freeze and every burst would break up identically.
+
+### The evidence rule
+
+Set entirely in `--font-pixel` at the owner's request — label, heading, body and
+all three claim cards. The sizes there run larger than the rest of the page and
+the line-height is looser: a pixel face has a small x-height and no true italic,
+and at the page's normal scale it reads markedly harder than the prose around
+it. **This is the one section on the site set in a display face at body sizes;
+if any legibility complaint arrives, this is where to look first.**
+
+The drawn owl was replaced by a supplied motion clip. It is copied into
+`assets/evidence-loop.mp4` **byte-for-byte** — `cmp` confirms it is identical to
+the source, so there is no transcode and no generation of loss. It is paused
+while off screen by an IntersectionObserver, because the page can have two clips
+alive at once (this and the intro) and decoding both is what actually costs
+frames. Under `prefers-reduced-motion` it gets controls instead of autoplay.
+
+### Brand lockups
+
+Two lockups, each used where its shape fits: **horizontal** (mark with the word
+beside it) in the nav, where the bar is short and wide, and **stacked** (mark
+over the word) on the intro gate and the closing signature, both of which have
+room above and below.
+
+**Both are drawn in the page, not loaded.** The supplied artwork was a raster on
+a black square, which is the one thing that cannot be used on a page with a
+light theme — the black block would show as a rectangle. So the mark is redrawn
+as inline SVG (`#rfx-mark`) and the wordmark is set in Michroma, and both are
+filled from the same brushed-steel ramp:
+
+| Part | Fill | Note |
+|---|---|---|
+| Outer ring, three curved arrows | `url(#rfx-steel)` | highlight → shadow band → highlight |
+| Inner pinwheel, three blades | `url(#rfx-steel-2)` | tilted against the first, so the two catch light at different angles |
+| Wordmark | `.wordmark` gradient | same ramp, clipped to the text |
+
+The two ramps are deliberately not the same gradient. One gradient across the
+whole mark reads as flat foil; struck metal has faces at different angles, and
+that is what the second ramp buys.
+
+The mark geometry is **generated, not eyeballed** — arc endpoints and arrowhead
+tips are computed so they actually meet. If the artwork changes, regenerate
+rather than nudging path data by hand.
+
+Sizing has one trap worth naming. `.lockup-mark` is sized in `em`, which works
+in the nav because `.nav-brand` sets a font size — but the stacked containers
+set none, so an `em` there pinned the mark to 16px while the wordmark beside it
+scaled with `vw`. The stacked variants size in `clamp(px, vw, px)` instead.
+
+**A real PNG still wins if one is produced.** Each lockup keeps an `<img>`
+carrying `onerror="this.remove()"`, and `:has()` hides the drawn version *only
+while that image is actually present*. Drop either file in and it takes over
+with no further edits; leave them absent and the drawn lockup shows.
+
+That hook costs **two 404s per page load** while the files are absent, which is
+the price of a zero-edit swap. The rasters exist outside the repo, so the hook
+is kept deliberately; if the decision is that the drawn lockups are final,
+delete the two `<img>` elements and the `:has()` rules with them.
+
+| File | Lockup | Used by |
+|---|---|---|
+| `assets/refinix-lockup-h.png` | mark + word beside it | nav |
+| `assets/refinix-lockup-v.png` | mark over the word | intro gate, closing signature |
+
+### The evidence section shows the states instead of describing them
+
+The section carried three paragraphs explaining that an unavailable figure is
+"drawn as absent — hatched, grey, and impossible to read as a healthy zero".
+Prose describing a visual treatment is a sign the treatment is missing. It is
+now one sentence, a three-line numbered rule, and three cards that *are* the
+treatment: a continuous rail for enforced, a rail broken at the observation
+interval for observed, and a dashed border over diagonal hatching for
+unavailable. Roughly 120 words became 45, and the section says more.
+
+Each card drives its rail, its tag and its source line from a single
+`--state` custom property, so a state cannot end up half-recoloured.
+
+The clip beside it was a bright graphic on a hard black ground inside a bordered
+panel, which read as a black box on the page. It now blends with
+`mix-blend-mode: screen` — but `.page` is `position:relative` with a `z-index`,
+so it is a stacking context and the blend cannot reach the atmosphere behind it.
+Screen alone therefore left the black ground exactly as it was. What removes the
+box is **feathering the edge with a radial mask**; the interior black is `#000`
+against a `#070708` page, a 3/255 difference that no one can see.
+
 **The plates are placeholders.** The hero says so on its face, inside a marked
 circle. Replace them with commissioned or public-domain artwork when a
 direction is chosen.
 
 The public site publishes no real build. No installer exists, so the download
-section renders its honest pre-release state instead of a fabricated release,
-and the page carries a visible sample-content strip.
+section renders its honest pre-release state instead of a fabricated release.
+
+**The sample-content strip across the top was removed** at the owner's request.
+The substantive disclosure is unaffected — the *No public release yet* paragraph
+still sits in the download section, where a visitor is actually deciding
+something, and the nav still carries a **Pre-release** chip above the fold. If
+that paragraph is ever softened, the strip should come back.
+
+### The hero is sized to one screen
+
+The whole hero has to be readable without scrolling: the terminal card at the
+foot of the column and the entire figure both land above the fold. So the
+section is sized from the viewport (`min-height: calc(100svh - var(--nav-h))`)
+rather than from its content, and the two things that overflowed are capped by
+viewport **height**, not just width:
+
+- the headline is `clamp(2.4rem, min(6.6vw, 8.6vh), 6.2rem)` — a width-only
+  clamp gave 99px on a 900px-tall window and pushed the terminal off the bottom;
+- the figure is sized from its height on `.hero-plate`, not `.hero-art`, because
+  the breathing fields are `::before`/`::after` on the plate and have to scale
+  with it. A width-driven box made the figure 873px tall inside an 836px window.
+
+Below `max-height: 800px` and `max-width: 1200px` the one-screen constraint is
+released. There is genuinely not enough room for headline, lede, actions,
+terminal card and a portrait figure at once on a short small screen, and forcing
+it would only crush the type. Verified fitting at 1366×768, 1440×900, 1536×864,
+1920×1080.
+
+### The download section was removed
+
+At the owner's request. Two things had to be handled rather than left to break:
+
+- **The disclosure moved, it was not deleted.** *No public release yet* was the
+  page's only substantive pre-release statement once the top strip went, and it
+  lived inside the removed section. It now opens `.closing`, reworded — the old
+  text pointed at "the builds below", which no longer exist.
+- **The anchor was preserved.** Four links pointed at `#get` (nav, hero CTA,
+  closing CTA, footer). `.closing` took `id="get"`, so all four still resolve and
+  land on the section that states no build exists. Verified: zero dead anchors.
+
+### Section order
+
+Set by the owner, not by argument: hero → formula → **download** → design
+approach → product → what it does → the evidence rule → counts → closing.
+Download leads because the pre-release disclosure lives in it, so the page states
+that no build exists before it describes anything.
+
+### Page rhythm
+
+Section spacing is one token, `--sec`, and every section pays it on the bottom
+only — subsequent sections carry `padding-top: 0` inline. Get that wrong and the
+junction doubles: `#proof` and `.closing` both did, giving 260px and 156px gaps
+against a 130px rhythm, which is most of what read as empty page. `--sec` is now
+`clamp(52px, 5.4vw, 92px)` and both junctions are closed, taking the document
+from 8187px to 7538px at 1440.
+
+`html { scroll-padding-top: 88px }` exists because the nav is sticky at
+`top: 0`. Without it every in-page anchor landed with its own heading hidden
+behind the bar.
 
 Fonts load from Google Fonts in this reference. **A shipped offline build must
 self-host them**, since [product invariant 1](../../docs/prd.md) forbids the
@@ -355,7 +600,7 @@ per theme state — and the count below is the total of those three passes:
 | `onboarding.html` | 432 | system dark, explicit dark, explicit light | 4.74:1 |
 | `onboarding-install.html` | 261 | system dark, explicit dark, explicit light | 5.25:1 |
 | `pairing.html` | 267 | system dark, explicit dark, explicit light | 5.01:1 |
-| `site.html` | 268 | dark, light | 5.62:1 |
+| `site.html` | 322 | dark, light | 4.87:1 |
 
 **3,054 element checks across the seven application pages, zero failures in any
 theme state.**
@@ -394,6 +639,14 @@ fell to 4.06:1 on `--surface-raised`, which is what the model cards and the
 pairing identity cards sit on. All four are structurally fixed in the current
 palette rather than patched at the selector.
 
+The public site was later swept with the same compositing auditor, which found
+two failures the older measurement could not see: `--accent` at **4.14:1** on a
+light glass panel, and `--ink-faint` at **4.18:1** on the artifact's raised
+ground. Neither is related to the intro work — they were simply invisible to an
+auditor that stopped at the first opaque ancestor. `--accent` was darkened and
+`--ink-faint` lightened; the site now measures 4.87:1 light and 5.03:1 dark
+across 184 elements per theme, with zero failures and no overflow.
+
 - Contrast measured on every text-bearing element against its resolved
   background, not spot-checked. Six application token values were raised and
   the disabled target control recessed after the first sweep failed at 2.40:1.
@@ -420,10 +673,13 @@ The application design is complete. Chat, Documents, Code, Control Center,
 onboarding and pairing are all built and cross-linked, covering workflows
 sections 2, 4, 5, 6, 8 and 10.
 
-These are static design references, not an implementation. They carry sample
-data only: no figure on any page is a measurement, and the pairing code is not
-a credential. Wiring them to the contract in `backend/contracts/v1.py` is the
-next step, and belongs to whoever picks up the frontend build.
+These are design references, not an implementation. They carry sample data only:
+no figure on any page is a measurement, and the pairing code is not a
+credential. The one exception to "wired to nothing" is `shell.js`, which folds
+the two walls away — real behaviour, but layout only; it reads and writes
+nothing but its own `localStorage` key. Wiring the surfaces to the contract in
+`backend/contracts/v1.py` is the next step, and belongs to whoever picks up the
+frontend build.
 
 Two smaller gaps remain inside what is built. Onboarding step 4 is drawn in its
 confirmed state rather than mid-download, so there is no progress or failure

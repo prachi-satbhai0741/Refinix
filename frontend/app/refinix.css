@@ -21,10 +21,11 @@
    on it. */
 [hidden] { display: none !important; }
 
+/* --brand-ground and --brand-edge now live in the token block at the top of
+   app.css, because the design track's application surfaces carry the same
+   strip. Declaring them again here would give one mark two sources of truth. */
 :root {
-  --brand-ground: #050608;
-  --brand-metal:  #C6CFDA;
-  --brand-edge:   #1E242C;
+  --brand-metal:  #CFCFCF;
   --card-radius:  var(--radius-lg);
 }
 
@@ -66,7 +67,7 @@
 }
 
 .surfaces .surface-link[aria-current="page"] {
-  background: var(--veil-sunken, rgba(127, 140, 160, .16));
+  background: var(--veil-sunken, rgba(140, 140, 140, .16));
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--line);
 }
@@ -104,8 +105,10 @@
   letter-spacing: .02em;
 }
 
-/* Pages with no inspector rail. */
-.app-plain { grid-template-columns: var(--nav-w) 1fr; }
+/* Pages with no inspector rail. Uses --nav-track, not --nav-w, so folding the
+   navigation away still works here — app.css collapses by setting that
+   variable rather than by rewriting the template. */
+.app-plain { grid-template-columns: var(--nav-track) 1fr; }
 
 /* ---- composer -------------------------------------------------------- */
 
@@ -129,11 +132,16 @@
 /* The selected skill sits at the start of the request line, at the same size
    and typeface as the request itself. It is selection state, not text: the
    textarea never contains it. */
+/* The inset belongs to this row, not to the textarea. The skill chip and the
+   request share one baseline and one left edge, so zeroing the textarea's own
+   padding (below) and insetting the row is what keeps them aligned — without
+   the padding here the request runs into the rounded edge of the box. */
 .composer-line {
   display: flex;
   align-items: flex-start;
   gap: var(--sp-2);
   flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
 }
 
 .composer-line .composer-input {
@@ -198,11 +206,12 @@
   cursor: pointer;
 }
 
-.skill-remove:hover { color: var(--text); background: var(--veil-sunken, rgba(127, 140, 160, .2)); }
+.skill-remove:hover { color: var(--text); background: var(--veil-sunken, rgba(140, 140, 140, .2)); }
 .skill-chip:focus-within { border-color: var(--signal); }
 
 .skill-status {
-  margin: var(--sp-2) 0 0;
+  margin: 0;
+  padding: 0 var(--sp-4) var(--sp-2);
   font-size: 12px;
   color: var(--st-caution);
 }
@@ -211,8 +220,8 @@
 
 .attachments {
   list-style: none;
-  margin: 0 0 var(--sp-3);
-  padding: 0;
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4) 0;   /* same inset as the request row */
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);

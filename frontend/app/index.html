@@ -8,7 +8,6 @@
 <link rel="stylesheet" href="/refinix.css">
 <!-- No external font or script. The running application makes no network
      request outside 127.0.0.1. -->
-<div class="scrim" id="scrim"></div>
 <div class="app">
   <nav class="nav" id="nav">
     <div class="brand">
@@ -38,13 +37,29 @@
 
   <main class="main">
     <header class="main-head">
-      <button class="nav-toggle" id="nav-toggle" aria-expanded="false"
-              aria-controls="nav">Menu</button>
+      <button class="panel-toggle panel-toggle-left" type="button"
+              id="nav-toggle" data-panel-toggle="nav"
+              aria-controls="nav" aria-expanded="true"
+              aria-label="Navigation panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
       <h1 class="head-title" id="head-title">Chat</h1>
       <span class="chip chip-unknown" id="job-chip">no job</span>
       <div class="head-spacer"></div>
-      <button class="rail-toggle" id="rail-toggle" aria-expanded="false"
-              aria-controls="rail">Details</button>
+      <button class="panel-toggle panel-toggle-right" type="button"
+              id="rail-toggle" data-panel-toggle="rail"
+              aria-controls="rail" aria-expanded="true"
+              aria-label="Details panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
     </header>
 
     <div id="notices" role="status" aria-live="polite"></div>
@@ -132,4 +147,5 @@
     </section>
   </aside>
 </div>
+<div class="panel-scrim" id="scrim"></div>
 <script type="module" src="/app.js"></script>

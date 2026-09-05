@@ -2631,29 +2631,103 @@ function connect() {
 
 let sending = false;
 
-/* Both drawers: click, Escape and scrim all close them. */
-function wireDrawer(toggleId, panelId) {
-  const toggle = $(toggleId), panel = $(panelId), scrim = $('scrim');
-  if (!toggle || !panel) return;
-  const set = (open) => {
-    panel.dataset.open = String(open);
-    toggle.setAttribute('aria-expanded', String(open));
-    if (scrim) scrim.dataset.open = String(open);
+/* Both walls fold away so the conversation can have the window.
+ *
+ * Two modes, one pair of controls. On a wide window the grid track collapses
+ * to zero and the middle column genuinely gets the room — that is the point,
+ * and an overlay would cover the conversation rather than widen it. On a
+ * narrow one the wall becomes an overlay with a scrim, because at 375px there
+ * is no room to give.
+ *
+ * The breakpoints match the responsive block in app.css. Previously each panel
+ * was display:none above its breakpoint with a text button that only appeared
+ * below it, so on a desktop there was no way to reclaim the middle column and
+ * on a phone the rail's routing evidence simply did not exist.
+ */
+const PANEL_MQ = {
+  nav:  window.matchMedia('(max-width: 760px)'),
+  rail: window.matchMedia('(max-width: 1180px)'),
+};
+
+function wirePanels() {
+  const app = document.querySelector('.app');
+  const scrim = $('scrim');
+  if (!app) return;
+
+  /* Persisted per panel, per surface: a collapsed rail on Chat should not
+     collapse it on Settings, where it carries different evidence. Storage can
+     throw outright (private windows, blocked site data), so reads and writes
+     are guarded and the UI is correct with no stored value. */
+  const surface = (location.pathname.split('/').pop() || 'index.html');
+  const key = (name) => `refinix.panel.${surface}.${name}`;
+  const stored = (name) => {
+    try { return localStorage.getItem(key(name)); } catch (_) { return null; }
   };
-  set(false);
-  toggle.addEventListener('click', () => set(panel.dataset.open !== 'true'));
-  if (scrim) scrim.addEventListener('click', () => set(false));
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && panel.dataset.open === 'true') {
-      set(false);
-      toggle.focus();
+  const remember = (name, value) => {
+    try { localStorage.setItem(key(name), value); } catch (_) {}
+  };
+
+  const panels = {};
+  for (const name of ['nav', 'rail']) {
+    const el = $(name);
+    const toggle = $(`${name}-toggle`);
+    if (!el || !toggle) {
+      /* Code and Settings carry no rail. A control for a panel that is not on
+         the page is worse than no control, so it is removed rather than left
+         to do nothing. */
+      if (toggle) toggle.hidden = true;
+      continue;
     }
+    panels[name] = { el, toggle, mq: PANEL_MQ[name] };
+  }
+
+  const isOpen = (name) => app.dataset[name] === 'open';
+
+  /* The scrim is raised by CSS — `.app[data-nav="open"] ~ .scrim`, declared
+     inside the same media queries as the overlays — so there is one source of
+     truth and a collapsed track on a wide window raises nothing. */
+  const set = (name, open, save = true) => {
+    const panel = panels[name];
+    if (!panel) return;
+    app.dataset[name] = open ? 'open' : 'closed';
+    panel.toggle.setAttribute('aria-expanded', String(open));
+    if (save) remember(name, open ? 'open' : 'closed');
+  };
+
+  for (const [name, panel] of Object.entries(panels)) {
+    panel.toggle.addEventListener('click', () => set(name, !isOpen(name)));
+
+    /* A stored choice wins on a wide window; on a narrow one both walls start
+       closed regardless, because opening over the conversation is never the
+       right thing to do to someone who just loaded the page. */
+    set(name, panel.mq.matches ? false : stored(name) !== 'closed', false);
+
+    /* Crossing a breakpoint changes what the same state means: leaving overlay
+       mode restores the remembered choice, entering it closes. */
+    panel.mq.addEventListener('change', (e) => {
+      set(name, e.matches ? false : stored(name) !== 'closed', false);
+    });
+  }
+
+  const closeOverlays = (refocus) => {
+    for (const [name, panel] of Object.entries(panels)) {
+      if (panel.mq.matches && isOpen(name)) {
+        set(name, false);
+        if (refocus) panel.toggle.focus();
+      }
+    }
+  };
+
+  if (scrim) scrim.addEventListener('click', () => closeOverlays(false));
+  document.addEventListener('keydown', (e) => {
+    /* Escape dismisses an overlay. It deliberately does not collapse a docked
+       panel on a wide window — that is a layout preference, not a trap. */
+    if (e.key === 'Escape') closeOverlays(true);
   });
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  wireDrawer('nav-toggle', 'nav');
-  wireDrawer('rail-toggle', 'rail');
+  wirePanels();
   const thread = $('thread');
   if (thread) {
     thread.addEventListener('scroll', () => {

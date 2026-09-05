@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Code — Refinix</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="code.css">
 </head>
-<body>
+<body data-surface="code">
 
 <!--
   Refinix Code surface — static design reference.
@@ -22,24 +22,10 @@
 <div class="app">
 
   <!-- ============================================================== nav -->
-  <nav class="nav" aria-label="Surfaces and repositories">
+  <nav class="nav" id="nav" aria-label="Surfaces and repositories">
     <div class="nav-brand">
-      <svg class="mark" viewBox="0 0 120 120" aria-hidden="true">
-        <g fill="none" stroke="currentColor" stroke-width="9">
-          <path d="M107,67 A48,48 0 0 1 64,108"/>
-          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(120 60 60)"/>
-          <path d="M107,67 A48,48 0 0 1 64,108" transform="rotate(240 60 60)"/>
-        </g>
-        <g fill="currentColor">
-          <path d="M47,111 L66,119 L63,96 Z"/>
-          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(120 60 60)"/>
-          <path d="M47,111 L66,119 L63,96 Z" transform="rotate(240 60 60)"/>
-          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z"/>
-          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(120 60 60)"/>
-          <path d="M60,60 C57,44 63,30 78,23 C81,40 74,53 60,60 Z" transform="rotate(240 60 60)"/>
-        </g>
-      </svg>
-      <b>Refinix</b>
+      <img class="brand-logo" src="assets/refinix-wordmark.png"
+           alt="Refinix" width="594" height="112">
       <span>v0.1-alpha</span>
     </div>
 
@@ -76,11 +62,29 @@
   <!-- ============================================================= main -->
   <main class="main">
     <header class="main-head">
+      <button class="panel-toggle panel-toggle-left" type="button"
+              data-panel-toggle="nav" aria-controls="nav" aria-expanded="true"
+              aria-label="Navigation panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
       <h1>plant-tools &mdash; raise on an empty tag file</h1>
       <span class="chip chip-caution">Awaiting approval</span>
       <div class="head-spacer"></div>
       <span class="sample">Sample data</span>
       <span class="lbl">Job b83e40</span>
+      <button class="panel-toggle panel-toggle-right" type="button"
+              data-panel-toggle="rail" aria-controls="rail" aria-expanded="true"
+              aria-label="Details panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
     </header>
 
     <div class="body">
@@ -213,7 +217,7 @@
   </main>
 
   <!-- ============================================================= rail -->
-  <aside class="rail" aria-label="Job inspector">
+  <aside class="rail" id="rail" aria-label="Job inspector">
     <section class="rail-sec">
       <span class="lbl">Lifecycle</span>
       <ol class="life">
@@ -271,6 +275,8 @@
     </section>
   </aside>
 </div>
+
+<script src="shell.js"></script>
 
 </body>
 </html>
