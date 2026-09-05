@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/overrides.css">
 <link rel="stylesheet" href="/refinix.css">
-<div class="app app-plain">
+<div class="app">
   <nav class="nav" id="nav">
     <div class="brand">
       <img class="brand-logo" src="/assets/refinix-wordmark.png" alt="Refinix">
@@ -39,8 +39,16 @@
       </button>
       <h1 class="head-title">Code</h1>
       <div class="head-spacer"></div>
-      <button class="rail-toggle" id="rail-toggle" aria-expanded="false"
-              aria-controls="rail">Details</button>
+      <button class="panel-toggle panel-toggle-right" type="button"
+              id="rail-toggle" data-panel-toggle="rail"
+              aria-controls="rail" aria-expanded="true"
+              aria-label="Details panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
     </header>
 
     <div id="notices" role="status" aria-live="polite"></div>
@@ -55,7 +63,7 @@
         <div class="prose">
           <p>Choose a project folder, pick the files to change, and describe the
              edit. You see the complete diff before anything is written.</p>
-          <p class="lbl">Refinix replaces the contents of existing text files you
+          <p class="prose-note">Refinix replaces the contents of existing text files you
              select. Creating, deleting or renaming files, running project
              commands, using Git and installing anything are <strong>not
              available</strong> in any access mode.</p>
