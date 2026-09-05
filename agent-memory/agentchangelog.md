@@ -1523,3 +1523,17 @@ work. No repository file change means no changelog entry.
 - changes: Worker and executor now pin `sha256:daf1052b...`; provenance records its observed config digest, successful offline build layer and streamed import while leaving unavailable archive fields null. The handoff now disables provenance/SBOM attestations for one Linux manifest and creates the explicit containerd digest alias used by the manifests.
 - verification: Requester output showed the single-manifest build, `sha256:daf1052b...` tag and explicit digest alias in K3s containerd. Source consistency and `git diff --check` were checked locally; no deployment or runtime test was run by Codex.
 - remaining: Push this source update, pull it on Ubuntu, then deploy only the worker API and prove loopback TLS before opening the guarded LAN forwarder. The executor remains blocked until pairing creates the relationship ID.
+
+<a id="ac-20260905-013"></a>
+## AC-20260905-013 — Non-root worker can read its mounted TLS identity
+- prompt_id: [UP-20260905-013](userprompts.md#up-20260905-013)
+- date: 2026-09-05
+- status: implemented; Ubuntu rollout retry pending
+- scope: c06, kubernetes, tls, permissions, rollout
+- tags: c06, kubernetes, tls, fsgroup, non-root, crashloopbackoff
+- aliases: uvicorn permission denied, tls key unreadable, C06 pod crash
+- paths: deploy/k3s/20-worker.yaml, deploy/k3s/test_manifests.py, agent-memory/
+- summary: Assigned the worker Pod's volumes to its existing GID so Uvicorn can read the TLS key without making it world-readable.
+- changes: Added pod-level `fsGroup: 10001`, matching the repository's Redis secret-volume pattern, and a focused assertion pairing it with secret mode `0440`.
+- verification: Requester logs proved `PermissionError` at Uvicorn `load_cert_chain`; pod events proved the pinned C06 image was present. `git diff --check` passed locally; no test or deployment was run by Codex.
+- remaining: Push and pull the two-file source fix plus ledger entries, rerun the manifest suite, and reapply only `20-worker.yaml`. Keep the executor undeployed until pairing produces its relationship ID.

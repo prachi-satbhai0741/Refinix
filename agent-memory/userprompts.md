@@ -1081,3 +1081,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Source consistency only; deployment and runtime checks remain human steps.
 - follow_up_to: [UP-20260905-011](#up-20260905-011)
 - linked_changes: [AC-20260905-012](agentchangelog.md#ac-20260905-012)
+
+<a id="up-20260905-013"></a>
+## UP-20260905-013 — Make the mounted TLS key readable to the non-root worker
+- date: 2026-09-05
+- status: implemented; Ubuntu rollout retry pending
+- scope: c06, kubernetes, tls, permissions, rollout
+- tags: c06, kubernetes, tls, fsgroup, non-root, crashloopbackoff
+- aliases: uvicorn permission denied, tls key unreadable, C06 pod crash
+- paths: deploy/k3s/20-worker.yaml, deploy/k3s/test_manifests.py, agent-memory/
+- summary: Fix the C06 worker startup failure without weakening the TLS private-key mode.
+- request: Continue the live C06 rollout after the new worker Pod failed while Uvicorn loaded the mounted certificate chain.
+- constraints: Preserve UID/GID 10001, mode 0440, the old ready worker during rollout, and all existing isolation boundaries.
+- acceptance: Kubernetes assigns the secret volume to group 10001 so the non-root worker can read the key while other users cannot.
+- verification_authorization: Source consistency only; the Ubuntu rollout is the authoritative check.
+- follow_up_to: [UP-20260905-012](#up-20260905-012)
+- linked_changes: [AC-20260905-013](agentchangelog.md#ac-20260905-013)

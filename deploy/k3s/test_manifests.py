@@ -647,6 +647,11 @@ class TestExecutorAndTLS(unittest.TestCase):
         self.assertIn("--ssl-keyfile", body)
         self.assertIn("secretName: worker-tls", body)
 
+    def test_the_non_root_worker_can_read_its_tls_key(self):
+        worker = self.worker()
+        self.assertIn("fsGroup: 10001", worker)
+        self.assertIn("defaultMode: 0440", worker)
+
     def test_the_tls_key_is_not_committed(self):
         """The private key is the worker's identity. It is created on the
         worker host and mounted from a Secret the operator makes."""
