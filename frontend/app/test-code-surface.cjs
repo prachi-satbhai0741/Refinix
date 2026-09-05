@@ -67,6 +67,12 @@ function page({ bridge } = {}) {
   const scope = vm.createContext({
     document,
     window: { addEventListener() {}, location: { port: '8770' },
+      /* app.js evaluates PANEL_MQ at module scope, so a harness without
+         matchMedia throws before a single test runs. Non-matching
+         queries are the desktop layout these checks assume. */
+      matchMedia: () => ({ matches: false, addEventListener() {},
+                           removeEventListener() {}, addListener() {},
+                           removeListener() {} }),
               pywebview: bridge ? { api: bridge } : undefined },
     navigator: {},
     fetch: (path, options) => new Promise((resolve, reject) => requests.push({

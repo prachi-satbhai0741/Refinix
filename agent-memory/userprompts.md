@@ -985,3 +985,67 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Design and appearance only. Do not change logic, button wiring or behaviour.
 - follow_up_to: [UP-20260905-005](#up-20260905-005)
 - linked_changes: [AC-20260905-006](agentchangelog.md#ac-20260905-006)
+
+<a id="up-20260905-007"></a>
+## UP-20260905-007 — Implement C06 distributed execution and prepare C07 fixtures
+- date: 2026-09-05
+- status: implemented; device gates and requester verification pending
+- scope: c06, c07, distributed-execution, pairing, redis, preparation
+- tags: c06, c07, af-005, af-006, af-007, od-06, pairing, redis-streams, executor, fixtures
+- aliases: pair the mac and ubuntu, redis dispatch, durable receipt, route reason, synthetic fixtures, c08 dependency plan
+- paths: backend/worker/, backend/coordinator/, deploy/k3s/, fixtures/c07/, frontend/app/, docs/, agent-memory/
+- summary: With C05 cleared, implement AF-005 to AF-007 — OD-06 pairing over pinned TLS, real Redis Streams dispatch with an executor, coordinator routing with truthful fallback, and the minimum UI/manifests — while independently preparing C07's synthetic fixtures and the C08 dependency plan.
+- request: Build C06 and C07 preparation in one bounded cycle, add focused offline checks with stateful fakes, and return one Mac/Ubuntu execution handoff.
+- constraints: Preserve unrelated and user-owned work. No Git/GitHub writes, deployment, installation, model download, host mutation or live-device command. Offline checks authorised. Smallest secure standard-library solution; no invented cryptography. Preserve and reuse the local Documents and Code work; C07 must not implement C08/C09. Do not invent the new image digest.
+- acceptance: Durable receipt before 202, pairing and pin failures closed, executor recovery and cancellation, canonical history surviving Redis/worker loss, truthful local fallback, and deterministic C07 fixtures.
+- verification_authorization: Implementation plus offline checks with fakes and stubs; no container build or device acceptance.
+- follow_up_to: [UP-20260905-006](#up-20260905-006)
+- linked_changes: [AC-20260905-007](agentchangelog.md#ac-20260905-007)
+
+<a id="up-20260905-008"></a>
+## UP-20260905-008 — Repair the eight Codex findings against C06 and C07
+- date: 2026-09-05
+- status: implemented; every device gate still outstanding
+- scope: c06, c07, review-fixes, nodeport, redis, executor, fixtures
+- tags: c06, c07, review-fixes, nodeport-exposure, socket-proxy, event-replay, redis-authority, atomic-receipt, lease, raster-scan, self-test
+- aliases: needs fix, dnat cannot be filtered by input, wait for terminal state, restart recovery, receipt unknown, duplicate delivery, synthetic scan, guided self-test
+- paths: backend/worker/, backend/coordinator/, deploy/k3s/, fixtures/c07/, frontend/app/, docs/, agent-memory/
+- summary: Codex returned NEEDS FIX with eight findings on the C06/C07 implementation, covering unsafe NodePort exposure, an impossible setup order, a snapshot event read, process-local attempt state, a non-atomic receipt, lease and acknowledgement semantics, a missing raster scan fixture, and the absent AF-007 self-test.
+- request: Repair all eight as one bounded correction pass, add the named checks, and report exact counts.
+- constraints: Preserve unrelated dirty-tree work. No Git/GitHub writes, deployment, host changes, downloads or live-device commands. Reuse Redis, the existing systemd proxy pattern and the current contracts; no Helm, Ingress, second broker, replicas, Kubernetes client or speculative abstractions.
+- acceptance: NodePort stays on loopback behind a restricted host forwarder, the setup order is executable, event consumption waits for a terminal state, the routes survive an API restart, receipts commit atomically, duplicates and reclaimed leases are safe, the scan fixture exists with provenance, and the self-test uses the real path.
+- verification_authorization: Implementation plus the named offline suites; no container build or device acceptance.
+- follow_up_to: [UP-20260905-007](#up-20260905-007)
+- linked_changes: [AC-20260905-008](agentchangelog.md#ac-20260905-008)
+
+<a id="up-20260905-009"></a>
+## UP-20260905-009 — Close the five remaining C06 safety boundaries
+- date: 2026-09-05
+- status: implemented; the C06 device gate is still unrun
+- scope: c06, review-fixes, dispatch-ambiguity, pending-recovery, self-test, image-build
+- tags: c06, review-fixes, receipt-unknown, ambiguous-commit, xautoclaim, xack, self-test-verdict, dockerfile
+- aliases: atomic mutation is not client knowledge, sent flag set too late, ack destroys the pending entry, local rescue is not a distributed pass, executor suite missing from the build
+- paths: backend/worker/, backend/coordinator/, backend/worker-image/Dockerfile, agent-memory/
+- summary: A focused C06 review found five failure boundaries the passing suites did not simulate — an ambiguous Redis commit reported as definite, an HTTP send classified definite after transmission began, a recovered pending entry acknowledged away from its live owner, a self-test that passed on a local rescue, and an image build missing the executor suite.
+- request: Find the smallest root-cause corrections consistent with the existing architecture and add regressions for each.
+- constraints: Preserve the LAN forwarder, setup order, Redis-backed lookup, waiting event stream, owner-checked leases, C07 fixture and ordinary-path self-test. No new infrastructure, dependencies, brokers, frameworks or abstractions; no Redis redesign. No Git writes, image build, installs, services or device commands. Preserve unrelated C05/C07 work.
+- acceptance: Ambiguous dispatch never authorises local fallback, pending work stays recoverable, the distributed self-test cannot pass on a fallback, and the Dockerfile matches the handoff.
+- verification_authorization: Implementation plus the existing offline suites and syntax checks; no image build or device execution.
+- follow_up_to: [UP-20260905-008](#up-20260905-008)
+- linked_changes: [AC-20260905-009](agentchangelog.md#ac-20260905-009)
+
+<a id="up-20260905-010"></a>
+## UP-20260905-010 — Require the canonical job to pass the distributed self-test
+- date: 2026-09-05
+- status: implemented and focused-check passed; C06 device gate remains unrun
+- scope: c06, self-test, review-fix
+- tags: c06, self-test-verdict, canonical-job, regression
+- aliases: completed remote attempt with failed job, self-test false positive
+- paths: backend/coordinator/server.py, backend/coordinator/dispatch.py, backend/coordinator/test_dispatch.py, agent-memory/
+- summary: The focused re-review found that a completed remote attempt could report a passing self-test even when the canonical job later failed.
+- request: Apply only the smallest verdict correction and focused regression, without reopening the broader C06 review.
+- constraints: Preserve all other C06/C07 work; no Git writes, build, deployment, install or device action.
+- acceptance: A self-test passes only when the canonical job and a relationship-bound attempt both complete.
+- verification_authorization: Run only the affected coordinator test module and `git diff --check`.
+- follow_up_to: [UP-20260905-009](#up-20260905-009)
+- linked_changes: [AC-20260905-010](agentchangelog.md#ac-20260905-010)

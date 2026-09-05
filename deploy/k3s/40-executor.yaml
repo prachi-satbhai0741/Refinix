@@ -1,0 +1,144 @@
+# AF-005 executor — the consumer that runs dispatched work.
+#
+# Same image as the worker API, different command. C06 adds no second image and
+# no second build; `python -m backend.worker.executor` is the only difference.
+#
+# It has NO Service and NO inbound port. Cancellation reaches it through Redis,
+# which is why it needs no listener at all — the smallest surface that can do
+# the job. A Service here would be an attack surface with no caller.
+#
+# The image digest below is the C04 build, which does NOT contain the executor.
+# It is a placeholder pinned to the last verified digest so this manifest never
+# floats; the Ubuntu worker replaces it with the digest of the C06 build at the
+# human checkpoint. See docs/c06-distributed-execution-handoff.md step E.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: executor-config
+  namespace: aegisforge
+data:
+  AEGIS_REDIS_HOST: "redis"
+  AEGIS_REDIS_PORT: "6379"
+  # Same runtime address as the worker: the protected Ollama bridge decided at
+  # the C05 checkpoint. Neither Pod may reach anything else.
+  AEGIS_RUNTIME_HOST: "http://127.0.0.1:11434"
+  AEGIS_MODEL: "qwen3.5:4b-q4_K_M"
+  AEGIS_NUM_CTX: "4096"
+  AEGIS_NUM_PREDICT: "2048"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegisforge-executor
+  namespace: aegisforge
+spec:
+  # One consumer. A second would be correct — the consumer group and the lease
+  # exist precisely so two executors are safe — but capacity is not a C06 gate
+  # and a second replica on one node buys queue contention, not throughput.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aegisforge-worker
+      component: executor
+  template:
+    metadata:
+      labels:
+        # `app` matches the NetworkPolicy selector; `component` keeps this Pod
+        # out of the worker Service's endpoints, which select on both.
+        app: aegisforge-worker
+        component: executor
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: executor
+          # REPLACE at the checkpoint with the C06 build digest.
+          image: docker.io/library/aegisforge-worker@sha256:a1eb434c91ff5e51a095ccbdc5becd10e98a099a281302ef68e86b531543a295
+          imagePullPolicy: Never
+          command: ["python", "-m", "backend.worker.executor"]
+          envFrom:
+            - configMapRef:
+                name: executor-config
+          env:
+            # The relationship this executor serves. Configuration, not
+            # discovery: an executor that scanned Redis for whatever
+            # relationships exist would happily serve a revoked one.
+            - name: AEGIS_RELATIONSHIP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: worker-credential
+                  key: relationship-id
+            - name: AEGIS_NODE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: worker-credential
+                  key: node-id
+            - name: AEGIS_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credential
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          # No HTTP probe: there is no listener. Liveness is "the process can
+          # still reach Redis", which is the only dependency it has and the
+          # only failure a restart would fix.
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - |
+                  import os, sys
+                  from backend.worker.redis_client import Redis
+                  client = Redis(os.environ["AEGIS_REDIS_HOST"],
+                                 int(os.environ.get("AEGIS_REDIS_PORT", "6379")),
+                                 password=os.environ.get("AEGIS_REDIS_PASSWORD"))
+                  sys.exit(0 if client.ping() else 1)
+            timeoutSeconds: 10
+            periodSeconds: 60
+            failureThreshold: 3
+          # A SIGTERM leaves the current entry unacknowledged, so the next
+          # executor recovers it once the lease idles out. 40s clears the
+          # contract's 30s LEASE_SECONDS.
+          terminationGracePeriodSeconds: 40
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+# The executor may reach Redis and nothing else in the cluster. The runtime
+# bridge is granted by 30-runtime-egress.yaml, which already selects on
+# `app: aegisforge-worker` and therefore covers this Pod too.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: executor-ingress
+  namespace: aegisforge
+spec:
+  podSelector:
+    matchLabels:
+      app: aegisforge-worker
+      component: executor
+  policyTypes: [Ingress]
+  # No ingress rules at all: nothing may open a connection to this Pod. The
+  # empty list is the policy, not an omission.
+  ingress: []

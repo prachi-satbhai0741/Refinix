@@ -596,5 +596,86 @@ class TestPodNetworkCheck(unittest.TestCase):
 
 
 
+class TestExecutorAndTLS(unittest.TestCase):
+    """C06 additions: the executor Pod, the TLS listener and the state volume."""
+
+    def executor(self) -> str:
+        return (ROOT / "deploy/k3s/40-executor.yaml").read_text()
+
+    def worker(self) -> str:
+        return (ROOT / "deploy/k3s/20-worker.yaml").read_text()
+
+    def test_the_executor_reuses_the_worker_image(self):
+        """A second image would mean a second build, a second digest and a
+        second supply chain for one process difference."""
+        worker_images = set(re.findall(r"image:\s*(\S+)", self.worker()))
+        executor_images = set(re.findall(r"image:\s*(\S+)", self.executor()))
+        self.assertTrue(executor_images)
+        self.assertTrue(executor_images <= worker_images,
+                        "the executor must run the worker image")
+
+    def test_the_executor_has_no_service_and_no_ingress(self):
+        """Cancellation arrives through Redis, so a listener would be an
+        attack surface with no caller."""
+        self.assertNotIn("kind: Service", self.executor())
+        self.assertNotIn("containerPort", self.executor())
+        self.assertRegex(self.executor(), r"ingress:\s*\[\]")
+
+    def test_the_executor_is_not_an_endpoint_of_the_worker_service(self):
+        """The Service selects app + component; the executor carries a
+        different component, so it can share the NetworkPolicy without
+        receiving LAN traffic."""
+        self.assertIn("component: executor", self.executor())
+        self.assertIn("component: api", self.worker())
+
+    def test_the_executor_serves_one_configured_relationship(self):
+        """Scanning Redis for whatever relationships exist would serve a
+        revoked one."""
+        self.assertIn("AEGIS_RELATIONSHIP_ID", self.executor())
+        self.assertIn("secretKeyRef", self.executor())
+
+    def test_no_credential_is_inline_in_the_new_manifests(self):
+        for text in (self.executor(), self.worker()):
+            for line in commands(text).splitlines():
+                if "AEGIS_REDIS_PASSWORD" in line or "AEGIS_WORKER_TOKEN" in line:
+                    self.assertNotIn("value:", line,
+                                     "credentials come from a Secret reference")
+
+    def test_the_listener_terminates_tls_with_the_pinned_certificate(self):
+        body = commands(self.worker())
+        self.assertIn("--ssl-certfile", body)
+        self.assertIn("--ssl-keyfile", body)
+        self.assertIn("secretName: worker-tls", body)
+
+    def test_the_tls_key_is_not_committed(self):
+        """The private key is the worker's identity. It is created on the
+        worker host and mounted from a Secret the operator makes."""
+        for path in sorted((ROOT / "deploy" / "k3s").rglob("*.yaml")):
+            text = path.read_text(errors="ignore")
+            self.assertNotIn("BEGIN PRIVATE KEY", text, str(path))
+            self.assertNotIn("BEGIN RSA PRIVATE KEY", text, str(path))
+
+    def test_pairing_state_survives_a_restart(self):
+        """Relationship hashes on an emptyDir would silently unpair the
+        coordinator every time the Pod moved."""
+        worker = self.worker()
+        self.assertIn("AEGIS_PAIRING_STATE", worker)
+        self.assertIn("kind: PersistentVolumeClaim", worker)
+        self.assertIn("claimName: worker-state", worker)
+
+    def test_redis_stays_internal_after_c06(self):
+        redis = commands((ROOT / "deploy/k3s/10-redis.yaml").read_text())
+        self.assertIn("type: ClusterIP", redis)
+        # Comments stripped: the file's own header names these to forbid them.
+        for forbidden in ("NodePort", "LoadBalancer", "hostPort", "kind: Ingress"):
+            self.assertNotIn(forbidden, redis)
+
+    def test_the_executor_digest_is_pinned_and_flagged_for_replacement(self):
+        """It cannot be the real C06 digest yet — that image has not been
+        built — so it must be pinned and it must say so."""
+        self.assertRegex(self.executor(), r"image:\s*\S+@sha256:[0-9a-f]{64}")
+        self.assertIn("REPLACE at the checkpoint", self.executor())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

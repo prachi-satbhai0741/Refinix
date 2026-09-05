@@ -31,6 +31,7 @@ FAKE_IP = """#!/bin/sh
 case "$*" in
   *"route show default"*) echo "default via 192.168.29.1 dev wlo1 proto dhcp" ;;
   *"addr show cni0"*)     [ -n "${NO_BRIDGE:-}" ] || echo "2: cni0    inet 10.42.0.1/24 brd 10.42.0.255 scope global cni0" ;;
+  *"addr show wlo1"*)     [ -n "${NO_LAN_ADDRESS:-}" ] || echo "3: wlo1    inet 192.168.29.42/24 brd 192.168.29.255 scope global wlo1" ;;
 esac
 exit 0
 """
@@ -265,6 +266,178 @@ class TestOllamaGuard(GuardCase):
         result, v4, _ = self.run_guard("remove", "ollama", seed4=applied)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(v4, [])
+
+
+class TestWorkerGuard(GuardCase):
+    """C06's LAN forwarder for the worker, on 30443.
+
+    The whole reason this guard exists: NodePort traffic is DNATed and
+    forwarded, so it never traverses INPUT and iptables cannot restrict it.
+    The NodePort therefore stays on loopback and a host socket forwards to it,
+    which puts the traffic back in a chain that can be filtered.
+    """
+
+    MAC = "192.168.29.31"
+    LAN = "192.168.29.42"
+
+    def apply(self, **extra):
+        return self.run_guard("apply", "worker", AEGIS_MAC_ADDRESS=self.MAC,
+                              **extra)
+
+    def test_the_paired_mac_reaches_the_forwarder(self):
+        result, v4, _ = self.apply()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(verdict(v4, {"dest": self.LAN, "dport": 30443,
+                                      "source": self.MAC}), "ACCEPT")
+
+    def test_every_other_lan_address_is_dropped(self):
+        _, v4, _ = self.apply()
+        for other in ("192.168.29.99", "192.168.29.1", "10.0.0.5"):
+            with self.subTest(source=other):
+                self.assertEqual(verdict(v4, {"dest": self.LAN, "dport": 30443,
+                                              "source": other}), "DROP")
+
+    def test_ipv6_stays_closed(self):
+        _, _, v6 = self.apply()
+        self.assertEqual(verdict(v6, {"in_interface": "wlo1", "dport": 30443}),
+                         "DROP")
+
+    def test_the_accept_precedes_the_drop(self):
+        """The DROP is a superset of the ACCEPT, so the reverse order would
+        block the paired Mac along with everyone else."""
+        _, v4, _ = self.apply()
+        indices = [i for i, rule in enumerate(v4) if "30443" in rule]
+        self.assertEqual(len(indices), 2)
+        self.assertIn("ACCEPT", v4[indices[0]])
+        self.assertIn("DROP", v4[indices[1]])
+
+    def test_a_missing_mac_address_refuses_rather_than_opening_the_port(self):
+        result, v4, _ = self.run_guard("apply", "worker")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("AEGIS_MAC_ADDRESS", result.stderr)
+        self.assertEqual([r for r in v4 if "30443" in r], [],
+                         "a forgotten address must leave the port closed")
+
+    def test_a_cidr_or_range_is_refused(self):
+        """A subnet here would silently widen the one rule that limits who may
+        reach the worker."""
+        for bad in ("192.168.29.0/24", "192.168.29.31-40", "mac.local", "",
+                    "999.1.1.1"):
+            with self.subTest(value=bad):
+                result, v4, _ = self.run_guard("apply", "worker",
+                                               AEGIS_MAC_ADDRESS=bad)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual([r for r in v4 if "30443" in r], [])
+
+    def test_applying_twice_is_idempotent(self):
+        self.apply()
+        _, v4, v6 = self.apply()
+        self.assertEqual(len([r for r in v4 if "30443" in r]), 2)
+        self.assertEqual(len([r for r in v6 if "30443" in r]), 1)
+
+    def test_removal_takes_only_this_guard_s_rules(self):
+        result, v4, v6 = self.run_guard(
+            "remove", "worker", AEGIS_MAC_ADDRESS=self.MAC,
+            seed4=["-p tcp --dport 22 -j ACCEPT"], seed6=[])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("-p tcp --dport 22 -j ACCEPT", v4)
+
+    def test_the_guard_and_the_other_guards_do_not_interfere(self):
+        _, v4, _ = self.run_guard("apply", "cluster")
+        self.assertEqual([r for r in v4 if "30443" in r], [],
+                         "the cluster guard must not touch the worker port")
+
+
+class TestNodePortIsNotWidened(unittest.TestCase):
+    """The handoff must never tell an operator to open the NodePort to the LAN.
+
+    An earlier draft did exactly that — it set `nodeport-addresses` to the
+    whole subnet and then tried to restrict 30443 with INPUT rules, which
+    cannot work for DNATed traffic. These read the shipped documentation
+    because that is where the instruction lives.
+    """
+
+    def documents(self):
+        root = HERE.parents[2]
+        return [root / "docs/c06-distributed-execution-handoff.md",
+                root / "docs/c05-ubuntu-deployment-handoff.md"]
+
+    def test_nodeport_addresses_is_never_widened_to_a_subnet(self):
+        for path in self.documents():
+            if not path.exists():
+                continue
+            for line in path.read_text().splitlines():
+                if "nodeport-addresses" not in line:
+                    continue
+                with self.subTest(document=path.name, line=line.strip()[:80]):
+                    self.assertNotRegex(
+                        line, r"nodeport-addresses=(?!127\.0\.0\.1/32)[0-9]",
+                        "the NodePort must stay on loopback; a host forwarder "
+                        "is what exposes it to one address")
+
+    def test_the_handoff_never_claims_input_protects_the_nodeport(self):
+        path = self.documents()[0]
+        if not path.exists():
+            self.skipTest("the C06 handoff has not been written")
+        text = path.read_text()
+        for line in text.splitlines():
+            lowered = line.lower()
+            if "iptables" in lowered and "30443" in line and "proxy" not in lowered:
+                with self.subTest(line=line.strip()[:80]):
+                    self.assertNotIn("dport 30443", line,
+                                     "an INPUT rule on the NodePort does not "
+                                     "filter DNATed traffic")
+
+    def test_the_handoff_uses_the_forwarder_and_the_guard(self):
+        path = self.documents()[0]
+        if not path.exists():
+            self.skipTest("the C06 handoff has not been written")
+        text = path.read_text()
+        self.assertIn("aegisforge-worker-proxy", text)
+        self.assertIn("apply worker", text)
+        self.assertIn("AEGIS_MAC_ADDRESS", text)
+
+    def test_the_guard_script_states_why_input_cannot_cover_nodeport(self):
+        header = GUARD.read_text()[:4000]
+        self.assertIn("DNAT", header.upper().replace("DNATED", "DNAT"))
+
+
+class TestWorkerProxyUnits(unittest.TestCase):
+    def unit(self, name: str) -> str:
+        return (HERE / name).read_text()
+
+    def test_the_socket_cannot_listen_without_the_guard(self):
+        socket = self.unit("aegisforge-worker-proxy.socket")
+        self.assertIn("Requires=aegisforge-worker-guard.service", socket)
+        self.assertIn("After=aegisforge-worker-guard.service", socket)
+
+    def test_the_socket_binds_one_address_not_every_interface(self):
+        socket = self.unit("aegisforge-worker-proxy.socket")
+        self.assertIn("ListenStream=LAN_ADDRESS:30443", socket)
+        self.assertNotRegex(socket, r"ListenStream=\d+\s*$",
+                            "a bare port binds every interface, including IPv6")
+
+    def test_the_proxy_forwards_to_loopback_not_to_a_lan_address(self):
+        service = self.unit("aegisforge-worker-proxy.service")
+        self.assertIn("127.0.0.1:30443", service)
+
+    def test_the_proxy_does_not_terminate_tls(self):
+        """systemd-socket-proxyd copies bytes, so the pinned session stays
+        end-to-end and this host holds no key."""
+        service = self.unit("aegisforge-worker-proxy.service")
+        self.assertIn("SOCKET_PROXY_PATH", service)
+        for forbidden in ("ssl", "tls.key", "certfile", "openssl"):
+            self.assertNotIn(forbidden, service.lower())
+
+    def test_the_guard_unit_requires_the_mac_address(self):
+        guard = self.unit("aegisforge-worker-guard.service")
+        self.assertIn("AEGIS_MAC_ADDRESS", guard)
+        self.assertIn("apply worker", guard)
+        self.assertIn("remove worker", guard)
+
+    def test_the_guard_waits_for_a_loopback_nodeport_not_a_lan_one(self):
+        guard = self.unit("aegisforge-worker-guard.service")
+        self.assertIn("127.0.0.1", guard)
 
 
 class TestRemovalDoesNotParseSaveOutput(unittest.TestCase):

@@ -31,7 +31,8 @@ RUN --network=none AEGIS_WORKER_TOKEN=build-time-check-token-not-a-secret-000000
     python -m unittest -q \
       backend.contracts.test_contracts \
       backend.worker.test_worker_runtime \
-      backend.worker.test_worker_app
+      backend.worker.test_worker_app \
+      backend.worker.test_executor
 
 # Non-root, matching the security boundary for worker execution.
 USER 10001:10001
