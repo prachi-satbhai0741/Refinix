@@ -245,10 +245,11 @@ class Coordinator:
                 self.conn, job_id=job_id, node_id=self.node_id,
                 route_reason="local coordinator: no paired worker in C03",
             )
-            # Read once, here. A later change to the switch cannot reach an
-            # attempt that has already recorded what it runs with.
-            reasoning = db.get_reasoning(self.conn, runtime.MODEL)
-            db.set_attempt_reasoning(self.conn, attempt_id, runtime.MODEL, reasoning)
+            # Both read once, here. A later change to either switch cannot
+            # reach an attempt that has already recorded what it runs with.
+            model = self.active_model()
+            reasoning = db.get_reasoning(self.conn, model)
+            db.set_attempt_reasoning(self.conn, attempt_id, model, reasoning)
             self._emit(job_id, attempt_id, {"kind": "attempt.state",
                                             "previous": None, "current": "queued"})
             db.set_attempt_selection(self.conn, attempt_id, selection.as_dict())
@@ -283,7 +284,7 @@ class Coordinator:
             collected, metrics = [], {}
             thinking_seen = False
             for kind, payload in runtime.stream_chat(
-                    messages, think=reasoning,
+                    messages, model=model, think=reasoning,
                     should_cancel=lambda: self.is_cancelled(job_id)
                     or self.stopping.is_set()):
                 if kind == "thinking":
@@ -742,6 +743,42 @@ class Coordinator:
             e["data"] = json.loads(e.pop("data_json"))
         return {"job": dict(job), "attempts": attempts, "events": events}
 
+    def active_model(self, runtime_state: dict | None = None) -> str:
+        """The model a request would actually run on right now.
+
+        A stored choice holds only while the runtime still reports that model.
+        Uninstalling one must not leave every request pointing at something
+        this computer no longer has — it falls back to the build default,
+        whose own absence is already reported as a blocked capability.
+        """
+        chosen = db.get_selected_model(self.conn)
+        if not chosen or chosen == runtime.MODEL:
+            return runtime.MODEL
+        state = runtime_state if runtime_state is not None else runtime.probe()
+        return chosen if chosen in (state.get("models") or []) else runtime.MODEL
+
+    def offered_models(self, runtime_state: dict | None = None) -> list[dict]:
+        """Every model this computer can be asked to run.
+
+        Whatever the runtime reports as installed, plus this build's default
+        even when it is not installed: that absence is a fact the Control
+        Center states, not one to hide by dropping the row. Reasoning is
+        already stored per model, so each entry carries its own.
+        """
+        state = runtime_state if runtime_state is not None else runtime.probe()
+        installed = [m for m in (state.get("models") or []) if isinstance(m, str)]
+        active = self.active_model(state)
+        return [{
+            "id": model,
+            "reasoning": db.get_reasoning(self.conn, model),
+            "installed": model in installed,
+            "active": model == active,
+            "default": model == runtime.MODEL,
+            "reasoning_note": "Reasoning gives the model room to work through "
+                              "a problem before answering. It is slower and "
+                              "can use the whole reply budget.",
+        } for model in dict.fromkeys([runtime.MODEL, *installed])]
+
     def capabilities(self, runtime_state: dict | None = None) -> list[dict]:
         """Observed capability state. `available` requires every observation.
 
@@ -750,7 +787,10 @@ class Coordinator:
         that one skill and nothing else — Chat and Code stay usable.
         """
         state = runtime_state if runtime_state is not None else runtime.probe()
-        model_installed = runtime.MODEL in (state.get("models") or [])
+        # The model that would run, not the build default: once a computer can
+        # choose, "the model is missing" has to be about the chosen one.
+        model = self.active_model(state)
+        model_installed = model in (state.get("models") or [])
         reading = documents.capability_summary()
         searchable = retrieval.fts_available(self.conn)
         rows = []
@@ -761,7 +801,7 @@ class Coordinator:
                 row["detail"] = entry["setup"]
             elif entry.get("kind") == "document":
                 blocked = self._document_blockers(entry, reading, searchable,
-                                                  state, model_installed)
+                                                  state, model_installed, model)
                 row["formats"] = reading["supported"]
                 row["unavailable_reasons"] = reading["unavailable"]
                 row["state"] = "blocked" if blocked else "available"
@@ -781,9 +821,9 @@ class Coordinator:
                 row["setup"] = "Open Settings to see what this computer needs."
             elif not model_installed:
                 row["state"] = "blocked"
-                row["detail"] = (f"The configured model {runtime.MODEL} is not "
+                row["detail"] = (f"The selected model {model} is not "
                                  "installed on this computer.")
-                row["setup"] = f"ollama pull {runtime.MODEL}"
+                row["setup"] = f"ollama pull {model}"
             else:
                 row["state"] = "available"
                 row["detail"] = "Runs on this computer."
@@ -791,13 +831,14 @@ class Coordinator:
         return rows
 
     @staticmethod
-    def _document_blockers(entry, reading, searchable, state, model_installed) -> list[str]:
+    def _document_blockers(entry, reading, searchable, state, model_installed,
+                           model=runtime.MODEL) -> list[str]:
         """Every reason this one skill cannot run, in the order to show them."""
         blocked = []
         if entry.get("needs_runtime") and not state.get("reachable"):
             blocked.append("The AI engine on this computer did not answer.")
         elif entry.get("needs_runtime") and not model_installed:
-            blocked.append(f"The configured model {runtime.MODEL} is not installed "
+            blocked.append(f"The selected model {model} is not installed "
                            "on this computer.")
         if entry.get("needs_search") and not searchable:
             blocked.append("This computer's SQLite build has no full-text search, "
@@ -823,18 +864,15 @@ class Coordinator:
             "bind": f"{BIND_HOST}",
             "runtime": runtime_state,
             "model_configured": runtime.MODEL,
-            "model_installed": runtime.MODEL in (runtime_state.get("models") or []),
-            # The approved model, and the reasoning choice that applies to it.
-            # Only models this build actually supports are offered; a name in
-            # the runtime's tag list is not approval to use it.
-            "models": [{
-                "id": runtime.MODEL,
-                "reasoning": db.get_reasoning(self.conn, runtime.MODEL),
-                "installed": runtime.MODEL in (runtime_state.get("models") or []),
-                "reasoning_note": "Reasoning gives the model room to work through "
-                                  "a problem before answering. It is slower and "
-                                  "can use the whole reply budget.",
-            }],
+            "model_active": self.active_model(runtime_state),
+            "model_installed": self.active_model(runtime_state)
+                               in (runtime_state.get("models") or []),
+            # Every model the runtime reports, so a computer with more than
+            # one can be switched between them, each with its own reasoning
+            # choice. The bounded settings in runtime.py were measured against
+            # the default (docs/model-catalog.md); another model runs under
+            # the same bounds and has not been characterised at this size.
+            "models": self.offered_models(runtime_state),
             "capabilities": self.capabilities(runtime_state),
             "attachments": {
                 "max_bytes": db.MAX_ATTACHMENT_BYTES,
@@ -1204,13 +1242,28 @@ class Handler(BaseHTTPRequestHandler):
                 # Request-scoped switch, stored per model by the coordinator so
                 # it survives a restart and a fallback port.
                 model = self._text(payload, "model", 200)
-                if model != runtime.MODEL:
-                    raise RequestError("that model is not configured on this computer", 404)
+                if model not in {m["id"] for m in c.offered_models()}:
+                    raise RequestError("that model is not on this computer", 404)
                 enabled = payload.get("enabled")
                 if not isinstance(enabled, bool):
                     raise RequestError("enabled must be true or false")
                 db.set_reasoning(c.conn, model, enabled)
                 self._json({"model": model, "reasoning": enabled})
+            elif route == "/v1/model/select":
+                # Which installed model requests run on. Only a model the
+                # runtime actually reports is accepted: the page sends a name
+                # it read from this same list, and a name alone is not
+                # evidence the model is there.
+                model = self._text(payload, "model", 200)
+                offered = {m["id"]: m for m in c.offered_models()}
+                if model not in offered:
+                    raise RequestError("that model is not on this computer", 404)
+                if not offered[model]["installed"]:
+                    raise RequestError("that model is not installed on this "
+                                       "computer", 409)
+                db.set_selected_model(c.conn, model)
+                self._json({"model": model,
+                            "reasoning": db.get_reasoning(c.conn, model)})
             elif route == "/v1/code/mode":
                 self._code(lambda: c.code.set_mode(
                     self._text(payload, "repo_id", 36),

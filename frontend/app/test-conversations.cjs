@@ -15,7 +15,14 @@ function page() {
     return nodes.get(id);
   };
   const scope = vm.createContext({
-    document: { getElementById: node }, window: { addEventListener() {} },
+    document: { getElementById: node },
+    window: {
+      addEventListener() {},
+      /* app.js evaluates matchMedia at module scope: the panel breakpoints and
+         the theme's system preference. Answering "no match" gives the wide
+         window and the light default, both of which are ordinary states. */
+      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    },
     fetch: (path, options) => new Promise(resolve => requests.push({ path, options,
       reply(body = {}, ok = true) { resolve({ ok, json: async () => body }); } })),
     setTimeout: fn => { scope.timer = fn; return 1; },

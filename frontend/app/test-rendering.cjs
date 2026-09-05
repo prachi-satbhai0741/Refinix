@@ -74,7 +74,14 @@ function page({ markdown } = {}) {
   const notices = [];
   const scope = vm.createContext({
     document,
-    window: { addEventListener() {}, location: { port: '8770' } },
+    window: {
+      addEventListener() {},
+      location: { port: '8770' },
+      /* app.js evaluates matchMedia at module scope: the panel breakpoints and
+         the theme's system preference. Answering "no match" gives the wide
+         window and the light default, both of which are ordinary states. */
+      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    },
     navigator: {},
     fetch: (path, options) => new Promise((resolve, reject) => requests.push({
       path, options,

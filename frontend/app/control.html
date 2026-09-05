@@ -6,14 +6,43 @@
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/overrides.css">
 <link rel="stylesheet" href="/refinix.css">
+<!-- Theme resolves before the first paint. Without this the page paints the
+     default palette and then swaps, which reads as a flash on every load. -->
+<script>
+  (function () {
+    try {
+      var stored = localStorage.getItem('refinix.theme');
+      var dark = stored ? stored === 'dark'
+        : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    } catch (_) { /* private window, blocked storage: the CSS default stands */ }
+  })();
+</script>
 <div class="app app-plain">
   <nav class="nav" id="nav">
     <div class="brand">
       <img class="brand-logo" src="/assets/refinix-wordmark.png" alt="Refinix">
     </div>
-    <div class="surfaces">
-      <a class="surface-link" href="/">Chat</a>
-      <a class="surface-link" href="/code.html">Code</a>
+
+    <!-- The two surfaces as one switch under the mark. Both destinations stay
+         on screen and the thumb sits under the one you are on, so changing
+         surface costs a click rather than open-then-choose, and the wall
+         spends a single row on it instead of a band of tabs. -->
+    <div class="surface-switch" data-on="none">
+      <span class="switch-thumb" aria-hidden="true"></span>
+      <a class="switch-seg" href="/">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <rect x="2" y="3" width="12" height="8.4" rx="2.4"/>
+          <path d="M5.6 11.4v2.3l2.9-2.3"/>
+        </svg>
+        <span>Chat</span>
+      </a>
+      <a class="switch-seg" href="/code.html">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M6 4.4 2.6 8 6 11.6M10 4.4 13.4 8 10 11.6"/>
+        </svg>
+        <span>Code</span>
+      </a>
     </div>
     <div class="nav-list">
       <p class="lbl nav-list-h">Settings</p>
@@ -21,11 +50,17 @@
       <a class="nav-item" href="#engine">AI engine</a>
       <a class="nav-item" href="#others">Connected computers</a>
       <a class="nav-item" href="#work">Current work</a>
-      <a class="nav-item" href="#capabilities">What Refinix can do</a>
       <a class="nav-item" href="#advanced">Advanced</a>
     </div>
     <div class="nav-foot">
-      <a class="nav-secondary" aria-current="page" href="/control.html">Settings</a>
+      <a class="nav-secondary" aria-current="page" href="/control.html">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M12.4 8h1.8M10.2 11.8l.9 1.6M5.8 11.8l-.9 1.6M3.6 8H1.8M5.8 4.2l-.9-1.6M10.2 4.2l.9-1.6"/>
+          <circle cx="8" cy="8" r="4.4"/>
+          <circle cx="8" cy="8" r="1.8"/>
+        </svg>
+        <span>Settings</span>
+      </a>
       <p class="ready-line" id="ready-line">Checking this computer…</p>
     </div>
   </nav>
@@ -44,6 +79,27 @@
       </button>
       <h1 class="head-title">Settings</h1>
       <div class="head-spacer"></div>
+      <!-- Icon only, and the icon reports the theme that is on rather than the
+           one a click would bring: a moon and star while dark is on, a sun and
+           cloud while light is on. -->
+      <button class="panel-toggle theme-toggle" type="button" id="theme-toggle">
+        <svg class="theme-icon theme-icon-day" viewBox="0 0 20 20"
+             aria-hidden="true" focusable="false">
+          <path class="sun-rays" d="M2.9 6.6H1.4M7 2.5V1M4.1 3.7 3 2.6M9.9 3.7 11 2.6M4.1 9.5 3 10.6"/>
+          <circle cx="7" cy="6.6" r="2.7"/>
+          <g class="cloud">
+            <circle cx="8.6" cy="13.6" r="2.5"/>
+            <circle cx="12.2" cy="12.9" r="3.2"/>
+            <circle cx="15.4" cy="13.8" r="2.3"/>
+            <rect x="8.6" y="13" width="6.8" height="3.1"/>
+          </g>
+        </svg>
+        <svg class="theme-icon theme-icon-night" viewBox="0 0 20 20"
+             aria-hidden="true" focusable="false">
+          <path d="M12.88 12.43A4.88 4.88 0 1 1 7.57 7.13 3.79 3.79 0 0 0 12.88 12.43z"/>
+          <path d="M14.6 2.2l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L11.7 5.1l2.05-.85z"/>
+        </svg>
+      </button>
       <span class="lbl" id="refreshed">—</span>
       <button class="btn" id="refresh">Refresh</button>
     </header>
@@ -92,7 +148,9 @@
           <div class="card-actions" id="c-work-actions"></div>
         </section>
 
-        <section class="card span-2" id="capabilities">
+        <!-- Off the UI, not out of the build: renderCapabilityCard() still
+             fills this from /v1/status, so nothing downstream changes. -->
+        <section class="card span-2" id="capabilities" hidden>
           <div class="card-head">
             <h2>What Refinix can do</h2>
             <span class="chip chip-unknown" id="c-cap-chip">—</span>
@@ -107,43 +165,61 @@
             <summary><h2>Advanced</h2></summary>
             <p class="lbl">Diagnostics, ports, contract detail and raw job
                records. Nothing here is needed for ordinary use.</p>
+            <!-- Each group is its own panel, and the readouts stack label over
+                 value. The old layout put five 16rem columns across a wide
+                 window and then gave the label 13rem of each one, which left
+                 an endpoint or a UUID about eight characters of width to wrap
+                 inside — every long value came out as a vertical sliver. -->
             <div class="adv-grid">
-              <div>
+              <!-- Charts first: what this computer has actually been doing is
+                   the reason to open Advanced, and the endpoints and UUIDs
+                   below are reference you go looking for afterwards. -->
+              <section class="adv-panel adv-wide">
+                <h3>Activity</h3>
+                <div class="chart-row">
+                  <figure class="chart" id="chart-duration"></figure>
+                  <figure class="chart" id="chart-hours"></figure>
+                  <figure class="chart" id="chart-outcomes"></figure>
+                </div>
+              </section>
+              <section class="adv-panel">
                 <h3>Runtime probe</h3>
+                <p class="probe-line" id="probe-line"></p>
                 <dl class="kv" id="kv-runtime"></dl>
-              </div>
-              <div>
+              </section>
+              <section class="adv-panel">
                 <h3>Models</h3>
+                <ul class="tag-row" id="model-tags"></ul>
                 <dl class="kv" id="kv-models"></dl>
-              </div>
-              <div>
+              </section>
+              <section class="adv-panel">
                 <h3>Conversation limits</h3>
+                <!-- Three token counts that add up to a fourth are a
+                     proportion, and a proportion is the one thing the numbers
+                     alone cannot show. -->
+                <figure class="budget" id="budget"></figure>
                 <dl class="kv" id="kv-context"></dl>
-              </div>
-              <div>
+              </section>
+              <section class="adv-panel">
                 <h3>Contract and addresses</h3>
                 <dl class="kv" id="kv-contract"></dl>
-              </div>
-              <div>
+              </section>
+              <section class="adv-panel">
                 <h3>Desktop shell</h3>
                 <dl class="kv" id="kv-shell"></dl>
-              </div>
-              <div>
+              </section>
+              <section class="adv-panel">
                 <h3>Restart reconciliation</h3>
                 <dl class="kv" id="kv-restart"></dl>
-              </div>
-              <div class="adv-wide">
-                <h3>Jobs by state</h3>
-                <dl class="kv" id="kv-jobs"></dl>
-              </div>
-              <div class="adv-wide">
+              </section>
+              <section class="adv-panel adv-wide">
                 <h3>Recent jobs</h3>
-                <ul class="events" id="job-list"></ul>
-              </div>
-              <div class="adv-wide">
+                <ul class="job-rows" id="job-list"></ul>
+              </section>
+              <section class="adv-panel adv-wide">
                 <h3>Not observed yet</h3>
                 <dl class="kv" id="kv-unavailable"></dl>
-              </div>
+              </section>
             </div>
           </details>
         </section>

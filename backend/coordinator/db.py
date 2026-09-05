@@ -862,6 +862,31 @@ def set_reasoning(conn, model: str, enabled: bool) -> bool:
     return enabled
 
 
+# Which model requests run on. One row in `meta` rather than a column on
+# model_prefs: the choice is a property of the workspace, not of any one
+# model, and storing it per model would allow two of them to claim it.
+SELECTED_MODEL_KEY = "selected_model"
+
+
+def get_selected_model(conn) -> str | None:
+    """The stored choice, or None when the build default has never been changed."""
+    row = conn.execute("SELECT value FROM meta WHERE key=?",
+                       (SELECTED_MODEL_KEY,)).fetchone()
+    return row["value"] if row else None
+
+
+@serialized
+def set_selected_model(conn, model: str) -> str:
+    if not isinstance(model, str) or not model.strip() or len(model) > 200:
+        raise ValueError("a model name is required")
+    with conn:
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES (?,?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (SELECTED_MODEL_KEY, model))
+    return model
+
+
 @serialized
 def set_attempt_reasoning(conn, attempt_id: str, model: str, enabled: bool) -> None:
     """Snapshot what this attempt actually ran with.

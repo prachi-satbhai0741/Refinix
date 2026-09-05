@@ -324,17 +324,20 @@ class CodeService:
             action="model.proposed", outcome=authorised, approval_id=approval_id,
             detail={"proposal_id": proposal["proposal_id"],
                     "authorised_by": policy.ACTION_READ,
-                    "edits": len(parsed["edits"]), "model": runtime.MODEL,
+                    "edits": len(parsed["edits"]),
+                    "model": self.c.active_model(),
                     "reasoning_enabled": reasoning, "digest": write_digest})
         return proposal
 
     def _ask_model(self, messages, cancel: threading.Event) -> tuple[str, bool]:
         """One bounded local model call. Reasoning is not collected or stored."""
-        reasoning = db.get_reasoning(self.conn, runtime.MODEL)
+        model = self.c.active_model()
+        reasoning = db.get_reasoning(self.conn, model)
         deadline = time.monotonic() + PROPOSAL_DEADLINE_SECONDS
         collected, metrics = [], {}
         for kind, payload in runtime.stream_chat(
-                messages, think=reasoning, num_predict=PROPOSAL_NUM_PREDICT,
+                messages, model=model, think=reasoning,
+                num_predict=PROPOSAL_NUM_PREDICT,
                 should_cancel=lambda: cancel.is_set() or time.monotonic() > deadline
                 or self.c.stopping.is_set()):
             if kind == "delta":
