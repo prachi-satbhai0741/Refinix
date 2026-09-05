@@ -82,16 +82,32 @@ visitor downloading Refinix should see Refinix, not the team that built it.
 The circular arrow **symbol** is name-neutral, so it works in both roles. It
 currently stands in as the Refinix mark in the nav.
 
-## The Refinix lockups are drawn, not stored
+## The Refinix lockups: drawn on the site, raster in the application
 
-Two REFINIX lockups were supplied as rasters on a black square: **horizontal**
-(mark then wordmark) and **stacked** (mark over wordmark). Neither is in this
-directory, and that is deliberate rather than an omission.
+This split is deliberate, and the reason is the *ground*, not the file.
 
-A black-square raster is the one form the pages cannot use. The site has a light
-theme, and a baked-in black block shows there as a rectangle — the same reason
-this file already warns against the black-square version of the team logo. So
-`site.html` draws both lockups instead:
+**The application surfaces use the raster.** `refinix-wordmark.png` and
+`refinix-mark.png` are in this directory, cropped from the two masters in
+`Brand/` by `scripts/build-brand-assets.py` — the same files the running
+application in `frontend/app/assets/` uses, so both tracks show one mark.
+
+The black square stops being a problem the moment something owns the ground
+behind it. The application surfaces put the lockup on a **brand strip** that
+keeps `--brand-ground` (near-black) in *both* themes, so the metal reads
+identically on light and dark instead of sitting in a grey box. That is the
+decision `frontend/app` had already made in `refinix.css`; the design track now
+matches it. `--brand-ground`, `--brand-edge` and `--brand-tag` are declared once
+in `tokens.css`, outside the theme blocks, because being the same value in every
+theme is the whole point.
+
+> `--brand-tag` exists because anything placed on that strip is measured against
+> `#050505` and not against the theme's ground. `--text-faint` would be a dark
+> grey there in light mode.
+
+**`site.html` still draws its lockups**, and should keep doing so. The site has
+a genuinely light surface with no strip to sit a mark on, so a baked-in black
+block would show there as a rectangle — the same reason this file warns against
+the black-square version of the team logo:
 
 | Piece | Where | How |
 |---|---|---|
@@ -102,8 +118,8 @@ this file already warns against the black-square version of the team logo. So
 
 The drawn version scales cleanly, recolours for the light theme, costs no
 bytes, and needs no binary in Git. `#rk-mark` remains as an alias of
-`#rfx-mark`, because `chat.html` and the application surfaces reference the
-symbol by that name.
+`#rfx-mark` for anything on the site that still reaches for the symbol by that
+name; the application surfaces no longer do — they carry the raster lockup.
 
 ### If you do want the rasters used
 

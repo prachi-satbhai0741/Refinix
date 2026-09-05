@@ -34,9 +34,15 @@ It cannot hard-code secure, blocked, healthy, or zero-traffic states.
 JavaScript served by the coordinator, with no package.json, build step or
 dependency set. Its stylesheet is derived from the design tokens but loads **no
 external font**, so the running application makes no network request outside
-loopback. Text renders wider than the design because the fallback `system-ui` is
-not condensed; that is expected, while clipped labels or unusable controls are
-functional defects.
+loopback.
+
+The two tracks no longer disagree on type metrics. `--font-ui` was
+`IBM Plex Sans Condensed`, which the application could never load and always
+replaced with a non-condensed system face — so the design rendered narrower than
+the product by design. It is now `IBM Plex Sans`, the same family in its normal
+cut: the design track loads it from Google Fonts, the application falls through
+to `system-ui`, and the two now differ by a typeface rather than by a width.
+Clipped labels or unusable controls remain functional defects.
 
 `frontend/design/` remains the design track's own reference area and is not
 served, linked or redirected into by the application.

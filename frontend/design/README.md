@@ -100,15 +100,68 @@ Glass only reads as glass when there is something behind it worth blurring, so
 the app sits on three soft radial fields (`--atmo-*`) over the flat ground.
 Without them every panel is flat translucent grey.
 
-The same distinction that governs curves governs glass:
+Glass is **spent, not spread**. One test decides it:
 
-> **Glass on the frame and on containers. Opaque on verbatim output and on
-> documents.**
+> **Is this thing floating over the canvas, with the ground or the conversation
+> showing past its edges?**
 
-The nav, rail, header, composer, panels, cards and dialogs are glass. The diff,
-the stdout/stderr panes, the meters, the artifact and the Proof Card are not —
-you read those literally, and refracted ground behind 11px monospace costs
-legibility for nothing.
+Yes, so it earns glass: the header band, the composer *box*, the approval gate,
+a dialog, the onboarding and pairing cards, and the floating controls (the panel
+toggles and Jump to latest).
+
+No, so it stays flat: **the nav and the rail**. They are full-height walls with
+nothing moving behind them, and blurring them is what made the previous build
+read as one washed sheet. They are now opaque `--surface-sunken` — darker than
+the canvas, the way a chat application seats its sidebar.
+
+Never, because you read them literally at 10–11px: the diff, the stdout/stderr
+panes, the meters, dense claim tables, the artifact and the Proof Card.
+Refracted ground behind small monospace costs legibility for nothing.
+
+Two traps worth knowing:
+
+- **The composer band is not the composer box.** The band is the full width of
+  the window and ~120px tall, so glassing it puts a grey slab across the bottom
+  of every screen. Glass goes on the object; the band stays the page.
+- **A masked ancestor is a backdrop root.** `.thread` carries an edge mask, so a
+  `backdrop-filter` on anything inside it — the user's message bubble, for
+  instance — samples nothing and silently degrades to a flat translucent fill.
+  The bubble takes an honest solid `--bubble-fill` instead.
+
+`saturate()` stays near 100%. At 150% it multiplied every tint behind the glass,
+which was one of the three things making the app read navy.
+
+### Folding the walls
+
+Both the nav and the rail fold away, from a three-line control at each end of
+the surface header. `shell.js` drives it; `app.css` owns the appearance.
+
+On a wide window the **grid track itself goes to zero**, so the middle column
+genuinely gets the room. An overlay would cover the conversation rather than
+widen it, which is the opposite of what the control is for. The panel fades in
+120ms while the track takes 220ms, which hides the one frame where its contents
+reflow at a narrow width, and its border goes transparent — a 1px border on a
+zero-width track is still a 1px line.
+
+Below their breakpoints (1180px for the rail, 760px for the nav) the same
+control opens the wall as an **overlay with a scrim**, because at 375px there is
+no room to give. This replaced `display: none`, which had silently deleted the
+routing evidence and then the navigation itself with no way to ask for them
+back.
+
+The glyph reports state rather than naming an action: all three rules are full
+width when the wall is open, and the middle rule retracts toward the window when
+it is closed, mirrored per side.
+
+The state is remembered per panel **per surface** — a collapsed rail on Chat
+should not collapse it on Control Center, where it carries different evidence.
+Storage is guarded in both directions; a blocked `localStorage` just means both
+walls open.
+
+> The overlay backdrop is `.panel-scrim`, **not** `.scrim`. `pairing.css`
+> already owns `.scrim` for the always-visible backdrop behind the pairing
+> dialog and declares neither `opacity` nor `visibility`, so a hidden-by-default
+> `.scrim` leaked straight through it and hid the entire pairing flow.
 
 **Two tiers, for cost rather than looks.** `--glass-*` carries the backdrop blur
 and belongs to top-level surfaces; `--veil-*` is fill only, for containers
@@ -143,6 +196,7 @@ contrast for dark text, so the light fields are near-white pastels that lift.
 | `onboarding.css` / `onboarding.html` | First run, steps 1-3 — installation, main engine, capabilities |
 | `onboarding-install.html` | First run, steps 4-5 — the stated plan, and the self-test |
 | `pairing.css` / `pairing.html` | Pairing — code, both identities, terms, advertised capability |
+| `shell.js` | The only script in the track: folds the nav and rail away. Loaded by the four application surfaces |
 
 **Load order is always `tokens.css`, `app.css`, then the surface file.**
 Anything shared between surfaces belongs in `app.css`; a surface file carries
@@ -619,10 +673,13 @@ The application design is complete. Chat, Documents, Code, Control Center,
 onboarding and pairing are all built and cross-linked, covering workflows
 sections 2, 4, 5, 6, 8 and 10.
 
-These are static design references, not an implementation. They carry sample
-data only: no figure on any page is a measurement, and the pairing code is not
-a credential. Wiring them to the contract in `backend/contracts/v1.py` is the
-next step, and belongs to whoever picks up the frontend build.
+These are design references, not an implementation. They carry sample data only:
+no figure on any page is a measurement, and the pairing code is not a
+credential. The one exception to "wired to nothing" is `shell.js`, which folds
+the two walls away — real behaviour, but layout only; it reads and writes
+nothing but its own `localStorage` key. Wiring the surfaces to the contract in
+`backend/contracts/v1.py` is the next step, and belongs to whoever picks up the
+frontend build.
 
 Two smaller gaps remain inside what is built. Onboarding step 4 is drawn in its
 confirmed state rather than mid-download, so there is no progress or failure

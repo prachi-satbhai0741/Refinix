@@ -6,7 +6,6 @@
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/overrides.css">
 <link rel="stylesheet" href="/refinix.css">
-<div class="scrim" id="scrim"></div>
 <div class="app app-plain">
   <nav class="nav" id="nav">
     <div class="brand">
@@ -33,8 +32,16 @@
 
   <main class="main">
     <header class="main-head">
-      <button class="nav-toggle" id="nav-toggle" aria-expanded="false"
-              aria-controls="nav">Menu</button>
+      <button class="panel-toggle panel-toggle-left" type="button"
+              id="nav-toggle" data-panel-toggle="nav"
+              aria-controls="nav" aria-expanded="true"
+              aria-label="Navigation panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
       <h1 class="head-title">Settings</h1>
       <div class="head-spacer"></div>
       <span class="lbl" id="refreshed">—</span>
@@ -145,4 +152,5 @@
     </div>
   </main>
 </div>
+<div class="panel-scrim" id="scrim"></div>
 <script type="module" src="/app.js"></script>
