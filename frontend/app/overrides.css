@@ -395,15 +395,13 @@
   color: var(--prose-text);
   border-color: var(--prose-rule);
 }
+/* Border, radius, fill and shadow come from the shared floating-surface rule
+   in refinix.css, so this menu matches the + menu and the model popover. */
 .row-menu {
   position: absolute;
   z-index: 50;
   min-width: 12rem;
-  background: var(--surface-raised);
-  border: 1px solid var(--prose-rule);
-  border-radius: 6px;
-  padding: .25em;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+  padding: var(--sp-1);
 }
 .row-menu button {
   display: block; width: 100%; text-align: left;

@@ -976,4 +976,12 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - acceptance: Both denial mechanisms exit 7 under one matchable prefix, allowed-path refusal stays exit 9, the allowed-first pairing is documented, and `python3 -B deploy/k3s/test_manifests.py` passes.
 - verification_authorization: Implementation plus the two named offline checks.
 - follow_up_to: [UP-20260904-004](#up-20260904-004)
+## UP-20260905-006 — Bring the new Code and composer surfaces onto our design system
+- date: 2026-09-05
+- tags: refinix, design-integration, code-surface, composer, parallel-work
+- aliases: codex implemented app integration, perform design beauty changes only, integrate his buttons workflow and logic with our ui, dont change any logic
+- paths: frontend/app/
+- summary: A parallel execution landed the Code surface, the model and context controls and the access-mode selector as working UI. Requester asked for presentation-only work on top of it — no logic, no button behaviour, no code changes — bringing those new controls onto the design system built in this session.
+- constraints: Design and appearance only. Do not change logic, button wiring or behaviour.
+- follow_up_to: [UP-20260905-005](#up-20260905-005)
 - linked_changes: [AC-20260905-006](agentchangelog.md#ac-20260905-006)
