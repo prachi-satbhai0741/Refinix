@@ -1,9 +1,21 @@
 """Behavioural checks for the worker API.
 
-These need FastAPI, which lives only inside the pinned image, so they run at
-**image build time** under `--network=none`. They cover the three defects Codex
-reproduced plus the admission bounds, using a synthetic runtime — no server,
+These need FastAPI, which lives only inside the pinned image, so the
+authoritative run is at **image build time** under `--network=none`. No server,
 model or network.
+
+They can also be run on a machine without FastAPI by calling the route
+coroutines directly against a minimal stand-in for `fastapi` — enough to import
+the module and invoke the routes. That checks route logic only: no HTTP, no
+request validation, no serialisation. A pass there is not evidence the service
+works, and the image build remains the run that counts.
+
+Execution moved to `backend.worker.executor` at C06 — the API enqueues and the
+executor Pod runs the work — so the streaming, budget and cancellation checks
+that used to live here now exercise the code that actually runs, in
+`backend/worker/test_executor.py`. What remains here is the API's own job:
+authority, admission, the durable receipt, and the contract shape of what it
+returns.
 
     python -m unittest backend.worker.test_worker_app
 """
@@ -11,28 +23,34 @@ model or network.
 import asyncio
 import os
 import pathlib
+import tempfile
 import unittest
-from unittest.mock import patch
 
 os.environ.setdefault("AEGIS_WORKER_TOKEN", "x" * 40)   # the startup guard
 os.environ.setdefault("AEGIS_NODE_ID", "22222222-2222-4222-8222-222222222222")
 
 from backend.contracts import v1                        # noqa: E402
 from backend.worker import app as W                     # noqa: E402
+from backend.worker import pairing as pairing_module    # noqa: E402
 from backend.worker import runtime                      # noqa: E402
+from backend.worker.test_executor import FakeRedis      # noqa: E402
+from backend.worker.dispatch import DispatchQueue       # noqa: E402
 
 
 CONFIRMED = "66666666-6666-4666-8666-666666666666"
+WORKSPACE = "77777777-7777-4777-8777-777777777777"
+CREDENTIAL = "test-relationship-credential-not-a-real-secret"
 
 
-def confirm_relationship():
-    """Inject a confirmed relationship so admission logic is reachable offline.
+def confirm_relationship(store):
+    """Insert a relationship the way pairing does: code, then redemption.
 
-    This is test-only injection of internal state. It is NOT a deployable
-    bypass: no code path, environment variable or request populates
-    `W._relationships`, so a running worker stays fail-closed.
+    Deliberately not a direct write into a registry. Going through
+    `issue_code`/`redeem` means these tests cannot pass while the real pairing
+    path is broken, and it keeps the credential a hash on disk here too.
     """
-    W._relationships[CONFIRMED] = {"confirmed_at": "test"}
+    code = store.issue_code()
+    return store.redeem(code, relationship_id=CONFIRMED, workspace_id=WORKSPACE)
 
 
 def envelope(**over):
@@ -65,117 +83,24 @@ def register(env):
     """Uses the application's own registration so tests cannot drift from it."""
     return W.register(env)
 
-
-def run(env, produced, *, budget=60.0):
-    """Execute with a synthetic runtime stream and return (record, event kinds)."""
-    def fake(messages, should_cancel=None, timeout=None):
-        for item in produced:
-            if isinstance(item, Exception):
-                raise item
-            if should_cancel is not None and should_cancel():
-                yield "cancelled", {}
-                return
-            yield item
-    with patch.object(runtime, "stream_chat", fake):
-        asyncio.run(W._execute(env.attempt_id, budget))
-    record = W._attempts[env.attempt_id]
-    frames, queue = [], W._streams[env.attempt_id]
-    while not queue.empty():
-        frame = queue.get_nowait()
-        if frame is not None:
-            frames.append(frame)
-    return record, frames
-
-
-DONE_STOP = ("done", {"done_reason": "stop", "limit_reason": None,
-                      "runtime_ms": 10, "prompt_tokens": 5, "output_tokens": 2})
-DONE_LENGTH = ("done", {"done_reason": "length", "limit_reason": "output",
-                        "runtime_ms": 10, "prompt_tokens": 5,
-                        "output_tokens": runtime.NUM_PREDICT})
-
-
 class Base(unittest.TestCase):
+    """Each test gets its own pairing file and its own fake Redis, so nothing
+    leaks between them and no test can pass because another one paired."""
+
     def setUp(self):
-        confirm_relationship()
-        W._attempts.clear()
-        W._streams.clear()
-        W._idempotency.clear()
+        self._dir = tempfile.TemporaryDirectory()
+        self.store = pairing_module.PairingStore(
+            pathlib.Path(self._dir.name) / "pairing.json")
+        self.credential = confirm_relationship(self.store)
+        self.redis = FakeRedis()
+        W._pairing = self.store
+        W._receipt_backend = DispatchQueue(self.redis)
 
     def tearDown(self):
-        W._relationships.clear()
-
-
-class TestCappedReplies(Base):
-    """Finding 1: a nonempty reply ending on `length` must not complete."""
-
-    def test_length_stop_does_not_complete(self):
-        env = envelope()
-        register(env)
-        record, _ = run(env, [("delta", "partial answer"), DONE_LENGTH])
-        self.assertEqual(record["state"], "failed")
-        self.assertEqual(record["error"]["code"], "validation_failed")
-        self.assertIn("reply token limit", record["error"]["message"])
-
-    def test_length_stop_keeps_the_partial_text(self):
-        env = envelope()
-        register(env)
-        record, _ = run(env, [("delta", "kept text"), DONE_LENGTH])
-        self.assertEqual(record["output"], "kept text")
-
-    def test_normal_stop_completes(self):
-        env = envelope()
-        register(env)
-        record, _ = run(env, [("delta", "a real answer"), DONE_STOP])
-        self.assertEqual(record["state"], "completed")
-        self.assertIsNone(record["error"])
-
-    def test_empty_output_fails_the_nonempty_validator(self):
-        env = envelope()
-        register(env)
-        record, _ = run(env, [("delta", "   "), DONE_STOP])
-        self.assertEqual(record["state"], "failed")
-
-
-class TestIncrementalDelivery(Base):
-    """Finding 2: output must not be buffered until generation finishes."""
-
-    def test_partial_output_survives_a_runtime_error(self):
-        env = envelope()
-        register(env)
-        record, frames = run(
-            env, [("delta", "before the failure"),
-                  runtime.RuntimeUnavailable("synthetic failure")])
-        self.assertEqual(record["state"], "failed")
-        self.assertEqual(record["output"], "before the failure",
-                         "text produced before the error must not be discarded")
-        self.assertTrue(any(b"output.delta" in f for f in frames),
-                        "the delta must have reached the stream before the error")
-
-    def test_deltas_are_emitted_before_the_terminal_event(self):
-        env = envelope()
-        register(env)
-        _, frames = run(env, [("delta", "one"), ("delta", "two"), DONE_STOP])
-        kinds = [b"output.delta" in f for f in frames]
-        self.assertGreaterEqual(sum(kinds), 2)
-        last = frames[-1]
-        self.assertIn(b"attempt.state", last, "the stream must end on a state change")
-
-
-class TestCancellationFencing(Base):
-    def test_cancel_prevents_a_later_completion(self):
-        env = envelope()
-        register(env)
-        W._attempts[env.attempt_id]["cancelled"] = True
-        record, _ = run(env, [("delta", "some text"), DONE_STOP])
-        self.assertEqual(record["state"], "cancelled")
-        self.assertEqual(record["error"]["code"], "cancelled_by_user")
-
-    def test_cancel_keeps_text_already_produced(self):
-        env = envelope()
-        register(env)
-        W._attempts[env.attempt_id]["cancelled"] = True
-        record, _ = run(env, [("delta", "kept"), DONE_STOP])
-        self.assertIn("kept", record["output"] or "kept")
+        W._pairing = pairing_module.PairingStore(
+            pathlib.Path(self._dir.name) / "empty.json")
+        W._receipt_backend = None
+        self._dir.cleanup()
 
 
 class TestAdmission(Base):
@@ -241,11 +166,18 @@ if __name__ == "__main__":
     unittest.main(verbosity=2)
 
 
+
 class TestFailClosed(unittest.TestCase):
-    """Blockers 1 and 2: no pairing and no durable receipt means no acceptance."""
+    """No pairing and no reachable receipt backend means no acceptance."""
 
     def setUp(self):
-        W._relationships.clear()
+        self._dir = tempfile.TemporaryDirectory()
+        W._pairing = pairing_module.PairingStore(
+            pathlib.Path(self._dir.name) / "pairing.json")
+        W._receipt_backend = None
+
+    def tearDown(self):
+        self._dir.cleanup()
 
     def test_prerequisites_are_missing_by_default(self):
         blockers = W.missing_prerequisites()
@@ -258,118 +190,257 @@ class TestFailClosed(unittest.TestCase):
         self.assertIsNotNone(shut)
         self.assertEqual(shut.status_code, 503)
 
-    def test_no_environment_variable_can_open_them(self):
-        """A deployable bypass would defeat the point of failing closed."""
+    def test_an_unreachable_queue_closes_them_again(self):
+        """A Redis that answered at startup and is gone now must close the
+        routes, not queue into nothing."""
+        W._pairing.redeem(W._pairing.issue_code(), relationship_id=CONFIRMED,
+                          workspace_id=WORKSPACE)
+        W._receipt_backend = DispatchQueue(FakeRedis(reachable=False))
+        blockers = W.missing_prerequisites()
+        self.assertEqual(len(blockers), 1)
+        self.assertIn("reachable", blockers[0])
+        self.assertIsNotNone(W._closed())
+
+    def test_the_registry_cannot_be_populated_from_application_source(self):
+        """Pairing state must come from a redeemed code, never from a literal
+        or an environment variable in the application."""
         import backend.worker.app as module
         source = pathlib.Path(module.__file__).read_text()
-        opener = "_relationships["
-        # The only assignment to the registry must be absent from app source.
-        self.assertNotIn(opener, source,
-                         "nothing in the application may populate the registry")
+        self.assertNotIn("_pairing._state", source)
+        self.assertNotIn("relationships[", source)
 
     def test_capability_is_not_advertised_while_closed(self):
         node = W._node(observed=False)
         self.assertEqual(node["capabilities"], [])
 
 
+class TestPairingRoutes(Base):
+    """OD-06 over HTTP: a code buys one credential, and only its owner revokes."""
+
+    def test_a_credential_authorises_only_its_own_relationship(self):
+        record = W._identify(self.credential)
+        self.assertIsNotNone(record)
+        self.assertEqual(record["relationship_id"], CONFIRMED)
+        self.assertEqual(record["workspace_id"], WORKSPACE)
+
+    def test_the_bootstrap_token_cannot_dispatch(self):
+        """It is mounted for kubelet probes and is visible to anything that can
+        read the Secret reference; letting it submit work would make pairing
+        decorative."""
+        record, refusal = W._job_guard(f"Bearer {W._CREDENTIAL}", "1.0")
+        self.assertIsNone(record)
+        self.assertEqual(refusal.status_code, 401)
+
+    def test_the_bootstrap_token_still_answers_preflight(self):
+        self.assertIsNone(W._guard(f"Bearer {W._CREDENTIAL}", "1.0"))
+
+    def test_an_unknown_credential_is_refused_on_both_surfaces(self):
+        self.assertIsNotNone(W._guard("Bearer nope", "1.0"))
+        self.assertIsNotNone(W._job_guard("Bearer nope", "1.0")[1])
+
+    def test_a_revoked_credential_stops_working_immediately(self):
+        self.store.revoke(CONFIRMED)
+        self.assertIsNone(W._identify(self.credential))
+        self.assertIsNotNone(W._job_guard(f"Bearer {self.credential}", "1.0")[1])
+
+
+
+class TestDurableReceipt(Base):
+    """AF-005: nothing returns 202 unless the envelope is in the stream."""
+
+    def submit(self, env, key=None, credential=None):
+        import json as _json
+        body = env.model_dump_json().encode()
+
+        class Request:
+            async def stream(self):
+                yield body
+
+        return asyncio.run(W.submit(
+            Request(), authorization=f"Bearer {credential or self.credential}",
+            x_aegisforge_contract="1.0",
+            idempotency_key=key or "11111111-1111-4111-8111-111111111111",
+            content_type="application/json", content_encoding=None))
+
+    def test_the_envelope_is_enqueued_before_the_202(self):
+        env = envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE)
+        response = self.submit(env)
+        self.assertEqual(response.status_code, 202)
+        stream = self.redis.streams[v1.redis_key("dispatch", CONFIRMED)]
+        self.assertEqual(len(stream), 1)
+        self.assertEqual(stream[0][1]["attempt_id"], env.attempt_id)
+
+    def test_a_failed_enqueue_does_not_return_202(self):
+        self.redis.fail_writes = True
+        env = envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE)
+        response = self.submit(env)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            self.redis.streams.get(v1.redis_key("dispatch", CONFIRMED), []), [],
+            "a failed enqueue must leave nothing queued")
+
+    def test_a_replayed_key_returns_the_same_attempt(self):
+        """The retry after a lost response. It must replay the original
+        receipt, not be refused as a duplicate."""
+        env = envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE)
+        first = self.submit(env)
+        second = self.submit(env)
+        self.assertEqual(second.status_code, 202)
+        self.assertEqual(first.body, second.body)
+        self.assertEqual(len(self.redis.streams[v1.redis_key("dispatch", CONFIRMED)]), 1)
+
+    def test_a_reused_key_with_a_different_body_conflicts(self):
+        key = "22222222-2222-4222-8222-222222222222"
+        self.submit(envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE), key)
+        response = self.submit(
+            envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE,
+                     original_request="different"), key)
+        self.assertEqual(response.status_code, 409)
+
+    def test_an_envelope_for_another_relationship_is_refused(self):
+        other = "88888888-8888-4888-8888-888888888888"
+        code = self.store.issue_code()
+        second = self.store.redeem(code, relationship_id=other,
+                                   workspace_id=WORKSPACE)
+        env = envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE)
+        response = self.submit(env, credential=second)
+        self.assertEqual(response.status_code, 403)
+
+    def test_an_envelope_for_another_workspace_is_refused(self):
+        env = envelope(relationship_id=CONFIRMED,
+                       workspace_id="99999999-9999-4999-8999-999999999999")
+        self.assertEqual(self.submit(env).status_code, 403)
+
+
 class TestAttemptSchema(Base):
-    """Blocker 4: outgoing Attempt records must satisfy the shared contract."""
+    """Outgoing Attempt records must satisfy the shared contract.
 
-    def test_terminal_attempt_has_a_finish_timestamp(self):
-        env = envelope()
-        record = register(env)
-        run(env, [("delta", "done"), DONE_STOP])
-        attempt = W._as_attempt(W._attempts[env.attempt_id])
-        self.assertEqual(attempt.state, "completed")
-        self.assertIsNotNone(attempt.finished_at)
-        self.assertIsNotNone(attempt.started_at)
+    Reconstructed from the envelope plus the observed state rather than
+    remembered, which is what lets a restarted API answer for work it never
+    admitted.
+    """
 
-    def test_stopped_attempt_carries_exactly_one_reason(self):
-        env = envelope()
-        register(env)
-        run(env, [("delta", "x"), DONE_LENGTH])
-        attempt = W._as_attempt(W._attempts[env.attempt_id])
-        self.assertEqual(attempt.state, "failed")
-        self.assertIsNotNone(attempt.error)
-        self.assertIsNotNone(attempt.finished_at)
-
-    def test_serialised_attempt_has_no_extra_fields(self):
-        env = envelope()
-        register(env)
-        run(env, [("delta", "x"), DONE_STOP])
-        payload = W._as_attempt(W._attempts[env.attempt_id]).model_dump()
-        for forbidden in ("metrics", "output_chars", "output"):
-            self.assertNotIn(forbidden, payload)
-        v1.Attempt(**payload)          # round-trips through the contract
-
-    def test_queued_attempt_has_not_started(self):
-        env = envelope()
-        record = register(env)
-        attempt = W._as_attempt(record)
+    def test_a_queued_attempt_has_not_started(self):
+        attempt = W._attempt_record(envelope(), "queued")
         self.assertEqual(attempt.state, "queued")
         self.assertIsNone(attempt.started_at)
         self.assertIsNone(attempt.finished_at)
 
+    def test_a_terminal_attempt_carries_a_finish_and_one_reason(self):
+        for state in ("completed", "failed", "cancelled", "interrupted"):
+            with self.subTest(state=state):
+                attempt = W._attempt_record(envelope(), state)
+                self.assertIsNotNone(attempt.finished_at)
+                if state == "completed":
+                    self.assertIsNone(attempt.error)
+                else:
+                    self.assertIsNotNone(attempt.error)
 
-class TestAbsoluteDeadline(Base):
-    """Blocker 3: one deadline for the attempt, not a fresh one per read."""
+    def test_a_failure_never_claims_the_user_cancelled_it(self):
+        """The contract forbids that pairing outright."""
+        self.assertNotEqual(W._attempt_record(envelope(), "failed").error.code,
+                            "cancelled_by_user")
 
-    def test_slow_stream_cannot_extend_the_budget(self):
-        import time as _t
-        env = envelope()
-        register(env)
+    def test_the_record_has_no_extra_fields(self):
+        payload = W._attempt_record(envelope(), "completed").model_dump()
+        for forbidden in ("metrics", "output_chars", "output", "envelope"):
+            self.assertNotIn(forbidden, payload)
+        v1.Attempt(**payload)          # round-trips through the contract
 
-        def slow(messages, should_cancel=None, timeout=None):
-            for _ in range(50):
-                if should_cancel is not None and should_cancel():
-                    yield "cancelled", {}
-                    return
-                _t.sleep(0.05)
-                yield "delta", "tick "
-            yield DONE_STOP
 
-        began = _t.monotonic()
-        with patch.object(runtime, "stream_chat", slow):
-            asyncio.run(W._execute(env.attempt_id, 0.30))
-        elapsed = _t.monotonic() - began
-        record = W._attempts[env.attempt_id]
-        self.assertLess(elapsed, 3.0,
-                        f"a 0.30s budget must not run for {elapsed:.2f}s")
-        self.assertIn(record["state"], {"failed", "cancelled"})
+class TestRestartRecovery(Base):
+    """Redis holds the receipt, so the routes answer after the Pod restarts.
 
-    def test_runtime_seconds_bounds_the_budget(self):
-        env = envelope(limits=v1.Limits(
-            cpu_millis=2000, memory_bytes=2_147_483_648, runtime_seconds=1,
-            processes=8, workspace_bytes=1_048_576, output_bytes=1_048_576,
-            tool_network="disabled"))
-        register(env)
-        import time as _t
+    The dictionary these routes used to consult is empty in a fresh process
+    while the work is still running, and every job route answered 404 for it.
+    """
 
-        def slow(messages, should_cancel=None, timeout=None):
-            for _ in range(40):
-                if should_cancel is not None and should_cancel():
-                    yield "cancelled", {}
-                    return
-                _t.sleep(0.05)
-                yield "delta", "x"
-            yield DONE_STOP
+    def submit(self, env, key=None):
+        import json as _json
+        body = env.model_dump_json().encode()
 
-        began = _t.monotonic()
-        with patch.object(runtime, "stream_chat", slow):
-            asyncio.run(W._execute(env.attempt_id, 600.0))
-        self.assertLess(_t.monotonic() - began, 4.0,
-                        "runtime_seconds must bound the attempt")
+        class Request:
+            async def stream(self):
+                yield body
 
-    def test_output_bytes_is_enforced(self):
-        env = envelope(limits=v1.Limits(
-            cpu_millis=2000, memory_bytes=2_147_483_648, runtime_seconds=300,
-            processes=8, workspace_bytes=1_048_576, output_bytes=64,
-            tool_network="disabled"))
-        register(env)
-        record, _ = run(env, [("delta", "y" * 500), DONE_STOP])
-        self.assertEqual(record["state"], "failed")
-        self.assertEqual(record["error"]["code"], "validation_failed")
-        self.assertIn("byte limit", record["error"]["message"])
+        return asyncio.run(W.submit(
+            Request(), authorization=f"Bearer {self.credential}",
+            x_aegisforge_contract="1.0",
+            idempotency_key=key or env.attempt_id,
+            content_type="application/json", content_encoding=None))
+
+    def restart(self):
+        """Everything a Pod restart destroys: the process, not Redis."""
+        W._receipt_backend = DispatchQueue(self.redis)
+
+    def call(self, coroutine):
+        return asyncio.run(coroutine)
+
+    def test_poll_answers_after_a_restart(self):
+        env = envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE)
+        self.assertEqual(self.submit(env).status_code, 202)
+        self.restart()
+        response = self.call(W.poll(
+            env.job_id, attempt_id=env.attempt_id,
+            authorization=f"Bearer {self.credential}",
+            x_aegisforge_contract="1.0"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_cancel_reaches_redis_after_a_restart(self):
+        env = envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE)
+        self.submit(env)
+        self.restart()
+        response = self.call(W.cancel(
+            env.job_id, attempt_id=env.attempt_id,
+            authorization=f"Bearer {self.credential}",
+            x_aegisforge_contract="1.0"))
+        self.assertEqual(response.status_code, 202)
+        self.assertIsNotNone(self.redis.get(
+            v1.redis_key("cancel", CONFIRMED, env.attempt_id)))
+
+    def test_an_attempt_that_was_never_admitted_is_still_unknown(self):
+        env = envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE)
+        self.restart()
+        response = self.call(W.poll(
+            env.job_id, attempt_id=env.attempt_id,
+            authorization=f"Bearer {self.credential}",
+            x_aegisforge_contract="1.0"))
+        self.assertEqual(response.status_code, 404)
+
+    def test_another_relationship_cannot_read_this_attempt(self):
+        env = envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE)
+        self.submit(env)
+        other = "88888888-8888-4888-8888-888888888888"
+        second = self.store.redeem(self.store.issue_code(),
+                                   relationship_id=other,
+                                   workspace_id=WORKSPACE)
+        self.restart()
+        response = self.call(W.poll(
+            env.job_id, attempt_id=env.attempt_id,
+            authorization=f"Bearer {second}", x_aegisforge_contract="1.0"))
+        self.assertEqual(response.status_code, 404)
+
+    def test_more_than_two_sequential_attempts_are_admitted(self):
+        """MAX_ACTIVE is 2. Capacity is derived from Redis, so a completed
+        attempt must stop holding a slot."""
+        from backend.worker.test_executor import DONE_STOP, fake_stream
+        from backend.worker import executor as executor_module
+        from backend.worker.dispatch import ExecutorSession
+        from backend.worker import runtime as worker_runtime
+        from unittest.mock import patch
+
+        session = ExecutorSession(self.redis, CONFIRMED, "consumer-a")
+        worker = executor_module.Executor(session, node_id=W.NODE_ID)
+        for index in range(4):
+            env = envelope(relationship_id=CONFIRMED, workspace_id=WORKSPACE,
+                           target_node_id=W.NODE_ID)
+            self.assertEqual(self.submit(env).status_code, 202,
+                             f"attempt {index} was refused for capacity")
+            session.claim(env.attempt_id, 0)
+            with patch.object(worker_runtime, "stream_chat",
+                              fake_stream([("delta", "hi"), DONE_STOP])):
+                worker.execute(env, 0)
+            session.release(env.attempt_id, 0)
 
 
 class TestIdempotencyKeys(Base):

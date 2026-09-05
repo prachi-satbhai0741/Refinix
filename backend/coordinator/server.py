@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import http.client
 import json
 import queue
 import sys
@@ -23,8 +24,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from backend.contracts import v1
-from backend.coordinator import (code_service, context, db, docflow, docgen,
-                                 documents, policy, repo, retrieval, runtime)
+from backend.coordinator import (code_service, context, db, dispatch, docflow,
+                                 docgen, documents, pairing, policy, repo,
+                                 retrieval, runtime)
 
 repo_errors = repo.RepositoryError
 
@@ -241,10 +243,19 @@ class Coordinator:
                 history, window=runtime.NUM_CTX,
                 output_allowance=runtime.NUM_PREDICT)
 
+            # AF-006. The route is decided before the attempt is created, so
+            # the reason is part of the canonical record from the first write
+            # rather than being back-filled once something has already run.
+            route = self.choose_route()
             attempt_id = db.create_attempt(
-                self.conn, job_id=job_id, node_id=self.node_id,
-                route_reason="local coordinator: no paired worker in C03",
+                self.conn, job_id=job_id,
+                node_id=route.node_id or self.node_id,
+                route_reason=route.reason,
+                model=route.model,
             )
+            if route.remote:
+                db.set_attempt_relationship(self.conn, attempt_id,
+                                            route.relationship_id)
             # Read once, here. A later change to the switch cannot reach an
             # attempt that has already recorded what it runs with.
             reasoning = db.get_reasoning(self.conn, runtime.MODEL)
@@ -266,6 +277,35 @@ class Coordinator:
                     "message": "cancelled before the model was called",
                     "retryable": True})
                 return
+
+            if route.kind == "identity-mismatch":
+                # Pinning refused the worker. There is no fallback here by
+                # design: the operator must see that the identity changed.
+                self._stop(job_id, attempt_id, "failed", "running", {
+                    "code": "permission_denied", "message": route.reason[:256],
+                    "retryable": False})
+                return
+            if route.remote and skill_id is None:
+                # Ordinary chat goes to the paired worker. Document and Code
+                # skills stay local: their workflows are C08/C09 and the worker
+                # advertises neither capability, so dispatching them would be a
+                # promise this build cannot keep.
+                request_text = self.conn.execute(
+                    "SELECT original_request FROM jobs WHERE job_id=?",
+                    (job_id,)).fetchone()["original_request"]
+                handled, attempt_id = self._run_remote(
+                    job_id, chat_id, attempt_id, route, text=request_text)
+                if handled:
+                    return
+                # Fell back: continue below on this computer, with the new
+                # attempt the fallback opened. The context selection and the
+                # reasoning choice are re-recorded against it, so the local
+                # attempt states what it actually ran with rather than
+                # inheriting the remote attempt's record by implication.
+                db.set_attempt_reasoning(self.conn, attempt_id, runtime.MODEL,
+                                         reasoning)
+                db.set_attempt_selection(self.conn, attempt_id,
+                                         selection.as_dict())
 
             if skill_id in docflow.DOCUMENT_SKILLS:
                 # A document skill replaces the ordinary chat turn: it reads
@@ -653,6 +693,401 @@ class Coordinator:
                                             "previous": "validating",
                                             "current": "completed"})
             self._advance_job(job_id, "completed", "validating")
+
+    # ---- AF-006 pairing and remote routing --------------------------------
+
+    def worker_state(self) -> dict:
+        """What the UI may display about the paired worker.
+
+        Every measurement is either observed now or reported as unavailable.
+        There is no cached "last known healthy": a stale number shown as
+        current is exactly the fabricated health AF-007 forbids.
+        """
+        relationship = self.paired_worker()
+        state = {
+            "paired": relationship is not None,
+            "keychain_available": pairing.keychain_available(),
+            "relationship": pairing.describe(relationship) if relationship else None,
+            "node": None, "health": "unavailable", "identity_mismatch": None,
+            "route_reason": None,
+        }
+        if relationship is None:
+            state["health"] = "unknown"
+            state["route_reason"] = "local coordinator: no paired worker"
+            return state
+        try:
+            node = self.preflight(relationship)
+        except pairing.IdentityMismatch as exc:
+            state["identity_mismatch"] = str(exc)
+            state["route_reason"] = f"refused: {exc}"
+            return state
+        route = dispatch.choose_route(relationship=relationship, node=node,
+                                      required=["text.generate"],
+                                      model_id=runtime.MODEL)
+        state["node"] = node
+        state["health"] = (node or {}).get("health", "unavailable")
+        state["route_reason"] = route.reason
+        state["would_dispatch"] = route.remote
+        return state
+
+    # The Pod's readiness is a Kubernetes fact, and Refinix has no Kubernetes
+    # credential. Granting one to populate a UI row would hand the desktop app
+    # cluster access it needs for nothing else, so the row stays unavailable
+    # and says why. The worker's own /v1/health is the observation we DO have.
+    POD_READINESS_UNAVAILABLE = (
+        "not observed — Refinix has no Kubernetes access, and asking for it to "
+        "fill in a row would be a larger permission than the feature needs. "
+        "Check it on the worker with: kubectl -n aegisforge get pods")
+
+    SELFTEST_TITLE = "Connection self-test"
+    SELFTEST_PROMPT = ("Reply with exactly: distributed self-test ok. "
+                       "Do not add anything else.")
+
+    def selftest_chat(self) -> str:
+        """The conversation self-tests are recorded in.
+
+        A real chat, not a hidden channel: the self-test runs the ordinary
+        request path, so its result is an ordinary job with an ordinary
+        history. Hiding it would mean a second path, and a second path is
+        exactly what a self-test must not exercise.
+        """
+        row = self.conn.execute(
+            "SELECT chat_id FROM chats WHERE workspace_id=? AND title=?"
+            " ORDER BY created_at DESC LIMIT 1",
+            (self.workspace_id, self.SELFTEST_TITLE)).fetchone()
+        if row:
+            return row["chat_id"]
+        return db.create_chat(self.conn, self.workspace_id, self.SELFTEST_TITLE)
+
+    def run_selftest(self) -> dict:
+        """Send one real request down the real path, and say where it went.
+
+        No bypass and no special-case dispatch: this calls `submit`, which
+        chooses a route, builds a validated envelope, authenticates to the
+        worker over the pinned channel, waits on the durable receipt and
+        replays the executor's events. A self-test that skipped any of that
+        would pass while the thing it claims to test was broken.
+
+        It is never triggered automatically — it invokes the model, which costs
+        real time on the worker — so there is no polling or startup call. Only
+        the button in the Control Center starts it.
+        """
+        relationship = self.paired_worker()
+        if relationship is None:
+            raise RequestError("No computer is connected, so there is nothing "
+                               "to test.", 409)
+        chat_id = self.selftest_chat()
+        job_id = self.submit(chat_id, self.SELFTEST_PROMPT)
+        return {"job_id": job_id, "chat_id": chat_id,
+                "expected": "the reply arrives from the connected computer, "
+                            "and the route reason names it"}
+
+    def selftest_result(self, job_id: str) -> dict:
+        """What the self-test actually did: route reason and terminal state.
+
+        Read from the canonical record rather than from anything the self-test
+        kept in memory, so it reports what a restart would also report.
+        """
+        job = self.conn.execute(
+            "SELECT job_id, state, chat_id FROM jobs WHERE job_id=?",
+            (job_id,)).fetchone()
+        if job is None:
+            raise RequestError("unknown self-test", 404)
+        attempts = [dict(row) for row in self.conn.execute(
+            "SELECT attempt_id, node_id, state, route_reason, error_json,"
+            " relationship_id FROM attempts WHERE job_id=? ORDER BY created_at",
+            (job_id,)).fetchall()]
+        finished = job["state"] in v1.TERMINAL_JOB_STATES or job["state"] == "interrupted"
+        return {
+            "job_id": job_id, "chat_id": job["chat_id"], "state": job["state"],
+            "finished": finished,
+            # A DISTRIBUTED pass requires a relationship-bound attempt to have
+            # reached `completed` itself. The job reaching `completed` is not
+            # enough: an interrupted remote attempt followed by a successful
+            # local fallback completes the job while proving only that the
+            # fallback works, which is the opposite of what this tests.
+            "passed": job["state"] == "completed" and any(
+                a["relationship_id"] and a["state"] == "completed"
+                for a in attempts),
+            "fell_back": any(a["relationship_id"] for a in attempts) and any(
+                not a["relationship_id"] and a["state"] == "completed"
+                for a in attempts),
+            # Every attempt, so a fallback shows both halves rather than only
+            # the one that answered.
+            "attempts": [{
+                "state": a["state"], "route_reason": a["route_reason"],
+                "ran_remotely": bool(a["relationship_id"]),
+                "error": json.loads(a["error_json"]) if a["error_json"] else None,
+            } for a in attempts],
+            "pod_readiness": None,
+            "pod_readiness_note": self.POD_READINESS_UNAVAILABLE,
+        }
+
+    def paired_worker(self) -> dict | None:
+        return db.active_relationship(self.conn, self.workspace_id)
+
+    def worker_client(self, relationship: dict) -> dispatch.WorkerClient:
+        """Build a client bound to this relationship's pin and credential.
+
+        The credential is read from the Keychain on every use rather than being
+        cached on the object: a revoked relationship must stop working at the
+        next request, not when the process restarts.
+        """
+        return dispatch.WorkerClient(
+            address=relationship["address"], port=relationship["port"],
+            fingerprint=relationship["fingerprint"],
+            certificate_pem=relationship["certificate_pem"],
+            credential=pairing.load_credential(relationship["relationship_id"]))
+
+    def preflight(self, relationship: dict | None = None) -> dict | None:
+        """Observe the paired worker, or return None.
+
+        An identity mismatch is deliberately allowed to propagate: it must reach
+        the operator as a changed-worker error, not be flattened into "the
+        worker is unavailable" and answered locally.
+        """
+        relationship = relationship or self.paired_worker()
+        if relationship is None:
+            return None
+        try:
+            return self.worker_client(relationship).health()
+        except pairing.IdentityMismatch:
+            raise
+        except (dispatch.DispatchUnavailable, pairing.PairingError):
+            return None
+
+    def choose_route(self) -> dispatch.Route:
+        relationship = self.paired_worker()
+        if relationship is None:
+            return dispatch.Route("local", "local coordinator: no paired worker")
+        try:
+            node = self.preflight(relationship)
+        except pairing.IdentityMismatch as exc:
+            # Not a fallback. The attempt records the refusal and stops.
+            return dispatch.Route("identity-mismatch", f"refused: {exc}")
+        return dispatch.choose_route(relationship=relationship, node=node,
+                                     required=["text.generate"],
+                                     model_id=runtime.MODEL)
+
+    def pair(self, *, address: str, port: int, fingerprint: str,
+             certificate_pem: str, pairing_code: str) -> dict:
+        """Complete OD-06 against a worker whose fingerprint a human confirmed.
+
+        Order matters and is not an implementation detail: pin, verify the
+        presented certificate, redeem the code, store the credential in the
+        Keychain, and only then record the relationship. A row written before
+        the Keychain write would describe a pairing with no usable credential.
+        """
+        fingerprint = pairing.normalise_fingerprint(fingerprint)
+        if not pairing.keychain_available():
+            raise RequestError(
+                "Pairing needs the macOS Keychain to hold the worker credential. "
+                "Storing it in the database is not permitted.", 501)
+        relationship_id = db.new_id()
+        body = json.dumps({"relationship_id": relationship_id,
+                           "workspace_id": self.workspace_id,
+                           "pairing_code": pairing_code}).encode("utf-8")
+        context = pairing.pinned_context(certificate_pem)
+        connection = http.client.HTTPSConnection(address, int(port), timeout=15,
+                                                 context=context)
+        try:
+            connection.connect()
+            pairing.verify_presented(connection.sock, fingerprint)
+            connection.request("POST", "/v1/pairing/confirm", body=body, headers={
+                "Content-Type": "application/json",
+                "X-AegisForge-Contract": v1.CONTRACT_VERSION,
+                "Content-Length": str(len(body))})
+            response = connection.getresponse()
+            payload = response.read(v1.MAX_REQUEST_BYTES)
+            if response.status != 201:
+                raise RequestError(
+                    "The worker refused the pairing code. Generate a fresh one "
+                    "on the worker host and try again.", 403)
+            answer = json.loads(payload)
+            credential = answer["credential"]
+        except pairing.IdentityMismatch as exc:
+            raise RequestError(str(exc), 409)
+        except (OSError, ValueError, KeyError) as exc:
+            raise RequestError(f"Could not reach the worker to pair: {exc}", 502)
+        finally:
+            connection.close()
+
+        # The only write of the plaintext, and it goes to the OS store.
+        pairing.store_credential(relationship_id, credential)
+        del credential
+        db.record_relationship(
+            self.conn, relationship_id=relationship_id,
+            workspace_id=self.workspace_id, node_id=answer["node_id"],
+            display_name=answer.get("display_name") or address, address=address,
+            port=int(port), fingerprint=fingerprint,
+            certificate_pem=certificate_pem)
+        return pairing.describe(db.get_relationship(self.conn, relationship_id,
+                                                    self.workspace_id))
+
+    def revoke_pairing(self, relationship_id: str) -> dict:
+        """Revoke locally whatever the worker says.
+
+        The remote delete is attempted first so the worker drops its hash, but a
+        worker that is switched off must not be able to keep a relationship
+        alive on this side: the local revocation and the Keychain deletion run
+        regardless, and the attempts in flight are fenced.
+        """
+        relationship = db.get_relationship(self.conn, relationship_id,
+                                           self.workspace_id)
+        if relationship is None:
+            raise RequestError("unknown relationship", 404)
+        reached = False
+        try:
+            client = self.worker_client(relationship)
+            connection = client._connect()
+            try:
+                connection.request("DELETE", f"/v1/pairing/{relationship_id}",
+                                   headers=client._headers())
+                reached = connection.getresponse().status in (204, 200)
+            finally:
+                connection.close()
+        except Exception:                              # noqa: BLE001
+            reached = False
+        pairing.delete_credential(relationship_id)
+        db.revoke_relationship(self.conn, relationship_id, self.workspace_id)
+        fenced = db.fence_relationship_attempts(self.conn, relationship_id,
+                                                self.node_id)
+        return {"relationship_id": relationship_id, "worker_notified": reached,
+                "attempts_fenced": len(fenced)}
+
+    def _run_remote(self, job_id, chat_id, attempt_id, route, *, text: str):
+        """Dispatch one attempt and turn the worker's stream into our events.
+
+        Returns `(handled, attempt_id)`. `handled` is False only when the worker
+        could not take the work and the caller should continue locally with the
+        returned replacement attempt — that is the truthful fallback, and it
+        leaves the remote attempt in history with its own typed reason.
+
+        Nothing here writes canonical state directly: it uses the same
+        `_emit`/`db` path a local attempt uses, so a remote answer and a local
+        one are indistinguishable to every reader — including a restart.
+        """
+        job = dict(self.conn.execute("SELECT * FROM jobs WHERE job_id=?",
+                                     (job_id,)).fetchone())
+        step = self.conn.execute("SELECT step_id FROM attempts WHERE attempt_id=?",
+                                 (attempt_id,)).fetchone()["step_id"]
+        relationship = db.get_relationship(self.conn, route.relationship_id,
+                                           self.workspace_id)
+        if relationship is None or relationship["state"] != "paired":
+            # Revoked between choosing the route and dispatching. Fall back
+            # rather than dereferencing a row that is no longer there.
+            return False, self._fallback(
+                job_id, attempt_id, "the pairing was revoked before dispatch")
+        try:
+            envelope = dispatch.build_envelope(
+                job=job, attempt_id=attempt_id, step_id=step, route=route,
+                coordinator_node_id=self.node_id, request_text=text)
+            client = self.worker_client(relationship)
+            # One key per attempt, reused by any retry of it. A fresh key on a
+            # retry would create a second remote attempt instead of replaying
+            # the first, which is the opposite of what idempotency is for.
+            client.submit(envelope, dispatch.idempotency_key_for(attempt_id))
+        except dispatch.ReceiptUnknown as exc:
+            # The request was sent and no answer came back, so the worker may
+            # be running this attempt right now. Running it locally as well
+            # would produce two answers to one request, so this does NOT fall
+            # back: the attempt is interrupted and the operator is told why.
+            self._stop(job_id, attempt_id, "interrupted", "running", {
+                "code": "worker_lost",
+                "message": ("the worker did not confirm the request; it may be "
+                            "running there, so this was not re-run here. "
+                            f"{exc}")[:256],
+                "retryable": True})
+            return True, attempt_id
+        except pairing.IdentityMismatch as exc:
+            # No fallback. A changed worker identity is the event pinning
+            # exists to surface, and answering locally would bury it.
+            self._stop(job_id, attempt_id, "failed", "running", {
+                "code": "permission_denied", "message": str(exc)[:256],
+                "retryable": False})
+            return True, attempt_id
+        except (dispatch.DispatchUnavailable, pairing.PairingError) as exc:
+            # Truthful fallback: the worker could not take the work, so this
+            # runs locally and the record says so.
+            return False, self._fallback(job_id, attempt_id, str(exc))
+
+        collected = []
+
+        def keep(event):
+            if event.data.kind == "output.delta":
+                collected.append(event.data.text)
+                db.append_output(self.conn, attempt_id, event.data.text)
+                self._emit(job_id, attempt_id,
+                           {"kind": "output.delta", "text": event.data.text})
+
+        def cancelling() -> bool:
+            if not (self.is_cancelled(job_id) or self.stopping.is_set()):
+                return False
+            try:
+                # Reaches the worker API, which sets the Redis cancellation key
+                # the executor polls. Both boundaries, one call.
+                client.cancel(job_id, attempt_id)
+            except Exception:                          # noqa: BLE001
+                pass
+            return True
+
+        outcome = dispatch.consume(client, envelope, on_event=keep,
+                                   should_cancel=cancelling)
+
+        if outcome.state == "completed":
+            db.set_attempt_state(self.conn, attempt_id, "validating",
+                                 runtime_ms=outcome.runtime_ms,
+                                 queue_ms=outcome.queue_ms)
+            self._emit(job_id, attempt_id, {"kind": "attempt.state",
+                                            "previous": "running",
+                                            "current": "validating"})
+            self._advance_job(job_id, "validating", "running")
+            answer = "".join(collected)
+            db.add_message(self.conn, chat_id, "assistant", answer, job_id=job_id)
+            db.set_attempt_state(self.conn, attempt_id, "completed")
+            self._emit(job_id, attempt_id, {"kind": "attempt.state",
+                                            "previous": "validating",
+                                            "current": "completed"})
+            self._advance_job(job_id, "completed", "validating")
+            return True, attempt_id
+        if outcome.state == "cancelled":
+            self._stop(job_id, attempt_id, "cancelled", "running", outcome.failure)
+            return True, attempt_id
+        # interrupted or failed: the workspace and history stay usable, and the
+        # partial text that did arrive is already persisted. This is worker or
+        # cluster loss, not a reason to silently re-run the same request.
+        self._stop(job_id, attempt_id, "failed" if outcome.state == "failed"
+                   else "interrupted", "running", outcome.failure)
+        return True, attempt_id
+
+    def _fallback(self, job_id, attempt_id, detail: str) -> str:
+        """Record why the worker was not used and open a fresh local attempt.
+
+        A new attempt rather than a reused one: the interrupted remote attempt
+        keeps its own typed reason, which is what makes "the worker was tried
+        first" visible in history instead of erased.
+        """
+        db.set_attempt_state(self.conn, attempt_id, "interrupted", error={
+            "code": "unavailable",
+            "message": f"the paired worker could not accept this work: {detail}"[:256],
+            "retryable": True})
+        self._emit(job_id, attempt_id, {"kind": "attempt.state",
+                                        "previous": "running",
+                                        "current": "interrupted"})
+        self._advance_job(job_id, "interrupted", "running")
+        self._advance_job(job_id, "queued", "interrupted")
+        self._advance_job(job_id, "routing", "queued")
+        local = db.create_attempt(
+            self.conn, job_id=job_id, node_id=self.node_id,
+            route_reason="local coordinator: the paired worker was unavailable, "
+                         "so this ran on this computer")
+        self._emit(job_id, local, {"kind": "attempt.state", "previous": None,
+                                   "current": "queued"})
+        self._advance_job(job_id, "running", "routing")
+        db.set_attempt_state(self.conn, local, "running")
+        self._emit(job_id, local, {"kind": "attempt.state",
+                                   "previous": "queued", "current": "running"})
+        return local
 
     @db.serialized
     def _stop(self, job_id, attempt_id, state, previous, error):
@@ -1101,6 +1536,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._code(lambda: c.code.files(
                     self._text(_as_payload(query), "repo_id", 36),
                     (query.get("approval_id") or [None])[0]))
+            elif route == "/v1/worker/selftest":
+                self._json(c.selftest_result(
+                    self._text(_as_payload(query), "job_id", 36)))
+            elif route == "/v1/worker":
+                # Preflight for the Control Center. Every field is either an
+                # observation or explicitly unavailable; nothing is inferred
+                # from the fact that a relationship row exists.
+                self._json(c.worker_state())
             elif route == "/v1/jobs/active":
                 self._json({"jobs": c.active_jobs()})
             elif route == "/v1/jobs":
@@ -1249,6 +1692,22 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "/v1/cancel":
                 c.request_cancel(self._text(payload, "job_id", 36))
                 self._json({"cancel_requested": payload["job_id"]}, 202)
+            elif route == "/v1/pair":
+                # The fingerprint and the code arrived out of band, read by a
+                # human. Neither is stored here: the code is spent by the
+                # worker and the credential goes straight to the Keychain.
+                self._json(c.pair(
+                    address=self._text(payload, "address", 255),
+                    port=int(payload.get("port") or v1.WORKER_NODE_PORT),
+                    fingerprint=self._text(payload, "fingerprint", 128),
+                    certificate_pem=self._text(payload, "certificate_pem", 16384),
+                    pairing_code=self._text(payload, "pairing_code", 256)), 201)
+            elif route == "/v1/worker/selftest":
+                # Explicitly started, never automatic: it invokes the model.
+                self._json(c.run_selftest(), 202)
+            elif route == "/v1/pair/revoke":
+                self._json(c.revoke_pairing(
+                    self._text(payload, "relationship_id", 36)), 200)
             else:
                 self._json({"error": "not found"}, 404)
         except db.ChatBusyError as exc:

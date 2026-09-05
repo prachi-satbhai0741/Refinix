@@ -15,7 +15,14 @@ function page() {
     return nodes.get(id);
   };
   const scope = vm.createContext({
-    document: { getElementById: node }, window: { addEventListener() {} },
+    document: { getElementById: node },
+    /* app.js evaluates PANEL_MQ at module scope, so a harness without
+       matchMedia throws before a single test runs. Non-matching queries are
+       the desktop layout these checks assume. */
+    window: { addEventListener() {},
+              matchMedia: () => ({ matches: false, addEventListener() {},
+                                   removeEventListener() {}, addListener() {},
+                                   removeListener() {} }) },
     fetch: (path, options) => new Promise(resolve => requests.push({ path, options,
       reply(body = {}, ok = true) { resolve({ ok, json: async () => body }); } })),
     setTimeout: fn => { scope.timer = fn; return 1; },

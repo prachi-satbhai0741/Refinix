@@ -2354,16 +2354,202 @@ function renderEngineCard(s) {
   actions($('c-engine-actions'), list);
 }
 
-function renderOthersCard(s) {
+/* AF-007. Every value here is observed now or shown as unavailable. There is
+ * no cached "last known healthy": a stale number displayed as current is the
+ * fabricated health this card exists to avoid. */
+function renderOthersCard(s, worker) {
   if (!$('c-others-facts')) return;
-  chip($('c-others-chip'), 'none connected', 'unknown');
-  $('c-others-lead').textContent =
-    'Refinix can share work with other computers you connect. None is connected, '
-    + 'so everything runs here.';
+  const form = $('pair-form');
+
+  if (!worker) {
+    chip($('c-others-chip'), 'unavailable', 'unknown');
+    $('c-others-lead').textContent =
+      'Refinix could not read the connection state, so nothing about another '
+      + 'computer is shown.';
+    facts($('c-others-facts'), [['Connected computers', null, 'not observed']]);
+    return;
+  }
+
+  if (worker.identity_mismatch) {
+    /* Never offered as "try again" or quietly answered locally: the worker
+     * presented a different certificate, and that is what the operator has to
+     * see. */
+    chip($('c-others-chip'), 'identity changed', 'failed');
+    $('c-others-lead').textContent =
+      'The connected computer presented a different certificate than the one '
+      + 'you confirmed. Refinix refused the connection and did not send your '
+      + 'request anywhere.';
+    facts($('c-others-facts'), [
+      ['Status', 'refused — worker identity changed'],
+      ['What Refinix did', 'nothing was sent; the request was not run elsewhere'],
+      ['Fingerprint you confirmed', worker.relationship?.fingerprint || null,
+       'not recorded'],
+    ]);
+    actions($('c-others-actions'), [
+      { label: 'Disconnect this computer',
+        run: () => revokePairing(worker.relationship.relationship_id) },
+    ]);
+    return;
+  }
+
+  if (!worker.paired) {
+    chip($('c-others-chip'), 'none connected', 'unknown');
+    $('c-others-lead').textContent = worker.keychain_available
+      ? 'Refinix can share work with another computer you connect. None is '
+        + 'connected, so everything runs here.'
+      : 'Connecting another computer needs the macOS Keychain to hold its '
+        + 'credential. It is not available here, so connecting is switched off.';
+    facts($('c-others-facts'), [
+      ['Connected computers', null, 'none'],
+      ['This computer', `${s.node_id.slice(0, 8)} — the only one in use`],
+      ['Where requests run', 'on this computer'],
+    ]);
+    actions($('c-others-actions'), worker.keychain_available
+      ? [{ label: 'Connect a computer', run: () => { if (form) form.hidden = false; } }]
+      : []);
+    return;
+  }
+
+  const node = worker.node;
+  const relationship = worker.relationship || {};
+  const health = worker.health || 'unavailable';
+  chip($('c-others-chip'), health, health === 'healthy' ? 'ok'
+    : health === 'unavailable' ? 'failed' : 'attention');
+  $('c-others-lead').textContent = worker.would_dispatch
+    ? 'Chat requests run on the connected computer. If it stops answering, '
+      + 'Refinix runs them here instead and says so.'
+    : 'A computer is connected but is not taking work right now, so requests '
+      + 'run here.';
   facts($('c-others-facts'), [
-    ['Connected computers', null, 'none'],
-    ['This computer', `${s.node_id.slice(0, 8)} — the only one in use`],
+    ['Connected computer', relationship.display_name || relationship.address],
+    ['Address', `${relationship.address}:${relationship.port}`],
+    ['Certificate fingerprint', relationship.fingerprint],
+    /* Missing measurements stay missing. `queue_depth` and the model are only
+     * present when the worker actually reported them. */
+    ['Model there', node?.models?.[0]?.model_id || null, 'not reported'],
+    ['Waiting requests', node && node.queue_depth !== null && node.queue_depth !== undefined
+      ? String(node.queue_depth) : null, 'not reported'],
+    ['Last checked', node?.observed_at || null, 'not observed'],
+    ['Where the next request runs', worker.route_reason],
   ]);
+  actions($('c-others-actions'), [
+    /* Explicit, never automatic: the self-test sends a real request to the
+       connected computer and the model spends real time on it. */
+    { label: 'Run distributed self-test', run: runSelftest },
+    { label: 'Disconnect this computer',
+      run: () => revokePairing(relationship.relationship_id) },
+  ]);
+}
+
+/* The self-test goes down the ORDINARY request path — route choice, pinned
+ * channel, durable receipt, executor, event replay. There is no bypass, so a
+ * pass means that path works and not that a test helper does. */
+async function runSelftest() {
+  const box = $('c-selftest');
+  const setNote = (text) => { if (box) box.textContent = text; };
+  setNote('Sending one request to the connected computer…');
+  let started;
+  try {
+    started = await api('/v1/worker/selftest', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+  } catch (error) {
+    setNote(String(error.message || error));
+    return;
+  }
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    let result;
+    try {
+      result = await api(`/v1/worker/selftest?job_id=${started.job_id}`);
+    } catch (error) {
+      setNote(String(error.message || error));
+      return;
+    }
+    if (result.finished) {
+      renderSelftest(result);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  setNote('The self-test did not finish within two minutes. Its record is in '
+          + 'the Connection self-test conversation.');
+}
+
+/* Report what happened, including a fallback, rather than a pass/fail badge:
+ * "it ran here instead" is the answer the operator most needs to see. */
+function renderSelftest(result) {
+  const box = $('c-selftest');
+  if (!box) return;
+  box.replaceChildren();
+  const headline = document.createElement('p');
+  headline.className = result.passed ? 'ok' : 'attention';
+  headline.textContent = result.passed
+    ? 'Passed. The request ran on the connected computer and came back.'
+    : `Did not pass. The request ended as ${result.state}.`;
+  box.append(headline);
+  const list = document.createElement('dl');
+  list.className = 'facts';
+  for (const attempt of result.attempts) {
+    const row = document.createElement('div');
+    const key = document.createElement('dt');
+    key.textContent = attempt.ran_remotely ? 'On the connected computer'
+      : 'On this computer';
+    row.append(key, cell(`${attempt.state} — ${attempt.route_reason}`));
+    list.append(row);
+  }
+  const pod = document.createElement('div');
+  const podKey = document.createElement('dt');
+  podKey.textContent = 'Pod readiness';
+  /* Deliberately unavailable: Refinix has no Kubernetes credential, and asking
+     for one to fill in a row would be a larger permission than this needs. */
+  pod.append(podKey, cell(result.pod_readiness, result.pod_readiness_note));
+  list.append(pod);
+  box.append(list);
+}
+
+async function revokePairing(relationshipId) {
+  if (!relationshipId) return;
+  await api('/v1/pair/revoke', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relationship_id: relationshipId }),
+  });
+  await loadStatus();
+}
+
+/* The form is submitted once. Nothing it holds is written to storage, and the
+ * fields are cleared immediately: the pairing code is single-use and the
+ * certificate is not the page's to keep. */
+function wirePairForm() {
+  const form = $('pair-form');
+  if (!form) return;
+  const cancel = $('pair-cancel');
+  if (cancel) cancel.onclick = () => { form.hidden = true; form.reset(); };
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const note = $('pair-note');
+    const payload = {
+      address: $('pair-address').value.trim(),
+      port: Number($('pair-port').value.trim()) || 30443,
+      fingerprint: $('pair-fingerprint').value.trim(),
+      certificate_pem: $('pair-certificate').value,
+      pairing_code: $('pair-code').value.trim(),
+    };
+    try {
+      await api('/v1/pair', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      form.reset();
+      form.hidden = true;
+      await loadStatus();
+    } catch (error) {
+      if (note) note.textContent = String(error.message || error);
+    } finally {
+      $('pair-code').value = '';
+      $('pair-certificate').value = '';
+    }
+  });
 }
 
 function renderWorkCard(s, jobs) {
@@ -2527,9 +2713,17 @@ async function loadStatus() {
   }
   if (!$('c-computer-facts')) return s;
   const { jobs } = await api('/v1/jobs');
+  // Preflight is a live observation and can fail on its own; a worker that
+  // cannot be read must not blank the rest of the Control Center.
+  let worker = null;
+  try {
+    worker = await api('/v1/worker');
+  } catch (error) {
+    worker = null;
+  }
   renderComputerCard(s);
   renderEngineCard(s);
-  renderOthersCard(s);
+  renderOthersCard(s, worker);
   renderWorkCard(s, jobs);
   renderCapabilityCard(s);
   renderAdvanced(s, jobs);
@@ -2778,6 +2972,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape' && modelPopover) closeModelPopover(true);
   });
   publishSlot();
+  wirePairForm();
   loadStatus().catch((e) => console.error('status unavailable:', e.message));
   if ($('composer')) {
     connect();

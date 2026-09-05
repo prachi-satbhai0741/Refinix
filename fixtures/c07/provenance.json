@@ -1,0 +1,67 @@
+{
+  "fixture_pack": "c07-v1",
+  "created": "2026-09-05",
+  "origin": "Written for this repository. Every name, site, asset, reading, standard number and signature is invented; no real inspection, person, organisation or site is represented.",
+  "licence": "Same licence as this repository. No third-party text, image, model or dataset is included, so no external licence applies.",
+  "contains_no_real_data": true,
+  "confidentiality": "Synthetic throughout. Nothing here is a real confidential scan, and no real document was copied, paraphrased or used as a template.",
+  "why_synthetic": "AGENTS.md forbids committing private documents or real confidential scans. A synthetic pack with known-correct answers is also the only way to check extraction against ground truth rather than against a plausible-looking reading.",
+  "raster_scan_status": "INCLUDED. documents/inspection-report-scan.pdf is a three-page raster-only PDF: each page holds one FlateDecode DeviceGray image and the content stream contains a single image-draw operator. There is no text layer and no font resource, so nothing can be extracted from it without rendering and OCR. inspection-report.txt remains the ground truth for what a correct reading produces.",
+  "files": {
+    "code/expected.json": {
+      "sha256": "293c4170f42012c978b73d7c2fbd9f93659c69525689b4c452d240f3dad59a48",
+      "size_bytes": 2492
+    },
+    "code/pumpcheck/pumpcheck/__init__.py": {
+      "sha256": "ba8bdc579f420a4f58ca11fdc61a6d204ef6ea84790cd075b5919887f20cf0fd",
+      "size_bytes": 80
+    },
+    "code/pumpcheck/pumpcheck/limits.py": {
+      "sha256": "f543a869c2a900a4f3f405b144537b7e15c2d250db94a9b6c4a924c244f1eceb",
+      "size_bytes": 805
+    },
+    "code/pumpcheck/tests/__init__.py": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "code/pumpcheck/tests/test_limits.py": {
+      "sha256": "ca3e1a66c19e008a6376a5bc36725de52652b68c668cc60108163b91bc13463e",
+      "size_bytes": 1286
+    },
+    "documents/expected.json": {
+      "sha256": "c6351379e1be4aa546116487452d8ebdf2a9380dbee7c918679ae00b738d01e0",
+      "size_bytes": 8503
+    },
+    "documents/inspection-report-scan.pdf": {
+      "sha256": "8a53e87e4549c58175e47744b8182de56dbbe43c7687c016393310575e1fd515",
+      "size_bytes": 43770
+    },
+    "documents/inspection-report.txt": {
+      "sha256": "dd580f650a31f8eafb53f468d25ddc462afc6b89518d72d7b1ffba0978516bdf",
+      "size_bytes": 1659
+    },
+    "documents/sop-mech-014.txt": {
+      "sha256": "0700406a06ea1eab094edcc4d45ce5023c6b94f7303d9a96844d8d93e118e0b2",
+      "size_bytes": 1851
+    }
+  },
+  "scan": {
+    "file": "documents/inspection-report-scan.pdf",
+    "pages": 3,
+    "page_size_pixels": [
+      1240,
+      1754
+    ],
+    "colour": "8-bit greyscale, DeviceGray",
+    "text_layer": "none",
+    "font_resources": "none",
+    "generated_by": "fixtures/c07/make_scan.py, committed alongside it",
+    "generation_method": "A 5x7 bitmap font defined in the generator renders inspection-report.txt to pixel buffers; a fixed-seed linear congruential generator adds deterministic speckle; the pages are zlib-compressed into a hand-written PDF with no /Producer, /CreationDate or /ID. Standard library only: zlib and arithmetic.",
+    "tool_versions": "CPython 3.14.6 and 3.12.13 on macOS produce identical bytes; the output depends only on zlib's deflate, and the recorded hash is checked on every run of fixtures/c07/test_fixtures.py.",
+    "deterministic": true,
+    "regenerate_with": "python3 fixtures/c07/make_scan.py && python3 -m fixtures.c07.rehash",
+    "no_dependency_added": "Pillow or reportlab would be a new pinned wheel, new provenance and a new image build for a fixture. Neither is installed and neither is needed.",
+    "sha256": "8a53e87e4549c58175e47744b8182de56dbbe43c7687c016393310575e1fd515",
+    "size_bytes": 43770
+  }
+}
