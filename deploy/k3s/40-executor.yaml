@@ -143,10 +143,10 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 60
             failureThreshold: 3
-          # A SIGTERM leaves the current entry unacknowledged, so the next
-          # executor recovers it once the lease idles out. 40s clears the
-          # contract's 30s LEASE_SECONDS.
-          terminationGracePeriodSeconds: 40
+      # A SIGTERM leaves the current entry unacknowledged, so the next
+      # executor recovers it once the lease idles out. 40s clears the
+      # contract's 30s LEASE_SECONDS.
+      terminationGracePeriodSeconds: 40
       volumes:
         - name: tmp
           emptyDir: {}

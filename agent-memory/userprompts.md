@@ -1242,3 +1242,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Focused offline manifest checks locally; publication, policy apply and live worker health remain device gates.
 - follow_up_to: [UP-20260906-003](#up-20260906-003)
 - linked_changes: [AC-20260906-005](agentchangelog.md#ac-20260906-005)
+
+<a id="up-20260906-005"></a>
+## UP-20260906-005 — Repair the executor Pod grace-period field
+- date: 2026-09-06
+- status: implemented; verification and publication pending
+- scope: c06, c09, kubernetes, executor, manifest
+- tags: executor, deployment, pod-spec, termination-grace-period, strict-decoding
+- aliases: unknown field terminationGracePeriodSeconds, executor deployment not found
+- paths: deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, agent-memory/
+- summary: Move the executor termination grace period from the container to the Kubernetes Pod spec after the live server rejected the manifest.
+- request: Continue setup after K3s strict decoding refused the executor Deployment and therefore created no executor Pod.
+- constraints: Preserve the 40-second recovery allowance and change only the invalid field placement with one regression check.
+- acceptance: Offline manifest checks pass, K3s accepts the Deployment, and the executor becomes Ready.
+- verification_authorization: Requester runs the focused manifest suite and live K3s apply; Git publication remains a human action.
+- follow_up_to: [UP-20260906-004](#up-20260906-004)
+- linked_changes: [AC-20260906-006](agentchangelog.md#ac-20260906-006)

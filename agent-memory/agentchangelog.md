@@ -1689,3 +1689,17 @@ work. No repository file change means no changelog entry.
 - changes: Worker and executor ConfigMaps now use `http://10.42.0.1:11434`; a focused check requires that endpoint to match `10.42.0.1/32` port 11434 in the separate runtime policy. The live handoff now includes the previously missing runtime-bridge step before LAN exposure and pairing.
 - verification: Requester output showed cni0 `10.42.0.1/24`, Ollama 0.33.2 and both expected model digests, the host runtime still bound only to `127.0.0.1:11434`, the guarded proxy bound to `10.42.0.1:11434`, Pod-CIDR ACCEPT followed by broader DROP, and the bridge returning the runtime version. Locally, 81 manifest checks and `git diff --check` passed.
 - remaining: Publish these six files, pull them on Ubuntu, apply `30-runtime-egress.yaml` and reapply only `20-worker.yaml`, then confirm the worker advertises the installed model. The executor remains undeployed until pairing creates its relationship ID.
+
+<a id="ac-20260906-006"></a>
+## AC-20260906-006 — Executor grace period moved to the Pod spec
+- prompt_id: [UP-20260906-005](userprompts.md#up-20260906-005)
+- date: 2026-09-06
+- status: implemented and offline-checked; publication and live executor retry pending
+- scope: c06, c09, kubernetes, executor, manifest
+- tags: executor, deployment, pod-spec, termination-grace-period, strict-decoding
+- aliases: unknown field terminationGracePeriodSeconds, executor deployment not found
+- paths: deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, agent-memory/
+- summary: Moved the executor's 40-second termination grace period from its container to the Kubernetes Pod spec.
+- changes: The recovery allowance is unchanged; only its invalid indentation changed. A focused manifest regression now requires the field at Pod level and rejects it inside the container.
+- verification: Requester ran 82 manifest checks on the macOS coordinator; all passed. `git diff --check` was silent. The failed Ubuntu apply had created only the executor ConfigMap and ingress NetworkPolicy; K3s rejected the Deployment before any executor Pod existed.
+- remaining: Commit and push these three files, pull them on Ubuntu, reapply `40-executor.yaml`, and prove the executor Deployment Ready. The earlier pairing-state reload defect remains to be repaired before final acceptance.

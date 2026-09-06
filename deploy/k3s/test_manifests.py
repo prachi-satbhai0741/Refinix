@@ -789,6 +789,15 @@ class TestExecutorAndTLS(unittest.TestCase):
         self.assertIn("AEGIS_RELATIONSHIP_ID", self.executor())
         self.assertIn("secretKeyRef", self.executor())
 
+    def test_the_executor_grace_period_is_a_pod_setting(self):
+        """Kubernetes rejects this field when it is nested in a container."""
+        executor = self.executor()
+        pod_tail = executor.split("      volumes:", 1)[0]
+        self.assertIn("\n      terminationGracePeriodSeconds: 40\n", pod_tail)
+        container = executor.split("      containers:", 1)[1].split(
+            "\n      terminationGracePeriodSeconds:", 1)[0]
+        self.assertNotIn("terminationGracePeriodSeconds", container)
+
     def test_no_credential_is_inline_in_the_new_manifests(self):
         for text in (self.executor(), self.worker()):
             for line in commands(text).splitlines():
