@@ -528,22 +528,20 @@ compression. This is recorded separately from acceptance on purpose:
   vision transport, honest extraction), C09 resource packages, remote code
   generation, the restricted validation Job, C10 concurrency, approval binding,
   durable final-write recovery and Proof Cards.
-- **NOT accepted:** C05, C06, C07, C08, C09 and C10 all remain unaccepted. No
-  runtime gate has been passed, and later code existing is not evidence for an
-  earlier gate.
+- **NOT accepted:** C06, C07, C08, C09 and C10 remain unaccepted. Later code or
+  an image build existing is not evidence for an earlier runtime gate.
 - **Runtime blocker recorded:** the configured C08 scan-reading model
   `MedAIBase/PaddleOCR-VL:0.9b` is installed and does **not** declare the
   `vision` capability, so scan reading currently reports itself unavailable.
   See [`docs/c08-dependency-plan.md`](docs/c08-dependency-plan.md) §3.
-- **Artifact state:** the linux/amd64 worker image was **not** rebuilt — the
-  Docker daemon was not running and starting it is a host action outside this
-  scope. The C09 worker changes therefore still need a build before rollout.
+- **Artifact state:** requester-returned Ubuntu output on 2026-09-06 shows the
+  linux/amd64 C09 worker image built with its offline layer under
+  `--network=none`. Digest and archive evidence are recorded in
+  `backend/worker-image/provenance.json`; K3s import and rollout are pending.
 
-**C06 resume point is unchanged.** The current C06 image
-`sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf` is
-built and pinned, and the Ubuntu worker reached the loopback TLS health check.
-Setup stopped **before C06 handoff step E, the guarded LAN forwarder**.
-Pairing, relationship-ID installation, executor deployment, real distributed
+**C06 setup resumed on a new router.** The C09 replacement image is built but
+not yet imported or rolled out. Address-bound TLS, the guarded LAN forwarder,
+pairing, relationship-ID installation, executor deployment, real distributed
 inference, cancellation, disconnect recovery and requester acceptance all
 remain pending. The consolidated next steps are in
 [`docs/c07-c10-runtime-handoff.md`](docs/c07-c10-runtime-handoff.md).

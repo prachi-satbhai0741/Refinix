@@ -1194,3 +1194,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Focused offline tests and static checks locally; the container build remains the live Ubuntu check.
 - follow_up_to: [UP-20260905-016](#up-20260905-016)
 - linked_changes: [AC-20260906-002](agentchangelog.md#ac-20260906-002)
+
+<a id="up-20260906-002"></a>
+## UP-20260906-002 — Pin the observed C09 Ubuntu image
+- date: 2026-09-06
+- status: implemented; publication and K3s import pending
+- scope: c06, c09, image-digest, provenance, manifests, handoff
+- tags: ubuntu, docker, image-digest, archive, kubernetes, provenance
+- aliases: 774218db, 873cd89c, 06013413, c09 image pin
+- paths: backend/worker-image/provenance.json, deploy/k3s/, docs/c07-c10-runtime-handoff.md, tasks.md, agent-memory/
+- summary: Pin the requester-observed C09 Ubuntu image and archive evidence everywhere the worker, executor and validation policy consume it.
+- request: Continue the ordered setup after the Ubuntu image build passed and its digest, platform and archive evidence were returned.
+- constraints: Use only observed digests and byte count; keep the archive outside Git; do not import, deploy or claim runtime acceptance from the build.
+- acceptance: All four runtime image fields match provenance, the runnable handoff uses the same digest, and focused manifest checks pass.
+- verification_authorization: Focused offline manifest and source consistency checks only; Ubuntu publication and cluster actions remain human gates.
+- follow_up_to: [UP-20260906-001](#up-20260906-001)
+- linked_changes: [AC-20260906-003](agentchangelog.md#ac-20260906-003)

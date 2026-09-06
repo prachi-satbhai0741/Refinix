@@ -96,9 +96,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: worker
-          # C06 Ubuntu build, 2026-09-05. Recorded in
+          # C09 Ubuntu build, 2026-09-06. Recorded in
           # backend/worker-image/provenance.json.
-          image: docker.io/library/aegisforge-worker@sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf
+          image: docker.io/library/aegisforge-worker@sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a
           imagePullPolicy: Never
           # TLS terminated by uvicorn itself. The image's CMD serves plain HTTP,
           # which was correct while the port was closed to the LAN; C06 opens it

@@ -1,6 +1,6 @@
 {
-  "recorded_on": "2026-09-04",
-  "status": "C06 worker image built, tested, imported and digest-aliased on the Ubuntu worker 2026-09-05.",
+  "recorded_on": "2026-09-06",
+  "status": "C09 worker image built and tested on the Ubuntu worker; import and rollout are pending.",
   "target": {
     "os": "linux",
     "architecture": "amd64",
@@ -241,20 +241,20 @@
   },
   "ubuntu_build": {
     "device": "Ubuntu worker, Ubuntu 24.04.4 LTS, x86_64",
-    "recorded_on": "2026-09-05",
+    "recorded_on": "2026-09-06",
     "docker_server": "native unix:///var/run/docker.sock endpoint",
     "platform": "linux/amd64",
     "build_flags": "--pull=false --provenance=false --sbom=false",
     "base_image_digest": "sha256:2f2e5a876c71a6757f55ec57f2add0225ddaf01c802a33fcc29073943f94d907",
-    "manifest_digest": "sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf",
-    "config_digest": "sha256:d1cbe4b454bc0873af8d84ff71aee1df93571354f33dec93eebeff8e21a4e905",
-    "archive_sha256": null,
-    "archive_bytes_approx": null,
+    "manifest_digest": "sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a",
+    "config_digest": "sha256:873cd89cb9a3305abf9af52525ebc804538dfc8cffd29d1912b12da799b49f5a",
+    "archive_sha256": "sha256:060134139b7bcb4e51d555d192b45ddba1c1a8e5d62150b1cd978760b8428fa9",
+    "archive_bytes_approx": 49579008,
     "layers": null,
-    "checks_in_image": "C06 offline suites passed under --network=none; the final single-manifest repackaging reused that successful test layer",
+    "checks_in_image": "Six C09 offline suites passed under --network=none in the authoritative Ubuntu build",
     "wheels": "13 installed under --require-hashes; pip check found no broken requirements",
     "health_observed": null,
-    "cross_check": "the manifest and config digests match the Ubuntu build output; containerd lists both the c06 tag and the explicit digest alias at the manifest digest",
-    "note": "The image was streamed directly into K3s containerd, so no archive was retained and no archive checksum or byte count is claimed."
+    "cross_check": "the manifest digest matches both the Ubuntu build output and docker image inspect; the config digest matches the build export output; the archive hash and byte size were observed separately",
+    "note": "The root-owned mode-0600 archive is outside the repository at /home/prachi/aegisforge-artifacts/aegisforge-worker-c09.tar. It has not yet been imported into K3s containerd."
   }
 }

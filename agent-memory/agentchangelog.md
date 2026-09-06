@@ -1647,3 +1647,17 @@ work. No repository file change means no changelog entry.
 - changes: The shared API fixture now makes its fake runtime advertise the same model digest carried by its envelopes. The zero-discovery check injects a successful zero-test result, so it still proves the minimum-test guard even when Python 3.13 itself exits 5 for no tests. Production admission and validation code are unchanged.
 - verification: `backend.worker.test_validation` passed 45 checks under the local Python 3.14 environment; both edited test files compiled; `git diff --check` passed. The worker API suite could not run locally because neither existing Mac virtual environment contains FastAPI, so the Ubuntu image build remains authoritative.
 - remaining: Commit and push the four changed files, pull them on Ubuntu, then rerun the cached-input C09 worker image build. No image, service, Kubernetes object, credential or Git state was changed by Codex.
+
+<a id="ac-20260906-003"></a>
+## AC-20260906-003 — Observed C09 worker image pinned
+- prompt_id: [UP-20260906-002](userprompts.md#up-20260906-002)
+- date: 2026-09-06
+- status: implemented and offline-checked; publication and K3s import pending
+- scope: c06, c09, image-digest, provenance, manifests, handoff
+- tags: ubuntu, docker, image-digest, archive, kubernetes, provenance
+- aliases: 774218db, 873cd89c, 06013413, c09 image pin
+- paths: backend/worker-image/provenance.json, deploy/k3s/, docs/c07-c10-runtime-handoff.md, tasks.md, agent-memory/
+- summary: Pinned the requester-observed C09 Ubuntu image across the worker, executor, validation policy, provenance and live handoff.
+- changes: All four runtime image references now use manifest digest `sha256:774218db...`; provenance records the observed config digest, archive SHA-256 and byte size. The handoff records step A passed, uses the new digest in the admission probe and limits its history scan to AegisForge-created layers so the upstream Python signing key is not a false positive. The execution ledger now distinguishes the passed image build from pending C06 runtime acceptance.
+- verification: Requester output showed the linux/amd64 build's offline layer pass, manifest and config digests, and a root-owned mode-0600 archive outside the repository with SHA-256 `06013413...` and 49,579,008 bytes. Locally, 79 manifest checks passed, provenance parsed as JSON, every live image consumer matched the recorded digest, and `git diff --check` passed.
+- remaining: Publish these eight files, pull them on Ubuntu, import and alias the image in K3s containerd, then recreate the address-bound TLS identity and resume the guarded C06 rollout. No cluster object or service was changed by Codex.
