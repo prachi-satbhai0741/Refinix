@@ -1178,3 +1178,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: The switcher must actually switch, not just list. Screenshot supplied showing the model list above the pill.
 - follow_up_to: [UP-20260905-018](#up-20260905-018)
 - linked_changes: [AC-20260905-018](agentchangelog.md#ac-20260905-018)
+
+<a id="up-20260906-001"></a>
+## UP-20260906-001 — Repair the Python 3.13 worker image checks
+- date: 2026-09-06
+- status: implemented; Ubuntu rebuild pending
+- scope: c06, c09, worker-image, offline-tests
+- tags: docker-build, python-3.13, model-digest, zero-tests, test-fixture
+- aliases: selected model is not installed, exit status 5, worker image 11 failures
+- paths: backend/worker/test_worker_app.py, backend/worker/test_validation.py, agent-memory/
+- summary: Repair the two stale test assumptions exposed by the authoritative Ubuntu worker-image build without weakening production admission or validation.
+- request: Continue the ordered live setup after the Ubuntu C09 worker image ran 213 offline checks and failed 11.
+- constraints: Keep model-digest admission fail-closed and keep zero discovered tests from passing; change only the shared fixtures that drifted across environments.
+- acceptance: The focused worker API and validation suites pass locally, and the Ubuntu image build is rerun as the authoritative gate.
+- verification_authorization: Focused offline tests and static checks locally; the container build remains the live Ubuntu check.
+- follow_up_to: [UP-20260905-016](#up-20260905-016)
+- linked_changes: [AC-20260906-002](agentchangelog.md#ac-20260906-002)

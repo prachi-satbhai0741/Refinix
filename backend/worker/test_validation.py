@@ -231,7 +231,10 @@ class TestRunner(unittest.TestCase):
 
     def test_zero_discovered_tests_is_not_a_pass(self):
         self.build(original={"empty.py": "value = 1\n"}, replacement={}, plan={})
-        result = validate.run(self.package, self.workspace)
+        result = validate.run(
+            self.package, self.workspace,
+            runner=lambda command, **_: subprocess.CompletedProcess(
+                command, 0, b"", b"Ran 0 tests in 0.000s\n\nOK\n"))
         self.assertEqual(result["exit_status"], 0)
         self.assertEqual(result["tests_run"], 0)
         self.assertFalse(result["passed"])

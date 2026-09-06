@@ -1633,3 +1633,17 @@ work. No repository file change means no changelog entry.
 - changes: Workflow-scoped model choices now persist and propagate exactly, Auto is visibly disabled, document search shows no false model choice, and OCR enables only a runtime-confirmed vision model. Code apply now requires a current observed sandbox pass over the full selected snapshot with at least one parsed unittest result. Validation Jobs are constrained by credential-free identity plus admission policy, temporary packages expire on terminal acknowledgement, startup and a periodic sweep, and Proof Card citation identities and approval sources are persisted.
 - verification: Observed on the macOS coordinator: 888 Python checks passed with 4 intentional skips; 91 browser checks passed; JavaScript and worker API source parsed; final `git diff --check` passed. The FastAPI worker route suite remains authoritative only inside the pinned image build.
 - remaining: Build the linux/amd64 worker image, server-dry-run and apply the admission policy, pair the devices, run one real validation Job, and choose a vision-capable OCR model or accept scan OCR as blocked. C06–C10 remain unaccepted until those device checks pass.
+
+<a id="ac-20260906-002"></a>
+## AC-20260906-002 — Worker image checks are deterministic on Python 3.13
+- prompt_id: [UP-20260906-001](userprompts.md#up-20260906-001)
+- date: 2026-09-06
+- status: implemented and locally checked; authoritative Ubuntu image rebuild pending
+- scope: c06, c09, worker-image, offline-tests
+- tags: docker-build, python-3.13, model-digest, zero-tests, test-fixture
+- aliases: selected model is not installed, exit status 5, worker image 11 failures
+- paths: backend/worker/test_worker_app.py, backend/worker/test_validation.py, agent-memory/
+- summary: Made the worker image checks supply their installed-model evidence explicitly and test the zero-test gate independently of Python's unittest exit-code change.
+- changes: The shared API fixture now makes its fake runtime advertise the same model digest carried by its envelopes. The zero-discovery check injects a successful zero-test result, so it still proves the minimum-test guard even when Python 3.13 itself exits 5 for no tests. Production admission and validation code are unchanged.
+- verification: `backend.worker.test_validation` passed 45 checks under the local Python 3.14 environment; both edited test files compiled; `git diff --check` passed. The worker API suite could not run locally because neither existing Mac virtual environment contains FastAPI, so the Ubuntu image build remains authoritative.
+- remaining: Commit and push the four changed files, pull them on Ubuntu, then rerun the cached-input C09 worker image build. No image, service, Kubernetes object, credential or Git state was changed by Codex.
