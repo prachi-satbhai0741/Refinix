@@ -38,7 +38,7 @@ import time
 import uuid
 
 from backend.contracts import v1
-from backend.worker import runtime
+from backend.worker import codegen, jobspec, packages as packages_module, runtime
 from backend.worker.dispatch import ExecutorSession
 from backend.worker.redis_client import Redis, RedisError, RedisUnavailable
 
@@ -46,6 +46,12 @@ BLOCK_MS = 5_000
 IDLE_SLEEP = 1.0
 RECONNECT_SLEEP = 3.0
 CANCEL_POLL_SECONDS = 1.0
+PACKAGE_PURGE_INTERVAL_SECONDS = 300.0
+
+# One JSON proposal or one JSON validation result, delivered as bounded output
+# deltas so the coordinator reconstructs it from validated events exactly as it
+# does a chat answer. No second transport.
+DELTA_CHARS = 2048
 
 
 class Stopped(Exception):
@@ -55,16 +61,25 @@ class Stopped(Exception):
 
 class Executor:
     def __init__(self, session: ExecutorSession, *, node_id: str,
-                 stop_check=None):
+                 stop_check=None, packages=None, validator=None):
         self.session = session
         self.node_id = node_id
         self._stop_check = stop_check or (lambda: False)
+        # AF-010: the job package volume. Separate from pairing state, which
+        # this process is never given.
+        self.packages = packages if packages is not None else packages_module.PackageStore()
+        self._next_package_purge = 0.0
+        self._purge_expired_packages()
+        # AF-011: the Kubernetes validation runner. Injected so the offline
+        # checks drive every failure path without a cluster.
+        self.validator = validator if validator is not None else jobspec.JobValidator()
 
     # ---------------------------------------------------------------- loop ---
 
     def run_once(self) -> int:
         """One pass. Returns how many entries were handled, for the caller's
         sleep decision and for the offline checks."""
+        self._purge_expired_packages()
         handled = 0
         for entry_id, fields in self.session.recover_pending():
             handled += self._handle(entry_id, fields, recovered=True)
@@ -73,6 +88,16 @@ class Executor:
         for entry_id, fields in self.session.next_entries(block_ms=BLOCK_MS):
             handled += self._handle(entry_id, fields, recovered=False)
         return handled
+
+    def _purge_expired_packages(self) -> None:
+        now = time.monotonic()
+        if now < self._next_package_purge:
+            return
+        self._next_package_purge = now + PACKAGE_PURGE_INTERVAL_SECONDS
+        try:
+            self.packages.purge_expired()
+        except OSError:
+            pass
 
     def _handle(self, entry_id: str, fields: dict, *, recovered: bool) -> int:
         """Run one delivered entry, and acknowledge it only when it is safe to.
@@ -104,6 +129,7 @@ class Executor:
         # check, at-least-once delivery produces a second answer to one request.
         if self.session.terminal_state(envelope.attempt_id) is not None:
             self.session.acknowledge(entry_id)
+            self._purge_package(envelope)
             return 1
 
         if not self.session.claim(envelope.attempt_id, epoch):
@@ -136,11 +162,23 @@ class Executor:
                 if outcome != "interrupted" and \
                         self.session.terminal_state(envelope.attempt_id) is not None:
                     self.session.acknowledge(entry_id)
+                    self._purge_package(envelope)
             except (RedisUnavailable, RedisError):
                 # Nothing to release or acknowledge against. The entry stays
                 # pending, which is the correct recoverable state.
                 pass
         return 1
+
+    def _purge_package(self, envelope: v1.JobEnvelope) -> None:
+        if envelope.task_type != "code":
+            return
+        try:
+            self.packages.purge(
+                relationship_id=envelope.relationship_id,
+                workspace_id=envelope.workspace_id,
+                attempt_id=envelope.attempt_id)
+        except OSError:
+            pass
 
     @staticmethod
     def _parse(fields: dict):
@@ -232,34 +270,23 @@ class Executor:
                 # can read and no lease protects.
                 return True
 
-        produced, metrics, failed = [], {}, None
-        try:
-            for kind, payload in runtime.stream_chat(
-                    [{"role": "user", "content": envelope.original_request}],
-                    should_cancel=should_cancel,
-                    timeout=max(0.5, deadline - time.monotonic())):
-                if kind == "delta":
-                    produced.append(payload)
-                    if len("".join(produced).encode("utf-8")) > envelope.limits.output_bytes:
-                        failed = "output limit reached"
-                        break
-                    for index in range(0, len(payload), 2048):
-                        emit({"kind": "output.delta",
-                              "text": payload[index:index + 2048]})
-                elif kind == "cancelled":
-                    emit({"kind": "attempt.state", "previous": "running",
-                          "current": "cancelled"})
-                    return "interrupted" if state["lost"] else "cancelled"
-                elif kind == "done":
-                    metrics = payload
-        except Exception:                                      # noqa: BLE001
-            failed = "the local model runtime failed"
-
-        if failed is None and metrics.get("done_reason") != "stop":
-            failed = "the reply was incomplete"
-        if failed is None and "text.nonempty" in envelope.output.validators \
-                and not "".join(produced).strip():
-            failed = "the runtime returned no visible output"
+        if envelope.task_type == "code" and \
+                "code.validate" in envelope.required_capabilities:
+            # A validation attempt runs no model at all: it creates one
+            # restricted Job and reports exactly what that Job returned.
+            produced, failed = self._validate(envelope, emit, should_cancel,
+                                              deadline)
+            if failed == "cancelled":
+                emit({"kind": "attempt.state", "previous": "running",
+                      "current": "cancelled"})
+                return "interrupted" if state["lost"] else "cancelled"
+        else:
+            produced, failed = self._generate(envelope, emit, should_cancel,
+                                              deadline, state)
+            if failed == "cancelled":
+                emit({"kind": "attempt.state", "previous": "running",
+                      "current": "cancelled"})
+                return "interrupted" if state["lost"] else "cancelled"
         if failed is not None:
             emit({"kind": "attempt.state", "previous": "running", "current": "failed"})
             return "interrupted" if state["lost"] else "failed"
@@ -270,6 +297,96 @@ class Executor:
         # "completed" as far as anyone else can tell, and saying so would be a
         # claim about a record that does not exist.
         return "interrupted" if state["lost"] else "completed"
+
+
+    # -------------------------------------------------------- production ---
+
+    def _emit_output(self, emit, text: str, limit: int) -> str | None:
+        """Send one bounded reply as deltas. Returns a failure reason or None."""
+        if len(text.encode("utf-8")) > limit:
+            return "output limit reached"
+        for index in range(0, len(text), DELTA_CHARS):
+            emit({"kind": "output.delta", "text": text[index:index + DELTA_CHARS]})
+        return None
+
+    def _generate(self, envelope, emit, should_cancel, deadline, state):
+        """Run the model. Chat sends the request text; Code sends its package.
+
+        Returns `(produced, failure)`, where a failure of `"cancelled"` is the
+        caller's signal to emit a cancellation rather than a failure.
+        """
+        if envelope.task_type == "code":
+            try:
+                selection = codegen.resolve_selection(self.packages, envelope)
+            except (LookupError, UnicodeDecodeError, OSError):
+                # The package is gone, incomplete, or no longer matches the
+                # envelope. Prompting the model with a partial selection would
+                # produce a proposal against files nobody chose.
+                return "", "this attempt's file package could not be resolved"
+            messages = codegen.build_messages(envelope.original_request, selection)
+        else:
+            messages = [{"role": "user", "content": envelope.original_request}]
+
+        produced, metrics, failed = [], {}, None
+        try:
+            options = {"should_cancel": should_cancel,
+                       "timeout": max(0.5, deadline - time.monotonic())}
+            if envelope.model:
+                options["model"] = envelope.model.model_id
+            for kind, payload in runtime.stream_chat(messages, **options):
+                if kind == "delta":
+                    produced.append(payload)
+                    if len("".join(produced).encode("utf-8")) > envelope.limits.output_bytes:
+                        failed = "output limit reached"
+                        break
+                    for index in range(0, len(payload), DELTA_CHARS):
+                        emit({"kind": "output.delta",
+                              "text": payload[index:index + DELTA_CHARS]})
+                elif kind == "cancelled":
+                    return "".join(produced), "cancelled"
+                elif kind == "done":
+                    metrics = payload
+        except Exception:                                      # noqa: BLE001
+            failed = "the local model runtime failed"
+
+        text = "".join(produced)
+        if failed is None and metrics.get("done_reason") != "stop":
+            failed = "the reply was incomplete"
+        if failed is None and "text.nonempty" in envelope.output.validators \
+                and not text.strip():
+            failed = "the runtime returned no visible output"
+        if failed is None and envelope.task_type == "code" and not text.strip():
+            failed = "the runtime returned no proposal"
+        return text, failed
+
+    def _validate(self, envelope, emit, should_cancel, deadline):
+        """Run one restricted Kubernetes Job and report only what it returned.
+
+        No model, no network and no repository. Every failure here — an
+        unreachable API, a refused ServiceAccount, a deadline, a deleted Job,
+        an unreadable result — becomes a failed attempt. There is no path from
+        any of them to a passed validation.
+        """
+        budget = max(1.0, deadline - time.monotonic())
+        try:
+            result = self.validator.run(
+                envelope, package_root=self.packages,
+                deadline_seconds=budget, should_cancel=should_cancel)
+        except jobspec.ValidationUnavailable as exc:
+            return "", f"sandbox validation is unavailable: {exc}"
+        except Exception:                                      # noqa: BLE001
+            return "", "sandbox validation could not be run"
+        if result.get("cancelled"):
+            return "", "cancelled"
+        body = json.dumps(result, sort_keys=True, separators=(",", ":"))
+        if (reason := self._emit_output(emit, body, envelope.limits.output_bytes)):
+            return body, reason
+        # A Job that ran and failed is still a COMPLETED attempt carrying a
+        # failed result: the coordinator needs the output to show why. Only an
+        # attempt that could not produce a result at all fails here.
+        if not result.get("observed"):
+            return body, "the validation Job produced no readable result"
+        return body, None
 
 
 def _now() -> str:

@@ -208,6 +208,22 @@ Details, including what the application deliberately does **not** do, are in
 [backend/coordinator/README.md](backend/coordinator/README.md) and
 [desktop/README.md](desktop/README.md).
 
+### What reads what, right now
+
+The application reports its own capabilities rather than promising them, and
+the state below is what it reports on the configured macOS coordinator:
+
+| Input | State |
+|---|---|
+| `.txt`, `.md`, `.csv`, `.json`, `.docx` | Read locally with the standard library |
+| **Scanned PDF** | Pages render with the macOS Quartz framework (no install needed), but reading them needs a model that declares the `vision` capability. The configured `MedAIBase/PaddleOCR-VL:0.9b` **does not**, so scan reading currently reports itself unavailable with that reason. See [`docs/c08-dependency-plan.md`](docs/c08-dependency-plan.md). |
+| Loose image files (`.png`, `.jpg`, …) | Refused. A scan is read as PDF pages, which is where page numbers and citations come from. |
+| Code changes | Proposed as a reviewable diff. Generation runs on the paired Ubuntu worker when one is paired and healthy, and on this Mac otherwise; either way the canonical folder changes only after an approval. |
+
+**Distributed execution is not accepted yet.** C06 onward remain unverified —
+see [`docs/c07-c10-runtime-handoff.md`](docs/c07-c10-runtime-handoff.md) for the
+ordered steps and exactly what is and is not proven.
+
 Before contributing code:
 
 1. Start with the [documentation map](docs/README.md) and short

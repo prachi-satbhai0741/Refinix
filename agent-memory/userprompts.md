@@ -1049,3 +1049,99 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Run only the affected coordinator test module and `git diff --check`.
 - follow_up_to: [UP-20260905-009](#up-20260905-009)
 - linked_changes: [AC-20260905-010](agentchangelog.md#ac-20260905-010)
+
+<a id="up-20260905-011"></a>
+## UP-20260905-011 — Remove test credentials from the worker image build
+- date: 2026-09-05
+- status: implemented; Ubuntu rebuild pending
+- scope: c06, dockerfile, secrets, image-build
+- tags: c06, dockerfile, credentials, image-build, test-boundary
+- aliases: dummy token in build history, coordinator import missing, Ubuntu C06 build failure
+- paths: backend/worker-image/Dockerfile, backend/worker/test_executor.py, agent-memory/
+- summary: Remove dummy identity values from the Dockerfile and keep the worker image build independent of coordinator-only source.
+- request: Ensure generated IDs and tokens stay in secret storage rather than appearing in the Dockerfile after the Ubuntu C06 build exposed fixed test values.
+- constraints: Preserve runtime Kubernetes Secret and TLS-file handling; fix only the failed image-build boundary without adding secret infrastructure.
+- acceptance: The Dockerfile contains no token or node-ID value, and its worker-only offline suite does not import uncopied coordinator code.
+- verification_authorization: No local test rerun requested; the authoritative check is the next Ubuntu image rebuild.
+- follow_up_to: [UP-20260905-010](#up-20260905-010)
+- linked_changes: [AC-20260905-011](agentchangelog.md#ac-20260905-011)
+
+<a id="up-20260905-012"></a>
+## UP-20260905-012 — Pin the observed C06 Ubuntu image
+- date: 2026-09-05
+- status: implemented; source push and deployment pending
+- scope: c06, image-digest, manifests, provenance, handoff
+- tags: c06, ubuntu, image-digest, containerd, provenance, deployment
+- aliases: daf1052b, single manifest, digest alias, pin C06 image
+- paths: backend/worker-image/provenance.json, deploy/k3s/20-worker.yaml, deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, docs/c06-distributed-execution-handoff.md, agent-memory/
+- summary: Record and pin the single-manifest C06 image built and imported on the Ubuntu worker.
+- request: Continue the C06 device checkpoint after containerd confirmed the C06 tag and explicit digest alias resolve to the same observed manifest.
+- constraints: Use only observed digests; keep credentials outside the image and do not deploy the executor before pairing.
+- acceptance: Both manifests pin the observed C06 digest, provenance distinguishes observed from unavailable archive evidence, and the build handoff produces a single manifest plus digest alias.
+- verification_authorization: Source consistency only; deployment and runtime checks remain human steps.
+- follow_up_to: [UP-20260905-011](#up-20260905-011)
+- linked_changes: [AC-20260905-012](agentchangelog.md#ac-20260905-012)
+
+<a id="up-20260905-013"></a>
+## UP-20260905-013 — Make the mounted TLS key readable to the non-root worker
+- date: 2026-09-05
+- status: implemented; Ubuntu rollout retry pending
+- scope: c06, kubernetes, tls, permissions, rollout
+- tags: c06, kubernetes, tls, fsgroup, non-root, crashloopbackoff
+- aliases: uvicorn permission denied, tls key unreadable, C06 pod crash
+- paths: deploy/k3s/20-worker.yaml, deploy/k3s/test_manifests.py, agent-memory/
+- summary: Fix the C06 worker startup failure without weakening the TLS private-key mode.
+- request: Continue the live C06 rollout after the new worker Pod failed while Uvicorn loaded the mounted certificate chain.
+- constraints: Preserve UID/GID 10001, mode 0440, the old ready worker during rollout, and all existing isolation boundaries.
+- acceptance: Kubernetes assigns the secret volume to group 10001 so the non-root worker can read the key while other users cannot.
+- verification_authorization: Source consistency only; the Ubuntu rollout is the authoritative check.
+- follow_up_to: [UP-20260905-012](#up-20260905-012)
+- linked_changes: [AC-20260905-013](agentchangelog.md#ac-20260905-013)
+
+<a id="up-20260905-014"></a>
+## UP-20260905-014 — Remove the invalid NodePort listener precheck
+- date: 2026-09-05
+- status: implemented; Ubuntu guard installation pending
+- scope: c06, k3s, nodeport, systemd, handoff
+- tags: c06, k3s, nodeport, systemd, socket-proxy, runtime-evidence
+- aliases: empty ss, packet-rule NodePort, guard precheck timeout, TLS curl root certificate
+- paths: deploy/k3s/host/aegisforge-worker-guard.service, deploy/k3s/host/test_guard.py, docs/c06-distributed-execution-handoff.md, agent-memory/
+- summary: Remove a worker-guard startup check that incorrectly assumes a K3s NodePort appears as a process listener.
+- request: Continue C06 after loopback TLS succeeded while `ss` correctly showed no listener for the packet-rule NodePort.
+- constraints: Preserve the loopback-only K3s setting, guard-before-socket dependency, pinned TLS proof, and single-Mac firewall restriction.
+- acceptance: The guard can start on the observed K3s implementation without weakening its firewall dependency, and the handoff treats TLS as functional proof.
+- verification_authorization: Source consistency only; the Ubuntu systemd activation is the authoritative check.
+- follow_up_to: [UP-20260905-013](#up-20260905-013)
+- linked_changes: [AC-20260905-014](agentchangelog.md#ac-20260905-014)
+
+<a id="up-20260905-015"></a>
+## UP-20260905-015 — Consolidated C07–C10 source and artifact preparation
+- date: 2026-09-05
+- status: implemented; every C06–C10 human runtime gate still pending
+- scope: c07, c08, c09, c10, documents, code, sandbox, approvals, proof, artifacts
+- tags: c08, c09, c10, paddleocr-vl, quartz, resource-package, kubernetes-job, approvals, proof-cards
+- aliases: consolidated execution, ocr on mac, code on ubuntu, validation job, durable write recovery
+- paths: backend/coordinator/, backend/worker/, backend/contracts/v1.py, deploy/k3s/, frontend/app/, docs/, tasks.md
+- summary: Build C08 Mac Documents/OCR, C09 distributed Code with a restricted Kubernetes validation Job, and C10 concurrency, approval binding, durable writes and Proof Cards in one cycle ahead of the human gates.
+- request: Implement the complete C07-preparation-through-C10 source and offline-verifiable artifact candidate in one consolidated pass for a single combined Codex review.
+- constraints: Mac keeps Documents and coordination; Ubuntu runs code generation and a restricted Kubernetes Job sandbox; reuse existing dispatch/approval/repository/SQLite/Redis paths; no installs, downloads, model pulls, Git writes, host or cluster mutation; ports 8080/8443/30443 unchanged.
+- acceptance: Source and offline checks cover both workflows and their concurrency, approvals bind to exact workflow outputs, Proof Cards cite observed sources only, and rebuilt artifacts carry recorded digests.
+- verification_authorization: Offline checks, bounded loopback Ollama reads, cached-input image build and macOS packaging only; all live device gates stay unrun.
+- follow_up_to: [UP-20260905-014](#up-20260905-014)
+- linked_changes: [AC-20260905-015](agentchangelog.md#ac-20260905-015)
+
+<a id="up-20260905-016"></a>
+## UP-20260905-016 — Close the C08–C10 review findings
+- date: 2026-09-05
+- status: implemented; every C06–C10 human runtime gate still pending
+- scope: c08, c09, c10, model-selection, validation, sandbox, cleanup, proof
+- tags: model-selector, paddleocr, auto-model, validation-gate, kubernetes-rbac, package-retention, proof-cards
+- aliases: execute review fixes, unreachable validation, zero tests, job create escalation, unstable citation ids
+- paths: backend/coordinator/, backend/worker/, deploy/k3s/, frontend/app/, docs/, tasks.md, agent-memory/
+- summary: Apply the consolidated Codex review corrections so model choice is real, validation is reachable and meaningful, Kubernetes workload authority is contained, temporary packages expire, and Proof Cards use persisted evidence.
+- request: Execute and solve the seven issues found in the review of the consolidated C07–C10 candidate.
+- constraints: Preserve the accepted C08–C10 foundations and unrelated work; no Git/GitHub writes, downloads, installs, model pulls, deployment, or host/cluster mutation; every C06+ human gate remains pending.
+- acceptance: Installed models are selectable by workflow with disabled Auto; apply requires a current observed passing validation that ran tests; sandbox authority cannot reach operational credentials; packages are cleaned at terminal acknowledgement, startup and periodically; Proof Card identities and sources are stable.
+- verification_authorization: Run focused and proportionate offline tests and static checks only; no live service, cluster or model execution.
+- follow_up_to: [UP-20260905-015](#up-20260905-015)
+- linked_changes: [AC-20260906-001](agentchangelog.md#ac-20260906-001)

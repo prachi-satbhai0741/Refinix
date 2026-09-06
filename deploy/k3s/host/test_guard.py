@@ -435,9 +435,9 @@ class TestWorkerProxyUnits(unittest.TestCase):
         self.assertIn("apply worker", guard)
         self.assertIn("remove worker", guard)
 
-    def test_the_guard_waits_for_a_loopback_nodeport_not_a_lan_one(self):
+    def test_the_guard_does_not_assume_nodeport_is_a_process_listener(self):
         guard = self.unit("aegisforge-worker-guard.service")
-        self.assertIn("127.0.0.1", guard)
+        self.assertNotIn("ExecStartPre", guard)
 
 
 class TestRemovalDoesNotParseSaveOutput(unittest.TestCase):

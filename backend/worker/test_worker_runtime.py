@@ -100,6 +100,21 @@ class TestFailureHandling(unittest.TestCase):
 
 
 class TestProbe(unittest.TestCase):
+    def test_runtime_requests_ignore_proxies_and_refuse_redirects(self):
+        class Opener:
+            def open(self, request, timeout):
+                return FakeResponse([])
+
+        with patch.object(runtime.urllib.request, "build_opener",
+                          return_value=Opener()) as build:
+            runtime._post("/api/version")
+        handlers = build.call_args.args
+        proxy = next(item for item in handlers
+                     if isinstance(item, runtime.urllib.request.ProxyHandler))
+        self.assertEqual(proxy.proxies, {})
+        self.assertTrue(any(isinstance(item, runtime._NoRedirect)
+                            for item in handlers))
+
     def test_unreachable_runtime_reports_honestly(self):
         with patch.object(runtime, "_post", side_effect=OSError("refused")):
             state = runtime.probe()

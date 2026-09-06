@@ -25,6 +25,19 @@ data:
   AEGIS_MODEL: "qwen3.5:4b-q4_K_M"
   AEGIS_NUM_CTX: "4096"
   AEGIS_NUM_PREDICT: "2048"
+  # AF-010 / AF-011. The package root is inside the job volume, which is a
+  # different claim from the pairing state the worker API holds.
+  AEGIS_PACKAGE_ROOT: "/var/lib/aegisforge-jobs/packages"
+  AEGIS_PACKAGE_SUBPATH: "packages"
+  AEGIS_JOBS_CLAIM: "aegisforge-jobs"
+  AEGIS_NAMESPACE: "aegisforge"
+  # The image a validation Job runs. The SAME pinned digest as this Deployment
+  # — one image, one build — and it must be replaced together with the image
+  # below whenever a new worker build is rolled out. An empty value makes
+  # validation report itself unavailable rather than running a floating tag.
+  AEGIS_VALIDATION_IMAGE: "docker.io/library/aegisforge-worker@sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf"
+  AEGIS_VALIDATION_SECONDS: "300"
+  AEGIS_VALIDATION_TTL: "300"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -48,7 +61,16 @@ spec:
         app: aegisforge-worker
         component: executor
     spec:
-      automountServiceAccountToken: false
+      # AF-011. The executor is the ONE narrowly scoped component allowed to
+      # create and inspect validation Jobs, so it is the only Pod with a
+      # mounted token. Its Role (deploy/k3s/50-validation.yaml) grants six
+      # namespaced operations and no access to Secrets, ConfigMaps,
+      # Deployments, Services, Nodes, exec, attach or port-forward.
+      #
+      # Until 50-validation.yaml is applied this ServiceAccount does not
+      # exist, the Pod does not schedule, and nothing has Job authority.
+      serviceAccountName: aegisforge-executor
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -58,8 +80,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: executor
-          # REPLACE at the checkpoint with the C06 build digest.
-          image: docker.io/library/aegisforge-worker@sha256:a1eb434c91ff5e51a095ccbdc5becd10e98a099a281302ef68e86b531543a295
+          # C06 Ubuntu build, 2026-09-05. Recorded in provenance.json.
+          image: docker.io/library/aegisforge-worker@sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf
           imagePullPolicy: Never
           command: ["python", "-m", "backend.worker.executor"]
           envFrom:
@@ -99,6 +121,10 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # Job packages only. `worker-state`, which holds the pairing store
+            # and its credential hashes, is deliberately NOT mounted here.
+            - name: jobs
+              mountPath: /var/lib/aegisforge-jobs
           # No HTTP probe: there is no listener. Liveness is "the process can
           # still reach Redis", which is the only dependency it has and the
           # only failure a restart would fix.
@@ -124,6 +150,9 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: jobs
+          persistentVolumeClaim:
+            claimName: aegisforge-jobs
 ---
 # The executor may reach Redis and nothing else in the cluster. The runtime
 # bridge is granted by 30-runtime-egress.yaml, which already selects on

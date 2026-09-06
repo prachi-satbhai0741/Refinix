@@ -104,6 +104,28 @@ class TestBundleContents(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "__pycache__"):
                 verify(bundle)
 
+    def test_the_new_c08_and_c10_modules_are_shipped(self):
+        """A module the coordinator imports but the bundle omits would make the
+        packaged app behave differently from a source run."""
+        self.assertIn("backend/coordinator", self.ns["APPLICATION_PACKAGES"])
+        for name in ("pdfrender.py", "ocr.py", "proof.py"):
+            with self.subTest(module=name):
+                self.assertTrue(
+                    (REPO / "backend" / "coordinator" / name).exists(),
+                    f"{name} must exist to be staged")
+
+    def test_quartz_is_named_explicitly_because_it_is_imported_lazily(self):
+        """`pdfrender` imports Quartz inside a function so the module stays
+        importable without PyObjC. modulegraph therefore cannot follow it, and
+        an unnamed dependency would ship an app that reports PDF unavailable on
+        a Mac that has PyObjC installed."""
+        includes = self.ns["OPTIONS"]["includes"]
+        self.assertIn("Quartz", includes)
+        self.assertIn("objc", includes)
+        source = (REPO / "backend" / "coordinator" / "pdfrender.py").read_text()
+        self.assertNotIn("\nimport Quartz", source,
+                         "a top-level import would break the Ubuntu worker")
+
     def test_the_desktop_lock_includes_the_existing_backend_versions(self):
         lock = (REPO / "desktop" / "requirements-macos.lock").read_text()
         for pin in (REPO / "backend" / "requirements.txt").read_text().splitlines():

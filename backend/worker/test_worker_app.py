@@ -4,11 +4,8 @@ These need FastAPI, which lives only inside the pinned image, so the
 authoritative run is at **image build time** under `--network=none`. No server,
 model or network.
 
-They can also be run on a machine without FastAPI by calling the route
-coroutines directly against a minimal stand-in for `fastapi` — enough to import
-the module and invoke the routes. That checks route logic only: no HTTP, no
-request validation, no serialisation. A pass there is not evidence the service
-works, and the image build remains the run that counts.
+They can also be run directly on a machine that already has the pinned worker
+dependencies. The image build remains the run that counts.
 
 Execution moved to `backend.worker.executor` at C06 — the API enqueues and the
 executor Pod runs the work — so the streaming, budget and cancellation checks
@@ -66,6 +63,8 @@ def envelope(**over):
         coordinator_node_id=nid(), target_node_id=W.NODE_ID,
         relationship_id=CONFIRMED,
         original_request="say something", task_type="chat",
+        model=v1.ModelRef(model_id=W.runtime.MODEL, manifest_sha256="a" * 64,
+                          runtime="ollama", runtime_version="test"),
         required_capabilities=["text.generate"], context=[], attachments=[],
         allowed_tools=[],
         limits=v1.Limits(cpu_millis=2000, memory_bytes=2_147_483_648,
@@ -112,6 +111,21 @@ class TestAdmission(Base):
     def test_unsupported_capability(self):
         self.assertIsNotNone(
             W._unsupported(envelope(required_capabilities=["document.extract"])))
+
+    def test_generation_and_validation_cannot_be_combined(self):
+        self.assertIsNotNone(W._unsupported(envelope(
+            task_type="code",
+            required_capabilities=["code.generate", "code.validate"],
+            output=v1.OutputContract(
+                kind="patch", validators=["patch.applies", "sandbox.exit_zero"],
+                schema_ref=None))))
+
+    def test_validation_cannot_omit_its_exit_status_validator(self):
+        self.assertIsNotNone(W._unsupported(envelope(
+            task_type="code", model=None,
+            required_capabilities=["code.validate"],
+            output=v1.OutputContract(kind="patch", validators=["patch.applies"],
+                                     schema_ref=None))))
 
     def test_unsupported_output_kind(self):
         self.assertIsNotNone(W._unsupported(envelope(

@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.coordinator import db, runtime
-from backend.coordinator.server import Coordinator
+from backend.coordinator.server import Coordinator, RequestError
 
 
 class FakeOllama(BaseHTTPRequestHandler):
@@ -303,14 +303,52 @@ class TestThinkingOnlyCompletion(CoordinatorBase):
 
 
 class TestStatusSurface(CoordinatorBase):
-    def test_only_the_configured_model_is_offered(self):
+    def test_configured_models_are_visible_before_setup(self):
         status = self.c.status()
-        self.assertEqual([m["id"] for m in status["models"]], [runtime.MODEL])
-        self.assertIn("reasoning", status["models"][0])
+        self.assertEqual({m["id"] for m in status["models"]},
+                         {runtime.MODEL, runtime.OCR_MODEL})
+        self.assertEqual(status["model_selections"]["chat"], runtime.MODEL)
 
     def test_the_status_reflects_the_stored_choice(self):
         db.set_reasoning(self.c.conn, runtime.MODEL, True)
-        self.assertTrue(self.c.status()["models"][0]["reasoning"])
+        row = next(model for model in self.c.status()["models"]
+                   if model["id"] == runtime.MODEL)
+        self.assertTrue(row["reasoning"])
+
+    def test_any_observed_text_model_can_be_selected_exactly(self):
+        other = "another-model:1b"
+        state = {"reachable": True, "server_version": "test",
+                 "models": [runtime.MODEL, other],
+                 "digests": {runtime.MODEL: "a" * 64, other: "b" * 64},
+                 "loaded": None, "endpoint": runtime.HOST, "error": None}
+        with patch.object(runtime, "probe", return_value=state):
+            self.assertEqual(self.c.select_model("chat", other),
+                             {"scope": "chat", "model": other})
+            self.assertEqual(self.c.status()["model_selections"]["chat"], other)
+
+    def test_only_a_confirmed_vision_model_is_selectable_for_ocr(self):
+        vision = "vision-model:1b"
+        state = {"reachable": True, "server_version": "test",
+                 "models": [runtime.MODEL, vision],
+                 "digests": {runtime.MODEL: "a" * 64, vision: "b" * 64},
+                 "loaded": None, "endpoint": runtime.HOST, "error": None}
+        capabilities = lambda model: (["completion", "vision"]
+                                      if model == vision else ["completion"])
+        with patch.object(runtime, "probe", return_value=state), \
+                patch.object(runtime, "model_capabilities", side_effect=capabilities):
+            inventory = {row["id"]: row for row in self.c.model_inventory()}
+            self.assertNotIn("documents.ocr",
+                             inventory[runtime.MODEL]["eligible_scopes"])
+            self.assertIn("documents.ocr", inventory[vision]["eligible_scopes"])
+            self.assertEqual(self.c.select_model("documents.ocr", vision),
+                             {"scope": "documents.ocr", "model": vision})
+            with self.assertRaises(RequestError):
+                self.c.select_model("documents.ocr", runtime.MODEL)
+
+    def test_auto_is_visible_as_a_future_choice_but_not_selectable(self):
+        with self.assertRaises(RequestError) as caught:
+            self.c.select_model("chat", "auto")
+        self.assertEqual(caught.exception.status, 409)
 
 
 if __name__ == "__main__":

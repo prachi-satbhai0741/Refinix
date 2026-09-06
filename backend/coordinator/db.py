@@ -22,7 +22,7 @@ from unicodedata import category
 
 from backend.contracts import v1
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 9
 
 # ponytail: one coordinator database; use per-database locks if hosting several.
 LOCK = threading.RLock()
@@ -139,6 +139,11 @@ CREATE TABLE IF NOT EXISTS model_prefs (
     reasoning  INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS model_selections (
+    scope      TEXT PRIMARY KEY,
+    model      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 -- A folder the user connected through the native picker. `root` is the
 -- canonical absolute path and never leaves the coordinator: the page and the
 -- model see `repo_id` and relative paths only.
@@ -161,9 +166,41 @@ CREATE TABLE IF NOT EXISTS proposals (
     request      TEXT NOT NULL,
     summary      TEXT NOT NULL,
     digest       TEXT NOT NULL,
+    selection_json TEXT NOT NULL DEFAULT '[]',
     state        TEXT NOT NULL,
     created_at   TEXT NOT NULL
 );
+-- AF-011. One row per validation attempt against a proposal. `passed` is
+-- written only from a validation result the sandbox actually returned; a
+-- Kubernetes error, a deadline or an unreadable log leaves it 0 with the
+-- reason recorded, never absent-and-assumed.
+CREATE TABLE IF NOT EXISTS proposal_validations (
+    validation_id   TEXT PRIMARY KEY,
+    workspace_id    TEXT NOT NULL,
+    proposal_id     TEXT NOT NULL,
+    job_id          TEXT,
+    attempt_id      TEXT,
+    node_id         TEXT,
+    passed          INTEGER NOT NULL DEFAULT 0,
+    observed        INTEGER NOT NULL DEFAULT 0,
+    command_json    TEXT NOT NULL,
+    exit_status     INTEGER,
+    stdout          TEXT NOT NULL DEFAULT '',
+    stderr          TEXT NOT NULL DEFAULT '',
+    job_name        TEXT,
+    job_uid         TEXT,
+    pod_json        TEXT,
+    image_digest    TEXT,
+    patch_sha256    TEXT,
+    result_sha256   TEXT,
+    tests_run       INTEGER,
+    detail          TEXT,
+    started_at      TEXT,
+    finished_at     TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS validations_by_proposal
+    ON proposal_validations(proposal_id, created_at);
 CREATE TABLE IF NOT EXISTS proposal_edits (
     edit_id      TEXT PRIMARY KEY,
     proposal_id  TEXT NOT NULL REFERENCES proposals(proposal_id),
@@ -197,6 +234,49 @@ CREATE TABLE IF NOT EXISTS approvals (
     consumed_at   TEXT
 );
 CREATE INDEX IF NOT EXISTS approvals_by_repo ON approvals(repo_id, requested_at);
+-- AF-013. One durable record per approved final write, created in the SAME
+-- transaction that claims the approval.
+--
+-- Consuming an approval and then writing files is two steps, and a coordinator
+-- that stopped between them left an approved multi-file change half applied
+-- with nothing left to resume from: the approval was spent, so a retry could
+-- not re-authorise it, and nothing recorded which files had already landed.
+-- This table is what a restart resumes. `approval_id` is UNIQUE, so a
+-- double-click or a retried request cannot create a second operation for one
+-- decision.
+CREATE TABLE IF NOT EXISTS write_operations (
+    operation_id  TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL,
+    -- NULL for a Full-access write, which the mode allows without asking. The
+    -- record is still durable and still resumable; UNIQUE keeps one approval
+    -- from ever producing two operations, and SQLite permits repeated NULLs.
+    approval_id   TEXT UNIQUE,
+    repo_id       TEXT NOT NULL,
+    proposal_id   TEXT NOT NULL,
+    action        TEXT NOT NULL,
+    action_sha256 TEXT NOT NULL,
+    state         TEXT NOT NULL,
+    detail        TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    finished_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS operations_by_state ON write_operations(state, created_at);
+-- Per-file progress. `base_sha256` and `after_sha256` are what recovery
+-- compares against, which is how it can tell "already applied" from "someone
+-- else edited this file" without ever overwriting unknown content.
+CREATE TABLE IF NOT EXISTS write_operation_files (
+    operation_id TEXT NOT NULL REFERENCES write_operations(operation_id),
+    rel_path     TEXT NOT NULL,
+    edit_id      TEXT NOT NULL,
+    base_sha256  TEXT NOT NULL,
+    after_sha256 TEXT NOT NULL,
+    state        TEXT NOT NULL,
+    detail       TEXT,
+    position     INTEGER NOT NULL,
+    updated_at   TEXT NOT NULL,
+    PRIMARY KEY (operation_id, rel_path)
+);
 -- One row per attempted repository operation. A policy allow is recorded as
 -- `allowed_automatically` with the mode that allowed it, never as a human
 -- approval the person did not give.
@@ -333,8 +413,24 @@ def connect(path: Path) -> sqlite3.Connection:
         # The model and reasoning value a request actually ran with. Older
         # attempts keep NULL rather than being back-filled with a guess.
         conn.execute("ALTER TABLE attempts ADD COLUMN reasoning_json TEXT")
+    proposal_columns = {r["name"] for r in conn.execute("PRAGMA table_info(proposals)")}
+    if "selection_json" not in proposal_columns:
+        conn.execute(
+            "ALTER TABLE proposals ADD COLUMN selection_json TEXT NOT NULL DEFAULT '[]'")
+    validation_columns = {
+        r["name"] for r in conn.execute("PRAGMA table_info(proposal_validations)")}
+    if "tests_run" not in validation_columns:
+        conn.execute("ALTER TABLE proposal_validations ADD COLUMN tests_run INTEGER")
     if "pinned" not in {r["name"] for r in conn.execute("PRAGMA table_info(chats)")}:
         conn.execute("ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+    # AF-013: bind a workflow approval to the exact attempt that produced the
+    # output. Additive and nullable, so every approval written before C10 stays
+    # readable and simply records no workflow binding — which is the truth
+    # about it, rather than a back-filled guess.
+    approval_columns = {r["name"] for r in conn.execute("PRAGMA table_info(approvals)")}
+    for column in ("workflow_id", "job_id", "step_id", "attempt_id"):
+        if column not in approval_columns:
+            conn.execute(f"ALTER TABLE approvals ADD COLUMN {column} TEXT")
     # Full-text search is created only where this SQLite build has FTS5. Its
     # absence disables document search and says so; it never fails a startup.
     try:
@@ -887,6 +983,27 @@ def set_reasoning(conn, model: str, enabled: bool) -> bool:
 
 
 @serialized
+def get_model_selection(conn, scope: str, default: str) -> str:
+    row = conn.execute("SELECT model FROM model_selections WHERE scope=?",
+                       (scope,)).fetchone()
+    return row["model"] if row else default
+
+
+@serialized
+def set_model_selection(conn, scope: str, model: str) -> str:
+    if not isinstance(scope, str) or not scope or len(scope) > 64:
+        raise ValueError("a model scope is required")
+    if not isinstance(model, str) or not model.strip() or len(model) > 200:
+        raise ValueError("a model name is required")
+    with conn:
+        conn.execute(
+            "INSERT INTO model_selections(scope, model, updated_at) VALUES (?,?,?)"
+            " ON CONFLICT(scope) DO UPDATE SET model=excluded.model,"
+            " updated_at=excluded.updated_at", (scope, model, now()))
+    return model
+
+
+@serialized
 def set_attempt_reasoning(conn, attempt_id: str, model: str, enabled: bool) -> None:
     """Snapshot what this attempt actually ran with.
 
@@ -980,19 +1097,53 @@ def forget_repository(conn, repo_id: str, workspace_id: str) -> bool:
     return True
 
 
+CODE_CHAT_TITLE = "Code activity"
+
+
+@serialized
+def code_chat(conn, workspace_id: str) -> str:
+    """The one conversation Code jobs belong to, created on first use.
+
+    The shared `Job` record requires a `chat_id`, and a Code request has no
+    conversation of its own. Rather than weaken the contract or invent a null,
+    the Code surface gets one durable workspace-level conversation: its job,
+    attempt and event history is then readable through exactly the same
+    surfaces as everything else, instead of living somewhere only Code knows
+    how to read.
+    """
+    row = conn.execute("SELECT value FROM meta WHERE key='code_chat_id'").fetchone()
+    if row:
+        existing = conn.execute(
+            "SELECT chat_id FROM chats WHERE chat_id=? AND workspace_id=?",
+            (row["value"], workspace_id)).fetchone()
+        if existing:
+            return existing["chat_id"]
+    chat_id, stamp = new_id(), now()
+    with conn:
+        conn.execute(
+            "INSERT INTO chats(chat_id, workspace_id, title, pinned, created_at,"
+            " updated_at) VALUES (?,?,?,?,?,?)",
+            (chat_id, workspace_id, CODE_CHAT_TITLE, 0, stamp, stamp))
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES ('code_chat_id', ?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value", (chat_id,))
+    return chat_id
+
+
 # ---- proposals ------------------------------------------------------------
 
 @serialized
 def create_proposal(conn, *, workspace_id, repo_id, job_id, attempt_id,
-                    request: str, summary: str, digest: str, edits: list[dict]) -> dict:
+                    request: str, summary: str, digest: str, edits: list[dict],
+                    selection: list[dict] | None = None) -> dict:
     proposal_id, stamp = new_id(), now()
     with conn:
         conn.execute(
             "INSERT INTO proposals(proposal_id, workspace_id, repo_id, job_id,"
-            " attempt_id, request, summary, digest, state, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            " attempt_id, request, summary, digest, selection_json, state, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (proposal_id, workspace_id, repo_id, job_id, attempt_id, request[:4000],
-             summary, digest, "proposed", stamp))
+             summary, digest, json.dumps(selection or []), "proposed", stamp))
         for edit in edits:
             conn.execute(
                 "INSERT INTO proposal_edits(edit_id, proposal_id, rel_path, base_sha256,"
@@ -1019,6 +1170,7 @@ def get_proposal(conn, proposal_id: str, workspace_id: str) -> dict | None:
     return {"proposal_id": row["proposal_id"], "repo_id": row["repo_id"],
             "job_id": row["job_id"], "attempt_id": row["attempt_id"],
             "summary": row["summary"], "digest": row["digest"],
+            "selection": json.loads(row["selection_json"] or "[]"),
             "state": row["state"], "created_at": row["created_at"], "edits": edits}
 
 
@@ -1066,15 +1218,19 @@ def _expiry(seconds: int = APPROVAL_TTL_SECONDS) -> str:
 @serialized
 def request_approval(conn, *, workspace_id, repo_id, proposal_id, action, target,
                      action_sha256, payload: dict,
-                     ttl_seconds: int = APPROVAL_TTL_SECONDS) -> dict:
+                     ttl_seconds: int = APPROVAL_TTL_SECONDS,
+                     workflow_id: str | None = None, job_id: str | None = None,
+                     step_id: str | None = None,
+                     attempt_id: str | None = None) -> dict:
     # Asking again for the same thing must not pile up approvals. An existing
     # pending, unexpired request for this exact action and digest IS the
     # request; returning it keeps the decision one-shot and the card single.
     existing = conn.execute(
         "SELECT approval_id FROM approvals WHERE workspace_id=? AND repo_id=?"
         " AND proposal_id IS ? AND action=? AND action_sha256=? AND decision='pending'"
-        " AND expires_at > ? ORDER BY requested_at DESC LIMIT 1",
-        (workspace_id, repo_id, proposal_id, action, action_sha256, now())).fetchone()
+        " AND attempt_id IS ? AND expires_at > ? ORDER BY requested_at DESC LIMIT 1",
+        (workspace_id, repo_id, proposal_id, action, action_sha256, attempt_id,
+         now())).fetchone()
     if existing:
         return public_approval(conn, existing["approval_id"], workspace_id)
 
@@ -1084,11 +1240,12 @@ def request_approval(conn, *, workspace_id, repo_id, proposal_id, action, target
         conn.execute(
             "INSERT INTO approvals(approval_id, workspace_id, repo_id, proposal_id,"
             " action, target, action_sha256, payload_json, decision, actor_id,"
-            " requested_at, expires_at, decided_at, consumed_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " requested_at, expires_at, decided_at, consumed_at,"
+            " workflow_id, job_id, step_id, attempt_id)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (approval_id, workspace_id, repo_id, proposal_id, action, target,
              action_sha256, json.dumps(payload), "pending", None, stamp, expires,
-             None, None))
+             None, None, workflow_id, job_id, step_id, attempt_id))
     return public_approval(conn, approval_id, workspace_id)
 
 
@@ -1107,12 +1264,19 @@ def public_approval(conn, approval_id: str, workspace_id: str) -> dict | None:
     if row is None:
         return None
     payload = json.loads(row["payload_json"])
+    keys = row.keys()
     return {"approval_id": row["approval_id"], "repo_id": row["repo_id"],
             "proposal_id": row["proposal_id"], "action": row["action"],
             "target": row["target"], "action_sha256": row["action_sha256"],
             "decision": _decide_expiry(row), "requested_at": row["requested_at"],
             "expires_at": row["expires_at"], "decided_at": row["decided_at"],
             "consumed": row["consumed_at"] is not None,
+            # NULL on approvals written before C10. Absent binding is reported
+            # as absent rather than filled in.
+            "workflow_id": row["workflow_id"] if "workflow_id" in keys else None,
+            "job_id": row["job_id"] if "job_id" in keys else None,
+            "step_id": row["step_id"] if "step_id" in keys else None,
+            "attempt_id": row["attempt_id"] if "attempt_id" in keys else None,
             # Display-only detail; never the absolute root.
             "detail": {k: payload.get(k) for k in ("paths", "summary", "mode", "repo_name")}}
 
@@ -1200,6 +1364,258 @@ def claim_approval(conn, approval_id: str, workspace_id: str, action: str,
         conn.execute("UPDATE approvals SET consumed_at=? WHERE approval_id=?",
                      (now(), approval_id))
     return json.loads(row["payload_json"])
+
+
+# ---- durable final writes (AF-013) ----------------------------------------
+
+OPERATION_OPEN_STATES = ("pending", "applying")
+
+
+@serialized
+def claim_approval_for_write(conn, approval_id: str, workspace_id: str, *,
+                             action: str, action_sha256: str, repo_id: str,
+                             proposal_id: str, edits: list[dict]) -> dict:
+    """Consume the approval and create the write record in ONE transaction.
+
+    This is the whole point of the function. Consuming the approval first and
+    creating the record afterwards leaves a window where the decision is spent
+    and nothing records what it authorised — which is exactly the state a crash
+    used to produce. Either both exist or neither does.
+
+    A second call for the same approval finds it already consumed and returns
+    the operation that consumed it, so a double-click resumes one operation
+    rather than starting a second.
+    """
+    row = conn.execute(
+        "SELECT * FROM approvals WHERE approval_id=? AND workspace_id=?",
+        (approval_id, workspace_id)).fetchone()
+    if row is None:
+        raise ApprovalError("unknown", "That approval no longer exists.")
+    if row["action"] != action or row["action_sha256"] != action_sha256:
+        raise ApprovalError("mismatch",
+                            "That approval was for a different change. Ask again.")
+    if row["repo_id"] != repo_id or row["proposal_id"] != proposal_id:
+        raise ApprovalError("mismatch",
+                            "That approval was for a different target. Ask again.")
+    if row["consumed_at"] is not None:
+        existing = conn.execute(
+            "SELECT operation_id FROM write_operations WHERE approval_id=?",
+            (approval_id,)).fetchone()
+        if existing:
+            return write_operation(conn, existing["operation_id"], workspace_id)
+        raise ApprovalError("used", "That approval was already used.")
+    decision = _decide_expiry(row)
+    if decision == "expired":
+        with conn:
+            conn.execute("UPDATE approvals SET decision='expired', decided_at=?"
+                         " WHERE approval_id=?", (row["expires_at"], approval_id))
+        raise ApprovalError("expired", "That approval expired before it was used.")
+    if decision != "approved":
+        raise ApprovalError(decision, f"That request was {decision}.")
+
+    operation_id, stamp = new_id(), now()
+    with conn:
+        conn.execute("UPDATE approvals SET consumed_at=? WHERE approval_id=?"
+                     " AND consumed_at IS NULL", (stamp, approval_id))
+        # If another caller consumed it between the read and here, its row won
+        # and this one must not create a second operation.
+        if conn.execute("SELECT consumed_at FROM approvals WHERE approval_id=?",
+                        (approval_id,)).fetchone()["consumed_at"] != stamp:
+            raise ApprovalError("used", "That approval was already used.")
+        conn.execute(
+            "INSERT INTO write_operations(operation_id, workspace_id, approval_id,"
+            " repo_id, proposal_id, action, action_sha256, state, detail,"
+            " created_at, updated_at, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (operation_id, workspace_id, approval_id, repo_id, proposal_id, action,
+             action_sha256, "pending", None, stamp, stamp, None))
+        for position, edit in enumerate(edits):
+            conn.execute(
+                "INSERT INTO write_operation_files(operation_id, rel_path, edit_id,"
+                " base_sha256, after_sha256, state, detail, position, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (operation_id, edit["path"], edit["edit_id"], edit["base_sha256"],
+                 edit["after_sha256"], "pending", None, position, stamp))
+    return write_operation(conn, operation_id, workspace_id)
+
+
+@serialized
+def create_write_operation(conn, *, workspace_id, repo_id, proposal_id, action,
+                           action_sha256, edits: list[dict]) -> dict:
+    """A durable record for a write the access mode allowed without asking.
+
+    Full access skips the approval, not the record: a crash mid-write must be
+    resumable in that mode too. An operation already open for this proposal is
+    returned rather than duplicated, so a retried request resumes one write.
+    """
+    existing = conn.execute(
+        "SELECT operation_id FROM write_operations WHERE workspace_id=?"
+        " AND proposal_id=? AND action_sha256=? AND state IN ('pending','applying')"
+        " ORDER BY created_at DESC LIMIT 1",
+        (workspace_id, proposal_id, action_sha256)).fetchone()
+    if existing:
+        return write_operation(conn, existing["operation_id"], workspace_id)
+    operation_id, stamp = new_id(), now()
+    with conn:
+        conn.execute(
+            "INSERT INTO write_operations(operation_id, workspace_id, approval_id,"
+            " repo_id, proposal_id, action, action_sha256, state, detail,"
+            " created_at, updated_at, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (operation_id, workspace_id, None, repo_id, proposal_id, action,
+             action_sha256, "pending", None, stamp, stamp, None))
+        for position, edit in enumerate(edits):
+            conn.execute(
+                "INSERT INTO write_operation_files(operation_id, rel_path, edit_id,"
+                " base_sha256, after_sha256, state, detail, position, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (operation_id, edit["path"], edit["edit_id"], edit["base_sha256"],
+                 edit["after_sha256"], "pending", None, position, stamp))
+    return write_operation(conn, operation_id, workspace_id)
+
+
+@serialized
+def write_operation(conn, operation_id: str, workspace_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM write_operations WHERE operation_id=? AND workspace_id=?",
+        (operation_id, workspace_id)).fetchone()
+    if row is None:
+        return None
+    files = conn.execute(
+        "SELECT * FROM write_operation_files WHERE operation_id=? ORDER BY position",
+        (operation_id,))
+    return {
+        "operation_id": row["operation_id"], "approval_id": row["approval_id"],
+        "repo_id": row["repo_id"], "proposal_id": row["proposal_id"],
+        "action": row["action"], "action_sha256": row["action_sha256"],
+        "state": row["state"], "detail": row["detail"],
+        "created_at": row["created_at"], "updated_at": row["updated_at"],
+        "finished_at": row["finished_at"],
+        "files": [{"path": f["rel_path"], "edit_id": f["edit_id"],
+                   "base_sha256": f["base_sha256"],
+                   "after_sha256": f["after_sha256"], "state": f["state"],
+                   "detail": f["detail"]} for f in files],
+    }
+
+
+@serialized
+def set_operation_file(conn, operation_id: str, rel_path: str, state: str,
+                       detail: str | None = None) -> None:
+    with conn:
+        conn.execute(
+            "UPDATE write_operation_files SET state=?, detail=?, updated_at=?"
+            " WHERE operation_id=? AND rel_path=?",
+            (state, detail, now(), operation_id, rel_path))
+
+
+@serialized
+def set_operation_state(conn, operation_id: str, state: str,
+                        detail: str | None = None) -> None:
+    terminal = state in ("applied", "partially_applied", "failed")
+    stamp = now()
+    with conn:
+        conn.execute(
+            "UPDATE write_operations SET state=?, detail=?, updated_at=?,"
+            " finished_at=? WHERE operation_id=?",
+            (state, detail, stamp, stamp if terminal else None, operation_id))
+
+
+@serialized
+def unfinished_operations(conn, workspace_id: str) -> list[dict]:
+    """Operations a restart must resume. Never anything already terminal."""
+    rows = conn.execute(
+        "SELECT operation_id FROM write_operations WHERE workspace_id=?"
+        " AND state IN ('pending', 'applying') ORDER BY created_at",
+        (workspace_id,))
+    found = [write_operation(conn, row["operation_id"], workspace_id) for row in rows]
+    return [item for item in found if item]
+
+
+@serialized
+def operation_for_approval(conn, approval_id: str, workspace_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT operation_id FROM write_operations WHERE approval_id=?"
+        " AND workspace_id=?", (approval_id, workspace_id)).fetchone()
+    return write_operation(conn, row["operation_id"], workspace_id) if row else None
+
+
+# ---- AF-011 validation results --------------------------------------------
+
+@serialized
+def record_validation(conn, *, workspace_id, proposal_id, job_id, attempt_id,
+                      node_id, result: dict, patch_sha256: str,
+                      detail: str | None = None) -> dict:
+    """Store exactly what the sandbox returned. `passed` is never inferred."""
+    inner = (result or {}).get("result") or {}
+    observed = bool((result or {}).get("observed"))
+    tests_run = inner.get("tests_run")
+    if isinstance(tests_run, bool) or not isinstance(tests_run, int):
+        tests_run = None
+    passed = (observed and (result or {}).get("job_state") == "succeeded"
+              and (result or {}).get("passed") is True
+              and inner.get("passed") is True
+              and inner.get("exit_status") == 0
+              and (tests_run or 0) >= 1)
+    validation_id, stamp = new_id(), now()
+    pod = (result or {}).get("pod") or None
+    with conn:
+        conn.execute(
+            "INSERT INTO proposal_validations(validation_id, workspace_id,"
+            " proposal_id, job_id, attempt_id, node_id, passed, observed,"
+            " command_json, exit_status, stdout, stderr, job_name, job_uid,"
+            " pod_json, image_digest, patch_sha256, result_sha256, detail,"
+            " tests_run, started_at, finished_at, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (validation_id, workspace_id, proposal_id, job_id, attempt_id, node_id,
+             1 if passed else 0,
+             1 if observed else 0,
+             json.dumps(inner.get("command") or []),
+             inner.get("exit_status"), (inner.get("stdout") or "")[:16000],
+             (inner.get("stderr") or "")[:16000],
+             (result or {}).get("job_name"), (result or {}).get("job_uid"),
+             json.dumps(pod) if pod else None,
+             (pod or {}).get("image_digest"), patch_sha256,
+             inner.get("result_sha256"), detail, tests_run,
+             inner.get("started_at"), inner.get("finished_at"), stamp))
+    return public_validation(conn, validation_id, workspace_id)
+
+
+@serialized
+def public_validation(conn, validation_id: str, workspace_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM proposal_validations WHERE validation_id=? AND workspace_id=?",
+        (validation_id, workspace_id)).fetchone()
+    return _validation_row(row) if row else None
+
+
+@serialized
+def latest_validation(conn, proposal_id: str, workspace_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM proposal_validations WHERE proposal_id=? AND workspace_id=?"
+        " ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        (proposal_id, workspace_id)).fetchone()
+    return _validation_row(row) if row else None
+
+
+def validation_row(row) -> dict:
+    """Public shape of one validation row, for readers outside this module."""
+    return _validation_row(row)
+
+
+def _validation_row(row) -> dict:
+    return {"validation_id": row["validation_id"], "proposal_id": row["proposal_id"],
+            "job_id": row["job_id"], "attempt_id": row["attempt_id"],
+            "node_id": row["node_id"], "passed": bool(row["passed"]),
+            "observed": bool(row["observed"]),
+            "command": json.loads(row["command_json"]),
+            "exit_status": row["exit_status"], "stdout": row["stdout"],
+            "stderr": row["stderr"], "job_name": row["job_name"],
+            "job_uid": row["job_uid"],
+            "pod": json.loads(row["pod_json"]) if row["pod_json"] else None,
+            "image_digest": row["image_digest"],
+            "patch_sha256": row["patch_sha256"],
+            "result_sha256": row["result_sha256"], "detail": row["detail"],
+            "tests_run": row["tests_run"],
+            "started_at": row["started_at"], "finished_at": row["finished_at"],
+            "created_at": row["created_at"]}
 
 
 # ---- audit ----------------------------------------------------------------
@@ -1332,6 +1748,8 @@ def record_artifact(conn, *, workspace_id, chat_id, job_id, attempt_id, workflow
                     filename, stored_name, media_type, byte_size, sha256,
                     validation: dict, citations: list) -> dict:
     artifact_id, stamp = new_id(), now()
+    citations = [{**citation, "citation_id": citation.get("citation_id") or new_id()}
+                 for citation in citations]
     with conn:
         conn.execute(
             "INSERT INTO artifacts(artifact_id, workspace_id, chat_id, job_id,"

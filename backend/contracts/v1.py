@@ -162,6 +162,7 @@ class JobEnvelope(Record):
         min_length=1, max_length=16_384, pattern=r"\S"
     )]
     task_type: Literal["chat", "documents", "code"]
+    model: ModelRef | None = None
     required_capabilities: Annotated[list[Capability], Field(min_length=1, max_length=6)]
     context: Annotated[list[ResourceRef], Field(max_length=32)]
     attachments: Annotated[list[ResourceRef], Field(max_length=16)]

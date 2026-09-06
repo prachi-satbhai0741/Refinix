@@ -48,7 +48,7 @@ pipeline, not the name of a single model.
 | Pack | Candidate | Intended use | Status |
 |---|---|---|---|
 | Main engine | `qwen3.5:4b-q4_K_M` | General chat, planning, tool use | **Selected for the first path — Integrity verified** on the macOS coordinator (see §3.1) |
-| Documents | PaddleOCR-VL-1.6 candidate | OCR, scans, and document layout | Research candidate |
+| Documents | PaddleOCR-VL-1.6 candidate | OCR, scans, and document layout | Research candidate. **Not** the same artifact as the installed `MedAIBase/PaddleOCR-VL:0.9b` conversion recorded in 3.2, whose provenance is unresolved. |
 | Semantic knowledge | Qwen3-Embedding-0.6B candidate | Local embeddings | Research candidate |
 | Code | Qwen2.5-Coder-7B-Instruct Q4 candidate | Code generation and patch work | Research candidate |
 | Reasoning/vision | Qwen3.5-9B Q4 candidate | Optional stronger or visual fallback | Hardware-dependent hypothesis |
@@ -112,7 +112,53 @@ Its returned checksum output reports `OK` for the manifest and all four blobs.
 |---|---|---|
 | **Thinking** | **`think: false` by default**, changeable per model from the composer (`chat_template_kwargs.enable_thinking: false` on `llama-server`) | **The safe default, no longer a prohibition.** This is a thinking model: left on, it spent the entire output budget reasoning and returned an **empty** answer at `num_predict` 128 *and* 512, both stopping on `length`. With thinking off the same prompt finished in 89 tokens on `stop`. Measured on the macOS coordinator 2026-09-03; that evidence stands and is why the default is off. Execution 2 raised Chat to `num_predict` 2048 and added a per-model Reasoning switch sending the top-level `/api/chat` `think` field; a request that ends with reasoning but no visible content fails with a named reason and saves no blank reply. Smoke-checked on the macOS coordinator 2026-09-05 against Ollama 0.33.3: `think: false` produced 0 thinking chunks and a visible answer on `stop`; `think: true` produced 101 thinking chunks and the same visible answer on `stop`. No Qwen `/think` or `/nothink` prompt suffix is used. |
 | Context | `num_ctx` **8192** on the macOS coordinator | Measured 2026-09-04: +220 MiB resident over 4096, warm time-to-first-token unchanged (0.196 s → 0.203 s), and a fact planted at the start of a 3052-token prompt was still retrieved. The Ubuntu worker keeps 4096 until measured at its own checkpoint. |
-| Document work | Desktop Execution 3 sends the model only validated extraction and selected passages, fenced as untrusted data, and parses its reply through a strict schema. No OCR, vision or embedding model is provisioned; retrieval is keyword matching, and OD-07 stays unresolved. Nothing here was measured — the workflow is implemented in source and untested. |
+| Document work | Desktop Execution 3 sends the model only validated extraction and selected passages, fenced as untrusted data, and parses its reply through a strict schema. Retrieval is keyword matching and OD-07 stays unresolved. C08 adds a scan-reading path whose model is recorded in 3.2 below as an **installed candidate**, not a provisioned catalogue entry. |
+
+## 3.2 C08 scan reading — installed candidate, NOT a catalogue entry
+
+**Evidence state: installed and inspected. Source, licence, provenance and
+quality all UNRESOLVED. Not verified for any workflow.** Nothing below was
+downloaded by AegisForge; the manifest was already present on the macOS
+coordinator and was read there on 2026-09-05 with read-only commands.
+
+This entry does not meet §4's manifest requirement and is deliberately not
+promoted to §3.1. It is recorded so the fact that it is installed, and the
+observed reason it cannot currently be used, are both written down.
+
+| Field | Observed value |
+|---|---|
+| Upstream identifier | `MedAIBase/PaddleOCR-VL:0.9b` |
+| Source | **UNRESOLVED.** A third-party Ollama account name. Who published it, from what, and whether it corresponds to any official release is not established. |
+| Licence | **UNRESOLVED.** No licence layer is present in the manifest. The upstream PaddleOCR project's licence must NOT be attributed to this conversion without reading that artifact's own licence. |
+| Manifest SHA-256 | `2d9290d5ab53a5eb50ba12903909ae3879408ca7ef0e5361092967c06cfbfdaf` |
+| Config | `sha256:e4ecc823369bd984af05fae8d580273e469c5728f8f46e6fd585ee2fef8bfc6c` — 422 B |
+| Model layer | `sha256:3ac47f4557c259c4c680c762729fb4b94e9572c9d52f9104c2f00013caaf9b0e` — 935,768,512 B |
+| Other layers | system 31 B, params 35 B. **No projector layer.** |
+| Architecture | `paddleocr` (from `/api/show`) |
+| Parameter count | 466,654,208 — **466.65M**, despite the `0.9b` tag |
+| Quantisation | BF16 |
+| Declared capabilities | **`["completion"]` only — `vision` is absent** |
+| Storage | `~/.ollama/models` on the macOS coordinator |
+| Evidence state | **Installed, inspected, and observed NOT to accept image input.** An image request returns HTTP 500 `image input is not supported`. No quality, accuracy, layout or confidence claim is made or implied. |
+
+**Consequence.** C08 asks the runtime what a model can do before sending it a
+page, and requires `vision` in the answer. This model does not declare it, so
+scan reading reports itself unavailable with the reason, and no page image is
+ever sent. See [`docs/c08-dependency-plan.md`](c08-dependency-plan.md) §3 for
+the three observations and the decision this leaves to the human gate.
+
+**A name is not a capability.** The tag contains "VL" and "PaddleOCR"; the
+artifact is a 466M-parameter text-only conversion with no projector. Nothing in
+this repository may infer modality, provenance or licence from a model name.
+
+### C08 rendering component
+
+| Field | Observed value |
+|---|---|
+| Component | `Quartz` via PyObjC — a macOS framework binding, not a model |
+| Version | `objc.__version__` = 12.2.2, in `desktop/.venv` (Python 3.12.13) |
+| Downloaded | **no** — already present in the locked desktop environment |
+| Observed behaviour | Renders the C07 scan to 3 pages, 1131×1600 px PNG, byte-identical across two runs (2026-09-05) |
 | Output limit | `num_predict` 128 for self-test and comparison runs | Enough for a complete answer with thinking off; keeps a failing run cheap |
 | C03 Chat output limit | `num_predict` 2048, raised from 512 on 2026-09-04 | Longer replies remain bounded; the coordinator records the actual stop reason and distinguishes output and context limits. The Mac context is 8192; the historical comparison settings stay unchanged. |
 | C03 overflow policy | Request fields `truncate: false`, `shift: false` | Verified on macOS with Ollama 0.32.14 and this GGUF: oversized input rejected, generation stopped at 8042 prompt + 150 output = 8192 tokens. See [repair evidence](evaluation.md#53-c03-review-repairs--macos-coordinator-2026-09-04). Ubuntu remains unverified for this policy. |

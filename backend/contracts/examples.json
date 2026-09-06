@@ -27,6 +27,7 @@
     "relationship_id": null,
     "original_request": "Synthetic fixture: explain why a local job needs an attempt ID.",
     "task_type": "chat",
+    "model": null,
     "required_capabilities": ["text.generate"],
     "context": [],
     "attachments": [],
