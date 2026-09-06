@@ -33,7 +33,7 @@ jobs:
 
       - name: Run Python checks
         run: |
-          python -m unittest discover -s backend/contracts -p 'test_*.py' -q
+          python -m unittest discover -s backend/contracts -t . -p 'test_*.py' -q
           python -m unittest discover -s backend/coordinator -p 'test_*.py' -q
           python -m unittest discover -s backend/worker -p 'test_*.py' -q
           python -m unittest discover -s deploy/k3s -p 'test_*.py' -q
