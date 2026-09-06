@@ -1113,3 +1113,35 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Source consistency only; the Ubuntu systemd activation is the authoritative check.
 - follow_up_to: [UP-20260905-013](#up-20260905-013)
 - linked_changes: [AC-20260905-014](agentchangelog.md#ac-20260905-014)
+
+<a id="up-20260905-015"></a>
+## UP-20260905-015 — Consolidated C07–C10 source and artifact preparation
+- date: 2026-09-05
+- status: implemented; every C06–C10 human runtime gate still pending
+- scope: c07, c08, c09, c10, documents, code, sandbox, approvals, proof, artifacts
+- tags: c08, c09, c10, paddleocr-vl, quartz, resource-package, kubernetes-job, approvals, proof-cards
+- aliases: consolidated execution, ocr on mac, code on ubuntu, validation job, durable write recovery
+- paths: backend/coordinator/, backend/worker/, backend/contracts/v1.py, deploy/k3s/, frontend/app/, docs/, tasks.md
+- summary: Build C08 Mac Documents/OCR, C09 distributed Code with a restricted Kubernetes validation Job, and C10 concurrency, approval binding, durable writes and Proof Cards in one cycle ahead of the human gates.
+- request: Implement the complete C07-preparation-through-C10 source and offline-verifiable artifact candidate in one consolidated pass for a single combined Codex review.
+- constraints: Mac keeps Documents and coordination; Ubuntu runs code generation and a restricted Kubernetes Job sandbox; reuse existing dispatch/approval/repository/SQLite/Redis paths; no installs, downloads, model pulls, Git writes, host or cluster mutation; ports 8080/8443/30443 unchanged.
+- acceptance: Source and offline checks cover both workflows and their concurrency, approvals bind to exact workflow outputs, Proof Cards cite observed sources only, and rebuilt artifacts carry recorded digests.
+- verification_authorization: Offline checks, bounded loopback Ollama reads, cached-input image build and macOS packaging only; all live device gates stay unrun.
+- follow_up_to: [UP-20260905-014](#up-20260905-014)
+- linked_changes: [AC-20260905-015](agentchangelog.md#ac-20260905-015)
+
+<a id="up-20260905-016"></a>
+## UP-20260905-016 — Close the C08–C10 review findings
+- date: 2026-09-05
+- status: implemented; every C06–C10 human runtime gate still pending
+- scope: c08, c09, c10, model-selection, validation, sandbox, cleanup, proof
+- tags: model-selector, paddleocr, auto-model, validation-gate, kubernetes-rbac, package-retention, proof-cards
+- aliases: execute review fixes, unreachable validation, zero tests, job create escalation, unstable citation ids
+- paths: backend/coordinator/, backend/worker/, deploy/k3s/, frontend/app/, docs/, tasks.md, agent-memory/
+- summary: Apply the consolidated Codex review corrections so model choice is real, validation is reachable and meaningful, Kubernetes workload authority is contained, temporary packages expire, and Proof Cards use persisted evidence.
+- request: Execute and solve the seven issues found in the review of the consolidated C07–C10 candidate.
+- constraints: Preserve the accepted C08–C10 foundations and unrelated work; no Git/GitHub writes, downloads, installs, model pulls, deployment, or host/cluster mutation; every C06+ human gate remains pending.
+- acceptance: Installed models are selectable by workflow with disabled Auto; apply requires a current observed passing validation that ran tests; sandbox authority cannot reach operational credentials; packages are cleaned at terminal acknowledgement, startup and periodically; Proof Card identities and sources are stable.
+- verification_authorization: Run focused and proportionate offline tests and static checks only; no live service, cluster or model execution.
+- follow_up_to: [UP-20260905-015](#up-20260905-015)
+- linked_changes: [AC-20260906-001](agentchangelog.md#ac-20260906-001)

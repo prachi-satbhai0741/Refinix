@@ -147,6 +147,11 @@ spec:
               mountPath: /tmp
             - name: state
               mountPath: /var/lib/aegisforge
+            # AF-010 job packages. A SEPARATE volume from `state` above, which
+            # holds the pairing store: the executor and the validation Pod are
+            # given this one and never that one.
+            - name: jobs
+              mountPath: /var/lib/aegisforge-jobs
             - name: tls
               mountPath: /etc/aegisforge/tls
               readOnly: true
@@ -210,6 +215,9 @@ spec:
         - name: state
           persistentVolumeClaim:
             claimName: worker-state
+        - name: jobs
+          persistentVolumeClaim:
+            claimName: aegisforge-jobs
         - name: tls
           secret:
             # Created by the operator from the worker's own self-signed

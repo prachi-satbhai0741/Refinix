@@ -134,15 +134,157 @@ class TestPodSecurity(unittest.TestCase):
 
     def test_nothing_escapes_to_the_host(self):
         for filename, kind, name, text in documents():
+            if kind not in {"Deployment", "Pod", "StatefulSet", "DaemonSet", "Job"}:
+                continue
             for forbidden in ("hostNetwork", "hostPID", "hostIPC",
                               "hostPath", "hostPort", "privileged: true"):
                 self.assertNotIn(forbidden, text,
                                  f"{filename}/{name} uses {forbidden}")
 
     def test_service_account_tokens_are_not_mounted(self):
+        """Exactly one Pod may talk to the Kubernetes API, and it is named here.
+
+        AF-011 gives the executor a token so it can create validation Jobs.
+        That is the ONE exception, so it is written down rather than allowed
+        by a relaxed pattern: every other Deployment must still refuse a token,
+        and a second one appearing would fail this check.
+        """
         for name, text in self.deployments():
             with self.subTest(deployment=name):
+                if name == "aegisforge-executor":
+                    self.assertRegex(text, r"serviceAccountName:\s*aegisforge-executor")
+                    continue
                 self.assertRegex(text, r"automountServiceAccountToken:\s*false")
+
+    def test_only_the_executor_names_a_service_account(self):
+        named = [name for name, text in self.deployments()
+                 if re.search(r"serviceAccountName:", text)]
+        self.assertEqual(named, ["aegisforge-executor"])
+
+
+class TestValidationSandbox(unittest.TestCase):
+    """AF-011 authority and isolation, read straight out of the manifests."""
+
+    def role(self) -> str:
+        found = [t for _, k, n, t in documents()
+                 if k == "Role" and n == "aegisforge-validation"]
+        self.assertTrue(found, "the validation Role is missing")
+        return commands(found[0])
+
+    def policy(self, name: str) -> str:
+        found = [t for _, k, n, t in documents()
+                 if k == "NetworkPolicy" and n == name]
+        self.assertTrue(found, f"{name} is missing")
+        return commands(found[0])
+
+    def admission(self) -> str:
+        found = [t for _, k, n, t in documents()
+                 if k == "ValidatingAdmissionPolicy"
+                 and n == "aegisforge-validation-job"]
+        self.assertTrue(found, "the validation admission policy is missing")
+        return commands(found[0])
+
+    def test_the_role_grants_only_the_six_operations_the_client_performs(self):
+        role = self.role()
+        self.assertRegex(role, r'resources:\s*\["jobs"\]')
+        self.assertRegex(role, r'verbs:\s*\["create", "get", "delete"\]')
+        self.assertRegex(role, r'resources:\s*\["pods"\]')
+        self.assertRegex(role, r'resources:\s*\["pods/log"\]')
+
+    def test_the_role_grants_nothing_that_would_widen_the_blast_radius(self):
+        role = self.role()
+        for forbidden in ("secrets", "configmaps", "deployments", "services",
+                          "nodes", "pods/exec", "pods/attach",
+                          "pods/portforward", "persistentvolumes",
+                          "ClusterRole", '"*"', "'*'"):
+            with self.subTest(value=forbidden):
+                self.assertNotIn(forbidden, role)
+
+    def test_the_role_is_namespaced_rather_than_cluster_wide(self):
+        kinds = {k for _, k, n, _ in documents()
+                 if n in ("aegisforge-validation", "aegisforge-executor")}
+        self.assertNotIn("ClusterRole", kinds)
+        self.assertNotIn("ClusterRoleBinding", kinds)
+
+    def test_the_executor_cannot_create_pods_directly(self):
+        """`create` on pods would let this ServiceAccount run any Pod spec."""
+        role = self.role()
+        pods = role.split('resources: ["pods"]', 1)[1].split("- apiGroups", 1)[0]
+        self.assertNotIn("create", pods)
+
+    def test_job_creation_is_bound_to_the_exact_sandbox_template(self):
+        policy = self.admission()
+        for required in (
+                "system:serviceaccount:aegisforge:aegisforge-executor",
+                "aegisforge-validation'", "automountServiceAccountToken == false",
+                "aegisforge-jobs", "persistentVolumeClaim.readOnly == true",
+                "backend.worker.validate", "imagePullPolicy == 'Never'",
+                "!has(object.spec.template.spec.imagePullSecrets)",
+                "object.spec.template.metadata.labels.size() == 2",
+                "securityContext.capabilities.add",
+                "securityContext.seccompProfile",
+                "resources.limits['memory'] == quantity('512Mi')",
+                "validationActions: [Deny]"):
+            with self.subTest(value=required):
+                self.assertIn(required, policy + "\n" + "\n".join(
+                    t for _, k, n, t in documents()
+                    if k == "ValidatingAdmissionPolicyBinding"
+                    and n == "aegisforge-validation-job"))
+
+    def test_validation_jobs_use_the_credential_free_service_account(self):
+        accounts = {n: t for _, k, n, t in documents() if k == "ServiceAccount"}
+        self.assertIn("aegisforge-validation", accounts)
+        self.assertRegex(accounts["aegisforge-validation"],
+                         r"automountServiceAccountToken:\s*false")
+
+    def test_the_validation_pod_has_no_egress_exception_at_all(self):
+        egress = self.policy("validation-egress")
+        self.assertRegex(egress, r"egress:\s*\[\]")
+        for forbidden in ("ipBlock", "podSelector:\n            matchLabels",
+                          "0.0.0.0/0", "port: 11434", "port: 6379"):
+            with self.subTest(value=forbidden):
+                self.assertNotIn(forbidden, egress)
+
+    def test_the_validation_pod_accepts_no_ingress(self):
+        self.assertRegex(self.policy("validation-ingress"), r"ingress:\s*\[\]")
+
+    def test_the_validation_pod_is_outside_the_runtime_egress_policy(self):
+        """It selects `aegisforge-validation`, not `aegisforge-worker`, so it
+        inherits no path to the model runtime."""
+        runtime = self.policy("worker-egress-runtime")
+        self.assertIn("app: aegisforge-worker", runtime)
+        self.assertNotIn("aegisforge-validation", runtime)
+
+    def test_the_kubernetes_api_exception_is_a_placeholder_not_a_wide_rule(self):
+        """The API ClusterIP is per-cluster and is not recorded here, so the
+        manifest must fail closed rather than ship a subnet-wide hole."""
+        egress = self.policy("executor-egress-kubernetes")
+        self.assertIn("API_SERVER_IP/32", egress)
+        for forbidden in ("0.0.0.0/0", "/8", "/16", "/24"):
+            with self.subTest(value=forbidden):
+                self.assertNotIn(forbidden, egress)
+
+    def test_the_job_package_volume_is_separate_from_pairing_state(self):
+        claims = {n for _, k, n, _ in documents() if k == "PersistentVolumeClaim"}
+        self.assertIn("aegisforge-jobs", claims)
+        self.assertIn("worker-state", claims)
+        executor = [t for _, k, n, t in documents()
+                    if k == "Deployment" and n == "aegisforge-executor"][0]
+        # The executor gets job packages and must NOT get the pairing store.
+        self.assertIn("claimName: aegisforge-jobs", executor)
+        self.assertNotIn("claimName: worker-state", executor)
+
+    def test_the_validation_image_is_pinned_by_digest(self):
+        config = [t for _, k, n, t in documents()
+                  if k == "ConfigMap" and n == "executor-config"][0]
+        match = re.search(r'AEGIS_VALIDATION_IMAGE:\s*"([^"]+)"', config)
+        self.assertIsNotNone(match, "the validation image must be configured")
+        self.assertIn("@sha256:", match.group(1))
+        provenance = json.loads(
+            (ROOT / "backend/worker-image/provenance.json").read_text())
+        self.assertIn(provenance["ubuntu_build"]["manifest_digest"],
+                      match.group(1),
+                      "validation must run the same recorded build as the executor")
 
 
 class TestDefaultDeny(unittest.TestCase):

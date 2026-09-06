@@ -108,7 +108,8 @@ class StreamOutcome:
 # ------------------------------------------------------------------ routing ---
 
 def choose_route(*, relationship: dict | None, node: dict | None,
-                 required: list[str], model_id: str | None = None) -> Route:
+                 required: list[str], model_id: str | None = None,
+                 require_model: bool = True) -> Route:
     """Decide between the paired worker and local execution.
 
     Every refusal names the missing precondition. A caller that cannot dispatch
@@ -136,6 +137,13 @@ def choose_route(*, relationship: dict | None, node: dict | None,
         return Route("local",
                      "local coordinator: the worker does not advertise "
                      + ", ".join(sorted(missing)))
+    depth = node.get("queue_depth")
+    queue_note = "" if depth is None else f", queue depth {depth}"
+    if not require_model:
+        return Route("remote",
+                     f"paired worker {node.get('display_name') or node['node_id']}: "
+                     f"healthy{queue_note}", node_id=node["node_id"],
+                     relationship_id=relationship["relationship_id"])
     models = node.get("models") or []
     chosen = None
     for candidate in models:
@@ -146,8 +154,6 @@ def choose_route(*, relationship: dict | None, node: dict | None,
         return Route("local",
                      "local coordinator: the worker does not offer "
                      f"{model_id or 'any advertised model'}")
-    depth = node.get("queue_depth")
-    queue_note = "" if depth is None else f", queue depth {depth}"
     return Route("remote",
                  f"paired worker {node.get('display_name') or node['node_id']}: "
                  f"healthy, {chosen['model_id']}{queue_note}",
@@ -158,12 +164,26 @@ def choose_route(*, relationship: dict | None, node: dict | None,
 def build_envelope(*, job: dict, attempt_id: str, step_id: str, route: Route,
                    coordinator_node_id: str, request_text: str,
                    runtime_seconds: int = 300,
-                   output_bytes: int = 1_048_576) -> v1.JobEnvelope:
+                   output_bytes: int = 1_048_576,
+                   task_type: str = "chat",
+                   required_capabilities: list[str] | None = None,
+                   context: list | None = None,
+                   attachments: list | None = None,
+                   allowed_tools: list[str] | None = None,
+                   output: v1.OutputContract | None = None,
+                   workspace_bytes: int = 67_108_864) -> v1.JobEnvelope:
     """One validated envelope, with an explicit target and relationship.
 
     Built through the contract type, so an envelope that could not be executed —
     a missing relationship on a remote target, a deadline before creation — is
     rejected here rather than at the worker.
+
+    Every parameter below `output_bytes` defaults to exactly the C06 chat
+    envelope, so Chat is unchanged by C09 arriving. Documents and Code pass
+    their own task type, capabilities, selected `ResourceRef` inputs, allowed
+    tools and output contract instead of getting a second builder: one place
+    still decides how an envelope is shaped, and one place still rejects an
+    envelope that could not be executed.
     """
     created = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     deadline = time.strftime("%Y-%m-%dT%H:%M:%SZ",
@@ -175,15 +195,17 @@ def build_envelope(*, job: dict, attempt_id: str, step_id: str, route: Route,
         chat_id=job["chat_id"], coordinator_node_id=coordinator_node_id,
         target_node_id=route.node_id or coordinator_node_id,
         relationship_id=route.relationship_id,
-        original_request=request_text, task_type="chat",
-        required_capabilities=["text.generate"], context=[], attachments=[],
-        allowed_tools=[],
+        original_request=request_text, task_type=task_type,
+        model=route.model,
+        required_capabilities=list(required_capabilities or ["text.generate"]),
+        context=list(context or []), attachments=list(attachments or []),
+        allowed_tools=list(allowed_tools or []),
         limits=v1.Limits(cpu_millis=2000, memory_bytes=2_147_483_648,
                          runtime_seconds=runtime_seconds, processes=8,
-                         workspace_bytes=67_108_864, output_bytes=output_bytes,
+                         workspace_bytes=workspace_bytes, output_bytes=output_bytes,
                          tool_network="disabled"),
-        output=v1.OutputContract(kind="text", validators=["text.nonempty"],
-                                 schema_ref=None),
+        output=output or v1.OutputContract(kind="text", validators=["text.nonempty"],
+                                           schema_ref=None),
         approval_policy="coordinator-default-v1", created_at=created,
         deadline_at=deadline, cancel_requested=False)
 
@@ -298,6 +320,43 @@ class WorkerClient:
         if _definite_refusal(payload):
             raise DispatchUnavailable(_refusal(status, payload))
         raise ReceiptUnknown(_refusal(status, payload))
+
+    def upload_package(self, body: dict) -> dict:
+        """Send one attempt's selected files before its envelope is dispatched.
+
+        Ordering matters and is not an implementation detail: the worker
+        refuses a code envelope whose package is absent, so uploading first is
+        what makes an accepted receipt mean "this attempt can actually run".
+
+        An identical retry is idempotent at the worker, so a `ReceiptUnknown`
+        here is safe to retry — unlike `submit`, where a retry under a new
+        attempt would be a second run.
+        """
+        payload = json.dumps(body).encode("utf-8")
+        connection = self._connect()
+        try:
+            connection.request("POST", "/v1/packages", body=payload,
+                               headers=self._headers({
+                                   "Content-Type": "application/json",
+                                   "Content-Length": str(len(payload))}))
+            response = connection.getresponse()
+            answer = response.read(v1.MAX_REQUEST_BYTES)
+            status = response.status
+        except (OSError, ValueError) as exc:
+            raise ReceiptUnknown(
+                "the worker did not answer while the package was being sent") from exc
+        finally:
+            connection.close()
+        if status in (200, 201):
+            try:
+                return json.loads(answer)
+            except ValueError as exc:
+                raise ReceiptUnknown(
+                    "the worker stored the package but its reply was unreadable"
+                ) from exc
+        # Nothing was queued by this route, so every refusal is definite: no
+        # attempt exists yet and the caller may still choose another route.
+        raise DispatchUnavailable(_refusal(status, answer))
 
     def stream(self, job_id: str, attempt_id: str, after: int = 0):
         """Yield raw SSE `data:` payloads. Validation is the caller's job.
@@ -498,4 +557,3 @@ def _accept(raw: bytes, envelope: v1.JobEnvelope) -> v1.Event | None:
     if event.producer_node_id != envelope.target_node_id:
         return None                # produced by a node we did not dispatch to
     return event
-

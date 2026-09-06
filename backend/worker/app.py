@@ -48,6 +48,7 @@ from pydantic import TypeAdapter
 
 from backend.contracts import v1
 from backend.worker import dispatch as dispatch_module
+from backend.worker import packages as packages_module
 from backend.worker import pairing as pairing_module
 from backend.worker import runtime
 from backend.worker.redis_client import Redis
@@ -61,10 +62,17 @@ STREAM_POLL_SECONDS = 0.25    # how often the stored log is re-read
 STREAM_IDLE_LIMIT = 90.0      # no new event: assume the executor is gone
 STREAM_WALL_LIMIT = 1800.0    # hard ceiling, matching Limits.runtime_seconds
 
-SUPPORTED_TASK_TYPES = {"chat"}
-SUPPORTED_CAPABILITIES = {"text.generate"}
-SUPPORTED_OUTPUT_KINDS = {"text"}
-SUPPORTED_VALIDATORS = {"text.nonempty"}
+# What this worker executes, per task type. Adding C09 does not widen chat:
+# a chat envelope still may not carry a package, and a code envelope still may
+# not ask for a capability outside this table.
+SUPPORTED_TASK_TYPES = {"chat", "code"}
+SUPPORTED_CAPABILITIES = {"text.generate", "code.generate", "code.validate"}
+SUPPORTED_OUTPUT_KINDS = {"text", "patch"}
+
+TASK_PROFILES = {
+    "chat": {"outputs": {"text"}, "resources": False},
+    "code": {"outputs": {"patch"}, "resources": True},
+}
 
 VERSION_HEADER = "X-AegisForge-Contract"
 _ID = TypeAdapter(v1.Id)
@@ -110,6 +118,12 @@ app = FastAPI(title="AegisForge worker", docs_url=None, redoc_url=None,
 PAIRING_PATH = Path(os.environ.get("AEGIS_PAIRING_STATE",
                                    "/var/lib/aegisforge/pairing.json"))
 _pairing = pairing_module.PairingStore(PAIRING_PATH)
+
+# AF-010 resource packages. A SEPARATE root from the pairing state above, and
+# a separate volume in the manifests: the executor is given the job packages
+# and must never be given the relationship credentials.
+_packages = packages_module.PackageStore(
+    os.environ.get("AEGIS_PACKAGE_ROOT", packages_module.DEFAULT_ROOT))
 
 # AF-005 durable receipt. Constructed only when an address was configured;
 # reachability is re-checked per request, because a Redis that answered at
@@ -257,14 +271,15 @@ def _node(observed: bool) -> dict:
 
     probe = runtime.probe()
     models, loaded = [], None
-    digest = (probe.get("digests") or {}).get(runtime.MODEL, "")
-    if probe["reachable"] and len(digest) == 64:
-        models = [v1.ModelRef(model_id=runtime.MODEL, manifest_sha256=digest,
+    if probe["reachable"]:
+        models = [v1.ModelRef(model_id=model, manifest_sha256=digest,
                               runtime="ollama",
-                              runtime_version=probe["server_version"] or "unknown")]
+                              runtime_version=probe["server_version"] or "unknown")
+                  for model, digest in sorted((probe.get("digests") or {}).items())
+                  if model and len(digest) == 64][:16]
         # Installed is not loaded: only an /api/ps residency observation sets this.
-        if probe.get("loaded") == runtime.MODEL:
-            loaded = runtime.MODEL
+        if probe.get("loaded") in {item.model_id for item in models}:
+            loaded = probe["loaded"]
     # Capability is advertised only when this worker could actually accept work.
     eligible = bool(models) and not missing_prerequisites()
     # Queue depth is an observation of Redis, and stays `None` when it cannot be
@@ -280,7 +295,7 @@ def _node(observed: bool) -> dict:
         display_name=DISPLAY_NAME, app_version=APP_VERSION,
         platform=f"{platform.system()} {platform.machine()}",
         supported_contract_versions=[v1.CONTRACT_VERSION],
-        capabilities=["text.generate"] if eligible else [],
+        capabilities=sorted(SUPPORTED_CAPABILITIES) if eligible else [],
         models=models,
         health=("healthy" if probe["reachable"] and eligible
                 else "degraded" if probe["reachable"] else "unavailable"),
@@ -375,17 +390,38 @@ async def pairing_revoke(relationship_id: str,
 # ------------------------------------------------------------- admission ---
 
 def _unsupported(envelope: v1.JobEnvelope) -> str | None:
-    """Refuse what this worker cannot execute, rather than ignoring it."""
-    if envelope.task_type not in SUPPORTED_TASK_TYPES:
+    """Refuse what this worker cannot execute, rather than ignoring it.
+
+    The task profile is checked as a whole rather than field by field, so a
+    chat envelope cannot borrow the Code workflow's package resolution and a
+    code envelope cannot ask for the text validator that would let it skip
+    `patch.applies`.
+    """
+    profile = TASK_PROFILES.get(envelope.task_type)
+    if profile is None:
         return f"this worker executes only {sorted(SUPPORTED_TASK_TYPES)}"
-    if set(envelope.required_capabilities) - SUPPORTED_CAPABILITIES:
-        return f"this worker provides only {sorted(SUPPORTED_CAPABILITIES)}"
-    if envelope.output.kind not in SUPPORTED_OUTPUT_KINDS:
-        return f"this worker produces only {sorted(SUPPORTED_OUTPUT_KINDS)} output"
-    if set(envelope.output.validators) - SUPPORTED_VALIDATORS:
-        return f"this worker runs only {sorted(SUPPORTED_VALIDATORS)}"
-    if envelope.context or envelope.attachments:
-        return "this worker cannot resolve context or attachment packages"
+    capabilities = set(envelope.required_capabilities)
+    allowed_capability_sets = ({"text.generate"},) if envelope.task_type == "chat" \
+        else ({"code.generate"}, {"code.validate"})
+    if capabilities not in allowed_capability_sets:
+        return (f"a {envelope.task_type} envelope may require only "
+                "one exact supported operation")
+    if envelope.output.kind not in profile["outputs"]:
+        return (f"a {envelope.task_type} envelope produces only "
+                f"{sorted(profile['outputs'])} output")
+    validation = capabilities == {"code.validate"}
+    expected_validators = ({"patch.applies", "sandbox.exit_zero"}
+                           if validation else {"patch.applies"}
+                           if envelope.task_type == "code" else {"text.nonempty"})
+    if set(envelope.output.validators) != expected_validators:
+        return (f"a {envelope.task_type} envelope runs only "
+                f"{sorted(expected_validators)}")
+    if envelope.attachments:
+        return "this worker resolves selected context only, never attachments"
+    if envelope.context and not profile["resources"]:
+        return "this worker cannot resolve a context package for this task type"
+    if profile["resources"] and not envelope.context:
+        return "a code envelope must name the files it was packaged with"
     if envelope.target_node_id != NODE_ID:
         return "this envelope targets a different node"
     if envelope.relationship_id is None:
@@ -393,6 +429,34 @@ def _unsupported(envelope: v1.JobEnvelope) -> str | None:
     if not _pairing.is_active(envelope.relationship_id):
         # Verification, not merely presence. An empty or revoked store closes.
         return "this relationship has not been confirmed by pairing"
+    if validation and envelope.model is not None:
+        return "sandbox validation does not run a model"
+    if not validation:
+        if envelope.model is None:
+            return "a generation envelope must name its selected model"
+        observed = runtime.probe()
+        digest = (observed.get("digests") or {}).get(envelope.model.model_id)
+        if digest != envelope.model.manifest_sha256:
+            return "the selected model is not installed with the advertised digest"
+    if profile["resources"]:
+        # The envelope may only reference what was actually uploaded for THIS
+        # attempt. A submission whose package is missing, belongs to another
+        # attempt, or does not contain every named resource is refused before
+        # a receipt exists, so nothing is queued that could not be resolved.
+        stored = _packages.manifest(
+            relationship_id=envelope.relationship_id,
+            workspace_id=envelope.workspace_id, attempt_id=envelope.attempt_id)
+        if stored is None:
+            return "no resource package has been uploaded for this attempt"
+        available = {entry["resource_id"]: entry
+                     for entry in stored.get("resources", [])}
+        for reference in envelope.context:
+            entry = available.get(reference.resource_id)
+            if entry is None:
+                return "this envelope references a resource that was not packaged"
+            if entry["sha256"] != reference.sha256 or \
+                    entry["size_bytes"] != reference.size_bytes:
+                return "a referenced resource does not match the stored package"
     return None
 
 
@@ -417,6 +481,99 @@ async def _read_bounded(request: Request) -> bytes | None:
             return None
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+# ------------------------------------------------------------- packages ---
+
+async def _read_package_body(request: Request) -> bytes | None:
+    """A larger ceiling than a job envelope, and still a hard stop."""
+    total, chunks = 0, []
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > packages_module.MAX_BODY_BYTES:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@app.post("/v1/packages")
+async def upload_package(request: Request,
+                         authorization: str | None = Header(None),
+                         x_aegisforge_contract: str | None = Header(None),
+                         content_type: str | None = Header(None),
+                         content_encoding: str | None = Header(None)):
+    """Store one attempt's selected files, before its envelope is dispatched.
+
+    Bound to the authenticated relationship, the relationship's workspace and
+    one attempt. An identical retry replays the stored receipt; a different
+    package for the same attempt is a conflict, because the attempt has already
+    been told what it is running against.
+    """
+    relationship, denied = _job_guard(authorization, x_aegisforge_contract)
+    if denied:
+        return denied
+    if (shut := _closed()) is not None:
+        return shut
+    if content_encoding:
+        return _failure("invalid_request", "compressed request bodies are not accepted",
+                        False, 415)
+    if not (content_type or "").startswith("application/json"):
+        return _failure("invalid_request", "Content-Type must be application/json",
+                        False, 415)
+
+    raw = await _read_package_body(request)
+    if raw is None:
+        return _failure("invalid_request", "package body is too large", False, 413)
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return _failure("invalid_request", "package body is not JSON", False, 400)
+    if not isinstance(payload, dict):
+        return _failure("invalid_request", "package body is not an object", False, 400)
+    if payload.get("contract_version") != v1.CONTRACT_VERSION:
+        return _failure("incompatible_contract",
+                        "package contract version is not supported", False, 409)
+
+    # Authority first: the credential that authenticated decides which
+    # relationship and workspace this package may belong to. A body naming
+    # another one is a permission failure, not a validation failure.
+    if payload.get("relationship_id") != relationship["relationship_id"]:
+        return _failure("permission_denied",
+                        "this package belongs to a different relationship", False, 403)
+    if payload.get("workspace_id") != relationship["workspace_id"]:
+        return _failure("permission_denied",
+                        "this package belongs to a different workspace", False, 403)
+    attempt_id = payload.get("attempt_id")
+    try:
+        _ID.validate_python(attempt_id)
+    except Exception:                                          # noqa: BLE001
+        return _failure("invalid_request", "attempt_id must be a UUIDv4", False, 400)
+
+    try:
+        validated = packages_module.validate(payload)
+        stored = _packages.store(
+            relationship_id=relationship["relationship_id"],
+            workspace_id=relationship["workspace_id"],
+            attempt_id=attempt_id, validated=validated)
+    except packages_module.PackageError as exc:
+        return _failure(exc.code, exc.message, exc.code == "internal_error",
+                        exc.status)
+
+    # Opportunistic, bounded reclamation of packages nothing came back for.
+    # Coordination state only: the coordinator holds the canonical proposal.
+    try:
+        _packages.purge_expired()
+    except OSError:
+        pass
+    receipt = {"attempt_id": attempt_id,
+               "package_sha256": stored["package_sha256"],
+               "file_count": stored["file_count"],
+               "total_bytes": stored["total_bytes"],
+               "stored_at": stored["stored_at"],
+               "replayed": bool(stored.get("replayed"))}
+    return JSONResponse(status_code=200 if receipt["replayed"] else 201,
+                        content=receipt,
+                        headers={VERSION_HEADER: v1.CONTRACT_VERSION})
 
 
 @app.post("/v1/jobs")
@@ -722,4 +879,13 @@ async def cancel(job_id: str, attempt_id: str = Query(...),
         _receipt_backend.request_cancel(relationship["relationship_id"], attempt_id)
     except dispatch_module.DispatchError as exc:
         return _failure(exc.code, exc.message, exc.retryable, exc.status)
+    # A cancelled attempt will never read its package again. Removing exactly
+    # this attempt's directory — never a wider tree — keeps selected repository
+    # text from outliving the request that sent it.
+    try:
+        _packages.purge(relationship_id=relationship["relationship_id"],
+                        workspace_id=relationship["workspace_id"],
+                        attempt_id=attempt_id)
+    except (OSError, packages_module.PackageError):
+        pass
     return Response(status_code=202, headers={VERSION_HEADER: v1.CONTRACT_VERSION})

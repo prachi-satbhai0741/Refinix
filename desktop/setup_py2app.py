@@ -128,7 +128,16 @@ OPTIONS = {
     "packages": ["webview"],
     "includes": ["backend.contracts.v1", "backend.coordinator.server",
                  "backend.coordinator.db", "backend.coordinator.runtime",
-                 "backend.coordinator.context", "desktop.lifecycle", "desktop.shell"],
+                 "backend.coordinator.context", "desktop.lifecycle", "desktop.shell",
+                 # C08. `pdfrender` imports Quartz lazily so the module stays
+                 # importable where PyObjC is absent — which also means
+                 # modulegraph cannot see the dependency and would ship an
+                 # application that reports PDF unavailable on a Mac that has
+                 # it. Named here for that reason. Already pinned in
+                 # requirements-macos.lock (pyobjc-framework-quartz 12.2.2, MIT).
+                 "Quartz", "objc",
+                 "backend.coordinator.pdfrender", "backend.coordinator.ocr",
+                 "backend.coordinator.proof"],
     "excludes": ["tkinter", "test", "unittest", "pydoc_data", "py2app",
                  "setuptools", "pip"],
     # py2app 0.28.10's optimized mode creates a dangling legacy site.pyo

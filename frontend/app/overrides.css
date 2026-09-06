@@ -442,3 +442,21 @@ dialog.confirm .row { display: flex; gap: .5em; justify-content: flex-end; }
   font-size: .82em;
   color: var(--prose-emphasis);
 }
+
+/* AF-014 Proof Card, rendered inside the Control Center's work card.
+   Deliberately plain: this is evidence, not a dashboard. The source line is
+   secondary text beside each value so a reader can see at a glance which
+   values were measured and which are absent. */
+.proof-card {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+}
+.proof-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+.proof-attempt { margin-bottom: 1rem; }
+.proof-attempt h4 { margin: 0 0 0.35rem; font-size: 0.85rem; font-weight: 600; }
+.proof-source { opacity: 0.65; font-size: 0.8em; }
+.proof-note, .proof-validation { font-size: 0.8rem; opacity: 0.8; }
+.proof-artifacts, .proof-citations { margin: 0.35rem 0; padding-left: 1.1rem; }
+.proof-artifacts li, .proof-citations li { font-size: 0.8rem; }
+.btn-proof { margin-right: 0.35rem; }

@@ -72,6 +72,21 @@ class RepoBase(unittest.TestCase):
             record = self.svc.set_mode(record["repo_id"], mode)
         return record["repo_id"]
 
+    def propose(self, *args, **kwargs):
+        """These access tests start after the separate sandbox gate passed."""
+        proposal = self.svc.propose(*args, **kwargs)
+        db.record_validation(
+            self.c.conn, workspace_id=self.c.workspace_id,
+            proposal_id=proposal["proposal_id"], job_id=proposal["job_id"],
+            attempt_id=proposal["attempt_id"], node_id=self.c.node_id,
+            patch_sha256=proposal["digest"], result={
+                "observed": True, "job_state": "succeeded", "passed": True,
+                "result": {"command": list(code_service.VALIDATION_COMMAND),
+                           "exit_status": 0, "stdout": "", "stderr": "Ran 1 test\nOK",
+                           "tests_run": 1, "passed": True,
+                           "result_sha256": "a" * 64}})
+        return proposal
+
 
 # --------------------------------------------------------------------------
 # Containment
@@ -278,7 +293,7 @@ class TestPartialAccess(RepoBase):
                                  "base_sha256": self.sha("src/main.py"),
                                  "content": "print('two')\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            proposal = self.svc.propose(repo_id, "change one to two", ["src/main.py"])
+            proposal = self.propose(repo_id, "change one to two", ["src/main.py"])
         self.assertEqual(len(proposal["edits"]), 1)
         self.assertIn("print('two')", proposal["edits"][0]["diff"])
         # Nothing written yet.
@@ -300,7 +315,7 @@ class TestPartialAccess(RepoBase):
         reply = proposal_reply([{"path": "notes.md", "base_sha256": self.sha("notes.md"),
                                  "content": "# changed\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            proposal = self.svc.propose(repo_id, "retitle", ["notes.md"])
+            proposal = self.propose(repo_id, "retitle", ["notes.md"])
         with self.assertRaises(code_service.ApprovalNeeded) as pending:
             self.svc.apply(repo_id, proposal["proposal_id"])
         approval = pending.exception.approval
@@ -317,7 +332,7 @@ class TestFullAccess(RepoBase):
         reply = proposal_reply([{"path": "notes.md", "base_sha256": self.sha("notes.md"),
                                  "content": "# full\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            proposal = self.svc.propose(repo_id, "retitle", ["notes.md"])
+            proposal = self.propose(repo_id, "retitle", ["notes.md"])
         result = self.svc.apply(repo_id, proposal["proposal_id"])
         self.assertEqual(result["state"], "applied")
         self.assertEqual((self.project / "notes.md").read_text(), "# full\n")
@@ -345,13 +360,13 @@ class TestAskBeforeActions(RepoBase):
         stream = stub_stream(reply)
         with patch.object(runtime, "stream_chat", stream):
             with self.assertRaises(code_service.ApprovalNeeded) as pending:
-                self.svc.propose(repo_id, "change", ["src/main.py"])
+                self.propose(repo_id, "change", ["src/main.py"])
             read_approval = pending.exception.approval
             # Nothing reached the model before the person decided.
             self.assertIsNone(stream.messages)
 
             self.svc.decide(read_approval["approval_id"], True)
-            proposal = self.svc.propose(repo_id, "change", ["src/main.py"],
+            proposal = self.propose(repo_id, "change", ["src/main.py"],
                                         read_approval["approval_id"])
         self.assertIsNotNone(stream.messages)
 
@@ -364,11 +379,11 @@ class TestAskBeforeActions(RepoBase):
     def test_a_read_approval_does_not_cover_a_later_added_path(self):
         repo_id = self.connect("ask")
         with self.assertRaises(code_service.ApprovalNeeded) as pending:
-            self.svc.propose(repo_id, "change", ["src/main.py"])
+            self.propose(repo_id, "change", ["src/main.py"])
         approval = pending.exception.approval
         self.svc.decide(approval["approval_id"], True)
         with self.assertRaises(code_service.CodeError) as caught:
-            self.svc.propose(repo_id, "change", ["src/main.py", "notes.md"],
+            self.propose(repo_id, "change", ["src/main.py", "notes.md"],
                              approval["approval_id"])
         self.assertEqual(caught.exception.code, "mismatch")
 
@@ -376,12 +391,12 @@ class TestAskBeforeActions(RepoBase):
         repo_id = self.connect("ask")
         stream = stub_stream(proposal_reply([]))
         with self.assertRaises(code_service.ApprovalNeeded) as pending:
-            self.svc.propose(repo_id, "change", ["notes.md"])
+            self.propose(repo_id, "change", ["notes.md"])
         approval = pending.exception.approval
         self.svc.decide(approval["approval_id"], False)
         with patch.object(runtime, "stream_chat", stream):
             with self.assertRaises(code_service.CodeError):
-                self.svc.propose(repo_id, "change", ["notes.md"],
+                self.propose(repo_id, "change", ["notes.md"],
                                  approval["approval_id"])
         self.assertIsNone(stream.messages)
 
@@ -422,7 +437,7 @@ class TestAskModeListing(RepoBase):
         self.svc.decide(listing["approval_id"], True)
         # The same id offered to the read-and-send action must not be accepted.
         with self.assertRaises(code_service.CodeError) as caught:
-            self.svc.propose(repo_id, "change it", ["src/main.py"],
+            self.propose(repo_id, "change it", ["src/main.py"],
                              listing["approval_id"])
         self.assertEqual(caught.exception.code, "mismatch")
 
@@ -440,12 +455,12 @@ class TestAskModeListing(RepoBase):
         stream = stub_stream(reply)
         with patch.object(runtime, "stream_chat", stream):
             with self.assertRaises(code_service.ApprovalNeeded) as pending:
-                self.svc.propose(repo_id, "change it", ["src/main.py"])
+                self.propose(repo_id, "change it", ["src/main.py"])
             read = pending.exception.approval
             self.assertEqual(read["action"], policy.ACTION_READ)
             self.assertIsNone(stream.messages)
             self.svc.decide(read["approval_id"], True)
-            proposal = self.svc.propose(repo_id, "change it", ["src/main.py"],
+            proposal = self.propose(repo_id, "change it", ["src/main.py"],
                                         read["approval_id"])
 
         with self.assertRaises(code_service.ApprovalNeeded) as pending:
@@ -469,7 +484,7 @@ class TestProposalAudit(RepoBase):
         reply = proposal_reply([{"path": "notes.md", "base_sha256": self.sha("notes.md"),
                                  "content": "# p\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            self.svc.propose(repo_id, "retitle", ["notes.md"])
+            self.propose(repo_id, "retitle", ["notes.md"])
         rows = self._audit_for(repo_id, "model.proposed")
         self.assertEqual(rows[0]["outcome"], "allowed_automatically")
         self.assertIsNone(rows[0]["approval_id"])
@@ -481,10 +496,10 @@ class TestProposalAudit(RepoBase):
                                  "content": "# a\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
             with self.assertRaises(code_service.ApprovalNeeded) as pending:
-                self.svc.propose(repo_id, "retitle", ["notes.md"])
+                self.propose(repo_id, "retitle", ["notes.md"])
             approval = pending.exception.approval
             self.svc.decide(approval["approval_id"], True)
-            self.svc.propose(repo_id, "retitle", ["notes.md"], approval["approval_id"])
+            self.propose(repo_id, "retitle", ["notes.md"], approval["approval_id"])
 
         rows = self._audit_for(repo_id, "model.proposed")
         self.assertEqual(rows[0]["outcome"], "approved")
@@ -496,7 +511,7 @@ class TestProposalAudit(RepoBase):
         repo_id = self.connect("partial")
         with patch.object(runtime, "stream_chat", stub_stream("not json at all")):
             with self.assertRaises(code_service.CodeError):
-                self.svc.propose(repo_id, "retitle", ["notes.md"])
+                self.propose(repo_id, "retitle", ["notes.md"])
         rows = self._audit_for(repo_id, policy.ACTION_READ)
         self.assertTrue(any(r["outcome"] == "failed" for r in rows))
 
@@ -507,7 +522,7 @@ class TestProposalLifecycle(RepoBase):
         first = threading.Event()
         self.svc._cancels[repo_id] = first
         with self.assertRaises(code_service.CodeError) as caught:
-            self.svc.propose(repo_id, "retitle", ["notes.md"])
+            self.propose(repo_id, "retitle", ["notes.md"])
         self.assertEqual(caught.exception.code, "busy")
         self.assertIs(self.svc._cancels[repo_id], first)
 
@@ -519,7 +534,7 @@ class TestProposalLifecycle(RepoBase):
         with patch.object(runtime, "stream_chat",
                           stub_stream(reply, done_reason="length")):
             with self.assertRaises(code_service.CodeError) as caught:
-                self.svc.propose(repo_id, "retitle", ["notes.md"])
+                self.propose(repo_id, "retitle", ["notes.md"])
         self.assertEqual(caught.exception.code, "runtime")
         self.assertIsNone(db.latest_proposal(self.c.conn, repo_id,
                                               self.c.workspace_id))
@@ -560,7 +575,7 @@ class TestModeChanges(RepoBase):
         reply = proposal_reply([{"path": "notes.md", "base_sha256": self.sha("notes.md"),
                                  "content": "# later\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            proposal = self.svc.propose(repo_id, "retitle", ["notes.md"])
+            proposal = self.propose(repo_id, "retitle", ["notes.md"])
         with self.assertRaises(code_service.ApprovalNeeded) as pending:
             self.svc.apply(repo_id, proposal["proposal_id"])
         approval = pending.exception.approval
@@ -581,7 +596,7 @@ class TestApprovals(RepoBase):
         reply = proposal_reply([{"path": "notes.md", "base_sha256": self.sha("notes.md"),
                                  "content": "# approved\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            proposal = self.svc.propose(repo_id, "retitle", ["notes.md"])
+            proposal = self.propose(repo_id, "retitle", ["notes.md"])
         with self.assertRaises(code_service.ApprovalNeeded) as pending:
             self.svc.apply(repo_id, proposal["proposal_id"])
         return repo_id, proposal, pending.exception.approval
@@ -640,8 +655,8 @@ class TestApprovals(RepoBase):
                                  "base_sha256": self.sha("notes.md"),
                                  "content": "# same\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            first = self.svc.propose(repo_id, "first", ["notes.md"])
-            second = self.svc.propose(repo_id, "second", ["notes.md"])
+            first = self.propose(repo_id, "first", ["notes.md"])
+            second = self.propose(repo_id, "second", ["notes.md"])
         with self.assertRaises(code_service.ApprovalNeeded) as pending_first:
             self.svc.apply(repo_id, first["proposal_id"])
         with self.assertRaises(code_service.ApprovalNeeded) as pending_second:
@@ -787,7 +802,7 @@ class TestRepositoryInstructionsAreData(RepoBase):
         reply = proposal_reply([{"path": "evil.md", "base_sha256": self.sha("evil.md"),
                                  "content": "clean\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            proposal = self.svc.propose(repo_id, "clean it up", ["evil.md"])
+            proposal = self.propose(repo_id, "clean it up", ["evil.md"])
         # Still Partial, still an approval, still unwritten.
         with self.assertRaises(code_service.ApprovalNeeded):
             self.svc.apply(repo_id, proposal["proposal_id"])
@@ -900,7 +915,7 @@ class TestAtomicWrites(RepoBase):
             {"path": "second.md", "base_sha256": self.sha("second.md"), "content": "c\n"},
         ])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            proposal = self.svc.propose(repo_id, "two files",
+            proposal = self.propose(repo_id, "two files",
                                         ["notes.md", "second.md"])
         # One file changes underneath between the preview and the apply.
         self.write("second.md", "changed elsewhere\n")
@@ -922,7 +937,7 @@ class TestAtomicWrites(RepoBase):
              "content": "c\n"},
         ])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            proposal = self.svc.propose(repo_id, "two files",
+            proposal = self.propose(repo_id, "two files",
                                         ["notes.md", "second.md"])
         self.write("second.md", "changed elsewhere\n")
         self.assertEqual(self.svc.apply(repo_id, proposal["proposal_id"])["state"],
@@ -939,7 +954,7 @@ class TestAtomicWrites(RepoBase):
                                  "base_sha256": self.sha("notes.md"),
                                  "content": "# reviewed\n"}])
         with patch.object(runtime, "stream_chat", stub_stream(reply)):
-            proposal = self.svc.propose(repo_id, "retitle", ["notes.md"])
+            proposal = self.propose(repo_id, "retitle", ["notes.md"])
         self.c.conn.execute(
             "UPDATE proposal_edits SET after_text='# tampered\\n' WHERE proposal_id=?",
             (proposal["proposal_id"],))

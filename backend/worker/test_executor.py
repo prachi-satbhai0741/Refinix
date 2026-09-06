@@ -279,6 +279,28 @@ class Base(unittest.TestCase):
             return self.executor.execute(env, epoch=0)
 
 
+class TestPackageRetention(unittest.TestCase):
+    def test_an_idle_executor_periodically_reclaims_abandoned_packages(self):
+        class Store:
+            def __init__(self):
+                self.sweeps = 0
+
+            def purge_expired(self):
+                self.sweeps += 1
+
+        store = Store()
+        session = ExecutorSession(FakeRedis(), RELATIONSHIP, "consumer-a")
+        with patch.object(executor_module.time, "monotonic", return_value=10):
+            worker = executor_module.Executor(session, node_id=NODE, packages=store)
+        self.assertEqual(store.sweeps, 1)
+        with patch.object(executor_module.time, "monotonic", return_value=309):
+            worker.run_once()
+        self.assertEqual(store.sweeps, 1)
+        with patch.object(executor_module.time, "monotonic", return_value=310):
+            worker.run_once()
+        self.assertEqual(store.sweeps, 2)
+
+
 # ------------------------------------------------------------- the receipt ---
 
 class TestDurableReceipt(Base):
@@ -1089,7 +1111,7 @@ class TestPairingStore(unittest.TestCase):
 
     def test_no_plaintext_secret_reaches_the_state_file(self):
         credential = self.pair()
-        raw = open(self.path, encoding="utf-8").read()
+        raw = pathlib.Path(self.path).read_text(encoding="utf-8")
         self.assertNotIn(credential, raw)
         self.assertIn("credential_sha256", raw)
 

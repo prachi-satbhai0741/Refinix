@@ -174,11 +174,12 @@ class TestCapabilities(Base):
         self.assertEqual(by_id["write-document"]["state"], "blocked")
         self.assertEqual(by_id["search-documents"]["state"], "available")
 
-    def test_a_missing_model_blocks_chat_with_the_exact_command(self):
+    def test_a_missing_model_directs_the_user_to_the_selector(self):
         rows = self.c.capabilities({"reachable": True, "models": ["other:1b"]})
         chat = next(r for r in rows if r["id"] == "chat")
         self.assertEqual(chat["state"], "blocked")
-        self.assertEqual(chat["setup"], f"ollama pull {runtime.MODEL}")
+        self.assertEqual(chat["setup"],
+                         "Choose an installed model in the model selector.")
 
     def test_execution_three_document_skills_are_available_when_ready(self):
         rows = self.c.capabilities({"reachable": True, "models": [runtime.MODEL]})

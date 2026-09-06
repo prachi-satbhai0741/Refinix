@@ -601,6 +601,7 @@ function chooseSkill(id) {
   if (!skill || skill.kind === 'default') skillByChat.delete(currentSlot());
   else skillByChat.set(currentSlot(), skill);
   renderSkill();
+  renderModelPill();
   const input = $('input');
   if (input) input.focus();
 }
@@ -658,15 +659,24 @@ function refreshSend() {
 
 /* ---- the model pill and its Reasoning switch -------------------------- */
 
-/* One approved model, one Boolean. The choice lives in coordinator state, so
- * it survives a restart and a fallback port; browser storage is origin-scoped
- * and would not. A submitted request snapshots the value server-side, so
+/* One selected model per workflow, one Boolean per model. The choices live in
+ * coordinator state, so they survive a restart and a fallback port; browser
+ * storage is origin-scoped and would not. A submitted request snapshots the
+ * value server-side, so
  * flipping the switch afterwards cannot change work already running. */
 let models = [];
+let modelSelections = {};
 let modelPopover = null;
 
-function activeModel() {
-  return models[0] || null;
+function modelScope() {
+  if ($('code-composer')) return 'code';
+  const skill = selectedSkill();
+  if (skill?.id === 'search-documents') return null;
+  return skill ? 'documents.generate' : 'chat';
+}
+
+function activeModel(scope = modelScope()) {
+  return models.find((model) => model.id === modelSelections[scope]) || null;
 }
 
 function renderModelPill() {
@@ -681,7 +691,8 @@ function renderModelPill() {
   pill.setAttribute('aria-label', model.reasoning
     ? `Model ${model.id}, reasoning on. Change it.`
     : `Model ${model.id}, reasoning off. Change it.`);
-  pill.title = model.installed ? '' : 'This model is not installed on this computer.';
+  pill.title = model.eligible_scopes?.includes(modelScope()) ? ''
+    : 'This model is not available for this workflow.';
 }
 
 function closeModelPopover(returnFocus) {
@@ -708,8 +719,15 @@ function openModelPopover() {
 
   const name = document.createElement('p');
   name.className = 'mp-name';
-  name.textContent = model.id;
+  name.textContent = 'Choose an installed model';
   box.append(name);
+
+  appendModelChoices(box, modelScope(),
+                     modelScope() === 'code' ? 'Code model'
+                     : modelScope() === 'chat' ? 'Chat model' : 'Document model');
+  if (modelScope() === 'documents.generate') {
+    appendModelChoices(box, 'documents.ocr', 'Document OCR model');
+  }
 
   const row = document.createElement('div');
   row.className = 'mp-row';
@@ -724,7 +742,7 @@ function openModelPopover() {
   toggle.setAttribute('role', 'switch');
   toggle.setAttribute('aria-labelledby', 'mp-reasoning-label');
   toggle.setAttribute('aria-checked', String(!!model.reasoning));
-  toggle.disabled = !model.installed;
+  toggle.disabled = !model.eligible_scopes?.includes(modelScope());
   const state = document.createElement('span');
   state.className = 'mp-state';
   state.textContent = model.reasoning ? 'On' : 'Off';
@@ -734,7 +752,7 @@ function openModelPopover() {
 
   const note = document.createElement('p');
   note.className = 'mp-note';
-  note.textContent = model.installed
+  note.textContent = model.eligible_scopes?.includes(modelScope())
     ? 'On lets the model work through the problem first. Slower, and it can use '
       + 'the whole reply budget before answering.'
     : 'This model is not installed on this computer, so reasoning cannot change.';
@@ -755,7 +773,7 @@ function openModelPopover() {
     } catch (err) {
       notice('That setting could not be saved.', 'error', err.message);
     } finally {
-      toggle.disabled = !model.installed;
+      toggle.disabled = !model.eligible_scopes?.includes(modelScope());
     }
   });
 
@@ -767,6 +785,51 @@ function openModelPopover() {
   modelPopover = box;
   pill.setAttribute('aria-expanded', 'true');
   toggle.focus();
+}
+
+function appendModelChoices(box, scope, labelText) {
+  const group = document.createElement('div');
+  group.className = 'mp-choices';
+  const label = document.createElement('p');
+  label.className = 'mp-label';
+  label.textContent = labelText;
+  group.append(label);
+
+  const auto = document.createElement('button');
+  auto.type = 'button';
+  auto.className = 'mp-model';
+  auto.textContent = 'Auto model — after internal hackathon';
+  auto.disabled = true;
+  group.append(auto);
+
+  for (const candidate of models) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mp-model';
+    const selected = modelSelections[scope] === candidate.id;
+    const unavailable = !candidate.eligible_scopes?.includes(scope);
+    button.dataset.selected = String(selected);
+    button.textContent = `${selected ? '✓ ' : ''}${candidate.id}`
+      + (candidate.locations?.length ? ` — ${candidate.locations.join(' + ')}` : ' — not installed')
+      + (candidate.installed && unavailable ? ' — unavailable for this workflow' : '');
+    button.disabled = unavailable;
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        await api('/v1/model/select', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope, model: candidate.id }),
+        });
+        await loadStatus();
+        closeModelPopover(true);
+      } catch (err) {
+        notice('That model could not be selected.', 'error', err.message);
+        button.disabled = false;
+      }
+    };
+    group.append(button);
+  }
+  box.append(group);
 }
 
 /* ---- attachments ------------------------------------------------------ */
@@ -1893,11 +1956,24 @@ function proposalCard(proposal) {
   if (proposal.state === 'proposed') {
     const actions = document.createElement('div');
     actions.className = 'card-actions';
-    const apply = document.createElement('button');
-    apply.className = 'btn btn-primary';
-    apply.textContent = 'Apply this change';
-    apply.onclick = () => applyProposal(proposal.proposal_id, null);
-    actions.append(apply);
+    const validation = codeState?.validation;
+    const passed = !!(validation?.observed && validation?.passed
+      && validation.patch_sha256 === proposal.digest);
+    const action = document.createElement('button');
+    action.className = 'btn btn-primary';
+    action.textContent = passed ? 'Apply this change' : 'Validate in sandbox';
+    action.onclick = () => passed
+      ? applyProposal(proposal.proposal_id, null)
+      : validateProposal(proposal.proposal_id);
+    actions.append(action);
+    if (validation) {
+      const result = document.createElement('span');
+      result.className = 'lbl';
+      result.textContent = passed
+        ? `Sandbox passed ${validation.tests_run} test(s).`
+        : `Sandbox did not pass${validation.detail ? `: ${validation.detail}` : '.'}`;
+      actions.append(result);
+    }
     card.append(actions);
   }
   return card;
@@ -2000,7 +2076,8 @@ function renderCode() {
   }
   if (codeState.proposal) {
     showCodeResult((article) => article.append(proposalCard(codeState.proposal)),
-                   `proposal:${codeState.proposal.proposal_id}:${codeState.proposal.state}`);
+                   `proposal:${codeState.proposal.proposal_id}:${codeState.proposal.state}:`
+                   + `${codeState.validation?.validation_id || 'unvalidated'}`);
   }
 }
 
@@ -2183,6 +2260,22 @@ async function applyProposal(proposalId, approvalId) {
     }
   } catch (err) {
     notice('That change was not applied.', 'error', err.message);
+  }
+  await loadCodeState(activeRepo);
+}
+
+async function validateProposal(proposalId) {
+  if (!proposalId || !codeState?.active) return;
+  try {
+    const result = await codeApi('/v1/code/validate', {
+      repo_id: codeState.active, proposal_id: proposalId,
+    });
+    notice(result.passed ? 'Sandbox validation passed.' : 'Sandbox validation failed.',
+           result.passed ? 'warn' : 'error',
+           result.passed ? `${result.tests_run} test(s) ran.`
+                         : (result.detail || result.stderr || 'No passing result was recorded.'));
+  } catch (err) {
+    notice('Sandbox validation could not run.', 'error', err.message);
   }
   await loadCodeState(activeRepo);
 }
@@ -2572,6 +2665,11 @@ function renderWorkCard(s, jobs) {
     detail.className = 'w-detail';
     detail.textContent = `started ${job.created_at.slice(11, 19)}`;
     text.append(name, detail);
+    const evidence = document.createElement('button');
+    evidence.type = 'button';
+    evidence.className = 'btn btn-proof';
+    evidence.textContent = 'Proof';
+    evidence.onclick = () => { showProof(job.job_id).catch(() => {}); };
     const stop = document.createElement('button');
     stop.type = 'button';
     stop.className = 'btn btn-stop';
@@ -2591,13 +2689,145 @@ function renderWorkCard(s, jobs) {
       }
       loadStatus().catch(() => {});
     };
-    li.append(text, stop);
+    li.append(text, evidence, stop);
     host.append(li);
   }
   actions($('c-work-actions'), [
     { label: 'View work', run: () => { location.href = '/'; } },
     { label: 'Refresh', run: () => loadStatus().catch(() => {}) },
   ]);
+}
+
+/* AF-014 Proof Card.
+ *
+ * The page renders exactly what the coordinator returned and adds nothing.
+ * Every row carries the source the backend stated, and a value the backend
+ * reported as absent is shown as unavailable WITH that reason — never as 0,
+ * "no", "healthy" or an empty row. A card that claimed more than the record
+ * behind it would be the specific failure AF-014 exists to prevent.
+ */
+async function showProof(jobId) {
+  const host = $('c-proof');
+  if (!host) return;
+  host.hidden = false;
+  host.replaceChildren();
+  let card;
+  try {
+    card = await api(`/v1/proof?job_id=${encodeURIComponent(jobId)}`);
+  } catch (err) {
+    const failed = document.createElement('p');
+    failed.className = 'unavailable';
+    failed.textContent = `No proof could be read for this job: ${err.message}`;
+    host.append(failed);
+    return;
+  }
+  renderProofCard(card);
+}
+
+/* One Proof row. The source is rendered for EVERY value, not only for a
+ * missing one: "runtime 4200 ms" and "runtime 4200 ms, from coordinator
+ * SQLite" are different claims, and AF-014 requires the second. `kv` shows a
+ * note only when the value is absent, which is right for a status card and
+ * wrong here. */
+function proofRow(target, label, value, source) {
+  const row = document.createElement('div');
+  const key = document.createElement('dt');
+  key.textContent = label;
+  const body = cell(value, source);
+  const origin = document.createElement('span');
+  origin.className = 'proof-source';
+  /* An absent value already reads as its own reason, so repeating the source
+     under it would say the same sentence twice. */
+  origin.textContent = (value === null || value === undefined || value === '')
+    ? '' : ` — source: ${source}`;
+  body.append(origin);
+  row.append(key, body);
+  target.append(row);
+}
+
+function renderProofCard(card) {
+  const host = $('c-proof');
+  if (!host) return;
+  host.hidden = false;
+  host.replaceChildren();
+
+  const heading = document.createElement('h3');
+  heading.textContent = `Proof — ${card.task_type} job, ${card.state}`;
+  host.append(heading);
+
+  for (const entry of card.attempts) {
+    const proof = entry.proof;
+    const block = document.createElement('section');
+    block.className = 'proof-attempt';
+    const title = document.createElement('h4');
+    title.textContent = `${entry.where} — attempt ${proof.attempt_id.slice(0, 8)}`;
+    block.append(title);
+
+    const facts = document.createElement('dl');
+    facts.className = 'facts';
+    const rows = [
+      ['Ran on', entry.where, entry.sources.state],
+      ['State', entry.state, entry.sources.state],
+      ['Why here', entry.route_reason, entry.sources.route_reason],
+      ['Model', proof.model ? proof.model.model_id : null, entry.sources.model],
+      ['Model manifest', proof.model ? proof.model.manifest_sha256 : null,
+       entry.sources.model],
+      ['Queue time', proof.queue_ms === null ? null : `${proof.queue_ms} ms`,
+       entry.sources.queue_ms],
+      ['Runtime', proof.runtime_ms === null ? null : `${proof.runtime_ms} ms`,
+       entry.sources.runtime_ms],
+      ['Validation',
+       proof.validation === 'unavailable' ? null : proof.validation,
+       entry.sources.validation],
+      ['Pod', proof.pod ? `${proof.pod.pod_name} (${proof.pod.pod_uid})` : null,
+       entry.sources.pod],
+      ['Pod image', proof.pod ? proof.pod.image_digest : null, entry.sources.pod],
+      ['Approval', proof.approval_id, entry.sources.approval],
+      ['Network', null, entry.sources.network],
+    ];
+    for (const [label, value, source] of rows) proofRow(facts, label, value, source);
+    block.append(facts);
+
+    if (proof.artifacts.length) {
+      const list = document.createElement('ul');
+      list.className = 'proof-artifacts';
+      for (const artifact of proof.artifacts) {
+        const li = document.createElement('li');
+        li.textContent = `${artifact.media_type} — ${artifact.size_bytes} bytes, `
+          + `SHA-256 ${artifact.sha256.slice(0, 16)}…`;
+        list.append(li);
+      }
+      block.append(list);
+    }
+    if (proof.citations.length) {
+      const list = document.createElement('ul');
+      list.className = 'proof-citations';
+      for (const citation of proof.citations) {
+        const li = document.createElement('li');
+        li.textContent = `page ${citation.page} — ${citation.quote}`;
+        list.append(li);
+      }
+      block.append(list);
+    }
+    if (entry.validation_detail) {
+      const detail = entry.validation_detail;
+      const pre = document.createElement('p');
+      pre.className = 'proof-validation';
+      pre.textContent = `${detail.command.join(' ')} → exit `
+        + `${detail.exit_status === null ? 'unavailable' : detail.exit_status}`;
+      block.append(pre);
+    }
+    host.append(block);
+  }
+
+  const note = document.createElement('p');
+  note.className = 'proof-note';
+  note.textContent = card.evidence_note;
+  host.append(note);
+  const network = document.createElement('p');
+  network.className = 'unavailable';
+  network.textContent = card.network;
+  host.append(network);
 }
 
 function renderCapabilityCard(s) {
@@ -2703,6 +2933,7 @@ async function loadStatus() {
   capabilities = s.capabilities || capabilities;
   if (Array.isArray(s.models)) {
     models = s.models;
+    modelSelections = s.model_selections || modelSelections;
     renderModelPill();
   }
   renderReadyLine(s);

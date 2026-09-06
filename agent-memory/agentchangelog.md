@@ -1551,3 +1551,31 @@ work. No repository file change means no changelog entry.
 - changes: The worker guard now applies its scoped rules as soon as K3s is active. The handoff records that `ss` may be empty for a packet-rule NodePort, uses the successful TLS request as functional proof, reads the root-only certificate via root curl without exposing the token, and expects only the LAN proxy to appear as a process listener.
 - verification: Requester output showed empty `ss`, loopback-only K3s configuration, an authenticated pinned-TLS Node response, and plaintext rejection with exit 52. `git diff --check` passed locally; no systemd unit was installed or started by Codex.
 - remaining: Push and pull this correction, install the worker guard/proxy units with the observed addresses, then verify the rules, LAN listener and Mac-only reachability before pairing.
+
+<a id="ac-20260905-015"></a>
+## AC-20260905-015 — C08 Documents, C09 distributed Code and C10 evidence, source and macOS artifact
+- prompt_id: [UP-20260905-015](userprompts.md#up-20260905-015)
+- date: 2026-09-05
+- status: implemented; every C06–C10 human runtime gate still pending
+- scope: c07, c08, c09, c10, documents, code, sandbox, approvals, proof, artifacts
+- tags: c08, c09, c10, quartz, ocr, resource-package, kubernetes-job, rbac, approvals, proof-cards
+- aliases: paddleocr vl no vision, scan rendering, validation job, durable write recovery, af-008 af-014
+- paths: backend/coordinator/, backend/worker/, deploy/k3s/, frontend/app/, desktop/setup_py2app.py, docs/, tasks.md, README.md
+- summary: Implemented C08 local Documents/OCR, C09 packaged remote code generation with a restricted Kubernetes validation Job, and C10 concurrency, approval binding, durable final writes and Proof Cards.
+- changes: New `pdfrender`/`ocr` render and read scan pages through the existing Ollama adapter, which now requires an OBSERVED `vision` capability before sending an image. New worker `packages`/`codegen`/`kube`/`jobspec`/`validate` carry a bounded idempotent JSON package and run one approved command in a Job with no token, no egress and a read-only package mount. `deploy/k3s/50-validation.yaml` adds a separate jobs volume, a six-verb namespaced Role and default-deny policies. Approvals gained workflow/job/step/attempt columns; a durable `write_operations` record is created in the same transaction that claims an approval and is resumed at startup. New `proof.py` and a Control Center card show one record per attempt with a source for every value.
+- verification: Observed on the macOS coordinator 2026-09-05 — 840 Python checks pass under `.venv` (7 skipped: no PyObjC), 174 under `desktop/.venv` (4 skipped), 90 browser checks across 6 suites. Twelve mutation checks each broke a matching regression, including one that found and fixed a real defect: the claimed write record was held on the shared service object and could cross between concurrent approvals. The C07 scan fixture was read end to end by the already-installed `qwen3.5:4b-q4_K_M` (local fixture evidence only). The macOS application rebuilt, ships the new modules and Quartz, and `codesign --verify --deep --strict` reports valid.
+- remaining: The linux/amd64 worker image was NOT built — the pinned base and all wheels are absent from the Docker cache and downloading is unauthorised, so the C09 worker changes still need a build on Ubuntu. The configured `MedAIBase/PaddleOCR-VL:0.9b` reports `["completion"]` with no projector and rejects images, so scan reading fails closed pending a requester decision. No Kubernetes Job, package transport, pairing or distributed run has ever executed; C05–C10 all remain unaccepted. Next steps are in `docs/c07-c10-runtime-handoff.md`.
+
+<a id="ac-20260906-001"></a>
+## AC-20260906-001 — C08–C10 review corrections
+- prompt_id: [UP-20260905-016](userprompts.md#up-20260905-016)
+- date: 2026-09-06
+- status: implemented; live Ubuntu and Kubernetes verification pending
+- scope: c08, c09, c10, model-selection, validation, sandbox, cleanup, proof
+- tags: model-selector, paddleocr, validation-gate, kubernetes-admission, package-retention, proof-cards
+- aliases: auto model disabled, zero tests refused, validation job containment, stable citations
+- paths: backend/contracts/, backend/coordinator/, backend/worker/, deploy/k3s/, frontend/app/, docs/c07-c10-runtime-handoff.md, tasks.md
+- summary: Closed the integrated review findings without advancing any C06–C10 human gate.
+- changes: Workflow-scoped model choices now persist and propagate exactly, Auto is visibly disabled, document search shows no false model choice, and OCR enables only a runtime-confirmed vision model. Code apply now requires a current observed sandbox pass over the full selected snapshot with at least one parsed unittest result. Validation Jobs are constrained by credential-free identity plus admission policy, temporary packages expire on terminal acknowledgement, startup and a periodic sweep, and Proof Card citation identities and approval sources are persisted.
+- verification: Observed on the macOS coordinator: 888 Python checks passed with 4 intentional skips; 91 browser checks passed; JavaScript and worker API source parsed; final `git diff --check` passed. The FastAPI worker route suite remains authoritative only inside the pinned image build.
+- remaining: Build the linux/amd64 worker image, server-dry-run and apply the admission policy, pair the devices, run one real validation Job, and choose a vision-capable OCR model or accept scan OCR as blocked. C06–C10 remain unaccepted until those device checks pass.

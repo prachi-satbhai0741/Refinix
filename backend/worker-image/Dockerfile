@@ -27,7 +27,9 @@ RUN --network=none python -m unittest -q \
       backend.contracts.test_contracts \
       backend.worker.test_worker_runtime \
       backend.worker.test_worker_app \
-      backend.worker.test_executor
+      backend.worker.test_executor \
+      backend.worker.test_packages \
+      backend.worker.test_validation
 
 # Non-root, matching the security boundary for worker execution.
 USER 10001:10001
