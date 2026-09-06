@@ -231,6 +231,11 @@ class TestValidationSandbox(unittest.TestCase):
                     if k == "ValidatingAdmissionPolicyBinding"
                     and n == "aegisforge-validation-job"))
 
+    def test_admission_map_keys_use_cel_membership(self):
+        policy = self.admission()
+        self.assertIn("'aegisforge.dev/attempt' in object.metadata.labels", policy)
+        self.assertNotIn("has(object.metadata.labels['", policy)
+
     def test_validation_jobs_use_the_credential_free_service_account(self):
         accounts = {n: t for _, k, n, t in documents() if k == "ServiceAccount"}
         self.assertIn("aegisforge-validation", accounts)
@@ -577,6 +582,14 @@ class TestRuntimeEgressIsSeparate(unittest.TestCase):
         self.assertIn("/32", policy, "a single host, not a subnet")
         self.assertNotIn("0.0.0.0/0", policy)
 
+    def test_runtime_endpoint_matches_the_egress_policy(self):
+        endpoint = 'AEGIS_RUNTIME_HOST: "http://10.42.0.1:11434"'
+        for path in ("20-worker.yaml", "40-executor.yaml"):
+            self.assertIn(endpoint, (ROOT / "deploy/k3s" / path).read_text())
+        policy = (ROOT / "deploy/k3s/30-runtime-egress.yaml").read_text()
+        self.assertIn("cidr: 10.42.0.1/32", policy)
+        self.assertIn("port: 11434", policy)
+
 
 class TestProbeBudget(unittest.TestCase):
     """/v1/health calls runtime.probe(), which makes three HTTP calls. A probe
@@ -775,6 +788,15 @@ class TestExecutorAndTLS(unittest.TestCase):
         revoked one."""
         self.assertIn("AEGIS_RELATIONSHIP_ID", self.executor())
         self.assertIn("secretKeyRef", self.executor())
+
+    def test_the_executor_grace_period_is_a_pod_setting(self):
+        """Kubernetes rejects this field when it is nested in a container."""
+        executor = self.executor()
+        pod_tail = executor.split("      volumes:", 1)[0]
+        self.assertIn("\n      terminationGracePeriodSeconds: 40\n", pod_tail)
+        container = executor.split("      containers:", 1)[1].split(
+            "\n      terminationGracePeriodSeconds:", 1)[0]
+        self.assertNotIn("terminationGracePeriodSeconds", container)
 
     def test_no_credential_is_inline_in_the_new_manifests(self):
         for text in (self.executor(), self.worker()):

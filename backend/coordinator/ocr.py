@@ -131,6 +131,135 @@ def method_label(digest: str | None = None,
 
 
 # --------------------------------------------------------------------------
+# One image, sent directly
+# --------------------------------------------------------------------------
+
+# The signatures checked before a byte is sent. A declared media type is a
+# claim by whatever uploaded the file; the magic number is the file itself.
+IMAGE_SIGNATURES = {
+    "image/png": ((b"\x89PNG\r\n\x1a\n",), (".png",)),
+    "image/jpeg": ((b"\xff\xd8\xff",), (".jpg", ".jpeg")),
+}
+
+# Deliberately only the two formats whose whole path has been exercised here.
+# TIFF, HEIC and WebP stay unsupported and say so rather than being declared
+# on the strength of the transport accepting any bytes.
+IMAGE_SUFFIXES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+
+DIRECT_IMAGE_NOTE = (
+    "Read directly from the supplied image. Nothing was rendered from a PDF, "
+    "so there is one page and no page mapping beyond it.")
+
+
+def image_probe(model: str = runtime.OCR_MODEL) -> dict:
+    """Whether a supplied image can be read right now, and why not if not.
+
+    Deliberately **not** `probe()`: reading a bare image needs no PDF renderer,
+    so requiring Quartz here would refuse work this computer can do. The model
+    prerequisite is identical and is checked the same way.
+    """
+    state = runtime.model_state(model, requires=runtime.VISION_CAPABILITY)
+    if state["state"] != "installed":
+        return {"available": False, "model": state, "detail": state["detail"]}
+    return {
+        "available": True, "model": state,
+        "detail": (f"Supplied images are read by {state['model']} on the local "
+                   f"runtime. " + STANDALONE_NOTE),
+    }
+
+
+def image_method_label(digest: str | None = None,
+                       model: str = runtime.OCR_MODEL) -> str:
+    """How a direct image extraction says it was produced.
+
+    Never the `method_label` above: claiming a Quartz render for a file that
+    was never rendered would be a fabricated provenance line.
+    """
+    suffix = f" manifest {digest[:16]}…" if digest else " manifest unavailable"
+    return f"image + local vision ({model}){suffix}"
+
+
+def check_image(data: bytes, *, filename: str, media_type: str) -> str:
+    """Prove the bytes are the image they claim to be, before sending them.
+
+    Returns the media type the *content* supports, which is what the transport
+    is told. A declared type that disagrees with the signature is refused
+    rather than quietly corrected: the disagreement is the interesting part.
+    """
+    if not data:
+        raise OcrError("empty_image", f"{filename} is empty.")
+    if len(data) > runtime.MAX_IMAGE_BYTES:
+        limit = runtime.MAX_IMAGE_BYTES // (1024 * 1024)
+        raise OcrError(
+            "too_large",
+            f"{filename} is larger than the {limit} MB an image request carries.")
+
+    suffix = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+    if suffix not in IMAGE_SUFFIXES:
+        supported = ", ".join(sorted(s.lstrip(".") for s in IMAGE_SUFFIXES))
+        raise OcrError(
+            "unsupported_image",
+            f"Refinix reads {supported} images directly. {filename} is not one of them.")
+
+    observed = next((declared for declared, (magics, _suffixes)
+                     in IMAGE_SIGNATURES.items()
+                     if any(data.startswith(magic) for magic in magics)), None)
+    if observed is None:
+        raise OcrError(
+            "malformed_image",
+            f"{filename} does not start with a PNG or JPEG signature, so it is "
+            "not the image it is named as.")
+    if observed != IMAGE_SUFFIXES[suffix]:
+        raise OcrError(
+            "type_mismatch",
+            f"{filename} is named {suffix} but its contents are {observed}.")
+    if media_type and media_type != observed:
+        raise OcrError(
+            "type_mismatch",
+            f"{filename} was accepted as {media_type} but its contents are {observed}.")
+    if observed == "image/jpeg" and not data.rstrip(b"\x00").endswith(b"\xff\xd9"):
+        raise OcrError(
+            "malformed_image",
+            f"{filename} ends before a JPEG end-of-image marker, so it is truncated.")
+    return observed
+
+
+def extract_image(data: bytes, *, filename: str, media_type: str,
+                  should_cancel=None, chat=None,
+                  model: str = runtime.OCR_MODEL) -> dict:
+    """Read one supplied image, returning the shape `extract_pdf` returns.
+
+    A supplied image *is* a page image, which is exactly what `read_page`
+    already takes, so there is no renderer in this path and nothing pretends
+    there was. It is page 1 because it is the only page, not because a page
+    number was recovered from anywhere.
+    """
+    state = image_probe(model)
+    if not state["available"]:
+        raise OcrError("unavailable", state["detail"])
+    observed = check_image(data, filename=filename, media_type=media_type)
+    if should_cancel is not None and should_cancel():
+        raise OcrError("cancelled", "Reading that image was stopped.")
+
+    text = read_page(data, media_type=observed, should_cancel=should_cancel,
+                     chat=chat, model=model)
+    warnings = []
+    if not text.strip():
+        # A blank reading is reported, never smoothed into an empty document
+        # that looks like a successful transcription of a blank page.
+        warnings.append(
+            "No text was recognised in this image. Nothing has been guessed to "
+            "fill the gap, and no document should be written from this alone.")
+    return {
+        "pages": [{"number": 1, "text": text, "confidence": None, "note": None}],
+        "method": image_method_label(state["model"].get("digest"), model),
+        "uncertain": [UNCERTAINTY_NOTE, STANDALONE_NOTE, DIRECT_IMAGE_NOTE,
+                      *warnings],
+        "page_count": 1,
+    }
+
+
+# --------------------------------------------------------------------------
 # One page
 # --------------------------------------------------------------------------
 

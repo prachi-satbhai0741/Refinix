@@ -1178,3 +1178,227 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: The switcher must actually switch, not just list. Screenshot supplied showing the model list above the pill.
 - follow_up_to: [UP-20260905-018](#up-20260905-018)
 - linked_changes: [AC-20260905-018](agentchangelog.md#ac-20260905-018)
+
+<a id="up-20260906-001"></a>
+## UP-20260906-001 — Repair the Python 3.13 worker image checks
+- date: 2026-09-06
+- status: implemented; Ubuntu rebuild pending
+- scope: c06, c09, worker-image, offline-tests
+- tags: docker-build, python-3.13, model-digest, zero-tests, test-fixture
+- aliases: selected model is not installed, exit status 5, worker image 11 failures
+- paths: backend/worker/test_worker_app.py, backend/worker/test_validation.py, agent-memory/
+- summary: Repair the two stale test assumptions exposed by the authoritative Ubuntu worker-image build without weakening production admission or validation.
+- request: Continue the ordered live setup after the Ubuntu C09 worker image ran 213 offline checks and failed 11.
+- constraints: Keep model-digest admission fail-closed and keep zero discovered tests from passing; change only the shared fixtures that drifted across environments.
+- acceptance: The focused worker API and validation suites pass locally, and the Ubuntu image build is rerun as the authoritative gate.
+- verification_authorization: Focused offline tests and static checks locally; the container build remains the live Ubuntu check.
+- follow_up_to: [UP-20260905-016](#up-20260905-016)
+- linked_changes: [AC-20260906-002](agentchangelog.md#ac-20260906-002)
+
+<a id="up-20260906-002"></a>
+## UP-20260906-002 — Pin the observed C09 Ubuntu image
+- date: 2026-09-06
+- status: implemented; publication and K3s import pending
+- scope: c06, c09, image-digest, provenance, manifests, handoff
+- tags: ubuntu, docker, image-digest, archive, kubernetes, provenance
+- aliases: 774218db, 873cd89c, 06013413, c09 image pin
+- paths: backend/worker-image/provenance.json, deploy/k3s/, docs/c07-c10-runtime-handoff.md, tasks.md, agent-memory/
+- summary: Pin the requester-observed C09 Ubuntu image and archive evidence everywhere the worker, executor and validation policy consume it.
+- request: Continue the ordered setup after the Ubuntu image build passed and its digest, platform and archive evidence were returned.
+- constraints: Use only observed digests and byte count; keep the archive outside Git; do not import, deploy or claim runtime acceptance from the build.
+- acceptance: All four runtime image fields match provenance, the runnable handoff uses the same digest, and focused manifest checks pass.
+- verification_authorization: Focused offline manifest and source consistency checks only; Ubuntu publication and cluster actions remain human gates.
+- follow_up_to: [UP-20260906-001](#up-20260906-001)
+- linked_changes: [AC-20260906-003](agentchangelog.md#ac-20260906-003)
+
+<a id="up-20260906-003"></a>
+## UP-20260906-003 — Repair the live C09 admission dry-run
+- date: 2026-09-06
+- status: implemented; Ubuntu server dry-run retry pending
+- scope: c06, c09, kubernetes, admission-policy, runtime-handoff
+- tags: cel, validatingadmissionpolicy, map-membership, pvc, rollout-order
+- aliases: invalid argument to has macro, aegisforge jobs not found, pending worker
+- paths: deploy/k3s/50-validation.yaml, deploy/k3s/test_manifests.py, docs/c07-c10-runtime-handoff.md, agent-memory/
+- summary: Fix the invalid CEL map-key check and move C09 prerequisites before the worker rollout that consumes their PVC.
+- request: Continue setup after the new worker stayed Pending on the missing jobs PVC and the server dry-run rejected the admission expression.
+- constraints: Preserve fail-closed admission, use the Kubernetes-supported map membership operator, and do not apply anything until server dry-run passes.
+- acceptance: Focused manifest checks pass and the live K3s server accepts every rendered object in dry-run.
+- verification_authorization: Focused offline manifest checks locally; the Ubuntu server dry-run remains the authoritative compiler check.
+- follow_up_to: [UP-20260906-002](#up-20260906-002)
+- linked_changes: [AC-20260906-004](agentchangelog.md#ac-20260906-004)
+
+<a id="up-20260906-004"></a>
+## UP-20260906-004 — Connect C09 Pods to the observed runtime bridge
+- date: 2026-09-06
+- status: implemented; publication and live Pod verification pending
+- scope: c06, c09, runtime, configmap, network-policy, handoff
+- tags: ollama, cni0, runtime-host, egress, worker, executor
+- aliases: health unavailable, 10.42.0.1, protected Ollama bridge
+- paths: deploy/k3s/20-worker.yaml, deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, docs/c07-c10-runtime-handoff.md, agent-memory/
+- summary: Point both C09 consumers at the observed guarded cni0 Ollama bridge and keep that endpoint locked to the narrow egress policy.
+- request: Continue setup after the exact C09 worker passed loopback TLS but reported runtime health unavailable while the preserved bridge was stopped.
+- constraints: Reuse the existing C05 socket proxy and guard; do not widen Ollama beyond loopback or grant Pod egress beyond the observed bridge /32 and port 11434.
+- acceptance: Worker and executor ConfigMaps match the runtime-egress policy, focused checks pass, and the live worker later reports the installed model through the bridge.
+- verification_authorization: Focused offline manifest checks locally; publication, policy apply and live worker health remain device gates.
+- follow_up_to: [UP-20260906-003](#up-20260906-003)
+- linked_changes: [AC-20260906-005](agentchangelog.md#ac-20260906-005)
+
+<a id="up-20260906-005"></a>
+## UP-20260906-005 — Repair the executor Pod grace-period field
+- date: 2026-09-06
+- status: implemented; verification and publication pending
+- scope: c06, c09, kubernetes, executor, manifest
+- tags: executor, deployment, pod-spec, termination-grace-period, strict-decoding
+- aliases: unknown field terminationGracePeriodSeconds, executor deployment not found
+- paths: deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, agent-memory/
+- summary: Move the executor termination grace period from the container to the Kubernetes Pod spec after the live server rejected the manifest.
+- request: Continue setup after K3s strict decoding refused the executor Deployment and therefore created no executor Pod.
+- constraints: Preserve the 40-second recovery allowance and change only the invalid field placement with one regression check.
+- acceptance: Offline manifest checks pass, K3s accepts the Deployment, and the executor becomes Ready.
+- verification_authorization: Requester runs the focused manifest suite and live K3s apply; Git publication remains a human action.
+- follow_up_to: [UP-20260906-004](#up-20260906-004)
+- linked_changes: [AC-20260906-006](agentchangelog.md#ac-20260906-006)
+
+<a id="up-20260906-006"></a>
+## UP-20260906-006 — Repair the collapsed model selector
+- date: 2026-09-06
+- status: implemented and locally verified; publication and packaged-app rebuild pending
+- scope: refinix, frontend, model-selection, c06-acceptance
+- tags: model-selector, css-grid, accessibility, chat, routing
+- aliases: vertical model text, fourteen pixel column, broken model dropdown
+- paths: frontend/app/app.js, frontend/app/test-composer.cjs, agent-memory/
+- summary: Render each model choice into the tick, name and location cells already defined by the selector's CSS grid.
+- request: Repair the unusable model chooser exposed while switching Chat from PaddleOCR to the paired worker model during live C06 acceptance.
+- constraints: Reuse the existing CSS and coordinator selection API; do not change routing, model inventory or visual tokens.
+- acceptance: The browser check proves each option has three cells, the selector is legible after reload, and the worker model can be selected.
+- verification_authorization: Requester runs the focused browser test and visually verifies the live selector; Git publication remains a human action.
+- follow_up_to: [UP-20260906-005](#up-20260906-005)
+- linked_changes: [AC-20260906-007](agentchangelog.md#ac-20260906-007)
+
+<a id="up-20260906-007"></a>
+## UP-20260906-007 — Preserve work across an executor rollout
+- date: 2026-09-06
+- status: implemented and locally verified; worker-image rebuild and live retry pending
+- scope: c06, worker, executor, recovery, pairing
+- tags: sigterm, redis-streams, restart-recovery, pairing-reload, worker-image
+- aliases: cancelled before completion, rollout restart lost work, fresh pairing code refused
+- paths: backend/worker/executor.py, backend/worker/pairing.py, backend/worker/test_executor.py, agent-memory/
+- summary: Keep an in-flight entry recoverable on executor shutdown and make the running worker API see codes minted by the separate host CLI.
+- request: Continue C06 after the live executor-rollout check preserved partial output but terminally cancelled the attempt instead of recovering it.
+- constraints: Preserve explicit user cancellation and deadline behavior; keep the entry pending without a false terminal event; rebuild the worker image only once for both live-proven defects.
+- acceptance: Focused executor checks pass, the rebuilt image pairs without an API restart, and a live executor rollout resumes the same attempt to completion.
+- verification_authorization: Requester runs the focused offline suite and the reviewed Ubuntu rebuild and recovery steps; Git publication remains a human action.
+- follow_up_to: [UP-20260906-006](#up-20260906-006)
+- linked_changes: [AC-20260906-008](agentchangelog.md#ac-20260906-008)
+
+<a id="up-20260906-008"></a>
+## UP-20260906-008 — Add one-command presentation startup
+- date: 2026-09-06
+- status: implemented and locally verified; publication and device installation pending
+- scope: c06, presentation, launcher, macos, ubuntu
+- tags: refinix-start, motorola-hotspot, systemd, k3s, fail-closed
+- aliases: Refinix start, college presentation, two-device startup
+- paths: scripts/refinix, scripts/test_refinix_launcher.py, agent-memory/
+- summary: Add one cross-platform command that verifies the fixed Motorola hotspot addresses before opening the Mac coordinator or starting the guarded Ubuntu stack.
+- request: Make `Refinix start` a presentation-day command on both devices while the same Motorola hotspot travels with the team.
+- constraints: Refuse unexpected addresses before changing host state, expose no secret, preserve the guarded listener, and reuse existing services and deployments.
+- acceptance: Offline launcher checks pass, both command spellings install on each device, Ubuntu reaches Ready, and Mac opens Refinix only after the worker port is reachable.
+- verification_authorization: Requester runs the focused offline checks and reviewed installation commands on both devices; Git publication remains a human action.
+- follow_up_to: [UP-20260906-007](#up-20260906-007)
+- linked_changes: [AC-20260906-009](agentchangelog.md#ac-20260906-009)
+
+<a id="up-20260906-009"></a>
+## UP-20260906-009 — Desktop Execution 4A: local documents and attachment intelligence
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4a, documents, attachments, macos, local-only
+- tags: pdf-output, image-ocr, xlsx, chat-attachments, general-document, write-document
+- aliases: convert answer to pdf, ocr an image into a document, read a spreadsheet, chat reads files
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Make Refinix useful as a standalone local application — put a finished answer into a Word or PDF file, read PNG and JPEG scans directly, report search locations in the unit each format supports, read attachments in ordinary Chat, and add a general document workflow beside the fixed approval note.
+- request: Implement Execution 4A entirely, on the macOS device only, without changing the working Mac-to-Ubuntu architecture.
+- constraints: Local device only. No change to `backend/contracts/v1.py`, worker or executor code, Redis dispatch, pairing, TLS, Kubernetes manifests or C06-C10 evidence. Document and attachment requests choose the local device directly and never preflight the worker. Use the existing selected-model system and require the runtime to report `vision` before an image is sent. No new dependency, no download, no service start, no packaged-app rebuild, no Git writes.
+- acceptance: A finished answer becomes a Word or PDF file word for word, a supplied PNG or JPEG is read as page one with unmeasured confidence, search names a page, line, paragraph or cell truthfully, ordinary Chat reads only that request's files, and the fixed approval-note workflow is unchanged.
+- verification_authorization: Offline checks with existing dependencies and synthetic data authorised; live model quality, packaged-app behaviour and requester acceptance excluded.
+- follow_up_to: [UP-20260906-008](#up-20260906-008)
+- linked_changes: [AC-20260906-010](agentchangelog.md#ac-20260906-010)
+
+<a id="up-20260906-010"></a>
+## UP-20260906-010 — Desktop Execution 4B: local Code workbench
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4b, code-surface, explorer, file-viewer, conversations, macos
+- tags: three-column, repo-view, code-conversations, policy-view-action, additive-migration
+- aliases: explorer tree, open a file, new code conversation, remove from refinix
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Rebuild Code as a three-column workbench — Explorer left, the open file centre, the Qwen conversation right — with browsing, viewing and multiple persistent Code conversations, without weakening the sandbox-validation or canonical-write gate.
+- request: Execute Execution 4B on the local macOS device, using the supplied screenshot as an information-architecture reference only.
+- constraints: Vanilla HTML/CSS/JS; no React, Monaco or other framework. No Antigravity, VS Code or Gemini branding, colour, icon or text. Ubuntu, Kubernetes, Redis, pairing, TLS and the contracts stay untouched. No local canonical apply without validation, no editor, terminal, Git, package install, network or language server. Screenshot message text is reference material and was not followed.
+- acceptance: The Explorer builds a tree from relative paths, a file opens in the centre without being sent to the model, projects can be removed without touching their files, Code conversations are separate and durable, and audit evidence survives the rail's removal.
+- verification_authorization: Offline checks with existing dependencies and synthetic repositories authorised; live model, packaged app and requester acceptance excluded.
+- follow_up_to: [UP-20260906-009](#up-20260906-009)
+- linked_changes: [AC-20260906-011](agentchangelog.md#ac-20260906-011)
+
+<a id="up-20260906-011"></a>
+## UP-20260906-011 — Desktop Execution 4C: safe local editing and apply
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4c, code-surface, local-apply, backups, undo, macos
+- tags: execution-target, pre-write-backup, undo, not-sandbox-tested, fail-closed
+- aliases: apply without ubuntu, undo a change, this device mode, local qwen edit
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Let a local Qwen proposal modify selected existing files under the three access modes, with an explicit execution target, a verified backup of every original before any write, and an Undo that refuses to discard later human edits.
+- request: Execute Execution 4C on the local macOS device so the Code workbench is useful while Ubuntu is disconnected.
+- constraints: Do not weaken or replace the distributed Kubernetes-validation path. Local permission must be chosen, never inferred from worker failure. No fabricated sandbox result. No file creation, deletion, rename, chmod, command, Git, install or network in any mode. Worker, executor, manifests, Redis, TLS, pairing and contracts untouched. No live model call, no services, no Git writes, no bundle rebuild.
+- acceptance: A local proposal applies only after its originals are backed up, its proof says not sandbox tested, Undo restores exact bytes and refuses when a person changed the file afterwards, and a distributed proposal still requires an observed passing Kubernetes validation.
+- verification_authorization: Offline checks against synthetic repositories and temporary databases authorised; live Qwen output, packaged app, Ubuntu validation and requester acceptance excluded.
+- follow_up_to: [UP-20260906-010](#up-20260906-010)
+- linked_changes: [AC-20260906-012](agentchangelog.md#ac-20260906-012)
+
+<a id="up-20260907-001"></a>
+## UP-20260907-001 — Executions 4A–4C integrated review corrections
+- date: 2026-09-07
+- status: implemented and locally verified; requester and Codex re-review pending
+- scope: execution-4a, execution-4b, execution-4c, review-fixes, macos
+- tags: fail-closed-target, verified-backups, conversation-ownership, local-attachments, aggregate-limits
+- aliases: codex review fixes, corrupted target, backup verification, ask mode view approval
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Fix the ten defects Codex found in the combined 4A–4C review, plus a concurrent-backup race Claude found, without weakening the distributed Kubernetes validation path.
+- request: Execute the full Codex correction set, items 1–10, including the UNIQUE(proposal_id, path) race, and do not defer the XLSX, PDF, conversion or removal-locking items.
+- constraints: No packaged app rebuild, no Ubuntu or worker-image work, no live model call, no services, no Kubernetes/Docker/Redis/worker contact, no dependency installation, no Git or GitHub writes. The distributed apply gate must remain unchanged.
+- acceptance: An unrecognised execution target stops before validation, approval, backup or writing; every local write is preceded by a verified backup; Code conversations own their local work; Ask-mode viewing completes its approval; a Chat request with files is answered locally; attachment context is bounded and never silently empty; XLSX has aggregate ceilings; no document output is silently truncated; removal is refused during active work; the ledgers state what the code does.
+- verification_authorization: The already-authorised offline checks only.
+- follow_up_to: [UP-20260906-011](#up-20260906-011)
+- linked_changes: [AC-20260907-001](agentchangelog.md#ac-20260907-001)
+
+<a id="up-20260907-002"></a>
+## UP-20260907-002 — Codex closeout of Execution 4 integration defects
+- date: 2026-09-07
+- status: implemented and locally verified; requester and external runtime gates pending
+- scope: execution-4a, execution-4b, execution-4c, review-fixes, macos
+- tags: conversation-isolation, durable-approval, backup-hardening, bounded-context, lossless-pdf
+- aliases: codex execute fixes, code conversation restore, reject proposal, safe project removal
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Repair the remaining verified 4A–4C integration defects in the shared coordinator and source UI while preserving the disconnected local path and the distributed validation boundary.
+- request: Implement the full remaining correction set directly rather than sending another Claude prompt.
+- constraints: No Git or GitHub writes, packaged-app rebuild, dependency installation, live model or service call, Ubuntu/Kubernetes/Docker/Redis/worker contact, or changes under backend/worker, backend/contracts or deploy.
+- acceptance: Validation resolves the stored target before routing; Code state, approvals, audit and restored UI stay conversation-owned; Reject and Ask-mode view work durably; project removal is locked and explicitly acknowledges lost Undo; model prompts are bounded; PDF text and backups are not silently lost or escaped.
+- verification_authorization: Proportionate offline checks with existing dependencies and isolated data only; packaged app, live Qwen, distributed worker and requester acceptance remain external gates.
+- follow_up_to: [UP-20260907-001](#up-20260907-001)
+- linked_changes: [AC-20260907-002](agentchangelog.md#ac-20260907-002)
+
+<a id="up-20260907-003"></a>
+## UP-20260907-003 — Run CI when work reaches main
+- date: 2026-09-07
+- status: implemented; first GitHub run and server-side enforcement pending
+- scope: github-actions, ci, main, release-flow
+- tags: main-ci, push, pull-request, python, frontend
+- aliases: enable CI for main push, main push checks, release CI
+- paths: .github/workflows/ci.yml, CONTRIBUTING.md, agent-memory/
+- summary: Add one read-only CI job for main-targeting pull requests and commits that land on main without weakening the repository's PR-only release rule.
+- request: Enable CI because the requester intends to publish the current work to main.
+- constraints: Do not perform Git or GitHub writes; preserve the existing dev-to-main flow guard; use pinned dependencies and action commits; do not contact Ubuntu, Kubernetes, Redis, Docker or a live model.
+- acceptance: Main-targeting pull requests and main pushes run the same Python and frontend checks, the flow guard remains pull-request-only, and documentation states that post-push CI cannot block a direct push.
+- verification_authorization: Static workflow inspection only; the first GitHub-hosted run is the execution gate.
+- follow_up_to: [UP-20260901-002](#up-20260901-002)
+- linked_changes: [AC-20260907-003](agentchangelog.md#ac-20260907-003)

@@ -131,11 +131,12 @@ class TestApprovalBinding(Base):
         self.assertEqual(approval["proposal_id"], proposal["proposal_id"])
         self.assertEqual(approval["decision"], "pending")
 
-    def test_the_client_decision_carries_only_an_id_and_a_boolean(self):
+    def test_the_client_decision_carries_only_an_id_boolean_and_conversation(self):
         """Nothing about the target may come from the decision request."""
         import inspect
         signature = inspect.signature(self.c.code.decide)
-        self.assertEqual(list(signature.parameters), ["approval_id", "approved"])
+        self.assertEqual(list(signature.parameters),
+                         ["approval_id", "approved", "conversation_id"])
         with self.assertRaises(code_service.CodeError):
             self.c.code.decide("not-a-uuid", "yes")          # not a boolean
 
@@ -197,7 +198,7 @@ class TestApprovalBinding(Base):
         with self.assertRaises(code_service.CodeError) as caught:
             self.c.code.apply(self.repo_id, proposal["proposal_id"],
                               approval_id=approval["approval_id"])
-        self.assertEqual(caught.exception.code, "already_applied")
+        self.assertEqual(caught.exception.code, "not_pending")
 
     def test_two_concurrent_approvals_never_cross(self):
         """C10 runs two workflows at once, and `apply` writes files.

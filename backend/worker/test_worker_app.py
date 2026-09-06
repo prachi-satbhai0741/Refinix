@@ -22,6 +22,7 @@ import os
 import pathlib
 import tempfile
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("AEGIS_WORKER_TOKEN", "x" * 40)   # the startup guard
 os.environ.setdefault("AEGIS_NODE_ID", "22222222-2222-4222-8222-222222222222")
@@ -37,6 +38,7 @@ from backend.worker.dispatch import DispatchQueue       # noqa: E402
 CONFIRMED = "66666666-6666-4666-8666-666666666666"
 WORKSPACE = "77777777-7777-4777-8777-777777777777"
 CREDENTIAL = "test-relationship-credential-not-a-real-secret"
+MODEL_DIGEST = "a" * 64
 
 
 def confirm_relationship(store):
@@ -63,7 +65,7 @@ def envelope(**over):
         coordinator_node_id=nid(), target_node_id=W.NODE_ID,
         relationship_id=CONFIRMED,
         original_request="say something", task_type="chat",
-        model=v1.ModelRef(model_id=W.runtime.MODEL, manifest_sha256="a" * 64,
+        model=v1.ModelRef(model_id=W.runtime.MODEL, manifest_sha256=MODEL_DIGEST,
                           runtime="ollama", runtime_version="test"),
         required_capabilities=["text.generate"], context=[], attachments=[],
         allowed_tools=[],
@@ -88,6 +90,11 @@ class Base(unittest.TestCase):
 
     def setUp(self):
         self._dir = tempfile.TemporaryDirectory()
+        self._probe = patch.object(
+            runtime, "probe",
+            return_value={"digests": {runtime.MODEL: MODEL_DIGEST}})
+        self._probe.start()
+        self.addCleanup(self._probe.stop)
         self.store = pairing_module.PairingStore(
             pathlib.Path(self._dir.name) / "pairing.json")
         self.credential = confirm_relationship(self.store)
@@ -441,8 +448,6 @@ class TestRestartRecovery(Base):
         from backend.worker import executor as executor_module
         from backend.worker.dispatch import ExecutorSession
         from backend.worker import runtime as worker_runtime
-        from unittest.mock import patch
-
         session = ExecutorSession(self.redis, CONFIRMED, "consumer-a")
         worker = executor_module.Executor(session, node_id=W.NODE_ID)
         for index in range(4):

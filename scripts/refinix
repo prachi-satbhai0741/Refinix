@@ -1,0 +1,64 @@
+#!/bin/sh
+# Presentation launcher for the paired Mac coordinator and Ubuntu worker.
+set -eu
+
+MAC_IP="10.219.115.113"
+WORKER_IP="10.219.115.160"
+WORKER_PORT="30443"
+
+die() {
+    echo "Refinix: $*" >&2
+    exit 1
+}
+
+[ "${1:-}" = "start" ] && [ "$#" -eq 1 ] \
+    || die "usage: refinix start"
+
+case "$(uname -s)" in
+    Darwin)
+        current_ip=$(ipconfig getifaddr en0 2>/dev/null || true)
+        echo "Mac Wi-Fi IP: ${current_ip:-unavailable}"
+        [ "$current_ip" = "$MAC_IP" ] || die \
+            "expected the Motorola hotspot address $MAC_IP; stop and rebind the network"
+        nc -z -G 5 "$WORKER_IP" "$WORKER_PORT" >/dev/null 2>&1 || die \
+            "Ubuntu worker $WORKER_IP:$WORKER_PORT is unreachable; run 'refinix start' on Ubuntu first"
+        app="$HOME/Documents/GitHub/AegisForge/desktop/dist/Refinix.app"
+        [ -d "$app" ] || die "application not found at $app"
+        open "$app"
+        echo "Refinix opened; Ubuntu worker reachable at $WORKER_IP:$WORKER_PORT"
+        ;;
+    Linux)
+        interface=$(ip -4 route show default 2>/dev/null \
+            | awk '/^default/ {print $5; exit}')
+        [ -n "$interface" ] || die "no active default network interface"
+        current_ip=$(ip -4 -o addr show "$interface" scope global 2>/dev/null \
+            | awk '{split($4,a,"/"); print a[1]; exit}')
+        echo "Ubuntu Wi-Fi IP: ${current_ip:-unavailable}"
+        [ "$current_ip" = "$WORKER_IP" ] || die \
+            "expected the Motorola hotspot address $WORKER_IP; stop and rebind the network"
+
+        sudo systemctl start k3s
+        sudo systemctl start ollama.service
+        sudo systemctl start aegisforge-ollama-guard.service \
+            aegisforge-ollama-proxy.socket
+        sudo systemctl start aegisforge-worker-guard.service \
+            aegisforge-worker-proxy.socket
+
+        for deployment in redis aegisforge-worker aegisforge-executor; do
+            sudo k3s kubectl -n aegisforge rollout status \
+                "deployment/$deployment" --timeout=300s
+        done
+
+        for unit in k3s ollama.service \
+                aegisforge-ollama-guard.service aegisforge-ollama-proxy.socket \
+                aegisforge-worker-guard.service aegisforge-worker-proxy.socket; do
+            state=$(systemctl is-active "$unit" 2>/dev/null || true)
+            printf '%-42s %s\n' "$unit" "${state:-unknown}"
+            [ "$state" = "active" ] || die "$unit did not become active"
+        done
+        echo "Ubuntu worker ready at https://$WORKER_IP:$WORKER_PORT"
+        ;;
+    *)
+        die "supported only on the macOS coordinator and Ubuntu worker"
+        ;;
+esac

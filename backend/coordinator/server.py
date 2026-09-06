@@ -25,8 +25,8 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from backend.contracts import v1
 from backend.coordinator import (code_service, context, db, dispatch, docflow,
-                                 docgen, documents, pairing, policy, proof,
-                                 repo, retrieval, runtime)
+                                 docgen, documents, pairing, pdfgen, policy,
+                                 proof, repo, retrieval, runtime)
 
 repo_errors = repo.RepositoryError
 
@@ -66,8 +66,8 @@ MODEL_DEFAULTS = {
 }
 
 # What this build can actually do, with the reason when it cannot. Nothing here
-# is inferred from configuration; `chat` is the only entry that becomes
-# available, and only when the runtime and the model were both observed.
+# is inferred from configuration; each entry becomes available only after its
+# runtime, model and local parser requirements are observed.
 CAPABILITIES = (
     {"id": "chat", "name": "Chat", "icon": "chat", "kind": "default",
      "needs_runtime": True,
@@ -80,10 +80,10 @@ CAPABILITIES = (
     {"id": "write-document", "name": "Write a document", "icon": "compose",
      "kind": "document", "needs_runtime": True, "needs_documents": True,
      "needs_docx": True,
-     "summary": "Draft an approval note from an inspection report and its SOPs.",
-     "detail_available": "Attach the report first, then any supporting "
-                         "documents. The draft is a Word file kept on this "
-                         "computer until you approve an export."},
+     "summary": "Create a Word or PDF document from your request, files, or prior answer.",
+     "detail_available": "Choose a general document or the fixed inspection "
+                         "approval note. The result stays on this computer "
+                         "until you approve an export."},
     {"id": "search-documents", "name": "Search my documents", "icon": "search",
      "kind": "document", "needs_runtime": False, "needs_documents": True,
      "needs_search": True,
@@ -279,7 +279,8 @@ class Coordinator:
 
     @db.serialized
     def submit(self, chat_id: str, text: str, draft_id: str | None = None,
-               skill_id: str | None = None) -> str:
+               skill_id: str | None = None, output_format: str | None = None,
+               doc_workflow: str | None = None) -> str:
         """Persist the job before any work starts, so a crash leaves a record."""
         if not self.conn.execute("SELECT 1 FROM chats WHERE chat_id=? AND workspace_id=?",
                                  (chat_id, self.workspace_id)).fetchone():
@@ -297,11 +298,22 @@ class Coordinator:
                 raise RequestError("that skill is not available on this computer", 400)
             if row["state"] != "available":
                 raise RequestError(row["detail"], 409)
+        # The document choices are made against this request and stored with
+        # it, so a reopened conversation reports the file and workflow that
+        # actually ran rather than whatever the composer shows now.
+        if output_format is not None and output_format not in docflow.OUTPUT_FORMATS:
+            raise RequestError("that output format does not exist", 400)
+        if doc_workflow is not None and doc_workflow not in docflow.DOC_WORKFLOWS:
+            raise RequestError("that document workflow does not exist", 400)
+        if output_format == docflow.FORMAT_PDF and not pdfgen.available():
+            raise RequestError(pdfgen.probe()["detail"], 409)
         job_id = db.create_job(self.conn, workspace_id=self.workspace_id,
-                               chat_id=chat_id, request=text, skill_id=skill_id)
+                               chat_id=chat_id, request=text, skill_id=skill_id,
+                               output_format=output_format,
+                               doc_workflow=doc_workflow)
         message_id = db.add_message(self.conn, chat_id, "user", text, job_id=job_id)
-        # The selection travels with the request it was made for. Nothing reads
-        # the files, and the reply is produced from the typed text alone.
+        # The selection travels with the request it was made for. The local
+        # run reads only files bound to this exact message.
         db.bind_attachments(self.conn, draft_id or chat_id, chat_id, message_id)
         self._emit(job_id, None, {"kind": "job.state", "previous": None,
                                   "current": "created"})
@@ -333,11 +345,25 @@ class Coordinator:
             uses_model = skill_id != docflow.SEARCH_SKILL
             scope = "documents.generate" if skill_id in docflow.DOCUMENT_SKILLS else "chat"
             model_id = self.model_for(scope) if uses_model else None
+            # Decided BEFORE routing. A request carrying files is answered on
+            # this computer: the worker contract has no field for an
+            # attachment, so dispatching one would produce an answer from a
+            # model that never received the file while the reply said it was
+            # read. Asked here rather than after the route so the worker is
+            # not preflighted, dispatched to, or fallen back from.
+            _message_id, request_files = self._request_sources(chat_id, job_id)
             if skill_id in docflow.DOCUMENT_SKILLS:
                 model = self.local_model_ref(model_id) if uses_model else None
                 route = dispatch.Route(
                     "local", "local coordinator: Documents runs on this computer",
                     node_id=self.node_id, model=model)
+            elif request_files:
+                route = dispatch.Route(
+                    "local",
+                    "local coordinator: this request has attached files, which "
+                    "are read on this computer",
+                    node_id=self.node_id,
+                    model=self.local_model_ref(model_id) if uses_model else None)
             else:
                 route = self.choose_route(model_id=model_id)
             attempt_id = db.create_attempt(
@@ -408,14 +434,35 @@ class Coordinator:
                     ocr_model=self.model_for("documents.ocr"))
                 if messages is None:
                     # The skill produced its own answer without the model.
+                    if extra.get("conversion"):
+                        extra["answer"] = self._convert_previous(
+                            job_id, chat_id, attempt_id, extra["conversion"])
                     self._finish_document(job_id, chat_id, attempt_id, extra,
                                           reasoning)
                     return
             else:
-                prepared, extra = None, {}
+                # Ordinary Chat reads the files sent with this one request.
+                # Choosing a skill is no longer the price of asking about a
+                # file, but the scope is unchanged: this request's attachments
+                # and nothing else on the computer.
+                messages, extra = self._chat_attachments(
+                    job_id, chat_id, messages, selection.included_ids)
+                prepared = extra.get("prepared")
+                final_selection = extra.get("selection")
+                if final_selection is not None:
+                    db.set_attempt_selection(self.conn, attempt_id,
+                                             final_selection.as_dict())
 
             collected, metrics = [], {}
             thinking_seen = False
+            note = extra.get("attachment_note") if extra else ""
+            if note:
+                # Said before the reply and saved with it, so the record of
+                # which files were read survives a reopen and an export.
+                collected.append(note)
+                db.append_output(self.conn, attempt_id, note)
+                self._emit(job_id, attempt_id,
+                           {"kind": "output.delta", "text": note[:2048]})
             for kind, payload in runtime.stream_chat(
                     messages, model=model_id, think=reasoning,
                     should_cancel=lambda: self.is_cancelled(job_id)
@@ -634,9 +681,9 @@ class Coordinator:
     def _request_sources(self, chat_id: str, job_id: str):
         """The attachments that travelled with this one request, and only those.
 
-        Ordinary Chat reads nothing. A document skill reads exactly the files
-        bound to its own message — not the conversation's earlier files, and
-        never anything else on the computer.
+        Ordinary Chat and every document skill read exactly the files bound
+        to their own message — not the conversation's earlier files, and never
+        anything else on the computer.
         """
         message = self.conn.execute(
             "SELECT message_id FROM messages WHERE job_id=? AND role='user'"
@@ -646,10 +693,109 @@ class Coordinator:
         return message["message_id"], db.list_attachments(
             self.conn, message_id=message["message_id"])
 
+    def _chat_attachments(self, job_id, chat_id, messages, selected_ids):
+        """Read the files sent with an ordinary Chat request, if any.
+
+        The same extraction the document skills use, and the same scope: only
+        this request's own attachments. A file that could not be read is
+        reported in the reply rather than dropped, so nobody is left thinking
+        the model saw something it never received.
+        """
+        message_id, attachments = self._request_sources(chat_id, job_id)
+        if not attachments:
+            return messages, {}
+        cancel = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
+        prepared = docflow.prepare_sources(
+            self, chat_id=chat_id, message_id=message_id, job_id=job_id,
+            attachments=attachments, should_cancel=cancel,
+            ocr_model=self.model_for("documents.ocr"))
+        if not prepared.usable:
+            # An ordinary question is still worth answering. The reply says
+            # which file could not be read and why, so nobody is left thinking
+            # the model saw something it never received — but the question is
+            # not thrown away because an attachment was unreadable.
+            reasons = "; ".join(f"{s['filename']}: {s['reason']}"
+                                for s in prepared.skipped) or "no readable text was found"
+            return messages, {"prepared": prepared,
+                              "attachment_note": f"_Nothing could be read — {reasons}._\n\n"}
+        # The extracted text is fenced as data before the model sees it, with
+        # the same rule the document skills state: an instruction inside a
+        # document is content, never authority.
+        required_tokens = (
+            context.estimate_tokens(docflow.UNTRUSTED_NOTE)
+            + context.estimate_tokens(messages[-1]["content"])
+            + (2 * context.PER_MESSAGE_OVERHEAD))
+        attachment_tokens = max(
+            0, context.input_budget(runtime.NUM_CTX, runtime.NUM_PREDICT)
+            - required_tokens)
+        fenced, notes = docflow.chat_context(
+            prepared, attachment_tokens * docflow.CHARS_PER_TOKEN_FLOOR)
+        if not fenced:
+            return messages, {
+                "prepared": prepared,
+                "attachment_note": docflow.attachment_note(prepared, notes)}
+        # The untrusted-document rule is a system instruction, not a line the
+        # document blocks could imitate: a file cannot claim to be the system.
+        built = [{"role": "system", "content": docflow.UNTRUSTED_NOTE},
+                 *messages[:-1],
+                 {"role": "user",
+                  "content": f"{fenced}\n\n{messages[-1]['content']}"}]
+        candidates = [
+            {"message_id": "attachment-system", "role": message["role"],
+             "text": message["content"]}
+            for message in built[:1]]
+        candidates.extend(
+            {"message_id": message_id, "role": message["role"],
+             "text": message["content"]}
+            for message_id, message in zip(selected_ids, built[1:]))
+        bounded, final_selection = context.select(
+            candidates, window=runtime.NUM_CTX,
+            output_allowance=runtime.NUM_PREDICT)
+        if not final_selection.newest_fits:
+            raise runtime.RuntimeUnavailable(final_selection.note)
+        final_selection.included_ids = [item for item in final_selection.included_ids
+                                        if item != "attachment-system"]
+        final_selection.omitted_ids = [item for item in final_selection.omitted_ids
+                                       if item != "attachment-system"]
+        final_selection.omitted_count = len(final_selection.omitted_ids)
+        return bounded, {"prepared": prepared, "chat_sources": True,
+                       "selection": final_selection,
+                       "attachment_note": docflow.attachment_note(prepared, notes)}
+
     def _document_stage(self, job_id, chat_id, skill_id, messages, *, ocr_model):
         """Extract, then either build a prompt or answer without the model."""
         cancel = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
         message_id, attachments = self._request_sources(chat_id, job_id)
+        job = self.conn.execute(
+            "SELECT original_request, output_format, doc_workflow FROM jobs"
+            " WHERE job_id=?", (job_id,)).fetchone()
+        request_text = job["original_request"]
+        workflow = job["doc_workflow"] or (
+            # A job written before the choice existed ran the fixed workflow,
+            # so that is what it is reported as. Nothing is relabelled.
+            docflow.WORKFLOW_APPROVAL_NOTE if skill_id == docflow.WRITE_SKILL
+            else None)
+
+        if skill_id == docflow.WRITE_SKILL and not attachments:
+            # Write Document no longer requires a file. Either the person is
+            # asking for the previous answer in a file, or for a new document
+            # about whatever they typed.
+            if docflow.looks_like_conversion(request_text, has_attachments=False):
+                previous = db.latest_completed_answer(
+                    self.conn, chat_id, before_job_id=job_id)
+                if previous is None:
+                    raise docflow.WorkflowError(
+                        "no_previous_answer",
+                        "There is no completed answer in this conversation to "
+                        "save. Ask a question first, let the reply finish, then "
+                        "ask for it as a file.")
+                return None, None, {"conversion": previous,
+                                    "workflow": docflow.WORKFLOW_CONVERSION}
+            built = docflow.general_document_messages(
+                request_text, [], self.chat_messages(chat_id)[:-1])
+            return built, None, {"workflow": docflow.WORKFLOW_GENERAL,
+                                 "general": True}
+
         prepared = docflow.prepare_sources(
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
             attachments=attachments, should_cancel=cancel, ocr_model=ocr_model)
@@ -663,8 +809,7 @@ class Coordinator:
                                 for s in prepared.skipped) or "no readable text was found"
             raise docflow.WorkflowError("unreadable", f"Nothing could be read — {reasons}.")
 
-        question = self.conn.execute(
-            "SELECT original_request FROM jobs WHERE job_id=?", (job_id,)).fetchone()[0]
+        question = request_text
 
         if skill_id == docflow.SEARCH_SKILL:
             # Search needs no model: it answers from the index directly.
@@ -684,7 +829,16 @@ class Coordinator:
             return built, prepared, {"notes": notes, "prepared": prepared,
                                      "citation_sources": citation_sources}
 
-        # write-document: the report is the first attachment, the rest are SOPs.
+        if workflow == docflow.WORKFLOW_GENERAL:
+            # A general document written from the attached files. It makes no
+            # page citations, so nothing is resolved against the sources.
+            built = docflow.general_document_messages(
+                question, prepared.sources, self.chat_messages(chat_id)[:-1])
+            return built, prepared, {"prepared": prepared, "general": True,
+                                     "workflow": docflow.WORKFLOW_GENERAL}
+
+        # The fixed approval note: the report is the first attachment, the rest
+        # are SOPs. Unchanged, and still what C08 is accepted against.
         report, *supporting = prepared.sources
         passages = []
         if supporting:
@@ -720,20 +874,63 @@ class Coordinator:
                 answer, extra.get("citation_sources", []))
             return docflow.read_answer(parsed, prepared, extra.get("notes", []))
 
+        if extra.get("general"):
+            document = docflow.parse_general_document(answer)
+            if self.is_cancelled(job_id) or self.stopping.is_set():
+                raise docflow.Cancelled()
+            sources = prepared.sources if prepared else []
+            artifact = self._write_artifact(
+                job_id, chat_id, attempt_id, title=document["title"],
+                blocks=docflow.general_blocks(document, sources),
+                workflow=docflow.WORKFLOW_GENERAL)
+            extra["_artifact"] = artifact
+            return docflow.written_answer(document["title"], artifact, sources)
+
         note = docflow.parse_approval_note(
             answer, extra.get("citation_sources", []))
         if self.is_cancelled(job_id) or self.stopping.is_set():
             raise docflow.Cancelled()
 
+        artifact = self._write_artifact(
+            job_id, chat_id, attempt_id,
+            title=note["title"],
+            blocks=docflow.note_blocks(note, prepared.sources,
+                                       extra.get("passages", [])),
+            workflow=docflow.WORKFLOW_APPROVAL_NOTE,
+            citations=docflow.citation_list(note))
+        extra["_artifact"] = artifact
+        return docflow.artifact_answer(note, artifact, prepared,
+                                       extra.get("passages", []))
+
+    def job_output_format(self, job_id: str) -> str:
+        """The file this request asked for. A job written before the choice
+        existed reports the docx default, which is what it actually produced."""
+        row = self.conn.execute(
+            "SELECT output_format FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        chosen = (row["output_format"] if row else None) or docflow.DEFAULT_OUTPUT_FORMAT
+        return chosen if chosen in docflow.OUTPUT_FORMATS else docflow.DEFAULT_OUTPUT_FORMAT
+
+    def _write_artifact(self, job_id, chat_id, attempt_id, *, title, blocks,
+                        workflow, citations=None):
+        """Write, validate and record one artifact in the requested format.
+
+        One path for every document this build produces, so a `.pdf` is
+        written, reopened and recorded with exactly the discipline the `.docx`
+        already had: atomic write, structure check on the real file, and the
+        file removed rather than left behind if anything after it fails.
+        """
+        fmt = self.job_output_format(job_id)
+        writer = pdfgen if fmt == docflow.FORMAT_PDF else docgen
         root = db.artifacts_root(self.state_path)
-        stored = f"{db.new_id()}.docx"
-        blocks = docflow.note_blocks(note, prepared.sources, extra.get("passages", []))
+        stored = f"{db.new_id()}.{fmt}"
         try:
-            written = docgen.write_docx(root / stored,
-                                        title=note["title"], blocks=blocks)
-        except docgen.ArtifactError as exc:
+            if fmt == docflow.FORMAT_PDF:
+                written = pdfgen.write_pdf(root / stored, title=title, blocks=blocks)
+            else:
+                written = docgen.write_docx(root / stored, title=title, blocks=blocks)
+        except (docgen.ArtifactError, pdfgen.ArtifactError) as exc:
             raise docflow.WorkflowError(exc.code, str(exc)) from exc
-        validation = docgen.validate(root / stored)
+        validation = writer.validate(root / stored)
         if not validation["readable"]:
             (root / stored).unlink(missing_ok=True)
             raise docflow.WorkflowError(
@@ -749,11 +946,11 @@ class Coordinator:
         try:
             artifact = db.record_artifact(
                 self.conn, workspace_id=self.workspace_id, chat_id=chat_id,
-                job_id=job_id, attempt_id=attempt_id, workflow=docflow.WORKFLOW,
-                filename=docgen.safe_filename(note["title"]), stored_name=stored,
+                job_id=job_id, attempt_id=attempt_id, workflow=workflow,
+                filename=writer.safe_filename(title), stored_name=stored,
                 media_type=written["media_type"], byte_size=written["byte_size"],
                 sha256=written["sha256"], validation=validation,
-                citations=docflow.citation_list(note))
+                citations=citations or [])
         except Exception:
             (root / stored).unlink(missing_ok=True)
             raise
@@ -761,9 +958,24 @@ class Coordinator:
             db.delete_artifact(self.conn, root, artifact["artifact_id"],
                                self.workspace_id)
             raise docflow.Cancelled()
-        extra["_artifact"] = artifact
-        return docflow.artifact_answer(note, artifact, prepared,
-                                       extra.get("passages", []))
+        return artifact
+
+    def _convert_previous(self, job_id, chat_id, attempt_id, previous: dict) -> str:
+        """Put an answer that already exists into a file with the same wording.
+
+        The model is not called. That is the whole point of this path: an
+        answer sent back through a model comes out rewritten, and the person
+        asked to keep the one they read.
+        """
+        if self.is_cancelled(job_id) or self.stopping.is_set():
+            raise docflow.Cancelled()
+        text = previous["text"]
+        title = docflow.conversion_title(text)
+        artifact = self._write_artifact(
+            job_id, chat_id, attempt_id, title=title,
+            blocks=docflow.conversion_blocks(text),
+            workflow=docflow.WORKFLOW_CONVERSION)
+        return docflow.conversion_answer(artifact, previous)
 
     def _finish_document(self, job_id, chat_id, attempt_id, extra, reasoning):
         """Complete a skill that answered without calling the model."""
@@ -1238,8 +1450,19 @@ class Coordinator:
 
     @db.serialized
     def chats(self):
+        """Ordinary Chat history only.
+
+        Code conversations are real conversations with their own jobs, but
+        they belong to the Code surface. Listing them here put an internal
+        "Code activity" row in the person's Chat sidebar, which is why the
+        kind is now recorded rather than inferred from a title.
+        """
         return [dict(r) for r in self.conn.execute(
-            "SELECT * FROM chats ORDER BY pinned DESC, updated_at DESC LIMIT 100")]
+            "SELECT * FROM chats WHERE kind=? ORDER BY pinned DESC,"
+            " updated_at DESC LIMIT 100", (db.CHAT_KIND,))]
+
+    def code_conversations(self):
+        return db.code_conversations(self.conn, self.workspace_id)
 
     @db.serialized
     def chat_messages(self, chat_id, with_attachments=False):
@@ -1403,11 +1626,13 @@ class Coordinator:
                 "max_bytes": db.MAX_ATTACHMENT_BYTES,
                 "max_files": db.MAX_ATTACHMENTS_PER_REQUEST,
                 "accepted": sorted({k.lstrip(".") for k in db.ATTACHMENT_TYPES}),
-                # Plain Chat still reads nothing. A document skill reads only
-                # the files sent with its own request.
-                "processing": "Plain Chat does not read attachments. Choose a "
-                              "document skill with + to have the files on that "
-                              "request read.",
+                # Ordinary Chat reads the files sent with one request, and
+                # only those. A request carrying files is answered on this
+                # computer, because the worker contract carries no attachment.
+                "processing": "Files sent with a request are read on this "
+                              "computer for that request only. Earlier files "
+                              "are not read again, and a request with files is "
+                              "not sent to the paired worker.",
             },
             "documents": {
                 **documents.capability_summary(
@@ -1591,7 +1816,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(exc), "code": exc.code}, 400)
 
     def _attach(self, c, payload):
-        """Take one selected file into local storage. Nothing reads it.
+        """Take one selected file into request-scoped local storage.
 
         The bytes arrive base64-encoded over loopback from either the native
         file dialog or the browser file input, so there is one intake path and
@@ -1660,11 +1885,24 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"artifacts": db.artifacts_for_chat(
                     c.conn, c.workspace_id, query["chat_id"][0])})
             elif route == "/v1/code/state":
-                self._json(c.code.state((query.get("repo_id") or [None])[0]))
+                self._json(c.code.state(
+                    (query.get("repo_id") or [None])[0],
+                    self._text(_as_payload(query), "conversation_id", 36)))
             elif route == "/v1/code/files":
                 self._code(lambda: c.code.files(
                     self._text(_as_payload(query), "repo_id", 36),
-                    (query.get("approval_id") or [None])[0]))
+                    (query.get("approval_id") or [None])[0],
+                    self._text(_as_payload(query), "conversation_id", 36)))
+            elif route == "/v1/code/view":
+                # Only a relative path arrives here, and only relative paths
+                # go back. The browser never learns where the folder is.
+                self._code(lambda: c.code.view(
+                    self._text(_as_payload(query), "repo_id", 36),
+                    self._text(_as_payload(query), "path", 1024),
+                    (query.get("approval_id") or [None])[0],
+                    self._text(_as_payload(query), "conversation_id", 36)))
+            elif route == "/v1/code/conversations":
+                self._json({"conversations": c.code.conversations()})
             elif route == "/v1/worker/selftest":
                 self._json(c.selftest_result(
                     self._text(_as_payload(query), "job_id", 36)))
@@ -1740,7 +1978,21 @@ class Handler(BaseHTTPRequestHandler):
                 if skill_id is not None and (not isinstance(skill_id, str)
                                              or len(skill_id) > 40):
                     raise RequestError("invalid skill")
-                job_id = c.submit(chat_id, text, draft_id=draft_id, skill_id=skill_id)
+                # Validated here as well as in `submit`, so a malformed value
+                # is refused before any job row exists.
+                output_format = payload.get("output_format") or None
+                if output_format is not None and (
+                        not isinstance(output_format, str)
+                        or output_format not in docflow.OUTPUT_FORMATS):
+                    raise RequestError("invalid output format")
+                doc_workflow = payload.get("doc_workflow") or None
+                if doc_workflow is not None and (
+                        not isinstance(doc_workflow, str)
+                        or doc_workflow not in docflow.DOC_WORKFLOWS):
+                    raise RequestError("invalid document workflow")
+                job_id = c.submit(chat_id, text, draft_id=draft_id,
+                                  skill_id=skill_id, output_format=output_format,
+                                  doc_workflow=doc_workflow)
                 # Clear only the version that was sent; newer typing survives.
                 db.clear_draft_if_matches(c.conn, draft_id, draft_text)
                 self._json({"job_id": job_id}, 202)
@@ -1803,28 +2055,54 @@ class Handler(BaseHTTPRequestHandler):
                     self._text(payload, "repo_id", 36),
                     self._text(payload, "mode", 20)))
             elif route == "/v1/code/forget":
-                self._code(lambda: c.code.forget(self._text(payload, "repo_id", 36)))
+                self._code(lambda: c.code.forget(
+                    self._text(payload, "repo_id", 36),
+                    payload.get("discard_undo", False)))
             elif route == "/v1/code/propose":
                 self._code(lambda: c.code.propose(
                     self._text(payload, "repo_id", 36),
                     self._text(payload, "request", 4000),
                     payload.get("paths") or [],
-                    payload.get("approval_id") or None))
+                    payload.get("approval_id") or None,
+                    self._text(payload, "conversation_id", 36),
+                    payload.get("execution_target") or None))
+            elif route == "/v1/code/undo":
+                self._code(lambda: c.code.undo(
+                    self._text(payload, "repo_id", 36),
+                    self._text(payload, "proposal_id", 36),
+                    self._text(payload, "conversation_id", 36)))
+            elif route == "/v1/code/conversation":
+                self._code(lambda: c.code.new_conversation(
+                    payload.get("title") or "",
+                    payload.get("repo_id") or None))
+            elif route == "/v1/code/conversation/context":
+                self._code(lambda: c.code.update_conversation(
+                    self._text(payload, "conversation_id", 36),
+                    payload.get("repo_id") or None,
+                    payload.get("open_path") or None))
+            elif route == "/v1/code/reject":
+                self._code(lambda: c.code.reject(
+                    self._text(payload, "repo_id", 36),
+                    self._text(payload, "proposal_id", 36),
+                    self._text(payload, "conversation_id", 36)))
             elif route == "/v1/code/validate":
                 self._code(lambda: c.code.validate(
                     self._text(payload, "repo_id", 36),
-                    self._text(payload, "proposal_id", 36)))
+                    self._text(payload, "proposal_id", 36),
+                    self._text(payload, "conversation_id", 36)))
             elif route == "/v1/code/apply":
                 self._code(lambda: c.code.apply(
                     self._text(payload, "repo_id", 36),
                     self._text(payload, "proposal_id", 36),
-                    payload.get("approval_id") or None))
+                    payload.get("approval_id") or None,
+                    self._text(payload, "conversation_id", 36)))
             elif route == "/v1/code/decision":
-                # Only an opaque id and a yes/no. No target, digest, mode,
-                # path or replacement content is accepted here.
+                # Opaque id, yes/no and the owning Code conversation. No
+                # target, digest, mode, path or replacement content is accepted.
                 self._code(lambda: c.code.decide(
                     self._text(payload, "approval_id", 36),
-                    payload.get("approved")))
+                    payload.get("approved"),
+                    payload.get("conversation_id") or None))
             elif route == "/v1/artifact/approve-export":
                 self._json(c.request_export(self._text(payload, "artifact_id", 36)),
                            202)

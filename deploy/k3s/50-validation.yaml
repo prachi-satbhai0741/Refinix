@@ -84,7 +84,7 @@ spec:
         object.metadata.name.startsWith('af-validate-') &&
         has(object.metadata.labels) &&
         object.metadata.labels['app'] == 'aegisforge-validation' &&
-        has(object.metadata.labels['aegisforge.dev/attempt'])
+        'aegisforge.dev/attempt' in object.metadata.labels
       message: validation Job identity is not approved
     - expression: >-
         object.spec.backoffLimit == 0 &&
@@ -125,7 +125,7 @@ spec:
         object.spec.template.spec.containers.size() == 1 &&
         object.spec.template.spec.containers[0].name == 'validate' &&
         object.spec.template.spec.containers[0].image ==
-          'docker.io/library/aegisforge-worker@sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf' &&
+          'docker.io/library/aegisforge-worker@sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a' &&
         object.spec.template.spec.containers[0].imagePullPolicy == 'Never' &&
         object.spec.template.spec.containers[0].command ==
           ['python', '-m', 'backend.worker.validate', '/package', '/workspace'] &&

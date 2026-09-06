@@ -4,8 +4,10 @@
 `~/Documents/GitHub/AegisForge`) and `Ubuntu worker` (x86_64, bash, whatever
 path C05 already uses).
 
-**Nothing in this document has been run.** Source for C08, C09 and C10 is
-implemented and covered by offline checks with fakes. A live worker, a real
+**Step A passed on the Ubuntu worker on 2026-09-06.** The C09 image is recorded
+at `sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a`.
+Source for C08, C09 and C10 is implemented and covered by offline checks with
+fakes. A live worker, a real
 pairing, a real dispatch, a real Kubernetes Job and a real scan reading are all
 device gates. Section J states exactly what is and is not proven.
 
@@ -21,16 +23,14 @@ which remains the reference for steps A–D.
 Read both before starting, because each changes a step you may already have
 planned.
 
-### 1. The worker image must be rebuilt first
+### 1. The worker image has been rebuilt
 
 C09 adds real code to the worker and the executor — resource packages, code
 generation, the Kubernetes client, the validation runner. **The pinned C06
 image `sha256:daf1052b…` does not contain any of it.**
 
-The image was **not** rebuilt by this change: the Docker daemon was not running
-on the Mac, and starting it is a host action that was not authorised. So step A
-below builds it, and the digest it produces replaces `daf1052b…` in four
-places.
+The Ubuntu worker built it on 2026-09-06. Its digest replaces `daf1052b…` in
+four places in step B.
 
 Until step C rolls out the newly pinned image, the deployment still uses the
 existing C06 image. Run **step C's loopback TLS check against the new one**.
@@ -52,11 +52,12 @@ Step J puts the decision in front of you. Nothing is downloaded without it.
 ```
 A  image           Ubuntu   rebuild the worker image with C09, record the digest
 B  pin             Ubuntu   put the new digest in the four manifest fields
+G  C09 components  Ubuntu   jobs volume, RBAC, network policies
 C  loopback TLS    Ubuntu   re-run C06 step D against the new image
+C2 runtime bridge  Ubuntu   point Pods at the guarded cni0 Ollama forwarder
 D  LAN forwarder   Ubuntu   C06 step E, open 30443 to the one Mac address
 E  pair            both     confirm the fingerprint, redeem the code
 F  relationship    both     read the ID on the Mac, patch the Secret on Ubuntu
-G  C09 components  Ubuntu   jobs volume, RBAC, network policies
 H  executor        Ubuntu   deploy the consumer with its ServiceAccount
 I  C06 acceptance  both     inference, cancellation, disconnect recovery
 J  C08 decision    macOS    choose a scan-reading model, or accept unavailable
@@ -69,9 +70,10 @@ wrong looks like a working system that quietly cannot work:
 
 * **The executor cannot be deployed before pairing**, because it serves one
   relationship ID that pairing mints.
-* **The C09 components must exist before the executor**, because the executor
-  now names a ServiceAccount. Without `50-validation.yaml` applied, the Pod
-  does not schedule at all — which is the correct closed state, not a fault.
+* **The C09 components must exist before the worker rollout and executor.** The
+  worker mounts the jobs PVC and the executor names its ServiceAccount. Without
+  `50-validation.yaml` applied, both stay closed rather than running without
+  their required storage or authority.
 
 ---
 
@@ -104,7 +106,7 @@ sudo docker image inspect aegisforge-worker:c09 --format '{{.Id}} {{.Architectur
 Check nothing secret is baked in:
 
 ```bash
-sudo docker image history --no-trunc aegisforge-worker:c09 | grep -iE 'token|password|secret|key' || echo "clean"
+sudo docker image history --no-trunc --format '{{.CreatedBy}}' aegisforge-worker:c09 | head -n 12 | grep -iE 'authorization|bearer|token=|password=|secret=|private[[:space:]]+key' || echo "clean"
 ```
 
 **Expected:** `clean`.
@@ -112,7 +114,7 @@ sudo docker image history --no-trunc aegisforge-worker:c09 | grep -iE 'token|pas
 Export a persistent archive **outside the repository**:
 
 ```bash
-sudo docker save aegisforge-worker:c09 -o ~/aegisforge-artifacts/aegisforge-worker-c09.tar && sha256sum ~/aegisforge-artifacts/aegisforge-worker-c09.tar
+sudo docker save aegisforge-worker:c09 -o ~/aegisforge-artifacts/aegisforge-worker-c09.tar && sudo sha256sum ~/aegisforge-artifacts/aegisforge-worker-c09.tar
 ```
 
 **Never commit the archive.** Return the checksum.
@@ -124,8 +126,8 @@ in place, so the cluster keeps running whatever is already pinned.
 
 ## B. Ubuntu worker — pin the new digest in four places
 
-Replace `sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf`
-with the digest from step A in **all four**:
+Confirm `sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a`
+is present in **all four**:
 
 1. `deploy/k3s/20-worker.yaml` — the worker Deployment image
 2. `deploy/k3s/40-executor.yaml` — the executor Deployment image
@@ -146,6 +148,10 @@ worker Deployment pins the recorded build, and one asserts the validation image
 is pinned by digest **and matches** it. A mismatch fails loudly rather than
 letting validation run a different build from the executor.
 
+Run section G now, before C. The C09 worker mounts the jobs PVC created there;
+rolling it out first leaves the new Pod Pending while Kubernetes safely retains
+the old worker.
+
 ---
 
 ## C. Ubuntu worker — re-run the loopback TLS check against the new image
@@ -164,6 +170,14 @@ curl -sS --cacert /etc/aegisforge/tls/tls.crt --resolve aegisforge-worker:30443:
 will be `degraded` until pairing exists — that is correct and fail-closed, not
 a failure. Getting a TLS handshake and an authenticated 200 is the proof this
 step is for.
+
+### C2. Ubuntu worker — connect Pods to the guarded runtime bridge
+
+Observe `cni0`, start the existing C05 guard and socket, and confirm Ollama is
+still loopback-only while the bridge answers. Set `AEGIS_RUNTIME_HOST` in both
+worker ConfigMaps to that observed bridge address, apply
+`30-runtime-egress.yaml`, and reapply only `20-worker.yaml`. Do not deploy the
+executor before pairing.
 
 ---
 
@@ -187,7 +201,7 @@ the Mac, patch the `worker-credential` Secret on Ubuntu.
 
 ## G. Ubuntu worker — apply the C09 components
 
-**New.** These do not exist yet on the cluster.
+**Run after B and before C.** These do not exist yet on the cluster.
 
 Read the Kubernetes API address first. It is per-cluster and is deliberately
 **not** recorded in the repository:
@@ -238,7 +252,7 @@ RBAC alone cannot constrain a Job's Pod template. Prove the executor identity
 cannot submit an arbitrary one, even though it may create the approved form:
 
 ```bash
-sudo kubectl -n aegisforge create job admission-must-deny --as=system:serviceaccount:aegisforge:aegisforge-executor --image=docker.io/library/aegisforge-worker@sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf --dry-run=server -- true
+sudo kubectl -n aegisforge create job admission-must-deny --as=system:serviceaccount:aegisforge:aegisforge-executor --image=docker.io/library/aegisforge-worker@sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a --dry-run=server -- true
 ```
 
 **Expected:** the server denies it through `aegisforge-validation-job`; no Job

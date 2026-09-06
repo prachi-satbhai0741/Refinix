@@ -154,9 +154,11 @@ class TestCapabilityProbe(unittest.TestCase):
         # complete PaddleOCR layout pipeline.
         self.assertIn("standalone vision-language component",
                       capability["pdf"]["detail"])
-        # A loose image still has no intake path even when pixels can be read.
-        self.assertEqual(capability["ocr"]["formats"], [])
-        self.assertNotIn(".png", supported)
+        # Execution 4A: a supplied image is a page image, so PNG and JPEG are
+        # read directly. Formats whose path has not been exercised stay out.
+        self.assertEqual(capability["ocr"]["formats"], ["jpeg", "jpg", "png"])
+        self.assertIn(".png", supported)
+        self.assertNotIn(".tiff", supported)
 
 
 # --------------------------------------------------------------------------
@@ -327,22 +329,44 @@ class TestExtraction(Base):
         self.assertIn("does not download models", str(caught.exception))
         self.assertEqual(calls, [])
 
-    def test_an_image_is_refused_rather_than_given_invented_text(self):
-        """Refused whether or not pixels can be read: a bare image has no page
-        structure, so nothing here can produce a citable page for it."""
+    def test_a_png_is_read_directly_as_one_page(self):
+        """Execution 4A: a supplied image already is a page image, so it goes
+        to the vision model as page 1 with no renderer in the path."""
         record = self.attach("scan.png", b"\x89PNG\r\n\x1a\nsynthetic")
-        with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT), \
-                patch.object(documents.ocr.runtime, "model_capabilities",
-                             return_value=["completion", "vision"]), \
-                patch.object(documents.ocr.runtime, "probe",
-                             return_value=INSTALLED_RUNTIME):
-            with self.assertRaises(documents.DocumentError) as caught:
-                documents.extract(self.stored(record),
-                                  source_id=record["attachment_id"],
-                                  filename="scan.png", media_type="image/png",
-                                  expected_sha256=record["sha256"])
-        self.assertEqual(caught.exception.code, "no_ocr")
-        self.assertIn("Attach the scan as a PDF", str(caught.exception))
+        reading = {"pages": [{"number": 1, "text": "PUMP P-204",
+                              "confidence": None, "note": None}],
+                   "method": "image + local vision (test-model) manifest unavailable",
+                   "uncertain": [documents.ocr.DIRECT_IMAGE_NOTE], "page_count": 1}
+        with patch.object(documents.ocr, "image_probe",
+                          return_value={"available": True,
+                                        "model": {"state": "installed",
+                                                  "model": "test-model"},
+                                        "detail": "ready"}), \
+                patch.object(documents.ocr, "extract_image",
+                             return_value=reading) as sent:
+            extraction = documents.extract(
+                self.stored(record), source_id=record["attachment_id"],
+                filename="scan.png", media_type="image/png",
+                expected_sha256=record["sha256"])
+        self.assertEqual([p.number for p in extraction.pages], [1])
+        self.assertEqual(extraction.page_count, 1)
+        # Confidence is not measured by this component, so it stays unmeasured.
+        self.assertIsNone(extraction.pages[0].confidence)
+        # The provenance names the real path. Claiming a Quartz render for a
+        # file that was never rendered would be a fabricated method line.
+        self.assertIn("image + local vision", extraction.method)
+        self.assertNotIn("Quartz", extraction.method)
+        self.assertTrue(sent.called)
+
+    def test_a_picture_format_that_was_never_exercised_is_refused(self):
+        record = self.attach("scan.tiff", b"II*\x00synthetic")
+        with self.assertRaises(documents.DocumentError) as caught:
+            documents.extract(self.stored(record),
+                              source_id=record["attachment_id"],
+                              filename="scan.tiff", media_type="image/tiff",
+                              expected_sha256=record["sha256"])
+        self.assertEqual(caught.exception.code, "unsupported_image")
+        self.assertIn("png", str(caught.exception))
 
     def test_non_utf8_text_is_refused_rather_than_corrupted(self):
         record = self.attach("latin.txt", "café".encode("latin-1"))
@@ -766,14 +790,36 @@ class TestSkillsInsideChat(Base):
             (message, record["attachment_id"]))
         self.c.conn.commit()
 
-    def test_plain_chat_never_reads_an_attachment(self):
-        record = self.attach("secret.txt", b"THE MODEL MUST NOT SEE THIS")
+    def test_plain_chat_reads_this_request_s_attachment(self):
+        """Execution 4A: choosing a skill is no longer the price of asking
+        about a file. The scope is unchanged — this request's files only."""
+        record = self.attach("notes.txt", b"THE PUMP RAN AT 7.9 MM/S")
         stream = fake_stream("an ordinary answer")
         job = self.send("what is in the file?")
         self.attach_to_request(job, record)
         with patch.object(runtime, "stream_chat", stream):
             self.c._run(job, self.chat, None)
-        self.assertNotIn("THE MODEL MUST NOT SEE THIS", json.dumps(stream.messages))
+        self.assertIn("THE PUMP RAN AT 7.9 MM/S", json.dumps(stream.messages))
+        # Fenced as data, with the rule that an instruction inside a file is
+        # content and never authority.
+        self.assertIn("untrusted data", json.dumps(stream.messages))
+        answer = self.c.conn.execute(
+            "SELECT text FROM messages WHERE chat_id=? AND role='assistant'"
+            " ORDER BY created_at DESC LIMIT 1", (self.chat,)).fetchone()["text"]
+        self.assertIn("notes.txt", answer)
+
+    def test_plain_chat_does_not_read_an_earlier_request_s_attachment(self):
+        earlier = self.attach("earlier.txt", b"AN EARLIER REQUEST FILE")
+        first = db.add_message(self.c.conn, self.chat, "user", "first")
+        self.c.conn.execute(
+            "UPDATE attachments SET state='sent', message_id=? WHERE attachment_id=?",
+            (first, earlier["attachment_id"]))
+        self.c.conn.commit()
+        stream = fake_stream("an ordinary answer")
+        job = self.send("what is in the file?")
+        with patch.object(runtime, "stream_chat", stream):
+            self.c._run(job, self.chat, None)
+        self.assertNotIn("AN EARLIER REQUEST FILE", json.dumps(stream.messages))
 
     def test_a_document_skill_reads_only_this_request_s_attachments(self):
         earlier = self.attach("earlier.txt", b"EARLIER REQUEST CONTENT")
@@ -828,7 +874,9 @@ class TestSkillsInsideChat(Base):
             self.c._run(job, self.chat, docflow.SEARCH_SKILL)
         messages = self.c.chat_messages(self.chat)
         self.assertEqual(messages[-1]["role"], "assistant")
-        self.assertIn("sop.txt p.1", messages[-1]["text"])
+        # Execution 4A: the location is stated in the unit the format
+        # supports. A .txt has lines, so it reports a line, not a page.
+        self.assertIn("sop.txt — line 1", messages[-1]["text"])
         self.assertEqual(self.c.job_detail(job)["job"]["state"], "completed")
 
     def test_an_unavailable_skill_is_refused_at_submit(self):

@@ -241,12 +241,19 @@ class TestReadContainment(RepoBase):
 class TestPolicyMatrix(unittest.TestCase):
     EXPECTED = {
         ("partial", policy.ACTION_LIST): policy.AUTOMATIC,
+        ("partial", policy.ACTION_VIEW): policy.AUTOMATIC,
         ("partial", policy.ACTION_READ): policy.AUTOMATIC,
         ("partial", policy.ACTION_WRITE): policy.APPROVAL_REQUIRED,
         ("full", policy.ACTION_LIST): policy.AUTOMATIC,
+        ("full", policy.ACTION_VIEW): policy.AUTOMATIC,
         ("full", policy.ACTION_READ): policy.AUTOMATIC,
         ("full", policy.ACTION_WRITE): policy.AUTOMATIC,
         ("ask", policy.ACTION_LIST): policy.APPROVAL_REQUIRED,
+        # Execution 4B: opening a file on screen is its own action. Ask mode
+        # gates it, because "ask before you touch my folder" covers reading a
+        # file off disk — but the refusal says opening is not sending it to
+        # the model, which is a different boundary.
+        ("ask", policy.ACTION_VIEW): policy.APPROVAL_REQUIRED,
         ("ask", policy.ACTION_READ): policy.APPROVAL_REQUIRED,
         ("ask", policy.ACTION_WRITE): policy.APPROVAL_REQUIRED,
     }
@@ -608,7 +615,7 @@ class TestApprovals(RepoBase):
         self.write("notes.md", "# approved\n")
         with self.assertRaises(code_service.CodeError) as caught:
             self.svc.apply(repo_id, proposal["proposal_id"], approval["approval_id"])
-        self.assertIn(caught.exception.code, ("used", "already_applied"))
+        self.assertIn(caught.exception.code, ("used", "not_pending"))
 
     def test_a_decision_cannot_be_repeated(self):
         _repo_id, _proposal, approval = self._pending_write()

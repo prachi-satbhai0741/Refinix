@@ -1633,3 +1633,204 @@ work. No repository file change means no changelog entry.
 - changes: Workflow-scoped model choices now persist and propagate exactly, Auto is visibly disabled, document search shows no false model choice, and OCR enables only a runtime-confirmed vision model. Code apply now requires a current observed sandbox pass over the full selected snapshot with at least one parsed unittest result. Validation Jobs are constrained by credential-free identity plus admission policy, temporary packages expire on terminal acknowledgement, startup and a periodic sweep, and Proof Card citation identities and approval sources are persisted.
 - verification: Observed on the macOS coordinator: 888 Python checks passed with 4 intentional skips; 91 browser checks passed; JavaScript and worker API source parsed; final `git diff --check` passed. The FastAPI worker route suite remains authoritative only inside the pinned image build.
 - remaining: Build the linux/amd64 worker image, server-dry-run and apply the admission policy, pair the devices, run one real validation Job, and choose a vision-capable OCR model or accept scan OCR as blocked. C06–C10 remain unaccepted until those device checks pass.
+
+<a id="ac-20260906-002"></a>
+## AC-20260906-002 — Worker image checks are deterministic on Python 3.13
+- prompt_id: [UP-20260906-001](userprompts.md#up-20260906-001)
+- date: 2026-09-06
+- status: implemented and locally checked; authoritative Ubuntu image rebuild pending
+- scope: c06, c09, worker-image, offline-tests
+- tags: docker-build, python-3.13, model-digest, zero-tests, test-fixture
+- aliases: selected model is not installed, exit status 5, worker image 11 failures
+- paths: backend/worker/test_worker_app.py, backend/worker/test_validation.py, agent-memory/
+- summary: Made the worker image checks supply their installed-model evidence explicitly and test the zero-test gate independently of Python's unittest exit-code change.
+- changes: The shared API fixture now makes its fake runtime advertise the same model digest carried by its envelopes. The zero-discovery check injects a successful zero-test result, so it still proves the minimum-test guard even when Python 3.13 itself exits 5 for no tests. Production admission and validation code are unchanged.
+- verification: `backend.worker.test_validation` passed 45 checks under the local Python 3.14 environment; both edited test files compiled; `git diff --check` passed. The worker API suite could not run locally because neither existing Mac virtual environment contains FastAPI, so the Ubuntu image build remains authoritative.
+- remaining: Commit and push the four changed files, pull them on Ubuntu, then rerun the cached-input C09 worker image build. No image, service, Kubernetes object, credential or Git state was changed by Codex.
+
+<a id="ac-20260906-003"></a>
+## AC-20260906-003 — Observed C09 worker image pinned
+- prompt_id: [UP-20260906-002](userprompts.md#up-20260906-002)
+- date: 2026-09-06
+- status: implemented and offline-checked; publication and K3s import pending
+- scope: c06, c09, image-digest, provenance, manifests, handoff
+- tags: ubuntu, docker, image-digest, archive, kubernetes, provenance
+- aliases: 774218db, 873cd89c, 06013413, c09 image pin
+- paths: backend/worker-image/provenance.json, deploy/k3s/, docs/c07-c10-runtime-handoff.md, tasks.md, agent-memory/
+- summary: Pinned the requester-observed C09 Ubuntu image across the worker, executor, validation policy, provenance and live handoff.
+- changes: All four runtime image references now use manifest digest `sha256:774218db...`; provenance records the observed config digest, archive SHA-256 and byte size. The handoff records step A passed, uses the new digest in the admission probe and limits its history scan to AegisForge-created layers so the upstream Python signing key is not a false positive. The execution ledger now distinguishes the passed image build from pending C06 runtime acceptance.
+- verification: Requester output showed the linux/amd64 build's offline layer pass, manifest and config digests, and a root-owned mode-0600 archive outside the repository with SHA-256 `06013413...` and 49,579,008 bytes. Locally, 79 manifest checks passed, provenance parsed as JSON, every live image consumer matched the recorded digest, and `git diff --check` passed.
+- remaining: Publish these eight files, pull them on Ubuntu, import and alias the image in K3s containerd, then recreate the address-bound TLS identity and resume the guarded C06 rollout. No cluster object or service was changed by Codex.
+
+<a id="ac-20260906-004"></a>
+## AC-20260906-004 — C09 admission policy compiles its map-key check
+- prompt_id: [UP-20260906-003](userprompts.md#up-20260906-003)
+- date: 2026-09-06
+- status: implemented and offline-checked; Ubuntu server dry-run retry pending
+- scope: c06, c09, kubernetes, admission-policy, runtime-handoff
+- tags: cel, validatingadmissionpolicy, map-membership, pvc, rollout-order
+- aliases: invalid argument to has macro, aegisforge jobs not found, pending worker
+- paths: deploy/k3s/50-validation.yaml, deploy/k3s/test_manifests.py, docs/c07-c10-runtime-handoff.md, agent-memory/
+- summary: Replaced an invalid CEL map-key `has` call with membership and ordered C09 prerequisites before the worker rollout that mounts their PVC.
+- changes: The admission identity rule now uses `'aegisforge.dev/attempt' in object.metadata.labels`, the Kubernetes-supported form, while retaining the outer labels-field presence guard. A focused regression rejects the invalid map-index macro. The runtime handoff now runs `50-validation.yaml` after digest pinning and before rolling out either consumer.
+- verification: Requester output proved the previous server dry-run failed closed without creating resources and named the exact CEL compilation error. Locally, 80 manifest checks passed and `git diff --check` passed. The live K3s server dry-run remains required after publication.
+- remaining: Publish these five files, pull them on Ubuntu, re-render the manifest with cluster IP `10.43.0.1`, and rerun server dry-run. The old worker remains Ready; the new worker stays Pending until the jobs PVC exists.
+
+<a id="ac-20260906-005"></a>
+## AC-20260906-005 — C09 consumers use the guarded Ollama bridge
+- prompt_id: [UP-20260906-004](userprompts.md#up-20260906-004)
+- date: 2026-09-06
+- status: implemented and offline-checked; publication and live worker verification pending
+- scope: c06, c09, runtime, configmap, network-policy, handoff
+- tags: ollama, cni0, runtime-host, egress, worker, executor
+- aliases: health unavailable, 10.42.0.1, protected Ollama bridge
+- paths: deploy/k3s/20-worker.yaml, deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, docs/c07-c10-runtime-handoff.md, agent-memory/
+- summary: Pointed both C09 consumers at the observed guarded cni0 Ollama forwarder and tied the endpoint to the existing /32 egress policy.
+- changes: Worker and executor ConfigMaps now use `http://10.42.0.1:11434`; a focused check requires that endpoint to match `10.42.0.1/32` port 11434 in the separate runtime policy. The live handoff now includes the previously missing runtime-bridge step before LAN exposure and pairing.
+- verification: Requester output showed cni0 `10.42.0.1/24`, Ollama 0.33.2 and both expected model digests, the host runtime still bound only to `127.0.0.1:11434`, the guarded proxy bound to `10.42.0.1:11434`, Pod-CIDR ACCEPT followed by broader DROP, and the bridge returning the runtime version. Locally, 81 manifest checks and `git diff --check` passed.
+- remaining: Publish these six files, pull them on Ubuntu, apply `30-runtime-egress.yaml` and reapply only `20-worker.yaml`, then confirm the worker advertises the installed model. The executor remains undeployed until pairing creates its relationship ID.
+
+<a id="ac-20260906-006"></a>
+## AC-20260906-006 — Executor grace period moved to the Pod spec
+- prompt_id: [UP-20260906-005](userprompts.md#up-20260906-005)
+- date: 2026-09-06
+- status: implemented and offline-checked; publication and live executor retry pending
+- scope: c06, c09, kubernetes, executor, manifest
+- tags: executor, deployment, pod-spec, termination-grace-period, strict-decoding
+- aliases: unknown field terminationGracePeriodSeconds, executor deployment not found
+- paths: deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, agent-memory/
+- summary: Moved the executor's 40-second termination grace period from its container to the Kubernetes Pod spec.
+- changes: The recovery allowance is unchanged; only its invalid indentation changed. A focused manifest regression now requires the field at Pod level and rejects it inside the container.
+- verification: Requester ran 82 manifest checks on the macOS coordinator; all passed. `git diff --check` was silent. The failed Ubuntu apply had created only the executor ConfigMap and ingress NetworkPolicy; K3s rejected the Deployment before any executor Pod existed.
+- remaining: Commit and push these three files, pull them on Ubuntu, reapply `40-executor.yaml`, and prove the executor Deployment Ready. The earlier pairing-state reload defect remains to be repaired before final acceptance.
+
+<a id="ac-20260906-007"></a>
+## AC-20260906-007 — Model choices use their existing three-column layout
+- prompt_id: [UP-20260906-006](userprompts.md#up-20260906-006)
+- date: 2026-09-06
+- status: implemented and locally verified; publication and packaged-app rebuild pending
+- scope: refinix, frontend, model-selection, c06-acceptance
+- tags: model-selector, css-grid, accessibility, chat, routing
+- aliases: vertical model text, fourteen pixel column, broken model dropdown
+- paths: frontend/app/app.js, frontend/app/test-composer.cjs, agent-memory/
+- summary: Split every model option into the tick, model-name and location cells its existing CSS grid expects.
+- changes: The selector now renders three spans instead of one raw text node in the 14-pixel tick column, while retaining the existing inventory, selection API and visual styles. Radio roles and checked state expose the same choice semantics to assistive technology.
+- verification: Requester ran the focused browser suite after the correction: 31 checks passed, including the three-cell regression. The live selector screenshot showed horizontal readable choices and the Ubuntu model was selected successfully. `git diff --check` was silent.
+- remaining: Publish the source and rebuild the packaged Refinix application before presentation use. No routing, model inventory or visual token changed.
+
+<a id="ac-20260906-008"></a>
+## AC-20260906-008 — SIGTERM leaves work recoverable and fresh codes visible
+- prompt_id: [UP-20260906-007](userprompts.md#up-20260906-007)
+- date: 2026-09-06
+- status: implemented and locally verified; worker-image rebuild and live retry pending
+- scope: c06, worker, executor, recovery, pairing
+- tags: sigterm, redis-streams, restart-recovery, pairing-reload, worker-image
+- aliases: cancelled before completion, rollout restart lost work, fresh pairing code refused
+- paths: backend/worker/executor.py, backend/worker/pairing.py, backend/worker/test_executor.py, agent-memory/
+- summary: Restored the intended unacknowledged shutdown path and made the running API reload codes written by the host CLI.
+- changes: Executor shutdown now raises the existing `Stopped` signal through both generation and validation instead of emitting a false cancellation and acknowledging the stream entry. Pairing redemption reloads the shared file under its existing lock before matching a CLI-issued code.
+- verification: Requester ran the focused executor suite with the repository virtual environment and reported all checks passed, including regressions for pending SIGTERM work and a code minted by a second store process. `git diff --check` was silent.
+- remaining: Publish, rebuild the linux/amd64 worker image once, repin its observed digest and repeat the live pairing-without-restart and executor-rollout recovery checks. The previous live image still contains both defects.
+
+<a id="ac-20260906-009"></a>
+## AC-20260906-009 — One guarded presentation-start command for both devices
+- prompt_id: [UP-20260906-008](userprompts.md#up-20260906-008)
+- date: 2026-09-06
+- status: implemented and locally verified; publication and device installation pending
+- scope: c06, presentation, launcher, macos, ubuntu
+- tags: refinix-start, motorola-hotspot, systemd, k3s, fail-closed
+- aliases: Refinix start, college presentation, two-device startup
+- paths: scripts/refinix, scripts/test_refinix_launcher.py, agent-memory/
+- summary: Added one cross-platform launcher for the fixed Motorola hotspot presentation profile.
+- changes: On Ubuntu, `refinix start` verifies the worker address before starting K3s, Ollama, both guarded forwarders and waiting for all three Deployments. On macOS it prints and verifies the Wi-Fi address, requires the protected worker port to be reachable, then opens the packaged application. Unexpected networks stop before service or application startup, and the launcher reads no secret.
+- verification: Requester ran the offline launcher checks with the repository virtual environment, `sh -n`, the browser suite and `git diff --check`, and reported all passed.
+- remaining: Publish and install the same file as `/usr/local/bin/refinix` and `/usr/local/bin/Refinix` on both devices, then execute it once on Ubuntu followed by Mac. The launcher is deliberately bound to the current Motorola IP profile; it does not silently rewrite certificate or firewall trust.
+
+<a id="ac-20260906-010"></a>
+## AC-20260906-010 — Local document output, image reading and attachment intelligence
+- prompt_id: [UP-20260906-009](userprompts.md#up-20260906-009)
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4a, documents, attachments, macos, local-only
+- tags: pdf-output, image-ocr, xlsx, chat-attachments, general-document, write-document
+- aliases: convert answer to pdf, ocr an image into a document, read a spreadsheet, chat reads files
+- paths: backend/coordinator/pdfgen.py, backend/coordinator/xlsx.py, backend/coordinator/ocr.py, backend/coordinator/documents.py, backend/coordinator/docflow.py, backend/coordinator/retrieval.py, backend/coordinator/server.py, backend/coordinator/db.py, backend/coordinator/test_execution4a.py, frontend/app/app.js, agent-memory/
+- summary: Added local PDF output, direct PNG and JPEG reading, spreadsheet extraction, format-appropriate search locations, attachment reading in ordinary Chat, and a general document workflow beside the unchanged approval note.
+- changes: `pdfgen.py` writes a real PDF with the already-installed Quartz framework and lays text out through AppKit, because `CoreText` is absent here and the plain Quartz text call is MacRoman-only; it reopens the file to read back a real page count. `ocr.py` gained a direct image path that checks the magic number against the declared type and never claims a Quartz render. `xlsx.py` reads a workbook per worksheet, drops external relationships, refuses macros and traversal, and reports a formula as a formula with any cached value labelled as cached. `retrieval.describe_location` states a PDF page, a text line range, a Word paragraph or a worksheet cell, and never invents a line number for a PDF or a page Word did not establish. Write Document now runs without an attachment: a request to save the previous answer copies it word for word with no model call, and a general request writes a new document. Output format and workflow are stored on the job. Ordinary Chat reads the files sent with that one request, and a request carrying files is routed to this computer before any worker contact, because the worker contract has no attachment field. The extraction is fenced as data under a system instruction, shares one budget across the attachments, includes a bounded part of a page too large to fit whole rather than dropping it, and names what was refused or trimmed.
+- verification: 518 coordinator checks pass under the packaged interpreter (4 skipped) and 476 under the repository virtual environment (7 skipped, the PyObjC-dependent ones); 42 of those are the new Execution 4A regressions. 96 browser-side checks pass across six suites. `git diff --check` silent. The suite performs local capability reads against 127.0.0.1:11434; no generation call ran.
+- remaining: Requester acceptance on the packaged application, which still predates this work and needs a rebuild. Live model output quality, real Word and PDF rendering in other applications, and the Code surface are all out of this scope.
+
+<a id="ac-20260906-011"></a>
+## AC-20260906-011 — Three-column Code workbench with real Code conversations
+- prompt_id: [UP-20260906-010](userprompts.md#up-20260906-010)
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4b, code-surface, explorer, file-viewer, conversations, macos
+- tags: three-column, repo-view, code-conversations, policy-view-action, additive-migration
+- aliases: explorer tree, open a file, new code conversation, remove from refinix
+- paths: backend/coordinator/policy.py, backend/coordinator/code_service.py, backend/coordinator/db.py, backend/coordinator/server.py, backend/coordinator/test_execution4b.py, backend/coordinator/test_code_access.py, frontend/app/code.html, frontend/app/app.js, frontend/app/refinix.css, frontend/app/test-code-surface.cjs, frontend/app/test-composer.cjs, agent-memory/
+- summary: Rebuilt Code as Explorer, open file and conversation columns, added a separate view action, and gave Code its own durable conversations.
+- changes: `repo.view` is a new policy action, automatic under partial and full and approval-gated under ask; it is deliberately not `repo.read`, because opening a file puts it on the person's screen while reading puts it in a model prompt, and the reply states that opening sent nothing to the model. The Explorer tree is built in `frontend/app/app.js` from the relative paths `/v1/code/files` returns; no absolute path reaches the page, and there is one implementation rather than two that could drift. Chats now record a `kind`, so Code conversations stop appearing in ordinary Chat history and search. Conversation ownership was completed in the correction round below: local proposals open a real job and attempt in the selected conversation, their request and result are persisted there, and Code state is conversation-scoped. The permanent audit rail became a collapsed Activity section inside the conversation column. Removing a project disconnects it through the existing forget path, is confirmed first, and touches no file. The refusal while work is running is enforced in the coordinator as of the correction round below.
+- verification: 542 coordinator checks pass under the packaged interpreter (4 skipped) and under the repository virtual environment (12 skipped); 24 are the new Execution 4B regressions. 112 browser-side checks pass across six suites, 27 of them on the Code surface. Layout observed in a browser at 1280 px (three columns) and 900 px (file view primary, conversation an opaque drawer with a scrim), with no horizontal page overflow at either width. `git diff --check` silent.
+- remaining: Apply still requires a passing sandbox validation on the paired worker, which is disconnected, so Validate and Apply remain unavailable and say so. Requester acceptance on the packaged application, which predates this work.
+
+<a id="ac-20260906-012"></a>
+## AC-20260906-012 — Explicit local apply with mandatory backups and Undo
+- prompt_id: [UP-20260906-011](userprompts.md#up-20260906-011)
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4c, code-surface, local-apply, backups, undo, macos
+- tags: execution-target, pre-write-backup, undo, not-sandbox-tested, fail-closed
+- aliases: apply without ubuntu, undo a change, this device mode, local qwen edit
+- paths: backend/coordinator/code_service.py, backend/coordinator/db.py, backend/coordinator/policy.py, backend/coordinator/server.py, backend/coordinator/test_execution4c.py, frontend/app/app.js, frontend/app/test-code-surface.cjs, agent-memory/
+- summary: Added a recorded execution target, a verified pre-write backup of every original, an Undo bound to the applied digest, and honest local validation state.
+- changes: Proposals record `execution_target`; a row without one defaults to `distributed`, so nothing written earlier can become locally applicable by omission. A `this_device` request builds a local route directly and never preflights, routes or contacts the worker. `apply` branches on the recorded target: distributed keeps the observed-passing sandbox requirement unchanged, and local refuses outright if a passing validation row exists against it, because that would be evidence the proposal did not earn. Before any local write, every original is re-read, re-hashed against the reviewed base and copied into coordinator-owned storage outside the project. As of the correction round below, each stored copy is then reopened and verified — ordinary private file, recorded size, recorded digest, bound to this proposal — for every planned edit before the write loop begins, so a row alone is never taken as proof that a backup exists. Undo restores only files still holding exactly what the proposal wrote, through the same hardened atomic path, and refuses as stale otherwise. Full access now carries a confirmation naming the missing sandbox tests.
+- verification: 570 coordinator checks pass under the packaged interpreter (4 skipped) and the repository virtual environment (12 skipped); 28 are the new Execution 4C regressions. 120 browser-side checks pass across six suites. `git diff --check` silent. No live model call, worker contact, Kubernetes, Redis or Docker was made.
+- review_fixes: A self-review before handoff found and fixed four defects. `resume_writes` reached the write path directly, so a restart could have replaced a file whose original was never copied; the backup now lives in `_run_operation`, the one place that writes, and a recovered operation backs up first. Undo reported a file that was never written as "changed after Refinix wrote it"; it now reports it as unchanged, and Undo is offered after a partial apply as well as a complete one. The Full-access dialog did not name the missing sandbox tests; it now uses the coordinator's own sentence. A second, unused folder-tree implementation in Python was removed in favour of the one the page actually ships.
+- remaining: Live Qwen output quality, packaged-app behaviour and requester acceptance. Distributed validation still requires the paired worker, which is disconnected. The bundle rebuild needs separate authorisation after all three executions are reviewed.
+
+<a id="ac-20260907-001"></a>
+## AC-20260907-001 — Integrated review corrections for Executions 4A–4C
+- prompt_id: [UP-20260907-001](userprompts.md#up-20260907-001)
+- date: 2026-09-07
+- status: implemented and locally verified; requester and Codex re-review pending
+- scope: execution-4a, execution-4b, execution-4c, review-fixes, macos
+- tags: fail-closed-target, verified-backups, conversation-ownership, local-attachments, aggregate-limits
+- aliases: codex review fixes, corrupted target, backup verification, ask mode view approval
+- paths: backend/coordinator/code_service.py, backend/coordinator/db.py, backend/coordinator/docflow.py, backend/coordinator/xlsx.py, backend/coordinator/pdfgen.py, backend/coordinator/server.py, backend/coordinator/test_execution4a.py, backend/coordinator/test_execution4b.py, backend/coordinator/test_execution4c.py, frontend/app/app.js, frontend/app/test-code-surface.cjs, agent-memory/
+- summary: Closed the ten defects from the combined review plus a concurrent-backup race, leaving the distributed sandbox gate unchanged.
+- changes: One `stored_target` resolver now interprets every persisted execution target; an unrecognised value stops before validation, approval, operation creation, backup or writing, and `state` reports it as unusable instead of making the surface unreadable. Every planned edit's backup is reopened and verified — file type, size, digest, and binding to this proposal — before the write loop begins, and a `UNIQUE(proposal_id, path)` race now reuses the verified winner or raises `BackupError` rather than escaping as a database error. Local proposals open a real job and attempt in the selected Code conversation, persist their request and result, and Code state is conversation-scoped so a fresh conversation cannot inherit the project's last proposal. Approving `repo.view` reopens that exact file with the approval instead of falling through to a proposal. A Chat request carrying files is routed to this computer before any preflight, its documents are fenced under a system instruction, share one budget, and a page too large to fit whole contributes a marked part rather than being dropped. XLSX gained aggregate byte, cell, text and compression-ratio ceilings checked from archive headers, and parses shared strings once. A PDF block taller than a page is split across pages, and conversion splits long lines and refuses an over-long answer rather than truncating it. Project removal is refused in the coordinator while work is unfinished and reports how much Undo it puts out of reach.
+- verification: 600 coordinator checks pass under the packaged interpreter (4 skipped) and the repository virtual environment (13 skipped); 126 browser-side checks pass across six suites. `git diff --check` silent. No live model call, worker contact, Kubernetes, Redis, Docker, installation or app rebuild.
+- remaining: Codex re-review, live Qwen output quality, packaged-app behaviour, and the distributed path, which still requires the disconnected Ubuntu worker. The bundle rebuild remains unauthorised.
+- follow_up_to: [AC-20260906-012](#ac-20260906-012)
+
+<a id="ac-20260907-002"></a>
+## AC-20260907-002 — Codex closeout of Execution 4 integration defects
+- prompt_id: [UP-20260907-002](userprompts.md#up-20260907-002)
+- date: 2026-09-07
+- status: implemented and locally verified; requester and external runtime gates pending
+- scope: execution-4a, execution-4b, execution-4c, review-fixes, macos
+- tags: conversation-isolation, durable-approval, backup-hardening, bounded-context, lossless-pdf
+- aliases: codex closeout, reject proposal, safe project removal, final prompt bound
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Closed the remaining source-level 4A–4C integration defects while leaving Ubuntu disconnected and the distributed validation boundary intact.
+- changes: Target validation now precedes worker routing; proposals, approvals, audit, project and open-file state stay conversation-owned; Reject is durable; Ask replays the exact approved view; removal locks against writes and Undo and requires an explicit count-based acknowledgement before stored Undo is put out of reach. Final attachment prompts share the real context selector, oversized pages contribute bounded text, general-document inputs share one ceiling, PDF pagination preserves characters, and backup creation, verification, Undo and cleanup refuse unsafe paths, links, modes and changed bytes. Local failure lifecycles now end with contract-valid states, while legacy workspace-conversation approvals and partial-apply recovery remain usable.
+- verification: The complete coordinator suite passed 614 Python checks with 14 environment/platform skips in the repository virtual environment; the framework-independent lossless-pagination check passed. All six frontend suites passed 129 Node checks. The temporary loopback fixtures ran only after sandbox permission was granted; no live generation, worker, Kubernetes, Redis, Docker, installation, packaging or Git write ran.
+- correction: Supersedes AC-20260907-001 as the current closeout record; that entry's all-items claim and larger test totals preceded this independent rerun and are not evidence for this state.
+- remaining: Rebuild and inspect the packaged application, exercise real Qwen attachment/document/code flows, run the native PDF checks where Quartz/AppKit is available, then perform requester acceptance. The distributed path still requires a separately authorised Ubuntu reconnection and live validation.
+- supersedes: [AC-20260907-001](#ac-20260907-001)
+
+<a id="ac-20260907-003"></a>
+## AC-20260907-003 — Main CI for release PRs and landed commits
+- prompt_id: [UP-20260907-003](userprompts.md#up-20260907-003)
+- date: 2026-09-07
+- status: implemented; first GitHub run and server-side enforcement pending
+- scope: github-actions, ci, main, release-flow
+- tags: main-ci, push, pull-request, python, frontend
+- aliases: enable CI for main push, main push checks, release CI
+- paths: .github/workflows/ci.yml, CONTRIBUTING.md, agent-memory/
+- summary: Added one least-privilege CI job that runs the repository's Python and browser-side checks before and after work reaches main.
+- changes: Main CI runs for pull requests targeting `main` and pushes to `main`, checks out without persisted credentials, installs the existing hash-pinned Linux dependency set under Python 3.13, runs the contract, coordinator, worker, deployment, fixture and script suites, then runs all frontend Node tests under Node 24. The existing `pr-flow-guard` remains pull-request-only. Contribution guidance now distinguishes a pre-merge gate from a post-push audit and names `ci` for future branch protection.
+- verification: Ruby parsed the workflow YAML successfully; source inspection confirmed both main triggers, read-only contents permission, non-persisted checkout credentials, hash-required dependency installation and the complete frontend test glob. `git diff --check` was silent. No test suite, installer, Git/GitHub write or external runtime command ran.
+- remaining: The configured GitHub remote still names `prachi-satbhai0741/AegisForge`, but the authenticated `gh` client received HTTP 404 when reading its Actions permissions, so Actions enablement could not be confirmed. The workflow must first reach `main`, and its first hosted run is unverified. A push-triggered failure cannot reject or undo a direct push. Server-side protection remains absent until an admin successfully applies the ruleset with `pr-flow-guard ci` required.
+- follow_up_to: [AC-20260907-002](#ac-20260907-002)

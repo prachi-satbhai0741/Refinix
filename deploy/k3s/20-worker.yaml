@@ -14,12 +14,9 @@ metadata:
   name: worker-config
   namespace: aegisforge
 data:
-  # Where the model runtime lives, as seen from inside the Pod. Deliberately
-  # the Pod's own loopback, where nothing listens: the worker then reports
-  # health "unavailable", which is true. Reaching the host runtime is a
-  # checkpoint decision plus a matching egress policy — see
-  # docs/c05-ubuntu-deployment-handoff.md.
-  AEGIS_RUNTIME_HOST: "http://127.0.0.1:11434"
+  # Observed cni0 address on the Ubuntu worker. The host forwarder accepts only
+  # the Pod CIDR, and 30-runtime-egress.yaml permits only this /32 and port.
+  AEGIS_RUNTIME_HOST: "http://10.42.0.1:11434"
   AEGIS_MODEL: "qwen3.5:4b-q4_K_M"
   AEGIS_NUM_CTX: "4096"
   AEGIS_NUM_PREDICT: "2048"
@@ -96,9 +93,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: worker
-          # C06 Ubuntu build, 2026-09-05. Recorded in
+          # C09 Ubuntu build, 2026-09-06. Recorded in
           # backend/worker-image/provenance.json.
-          image: docker.io/library/aegisforge-worker@sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf
+          image: docker.io/library/aegisforge-worker@sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a
           imagePullPolicy: Never
           # TLS terminated by uvicorn itself. The image's CMD serves plain HTTP,
           # which was correct while the port was closed to the LAN; C06 opens it

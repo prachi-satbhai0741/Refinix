@@ -63,6 +63,17 @@ class TestSelection(unittest.TestCase):
         if payload and payload[0]["role"] == "assistant":
             self.fail("selection began with an orphan assistant reply")
 
+    def test_a_leading_system_rule_is_retained_and_counted(self):
+        conv = [{"message_id": "system", "role": "system", "text": "rule" * 20},
+                *msgs(("user", 200))]
+        payload, selection = context.select(
+            conv, window=8192, output_allowance=2048)
+        self.assertEqual(payload[0]["role"], "system")
+        self.assertIn("system", selection.included_ids)
+        expected = sum(context.estimate_tokens(item["text"])
+                       + context.PER_MESSAGE_OVERHEAD for item in conv)
+        self.assertEqual(selection.estimated_input_tokens, expected)
+
     def test_selection_is_recorded_for_replay(self):
         conv = msgs(*[("user" if i % 2 == 0 else "assistant", 4000) for i in range(12)])
         _, sel = context.select(conv, window=8192, output_allowance=2048)

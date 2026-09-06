@@ -104,16 +104,18 @@ The offline-runtime invariant and `docs/security.md` §12 shape the surfaces:
   listing and reading included — rather than falling back to a weaker check.
   Chat is unaffected.
 - Document reading, search and generation are skills inside Chat. A skill
-  reads **only the attachments sent with its own request**; plain Chat still
-  reads nothing. `.txt`, `.md`, `.csv`, `.json` and `.docx` are read with the
-  standard library. PDF and OCR are **unavailable** here — no parser and no OCR
-  engine are installed — and the capability row names the missing prerequisite
-  rather than half-reading a file or inventing text for a scan.
+  reads **only the attachments sent with its own request**; plain Chat uses the
+  same local reader when files are attached. Text, Office documents, PDF pages,
+  spreadsheets and supported images are read only when their local parser or
+  OCR capability is observed; a missing capability is reported rather than
+  half-reading a file or inventing text for a scan.
 - Search is keyword matching over SQLite FTS5, described as such. Citations are
   re-checked against the selected sources and their real pages; one that does
   not resolve is shown as unresolved, never rendered as a reference.
-- `write-document` runs `inspection_report_to_approval_note` and produces a
-  real `.docx`, validated by reopening it. Generated documents stay in
+- `write-document` can create a general document, copy a prior answer with the
+  same wording, or run the fixed `inspection_report_to_approval_note` workflow.
+  It produces a real `.docx` or, where Quartz is observed, `.pdf`, validated by
+  reopening it. Generated documents stay in
   `~/.aegisforge/artifacts/` until a recorded one-shot approval, bound to the
   file's digest, allows a copy out.
 - `/v1/context` reports what the next request would cost, from `context.py` —
@@ -127,8 +129,8 @@ The offline-runtime invariant and `docs/security.md` §12 shape the surfaces:
   budget without producing visible content, the attempt fails with that named
   reason and no blank assistant message is saved.
 - A file attached to a request is stored under `~/.aegisforge/attachments/` and
-  listed beside the request. **Nothing reads it.** Its contents never enter the
-  prompt, and the interface says so on the request itself and in the export.
+  listed beside the request. A document skill or ordinary Chat reads only the
+  files bound to that request; their contents never enter another request.
 - Workers, cluster, approvals, Proof Cards and egress evidence render
   **unavailable**, each naming the chunk that produces its evidence.
 - A missing measurement renders hatched as unavailable — never as a default,

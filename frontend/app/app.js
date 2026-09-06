@@ -212,16 +212,16 @@ function turn(role, text, attachments, plain, host, skill, artifacts) {
     article.append(list);
     const note = document.createElement('p');
     note.className = 'lbl';
-    // What actually happened to these files, per request. Plain Chat still
-    // reads nothing; a document skill reads only its own request's files.
+    // What actually happened to these files, per request. Ordinary Chat now
+    // reads the files sent with that one request, and nothing else.
     const capability = skill && capabilities.find((c) => c.id === skill);
     note.textContent = capability
       ? `Read by ${capability.name} for this request.`
       : (attachments.length === 1
-        ? 'Saved with your request. Plain Chat does not read attachments — '
-          + 'choose a document skill with + to have a file read.'
-        : 'Saved with your request. Plain Chat does not read attachments — '
-          + 'choose a document skill with + to have them read.');
+        ? 'Read for this request, on this computer. Earlier files are not '
+          + 'read again.'
+        : 'Read for this request, on this computer. Earlier files are not '
+          + 'read again.');
     article.append(note);
   }
   if (artifacts && artifacts.length) {
@@ -768,6 +768,10 @@ function openModelPopover() {
   if (modelScope() === 'documents.generate') {
     appendModelChoices(box, 'documents.ocr', 'Document OCR model');
   }
+  if (selectedSkill()?.id === 'write-document') {
+    appendDocumentChoices(box);
+  }
+  if ($('code-composer')) appendTargetChoices(box);
 
   const row = document.createElement('div');
   row.className = 'mp-row';
@@ -827,9 +831,91 @@ function openModelPopover() {
   toggle.focus();
 }
 
+/* The row is a name and a location inside one narrow popover, and the name is
+ * the identity: "qwen3.5:4b-q4_K_M" and "qwen3:4b" differ only in the middle,
+ * so a name clipped to "qwen…" names nothing. The location prose is wider than
+ * the name it was displacing, and the machine reads just as clearly short.
+ * Only the display is shortened; the inventory keeps naming both in full. */
+const LOCATION_SHORT = { 'macOS coordinator': 'Mac', 'Ubuntu worker': 'Ubuntu' };
+
+function locationLabel(locations) {
+  if (!locations?.length) return 'not installed';
+  return locations.map((where) => LOCATION_SHORT[where] || where).join(' + ');
+}
+
+/* Write Document's two choices, made before the request and sent with it.
+ * They are structured selection state like the skill chip, not prompt text:
+ * the coordinator stores them on the job, so a reopened conversation reports
+ * the file and the workflow that actually ran. */
+const OUTPUT_FORMATS = [
+  { id: 'docx', name: 'Word (.docx)', tag: 'default' },
+  { id: 'pdf', name: 'PDF (.pdf)', tag: '' },
+];
+const DOC_WORKFLOWS = [
+  { id: 'general_document', name: 'General document', tag: 'default' },
+  { id: 'inspection_report_to_approval_note',
+    name: 'Inspection approval note', tag: 'cited' },
+];
+
+let outputFormat = 'docx';
+let docWorkflow = 'general_document';
+
+function appendDocumentChoices(box) {
+  appendChoiceGroup(box, 'Save as', OUTPUT_FORMATS, outputFormat, (id) => {
+    outputFormat = id;
+  });
+  appendChoiceGroup(box, 'Workflow', DOC_WORKFLOWS, docWorkflow, (id) => {
+    docWorkflow = id;
+  });
+  const note = document.createElement('p');
+  note.className = 'mp-note';
+  note.textContent = docWorkflow === 'general_document'
+    ? 'A general document is written from your request and any files you '
+      + 'attach. Ask to save or convert the previous answer and it is copied '
+      + 'with the same wording, without asking the model again.'
+    : 'The fixed inspection workflow. It needs a report attached, checks every '
+      + 'citation against the pages it read, and leaves unresolved values '
+      + 'unresolved.';
+  box.append(note);
+}
+
+function appendChoiceGroup(box, labelText, choices, current, onPick) {
+  const group = document.createElement('div');
+  group.className = 'mp-choices';
+  group.setAttribute('role', 'radiogroup');
+  group.setAttribute('aria-label', labelText);
+  const label = document.createElement('p');
+  label.className = 'mp-label';
+  label.textContent = labelText;
+  group.append(label);
+  const rows = document.createElement('div');
+  rows.className = 'mp-models';
+  for (const choice of choices) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mp-model';
+    const selected = current === choice.id;
+    button.dataset.selected = String(selected);
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-checked', String(selected));
+    appendModelChoiceParts(button, selected, choice.name, choice.tag);
+    button.onclick = () => {
+      onPick(choice.id);
+      closeModelPopover(false);
+      openModelPopover();
+      renderModelPill();
+    };
+    rows.append(button);
+  }
+  group.append(rows);
+  box.append(group);
+}
+
 function appendModelChoices(box, scope, labelText) {
   const group = document.createElement('div');
   group.className = 'mp-choices';
+  group.setAttribute('role', 'radiogroup');
+  group.setAttribute('aria-label', labelText);
   const label = document.createElement('p');
   label.className = 'mp-label';
   label.textContent = labelText;
@@ -838,7 +924,9 @@ function appendModelChoices(box, scope, labelText) {
   const auto = document.createElement('button');
   auto.type = 'button';
   auto.className = 'mp-model';
-  auto.textContent = 'Auto model — after internal hackathon';
+  auto.setAttribute('role', 'radio');
+  auto.setAttribute('aria-checked', 'false');
+  appendModelChoiceParts(auto, false, 'Auto model', 'after internal hackathon');
   auto.disabled = true;
   group.append(auto);
 
@@ -849,9 +937,12 @@ function appendModelChoices(box, scope, labelText) {
     const selected = modelSelections[scope] === candidate.id;
     const unavailable = !candidate.eligible_scopes?.includes(scope);
     button.dataset.selected = String(selected);
-    button.textContent = `${selected ? '✓ ' : ''}${candidate.id}`
-      + (candidate.locations?.length ? ` — ${candidate.locations.join(' + ')}` : ' — not installed')
-      + (candidate.installed && unavailable ? ' — unavailable for this workflow' : '');
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-checked', String(selected));
+    const location = locationLabel(candidate.locations);
+    appendModelChoiceParts(button, selected, candidate.id,
+      candidate.installed && unavailable
+        ? `${location} — unavailable for this workflow` : location);
     button.disabled = unavailable;
     button.onclick = async () => {
       button.disabled = true;
@@ -870,6 +961,19 @@ function appendModelChoices(box, scope, labelText) {
     group.append(button);
   }
   box.append(group);
+}
+
+function appendModelChoiceParts(button, selected, name, tag) {
+  const tick = document.createElement('span');
+  tick.className = 'mp-tick';
+  tick.textContent = selected ? '✓' : '';
+  const modelName = document.createElement('span');
+  modelName.className = 'mp-model-name';
+  modelName.textContent = name;
+  const modelTag = document.createElement('span');
+  modelTag.className = 'mp-tag';
+  modelTag.textContent = tag;
+  button.append(tick, modelName, modelTag);
 }
 
 /* ---- attachments ------------------------------------------------------ */
@@ -1558,8 +1662,11 @@ async function send(text, { draftText = null } = {}) {
     body: JSON.stringify({ chat_id: targetId, text,
       draft_id: sourceId || NEW_CHAT_DRAFT, draft_text: draftText ?? text,
       // The chosen skill is submitted with the request and stored on the job.
-      // It is not left as state only this page knows about.
-      skill_id: skill ? skill.id : undefined }),
+      // It is not left as state only this page knows about. The document
+      // choices travel the same way, and only when they apply.
+      skill_id: skill ? skill.id : undefined,
+      output_format: skill?.id === 'write-document' ? outputFormat : undefined,
+      doc_workflow: skill?.id === 'write-document' ? docWorkflow : undefined }),
   });
   if (chatId !== sourceId || (sourceId === null && draftVersion !== version)) {
     loadChats();
@@ -1591,8 +1698,8 @@ async function send(text, { draftText = null } = {}) {
            skill ? 'ok' : 'warn',
            skill
              ? `${skill.name} reads only the files sent with this request.`
-             : 'Plain Chat saved them on this computer but did not read them. '
-               + 'Choose a document skill with + when you want their contents used.');
+             : 'Plain Chat reads only the files sent with this request on this '
+               + 'computer, and tells you if any file could not be read.');
   }
 }
 
@@ -1648,6 +1755,9 @@ function codeApi(path, body) {
 function resetRepositoryState() {
   selectedPaths = new Set();
   repoFiles = [];
+  // The open file belonged to the project being left. Keeping it on screen
+  // would show one project's file above another project's work.
+  if (typeof closeViewer === 'function') closeViewer(false);
   // Results belong to the folder they came from. A diff or an approval from
   // the previous project must not sit above the new one's composer.
   if (typeof clearCodeResults === 'function') clearCodeResults();
@@ -1661,9 +1771,17 @@ function resetRepositoryState() {
  * fetched with that one-shot approval, and asking again without one would
  * raise a fresh approval card and throw the answer away. */
 async function loadCodeState(repoId, { reset = false, skipFiles = false } = {}) {
+  if (!codeConversation) return codeState;
   const generation = ++codeGeneration;
   if (reset) resetRepositoryState();
-  const query = repoId ? `?repo_id=${encodeURIComponent(repoId)}` : '';
+  const parts = [];
+  if (repoId) parts.push(`repo_id=${encodeURIComponent(repoId)}`);
+  // Scoped, so a fresh conversation never inherits the project's last
+  // proposal and a refresh cannot cross conversations.
+  if (codeConversation) {
+    parts.push(`conversation_id=${encodeURIComponent(codeConversation)}`);
+  }
+  const query = parts.length ? `?${parts.join('&')}` : '';
   let next;
   try {
     next = await api(`/v1/code/state${query}`);
@@ -1719,15 +1837,39 @@ async function connectRepository() {
     return;
   }
   // A newly connected folder is a repository change like any other.
-  await loadCodeState(result.repository.repo_id, { reset: true });
+  await activateRepository(result.repository.repo_id);
+}
+
+async function persistCodeContext(repoId, openPath = null) {
+  if (!codeConversation) return null;
+  const updated = await codeApi('/v1/code/conversation/context', {
+    conversation_id: codeConversation,
+    repo_id: repoId || undefined,
+    open_path: openPath || undefined,
+  });
+  const index = codeConversations.findIndex((c) => c.chat_id === codeConversation);
+  if (index >= 0) codeConversations[index] = updated;
+  renderConversationHead();
+  return updated;
+}
+
+async function activateRepository(repoId) {
+  try {
+    await persistCodeContext(repoId, null);
+  } catch (err) {
+    notice('That conversation could not switch projects.', 'error', err.message);
+    return;
+  }
+  await loadCodeState(repoId, { reset: true });
 }
 
 /* Returns the response so the caller can render a listing approval with the
  * rest of the state. Commits nothing once a newer activation has started. */
 async function loadRepoFiles(repoId, generation, approvalId) {
-  const query = approvalId
-    ? `?repo_id=${encodeURIComponent(repoId)}&approval_id=${encodeURIComponent(approvalId)}`
-    : `?repo_id=${encodeURIComponent(repoId)}`;
+  const parts = [`repo_id=${encodeURIComponent(repoId)}`,
+                 `conversation_id=${encodeURIComponent(codeConversation)}`];
+  if (approvalId) parts.push(`approval_id=${encodeURIComponent(approvalId)}`);
+  const query = `?${parts.join('&')}`;
   let body;
   try {
     body = await api(`/v1/code/files${query}`);
@@ -1825,9 +1967,12 @@ async function changeMode(mode) {
   if (mode.confirm) {
     const yes = await confirmDialog(
       'Turn on Full access for this folder?',
-      'Refinix will apply edits to the files you select inside this folder '
-      + 'without asking each time. It still cannot run commands, use Git, '
-      + 'install anything, create or delete files, or work outside this folder.',
+      // The coordinator's own sentence, so the warning cannot drift from the
+      // policy it describes. It names the sandbox tests that do not run on
+      // this device, which is the part a person most needs to have read.
+      (mode.confirm_note ? `${mode.confirm_note} ` : '')
+      + 'It still cannot run commands, use Git, install anything, create or '
+      + 'delete files, or work outside this folder.',
       'Turn on Full access');
     if (!yes) return;
   }
@@ -1874,9 +2019,12 @@ function approvalCard(approval) {
 
   const facts = document.createElement('dl');
   facts.className = 'facts';
+  // A malformed approval must not take the whole panel down with it; the
+  // fields it does carry are still worth showing.
+  const detail = approval.detail || {};
   const rows = [
-    ['Project', approval.detail.repo_name || '—'],
-    ['Files', (approval.detail.paths || []).join(', ') || approval.target],
+    ['Project', detail.repo_name || '—'],
+    ['Files', (detail.paths || []).join(', ') || approval.target],
     ['Expires', approval.expires_at],
   ];
   for (const [k, v] of rows) {
@@ -1904,9 +2052,20 @@ function approvalCard(approval) {
 }
 
 async function decideApproval(approval, approved) {
+  const viewTarget = approval.action === 'repo.view' ? {
+    repo_id: approval.repo_id,
+    path: (approval.detail?.paths || [])[0] || approval.target,
+  } : null;
+  if (approved && approval.action === 'repo.view'
+      && (!viewTarget.repo_id || !viewTarget.path)) {
+    notice('That file approval is incomplete.', 'error',
+           'Open the file again; this approval was not consumed.');
+    return;
+  }
   try {
     await codeApi('/v1/code/decision', {
       approval_id: approval.approval_id, approved,
+      conversation_id: approval.conversation_id || codeConversation || undefined,
     });
   } catch (err) {
     notice('That decision could not be recorded.', 'error', err.message);
@@ -1923,8 +2082,17 @@ async function decideApproval(approval, approved) {
   // approval id. The coordinator matches action and digest, so retrying the
   // wrong operation would simply fail — each action returns to its own path.
   if (approval.action === 'canonical.write') {
-    await applyProposal(approval.detail.proposal_id
+    await applyProposal(approval.proposal_id || (approval.detail || {}).proposal_id
       || codeState?.proposal?.proposal_id, approval.approval_id);
+    return;
+  }
+  if (approval.action === 'repo.view') {
+    // Reopen the exact file this approval was raised for. Falling through to
+    // proposeChange here asked the model to change a file the person only
+    // wanted to look at.
+    await openFileInViewer(viewTarget.repo_id, viewTarget.path,
+                           approval.approval_id);
+    await loadCodeState(codeState.active, { skipFiles: true });
     return;
   }
   if (approval.action === 'repo.list') {
@@ -1993,6 +2161,18 @@ function proposalCard(proposal) {
     + 'evidence that the change is correct.';
   card.append(note);
 
+  const local = codeState?.execution_target === 'this_device';
+  if (local) {
+    // Said before the buttons, in the coordinator's words. A local change was
+    // never inside the Ubuntu sandbox and this line must never imply it was.
+    const untested = document.createElement('p');
+    untested.className = 'prose-note';
+    untested.dataset.state = 'unvalidated';
+    untested.textContent = codeState.validation_note
+      || 'Not sandbox tested — local device mode';
+    card.append(untested);
+  }
+
   if (proposal.state === 'proposed') {
     const actions = document.createElement('div');
     actions.className = 'card-actions';
@@ -2001,12 +2181,20 @@ function proposalCard(proposal) {
       && validation.patch_sha256 === proposal.digest);
     const action = document.createElement('button');
     action.className = 'btn btn-primary';
-    action.textContent = passed ? 'Apply this change' : 'Validate in sandbox';
-    action.onclick = () => passed
+    // A local change is applied after review here; a distributed one still
+    // has to come back from the sandbox first. One button, two honest labels.
+    action.textContent = local ? 'Accept and apply'
+      : passed ? 'Apply this change' : 'Validate in sandbox';
+    action.onclick = () => (local || passed)
       ? applyProposal(proposal.proposal_id, null)
       : validateProposal(proposal.proposal_id);
     actions.append(action);
-    if (validation) {
+    const reject = document.createElement('button');
+    reject.className = 'btn';
+    reject.textContent = 'Reject';
+    reject.onclick = () => rejectProposal(proposal.proposal_id);
+    actions.append(reject);
+    if (validation && !local) {
       const result = document.createElement('span');
       result.className = 'lbl';
       result.textContent = passed
@@ -2016,7 +2204,82 @@ function proposalCard(proposal) {
     }
     card.append(actions);
   }
+
+  // Also after a partial apply: some files really did change, and those are
+  // exactly the ones a person needs to be able to put back.
+  if (['applied', 'partially_applied'].includes(proposal.state)
+      && codeState?.can_undo) {
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    const undo = document.createElement('button');
+    undo.className = 'btn';
+    undo.textContent = 'Undo this change';
+    undo.onclick = () => undoProposal(proposal.proposal_id);
+    actions.append(undo);
+    const note = document.createElement('span');
+    note.className = 'lbl';
+    note.textContent = 'Restores the files Refinix replaced, if nothing else '
+      + 'has changed them since.';
+    actions.append(note);
+    card.append(actions);
+  }
   return card;
+}
+
+/* Reject writes nothing and leaves the open file exactly as it is. */
+async function rejectProposal(proposalId) {
+  try {
+    await codeApi('/v1/code/reject', {
+      repo_id: codeState.active, proposal_id: proposalId,
+      conversation_id: codeConversation });
+  } catch (err) {
+    notice('That change could not be rejected.', 'error', err.message);
+    return;
+  }
+  await loadCodeState(codeState.active, { skipFiles: true });
+}
+
+async function undoProposal(proposalId) {
+  let result;
+  try {
+    result = await codeApi('/v1/code/undo', {
+      repo_id: codeState.active, proposal_id: proposalId,
+      conversation_id: codeConversation });
+  } catch (err) {
+    // A failed Undo leaves everything on screen. Blanking the conversation or
+    // the file because one request failed would lose the person's place.
+    notice('That change could not be undone.', 'error', err.message);
+    return;
+  }
+  const stale = (result.files || []).filter((f) => f.state === 'rejected_stale');
+  if (stale.length) {
+    notice('Some files changed after Refinix wrote them and were left alone.',
+           'warn', stale.map((f) => f.path).join(', '));
+  }
+  await loadCodeState(codeState.active, { skipFiles: true });
+  await refreshOpenFile();
+}
+
+/* After a write, the centre column is re-read from disk rather than being
+ * shown the proposed text: what is on screen must be what is in the file. */
+async function refreshOpenFile() {
+  if (!openFile) return;
+  const { repo_id: repoId, path } = openFile;
+  try {
+    const file = await api(`/v1/code/view?repo_id=${encodeURIComponent(repoId)}`
+                           + `&path=${encodeURIComponent(path)}`
+                           + `&conversation_id=${encodeURIComponent(codeConversation)}`);
+    if (!openFile || openFile.path !== path) return;
+    if (file.lines) {
+      openFile = { repo_id: repoId, ...file };
+      paintFile(file.lines);
+    }
+  } catch (err) {
+    // Keep the last known content and say so. An empty viewer would read as
+    // "the file is gone", which is a worse lie than a stale view.
+    notice('The open file could not be re-read; showing the last version '
+           + 'Refinix loaded.', 'warn', err.message);
+  }
 }
 
 /* The audit is reference material, so it sits under Details rather than
@@ -2081,19 +2344,7 @@ function renderCode() {
   $('plus-btn').disabled = !connected;
   renderModePill();
 
-  const list = $('repo-list');
-  if (list) {
-    list.replaceChildren();
-    for (const entry of codeState.repositories) {
-      const button = document.createElement('button');
-      button.className = 'nav-item';
-      button.type = 'button';
-      if (entry.repo_id === codeState.active) button.setAttribute('aria-current', 'true');
-      button.textContent = entry.name;
-      button.onclick = () => loadCodeState(entry.repo_id, { reset: true });
-      list.append(button);
-    }
-  }
+  renderExplorer();
 
   renderAudit(codeState.audit || []);
   renderUnavailable(codeState.unavailable || []);
@@ -2265,6 +2516,12 @@ async function proposeChange(approvalId) {
     const body = await codeApi('/v1/code/propose', {
       repo_id: codeState.active, request, paths: [...selectedPaths],
       approval_id: approvalId || undefined,
+      // The request belongs to one Code conversation, so its job, proposal
+      // and approval cannot surface under a different one.
+      conversation_id: codeConversation || undefined,
+      // Where this runs is chosen, never inferred. "The worker did not answer"
+      // is not permission to write to someone's files without the sandbox.
+      execution_target: executionTarget,
     });
     status.hidden = true;
     if (body.needs_approval) {
@@ -2289,6 +2546,7 @@ async function applyProposal(proposalId, approvalId) {
     const body = await codeApi('/v1/code/apply', {
       repo_id: codeState.active, proposal_id: proposalId,
       approval_id: approvalId || undefined,
+      conversation_id: codeConversation,
     });
     if (body.needs_approval) {
       notice('Refinix needs your approval before writing.', 'warn',
@@ -2301,9 +2559,15 @@ async function applyProposal(proposalId, approvalId) {
                .map((r) => `${r.path}: ${r.detail}`).join(' • '));
     }
   } catch (err) {
+    // The conversation and the open file stay exactly as they were: a refused
+    // or failed write changed nothing, and the screen should say so by not
+    // changing either.
     notice('That change was not applied.', 'error', err.message);
   }
   await loadCodeState(activeRepo);
+  // Re-read from disk, so the centre column shows the file rather than the
+  // text that was proposed for it.
+  await refreshOpenFile();
 }
 
 async function validateProposal(proposalId) {
@@ -2311,6 +2575,7 @@ async function validateProposal(proposalId) {
   try {
     const result = await codeApi('/v1/code/validate', {
       repo_id: codeState.active, proposal_id: proposalId,
+      conversation_id: codeConversation,
     });
     notice(result.passed ? 'Sandbox validation passed.' : 'Sandbox validation failed.',
            result.passed ? 'warn' : 'error',
@@ -2323,6 +2588,7 @@ async function validateProposal(proposalId) {
 }
 
 function wireCode() {
+  wireConversationControls();
   $('connect-btn').addEventListener('click', connectRepository);
   $('switch-btn').addEventListener('click', connectRepository);
   $('code-composer').onsubmit = (e) => { e.preventDefault(); proposeChange(null); };
@@ -2359,7 +2625,7 @@ function wireCode() {
     if (plusMenu) closePlusMenu();
     else openFileMenu();
   });
-  loadCodeState(null, { reset: true }).catch((err) =>
+  initializeCode().catch((err) =>
     notice('Code could not load.', 'error', err.message));
 }
 
@@ -3799,3 +4065,481 @@ window.addEventListener('DOMContentLoaded', () => {
     setInterval(() => loadStatus().catch(() => {}), 10000);
   }
 });
+
+/* ---- Execution 4B: Explorer, file viewer and Code conversations --------- */
+
+/* Which folders are open, per project, so a redraw does not fold the tree the
+ * person just expanded. Keyed by project because two projects can hold the
+ * same relative path and must not share expansion state. */
+const expandedFolders = new Map();
+let openFile = null;          // { repo_id, path, lines, ... }
+let viewerToken = 0;          // only the newest open may paint
+
+function foldersFor(repoId) {
+  if (!expandedFolders.has(repoId)) expandedFolders.set(repoId, new Set());
+  return expandedFolders.get(repoId);
+}
+
+/* The tree the coordinator returns is relative paths only. Building it here
+ * from `repoFiles` keeps the Explorer and the selection list showing one set
+ * of files: they cannot disagree because there is only one source. */
+function buildTree(files) {
+  const root = { folders: new Map(), files: [] };
+  for (const entry of files || []) {
+    const path = String(entry.path || '').replace(/^\/+|\/+$/g, '');
+    if (!path) continue;
+    const parts = path.split('/');
+    let node = root;
+    for (const folder of parts.slice(0, -1)) {
+      if (!node.folders.has(folder)) {
+        node.folders.set(folder, { folders: new Map(), files: [] });
+      }
+      node = node.folders.get(folder);
+    }
+    node.files.push({ ...entry, name: parts[parts.length - 1], path });
+  }
+  const convert = (node, prefix) => {
+    const out = [];
+    for (const name of [...node.folders.keys()].sort()) {
+      const child = `${prefix}${name}`;
+      out.push({ kind: 'folder', name, path: child,
+                 children: convert(node.folders.get(name), `${child}/`) });
+    }
+    for (const file of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
+      out.push({ kind: 'file', name: file.name, path: file.path,
+                 byte_size: file.byte_size });
+    }
+    return out;
+  };
+  return convert(root, '');
+}
+
+function treeRow({ kind, name, meta, depth, selected, expanded, onClick }) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'tree-row';
+  button.dataset.kind = kind;
+  button.style.paddingLeft = `${8 + depth * 12}px`;
+  button.setAttribute('role', 'treeitem');
+  if (expanded !== undefined) button.setAttribute('aria-expanded', String(expanded));
+  button.setAttribute('aria-selected', String(!!selected));
+  const twisty = document.createElement('span');
+  twisty.className = 'tree-twisty';
+  twisty.setAttribute('aria-hidden', 'true');
+  twisty.textContent = expanded === undefined ? '' : '›';
+  const label = document.createElement('span');
+  label.className = 'tree-name';
+  label.textContent = name;
+  const tail = document.createElement('span');
+  tail.className = 'tree-meta';
+  tail.textContent = meta || '';
+  button.append(twisty, label, tail);
+  button.onclick = onClick;
+  return button;
+}
+
+function renderExplorer() {
+  const host = $('explorer');
+  if (!host || !codeState) return;
+  host.replaceChildren();
+  if (!codeState.repositories.length) {
+    const empty = document.createElement('p');
+    empty.className = 'tree-note';
+    empty.textContent = 'No project is connected yet. Use + to choose a folder.';
+    host.append(empty);
+    return;
+  }
+  for (const entry of codeState.repositories) {
+    const isActive = entry.repo_id === codeState.active;
+    const open = foldersFor(entry.repo_id);
+    host.append(treeRow({
+      kind: 'project', name: entry.name, meta: entry.mode || '',
+      depth: 0, selected: isActive, expanded: isActive,
+      onClick: () => {
+        if (isActive) return;
+        activateRepository(entry.repo_id);
+      },
+    }));
+    if (!isActive) continue;
+    const children = document.createElement('div');
+    children.className = 'tree-children';
+    children.setAttribute('role', 'group');
+    if (!repoFiles.length) {
+      const note = document.createElement('p');
+      note.className = 'tree-note';
+      note.textContent = codeState.pending_approvals?.length
+        ? 'This project needs your approval before its files can be listed.'
+        : 'No readable text files were found in this project.';
+      children.append(note);
+    } else {
+      paintNodes(buildTree(repoFiles), children, 1, entry.repo_id, open);
+    }
+    host.append(children);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'tree-row';
+    remove.dataset.kind = 'action';
+    remove.style.paddingLeft = '20px';
+    remove.setAttribute('role', 'treeitem');
+    const spacer = document.createElement('span');
+    spacer.className = 'tree-twisty';
+    const text = document.createElement('span');
+    text.className = 'tree-name';
+    text.textContent = 'Remove from Refinix';
+    remove.append(spacer, text, document.createElement('span'));
+    remove.onclick = () => removeProject(entry);
+    host.append(remove);
+  }
+}
+
+function paintNodes(nodes, host, depth, repoId, open) {
+  for (const node of nodes) {
+    if (node.kind === 'folder') {
+      const expanded = open.has(node.path);
+      host.append(treeRow({
+        kind: 'folder', name: node.name, depth, expanded,
+        onClick: () => {
+          if (expanded) open.delete(node.path); else open.add(node.path);
+          renderExplorer();
+        },
+      }));
+      if (expanded) {
+        const group = document.createElement('div');
+        group.className = 'tree-children';
+        group.setAttribute('role', 'group');
+        paintNodes(node.children, group, depth + 1, repoId, open);
+        host.append(group);
+      }
+    } else {
+      host.append(treeRow({
+        kind: 'file', name: node.name, depth,
+        meta: selectedPaths.has(node.path) ? 'in request' : '',
+        selected: openFile && openFile.repo_id === repoId
+                  && openFile.path === node.path,
+        onClick: () => openFileInViewer(repoId, node.path),
+      }));
+    }
+  }
+}
+
+/* ---- the open file ----------------------------------------------------- */
+
+function viewerState(message, kind = 'note') {
+  const body = $('viewer-body');
+  if (!body) return;
+  const p = document.createElement('p');
+  p.className = 'viewer-state';
+  p.dataset.kind = kind;
+  p.textContent = message;
+  body.replaceChildren(p);
+}
+
+function closeViewer(persist = true) {
+  const closingRepo = openFile?.repo_id || activeRepo;
+  openFile = null;
+  viewerToken += 1;
+  const tabs = $('viewer-tabs');
+  const crumb = $('viewer-crumb');
+  if (tabs) tabs.hidden = true;
+  if (crumb) crumb.hidden = true;
+  const body = $('viewer-body');
+  if (body) {
+    const empty = document.createElement('p');
+    empty.className = 'viewer-empty';
+    empty.textContent = 'Choose a project in the Explorer, then open a file to '
+      + 'read it here. Opening a file does not send it to the model.';
+    body.replaceChildren(empty);
+  }
+  if (persist && closingRepo && codeConversation) {
+    persistCodeContext(closingRepo, null).catch((err) =>
+      notice('The closed file could not be remembered.', 'warn', err.message));
+  }
+  renderExplorer();
+}
+
+async function openFileInViewer(repoId, path, approvalId) {
+  const token = ++viewerToken;
+  const generation = codeGeneration;
+  const tabs = $('viewer-tabs');
+  const crumb = $('viewer-crumb');
+  if (tabs) tabs.hidden = false;
+  if ($('viewer-tab-name')) $('viewer-tab-name').textContent = path.split('/').pop();
+  if (crumb) { crumb.hidden = false; crumb.textContent = path; }
+  viewerState('Opening…');
+  let file;
+  try {
+    file = await api(`/v1/code/view?repo_id=${encodeURIComponent(repoId)}`
+                     + `&path=${encodeURIComponent(path)}`
+                     + `&conversation_id=${encodeURIComponent(codeConversation)}`
+                     + (approvalId ? `&approval_id=${encodeURIComponent(approvalId)}` : ''));
+  } catch (err) {
+    // A response for a file the person has already navigated away from must
+    // never paint, and neither must one from a project they have left.
+    if (token !== viewerToken || generation !== codeGeneration) return;
+    viewerState(err.message || 'That file could not be opened.', 'error');
+    return;
+  }
+  if (token !== viewerToken || generation !== codeGeneration) return;
+  if (file.needs_approval) {
+    // Remember which file this decision is about, and put the approval in
+    // front of the person instead of only describing it.
+    viewerState('This project asks before actions, so opening this file needs '
+                + 'your approval. Opening it does not send it to the model.');
+    if (codeState) {
+      const known = new Set((codeState.pending_approvals || [])
+        .map((a) => a.approval_id));
+      if (!known.has(file.needs_approval.approval_id)) {
+        codeState.pending_approvals = [...(codeState.pending_approvals || []),
+                                       file.needs_approval];
+      }
+    }
+    renderCode();
+    return;
+  }
+  openFile = { repo_id: repoId, ...file };
+  paintFile(file.lines || []);
+  try {
+    await persistCodeContext(repoId, file.path);
+  } catch (err) {
+    notice('The open file could not be remembered.', 'warn', err.message);
+  }
+  renderExplorer();
+}
+
+function paintFile(lines) {
+  const body = $('viewer-body');
+  if (!body) return;
+  const grid = document.createElement('div');
+  grid.className = 'code-lines';
+  lines.forEach((line, index) => {
+    const num = document.createElement('span');
+    num.className = 'code-num';
+    num.textContent = String(index + 1);
+    const text = document.createElement('span');
+    text.className = 'code-text';
+    // Inserted as text. A file is data, and nothing in it becomes markup.
+    text.textContent = line;
+    grid.append(num, text);
+  });
+  body.replaceChildren(grid);
+}
+
+/* ---- removing a project ------------------------------------------------ */
+
+async function removeProject(entry) {
+  if (proposing) {
+    notice('Wait for the current request to finish before removing this project.',
+           'error');
+    return;
+  }
+  const ok = window.confirm(
+    `Remove “${entry.name}” from Refinix?\n\n`
+    + 'This disconnects the folder from Refinix. Your files are not deleted, '
+    + 'renamed or changed in any way, and the folder stays exactly where it is.');
+  if (!ok) return;
+  let result;
+  try {
+    result = await codeApi('/v1/code/forget', {
+      repo_id: entry.repo_id, discard_undo: false });
+    if (result.confirmation_required) {
+      const discard = window.confirm(
+        `Refinix is holding ${result.undo_lost} original file copy/copies for `
+        + 'changes in this project. Remove it anyway and put those Undo actions '
+        + 'out of reach?');
+      if (!discard) return;
+      result = await codeApi('/v1/code/forget', {
+        repo_id: entry.repo_id, discard_undo: true });
+    }
+  } catch (err) {
+    // The coordinator refuses while work is in flight; that refusal is the
+    // authoritative one and is shown as it arrives.
+    notice('That project could not be removed.', 'error', err.message);
+    return;
+  }
+  if (!result.disconnected) return;
+  expandedFolders.delete(entry.repo_id);
+  if (openFile && openFile.repo_id === entry.repo_id) closeViewer();
+  await loadCodeState(null, { reset: true });
+}
+
+/* ---- Code conversations ------------------------------------------------ */
+
+let codeConversation = null;
+let codeConversations = [];
+let conversationGeneration = 0;
+
+async function loadCodeConversations() {
+  try {
+    const body = await api('/v1/code/conversations');
+    codeConversations = body.conversations || [];
+  } catch (_) {
+    codeConversations = [];
+  }
+  renderConversationHead();
+  return codeConversations;
+}
+
+function renderConversationHead() {
+  const title = $('conv-title');
+  if (title) {
+    const current = codeConversations.find((c) => c.chat_id === codeConversation);
+    title.textContent = current ? current.title : 'Code conversation';
+  }
+  const list = $('conv-history-list');
+  if (!list || list.hidden) return;
+  list.replaceChildren();
+  if (!codeConversations.length) {
+    const empty = document.createElement('p');
+    empty.className = 'tree-note';
+    empty.textContent = 'No Code conversations yet.';
+    list.append(empty);
+    return;
+  }
+  for (const entry of codeConversations) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'conv-item';
+    button.setAttribute('aria-current', String(entry.chat_id === codeConversation));
+    const name = document.createElement('span');
+    name.className = 'conv-item-name';
+    name.textContent = entry.title;
+    const meta = document.createElement('span');
+    meta.className = 'conv-item-meta';
+    // A disconnected project stays named and stays unavailable. Reopening
+    // this conversation must not reconnect a folder behind the person's back.
+    meta.textContent = entry.repo_id
+      ? (entry.project_available ? `Project: ${entry.repo_name}`
+                                 : 'Project no longer connected')
+      : 'No project recorded';
+    button.append(name, meta);
+    button.onclick = () => selectConversation(entry.chat_id);
+    list.append(button);
+  }
+}
+
+async function selectConversation(chatId) {
+  const selection = ++conversationGeneration;
+  codeConversation = chatId;
+  // A newer selection wins, so a slow load for the conversation just left
+  // cannot paint its proposal into the one now on screen.
+  if (typeof clearCodeResults === 'function') clearCodeResults();
+  closeViewer(false);
+  const list = $('conv-history-list');
+  if (list) { list.hidden = true; }
+  const toggle = $('conv-history');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  renderConversationHead();
+
+  const entry = codeConversations.find((c) => c.chat_id === chatId);
+  // A project that was removed stays removed. Reopening history must not
+  // reconnect a folder behind the person's back.
+  const project = entry && entry.project_available ? entry.repo_id : null;
+  await loadCodeState(project, { reset: true });
+  if (conversationGeneration !== selection || codeConversation !== chatId) return;
+  const generation = codeGeneration;
+  await restoreConversationTurns(chatId, generation);
+  if (conversationGeneration !== selection || codeConversation !== chatId) return;
+  const remembered = codeState?.conversation?.open_path;
+  if (project && remembered) {
+    await openFileInViewer(project, remembered);
+  }
+}
+
+/* The persisted turns of one Code conversation, so reopening it shows the
+ * work rather than an empty panel. */
+async function restoreConversationTurns(chatId, generation) {
+  let body;
+  try {
+    body = await api(`/v1/messages?chat_id=${encodeURIComponent(chatId)}`);
+  } catch (err) {
+    notice('That conversation could not be reopened.', 'error', err.message);
+    return;
+  }
+  if (codeGeneration !== generation || codeConversation !== chatId) return;
+  for (const message of body.messages || []) {
+    showCodeResult((article) => {
+      const p = document.createElement('p');
+      p.className = message.role === 'user' ? 'card-lead' : 'prose-note';
+      p.textContent = message.text;
+      article.append(p);
+    }, `restored-${message.message_id}`);
+  }
+}
+
+async function newCodeConversation() {
+  let made;
+  try {
+    made = await codeApi('/v1/code/conversation', {
+      title: '', repo_id: codeState?.active || null });
+    codeConversation = made.chat_id;
+  } catch (err) {
+    notice('A new conversation could not be started.', 'error', err.message);
+    return;
+  }
+  ++conversationGeneration;
+  // A new conversation clears the visible work, and forgets no project.
+  if (typeof clearCodeResults === 'function') clearCodeResults();
+  closeViewer(false);
+  await loadCodeConversations();
+  await loadCodeState(made.repo_id || null, { reset: true });
+}
+
+async function initializeCode() {
+  await loadCodeConversations();
+  if (codeConversations.length) {
+    await selectConversation(codeConversations[0].chat_id);
+  } else {
+    await newCodeConversation();
+  }
+}
+
+function wireConversationControls() {
+  const fresh = $('conv-new');
+  if (fresh) fresh.onclick = () => newCodeConversation();
+  const history = $('conv-history');
+  const list = $('conv-history-list');
+  if (history && list) {
+    history.onclick = () => {
+      const open = list.hidden;
+      list.hidden = !open;
+      history.setAttribute('aria-expanded', String(open));
+      if (open) renderConversationHead();
+    };
+  }
+  const close = $('viewer-close');
+  if (close) close.onclick = () => closeViewer();
+  const connect = $('connect-btn-nav');
+  if (connect && $('connect-btn')) {
+    connect.onclick = () => $('connect-btn').click();
+  }
+}
+
+/* ---- Execution 4C: where the work runs --------------------------------- */
+
+/* Chosen by the person, sent with the request, and recorded on the proposal.
+ * `this_device` never contacts the worker; `distributed` keeps the Kubernetes
+ * sandbox requirement exactly as it was. */
+let executionTarget = 'this_device';
+
+const TARGETS = [
+  { id: 'this_device', name: 'This device',
+    tag: 'local qwen, no sandbox tests' },
+  { id: 'distributed', name: 'Ubuntu worker',
+    tag: 'sandbox tested' },
+];
+
+function appendTargetChoices(box) {
+  appendChoiceGroup(box, 'Run on', TARGETS, executionTarget, (id) => {
+    executionTarget = id;
+  });
+  const note = document.createElement('p');
+  note.className = 'mp-note';
+  note.textContent = executionTarget === 'this_device'
+    ? 'Runs on the local model. Changes are reviewed here and written after '
+      + 'Refinix’s own checks — the Ubuntu sandbox tests do not run, and '
+      + 'Refinix keeps a copy of every file it replaces so you can undo it.'
+    : 'Generates on the paired Ubuntu worker and requires a passing sandbox '
+      + 'validation before any file is written.';
+  box.append(note);
+}

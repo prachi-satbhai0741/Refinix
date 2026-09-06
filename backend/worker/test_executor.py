@@ -1034,6 +1034,22 @@ class TestDuplicateAndPending(Base):
         self.assertIn("1-1", self.pending(),
                       "interrupted work was acknowledged and lost")
 
+    def test_sigterm_leaves_partial_work_pending_without_cancelling_it(self):
+        env = envelope()
+        self.deliver(env, "1-1")
+        checks = iter((False, True))
+        worker = executor_module.Executor(
+            self.session, node_id=NODE, stop_check=lambda: next(checks))
+
+        with patch.object(runtime, "stream_chat", fake_stream([
+                ("delta", "partial"), DONE_STOP])):
+            with self.assertRaises(executor_module.Stopped):
+                worker._handle("1-1", self.entry(env), recovered=False)
+
+        self.assertEqual(self.states(env.attempt_id), ["queued", "running"])
+        self.assertIn("1-1", self.pending(),
+                      "SIGTERM acknowledged work before another executor recovered it")
+
     def test_redis_recovering_after_a_failed_emit_does_not_ack(self):
         """The terminal event never reached the log, so no acknowledgement.
 
@@ -1172,6 +1188,14 @@ class TestPairingStore(unittest.TestCase):
         credential = self.pair()
         reopened = pairing_module.PairingStore(self.path)
         self.assertIsNotNone(reopened.authorise(RELATIONSHIP, credential))
+
+    def test_a_running_api_sees_a_code_minted_by_the_host_cli(self):
+        api = pairing_module.PairingStore(self.path)
+        cli = pairing_module.PairingStore(self.path)
+        code = cli.issue_code()
+        credential = api.redeem(code, relationship_id=RELATIONSHIP,
+                                workspace_id=WORKSPACE)
+        self.assertIsNotNone(api.authorise(RELATIONSHIP, credential))
 
     def test_the_fingerprint_matches_openssl_formatting(self):
         value = pairing_module.fingerprint(b"certificate-bytes")

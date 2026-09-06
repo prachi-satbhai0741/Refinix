@@ -87,29 +87,45 @@ def select(messages: list[dict], *, window: int, output_allowance: int):
     if not messages:
         return [], sel
 
+    system_count = 0
+    while (system_count < len(messages)
+           and messages[system_count]["role"] == "system"):
+        system_count += 1
+    required = messages[:system_count]
+    if system_count == len(messages):
+        used = sum(estimate_tokens(m["text"]) + PER_MESSAGE_OVERHEAD
+                   for m in required)
+        sel.included_ids = [m["message_id"] for m in required]
+        sel.estimated_input_tokens = used
+        sel.newest_fits = used <= budget
+        return ([{"role": m["role"], "content": m["text"]} for m in required], sel)
+
     newest = messages[-1]
-    newest_cost = estimate_tokens(newest["text"]) + PER_MESSAGE_OVERHEAD
+    newest_cost = (sum(estimate_tokens(m["text"]) + PER_MESSAGE_OVERHEAD
+                       for m in required)
+                   + estimate_tokens(newest["text"]) + PER_MESSAGE_OVERHEAD)
 
     if newest_cost > budget:
         sel.newest_fits = False
-        sel.omitted_ids = [m["message_id"] for m in messages[:-1]]
+        sel.omitted_ids = [m["message_id"] for m in messages[system_count:-1]]
         sel.omitted_count = len(sel.omitted_ids)
         sel.estimated_input_tokens = newest_cost
-        sel.included_ids = [newest["message_id"]]
+        sel.included_ids = [m["message_id"] for m in [*required, newest]]
         sel.note = (
             f"This message is about {newest_cost} tokens, larger than the "
             f"{budget}-token input budget for a {window}-token window. "
             "Shorten it or split it into parts."
         )
-        return [{"role": newest["role"], "content": newest["text"]}], sel
+        return [{"role": m["role"], "content": m["text"]}
+                for m in [*required, newest]], sel
 
     # Walk backwards in complete exchanges so an assistant reply always keeps
     # the user message it answered.
     chosen: list[dict] = [newest]
     used = newest_cost
     index = len(messages) - 2
-    while index >= 0:
-        if messages[index]["role"] == "assistant" and index >= 1:
+    while index >= system_count:
+        if messages[index]["role"] == "assistant" and index > system_count:
             pair = [messages[index - 1], messages[index]]
             step = 2
         else:
@@ -122,6 +138,7 @@ def select(messages: list[dict], *, window: int, output_allowance: int):
         used += cost
         index -= step
 
+    chosen = [*required, *chosen]
     kept = {m["message_id"] for m in chosen}
     sel.included_ids = [m["message_id"] for m in chosen]
     sel.omitted_ids = [m["message_id"] for m in messages if m["message_id"] not in kept]

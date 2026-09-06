@@ -249,7 +249,7 @@ class Executor:
             """Poll Redis at most once a second: cancellation must be prompt,
             but a per-token round trip would dominate generation time."""
             if self._stop_check():
-                return True
+                raise Stopped()
             if time.monotonic() >= deadline:
                 return True
             now = time.monotonic()
@@ -346,6 +346,8 @@ class Executor:
                     return "".join(produced), "cancelled"
                 elif kind == "done":
                     metrics = payload
+        except Stopped:
+            raise
         except Exception:                                      # noqa: BLE001
             failed = "the local model runtime failed"
 
@@ -372,6 +374,8 @@ class Executor:
             result = self.validator.run(
                 envelope, package_root=self.packages,
                 deadline_seconds=budget, should_cancel=should_cancel)
+        except Stopped:
+            raise
         except jobspec.ValidationUnavailable as exc:
             return "", f"sandbox validation is unavailable: {exc}"
         except Exception:                                      # noqa: BLE001
