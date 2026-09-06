@@ -22,6 +22,7 @@ Standard library only.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from unicodedata import category
@@ -65,6 +66,111 @@ class Passage:
     @property
     def citation(self) -> str:
         return f"{self.filename} p.{self.page}"
+
+
+# --------------------------------------------------------------------------
+# Where a passage actually is
+# --------------------------------------------------------------------------
+
+# What a location may be called for each format, and what it must never be
+# called. A PDF page is a real page. A line number in a PDF or a Word file is
+# not something this build can establish, so it is never printed for one.
+_CELL = re.compile(r"\b([A-Z]{1,3}[0-9]{1,7})\b")
+_ROW_LINE = re.compile(r"^row\s+([0-9]+):", re.M)
+_WORKSHEET = re.compile(r"^worksheet\s+(.+)$")
+
+WORD_PAGE_NOTE = (
+    "Word page numbers depend on the fonts, printer settings and application "
+    "used to open the file, so this build reports a paragraph reference rather "
+    "than a page it cannot establish.")
+
+
+def _suffix_of(filename: str) -> str:
+    return ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+
+
+def _line_span(page_text: str, passage_text: str) -> tuple[int, int] | None:
+    """The 1-based line range of `passage_text` inside `page_text`.
+
+    Returns None when the passage cannot be located exactly. A line number
+    that could not be found is reported as unavailable rather than estimated.
+    """
+    # A bounded passage carries ellipses where it was cut. They are not in the
+    # page, so searching for them would lose every windowed passage.
+    needle = (passage_text or "").strip().strip("…").strip()
+    if not needle or not page_text:
+        return None
+    index = page_text.find(needle)
+    if index < 0:
+        # FTS returns the stored page text, so an exact match is the normal
+        # case; a first-line match covers a passage that was bounded mid-way.
+        first = needle.splitlines()[0].strip()
+        index = page_text.find(first) if first else -1
+        if index < 0:
+            return None
+        needle = first
+    start = page_text.count("\n", 0, index) + 1
+    return start, start + needle.count("\n")
+
+
+def describe_location(passage, source: dict | None) -> dict:
+    """Where this passage is, in the units the format actually supports.
+
+    One shape for every format: `label` is what a person reads, `kind` is what
+    a check asserts, and `note` carries any limitation that applies. Nothing
+    here converts between units it cannot establish.
+    """
+    filename = passage.filename
+    suffix = _suffix_of(filename)
+    pages = (source or {}).get("pages") or []
+    page = next((p for p in pages if p.get("number") == passage.page), None)
+    page_text = (page or {}).get("text") or ""
+
+    if suffix == ".pdf":
+        return {"kind": "page", "label": f"page {passage.page}", "note": None}
+
+    if suffix == ".xlsx":
+        note = (page or {}).get("note") or ""
+        match = _WORKSHEET.match(note.strip())
+        sheet = match.group(1) if match else f"worksheet {passage.page}"
+        cells = _CELL.findall(passage.text or "")
+        rows = _ROW_LINE.findall(passage.text or "")
+        if cells:
+            where = (f"cell {cells[0]}" if len(cells) == 1
+                     else f"cells {cells[0]}–{cells[-1]}")
+        elif rows:
+            where = (f"row {rows[0]}" if len(rows) == 1
+                     else f"rows {rows[0]}–{rows[-1]}")
+        else:
+            where = "location within the sheet unavailable"
+        return {"kind": "cell", "label": f"{sheet}, {where}", "note": None}
+
+    if suffix == ".docx":
+        # A page number only when the file itself established one, which is
+        # what `page_count` records; otherwise a paragraph reference.
+        paragraphs = [line for line in page_text.splitlines() if line.strip()]
+        first = (passage.text or "").strip().splitlines()
+        index = None
+        if first:
+            for number, line in enumerate(paragraphs, start=1):
+                if first[0].strip() and first[0].strip() in line:
+                    index = number
+                    break
+        if (source or {}).get("page_count") and len(pages) > 1:
+            label = f"page {passage.page}"
+            if index is not None:
+                label += f", paragraph {index}"
+            return {"kind": "page", "label": label, "note": None}
+        label = (f"paragraph {index}" if index is not None
+                 else "paragraph reference unavailable")
+        return {"kind": "paragraph", "label": label, "note": WORD_PAGE_NOTE}
+
+    span = _line_span(page_text, passage.text)
+    if span is None:
+        return {"kind": "line", "label": "line number unavailable", "note": None}
+    start, end = span
+    label = f"line {start}" if start == end else f"lines {start}–{end}"
+    return {"kind": "line", "label": label, "note": None}
 
 
 # --------------------------------------------------------------------------

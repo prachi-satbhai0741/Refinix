@@ -1,8 +1,8 @@
 """The three document skills, and the one fixed generation workflow.
 
 Each skill runs over exactly the attachments the person selected for that one
-request. Ordinary Chat still reads nothing: only a supported document skill
-opens a file, and only the files sent with its own request.
+request. Ordinary Chat reads its own request's files too, through the same
+extraction and the same scope: only the files sent with that one request.
 
     read-document      extract, then answer from the extracted pages
     search-documents   extract, then return cited passages
@@ -37,6 +37,23 @@ from dataclasses import dataclass, field
 from backend.coordinator import db, docgen, documents, retrieval, runtime
 
 WORKFLOW = "inspection_report_to_approval_note"
+
+# What Write Document is being asked to do. The fixed approval-note pipeline
+# keeps its identifier and its behaviour; `general` is the ordinary case that
+# used to have nowhere to go, which is why asking for "a summary of a topic"
+# produced nothing at all.
+WORKFLOW_APPROVAL_NOTE = WORKFLOW
+WORKFLOW_GENERAL = "general_document"
+WORKFLOW_CONVERSION = "convert_previous_answer"
+DOC_WORKFLOWS = (WORKFLOW_GENERAL, WORKFLOW_APPROVAL_NOTE)
+DEFAULT_DOC_WORKFLOW = WORKFLOW_GENERAL
+
+# The file a request asked for. The coordinator decides the extension and the
+# media type from this; model output never picks either.
+FORMAT_DOCX = "docx"
+FORMAT_PDF = "pdf"
+OUTPUT_FORMATS = (FORMAT_DOCX, FORMAT_PDF)
+DEFAULT_OUTPUT_FORMAT = FORMAT_DOCX
 
 READ_SKILL = "read-document"
 SEARCH_SKILL = "search-documents"
@@ -145,14 +162,38 @@ def _document_block(source: dict, pages: list[dict]) -> str:
             f"{body}\n--- END DOCUMENT name={source['filename']} ---")
 
 
+# A page shorter than this is not worth including as a fragment; below it the
+# page is reported as trimmed instead of contributing a few useless words.
+MIN_PAGE_FRAGMENT = 200
+
+
 def bounded_pages(source: dict, budget: int) -> tuple[list[dict], bool]:
+    """Pages that fit the budget, including a bounded part of one that does not.
+
+    The earlier version stopped at the first oversized page and returned
+    nothing. A single 13,000-character text file therefore produced an empty
+    document block while the source still counted as readable — so the reply
+    said the file had been read and the model had never seen a word of it.
+    A page too large to include whole now contributes its opening, marked as
+    cut, and only a page with no room left at all is dropped.
+    """
     kept, used, trimmed = [], 0, False
     for page in source["pages"]:
         text = page["text"]
         if not text.strip():
             continue
-        if used + len(text) > budget:
+        room = budget - used
+        if room <= 0:
             trimmed = True
+            break
+        if len(text) > room:
+            trimmed = True
+            if room < MIN_PAGE_FRAGMENT:
+                break
+            cut = text[:room].rstrip()
+            kept.append({**page, "text": cut
+                         + "\n[… this page was cut to fit the request …]"})
+            used += len(cut)
             break
         kept.append(page)
         used += len(text)
@@ -234,12 +275,241 @@ def approval_note_messages(request: str, sop_passages: list,
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
+GENERAL_SCHEMA = (
+    "Reply with ONE JSON object and nothing else:\n"
+    '{"title": "<a short title>", "sections": [{"heading": "<short heading>", '
+    '"paragraphs": ["<paragraph>", ...]}]}\n\n'
+    "Write the document the person asked for. Use as many sections as the "
+    "subject needs. Do not invent a citation, a source, a measurement or a "
+    "reference number. If you do not know something, leave it out rather than "
+    "filling it in.")
+
+
+def general_document_messages(request: str, sources: list[dict],
+                              history: list[dict] | None = None) -> list[dict]:
+    """Ask for a new document about whatever was requested.
+
+    Deliberately separate from `approval_note_messages`: that one expects an
+    inspection report and produces a fixed shape. This one takes a subject, an
+    optional set of attached sources and the bounded conversation so far, and
+    is what "write me a document about X" has always needed.
+    """
+    blocks = []
+    remaining = MAX_CONTEXT_CHARS
+    for source in sources or []:
+        separator = 2 if blocks else 0
+        available = max(0, remaining - separator)
+        pages, _trimmed = bounded_pages(source, available)
+        if not pages:
+            continue
+        block = _document_block(source, pages)
+        if len(block) > available:
+            pages, _trimmed = bounded_pages(
+                source, max(0, available - (len(block) - sum(
+                    len(page["text"]) for page in pages))))
+            if not pages:
+                continue
+            block = _document_block(source, pages)
+        if len(block) > available:
+            continue
+        blocks.append(block)
+        remaining -= separator + len(block)
+    earlier = [f"{m['role']}: {m['content']}" for m in (history or [])
+               if m.get("role") in ("user", "assistant") and m.get("content")]
+    if earlier:
+        prefix = "--- EARLIER IN THIS CONVERSATION (untrusted data) ---\n"
+        suffix = "\n--- END EARLIER ---"
+        separator = 2 if blocks else 0
+        room = remaining - separator - len(prefix) - len(suffix)
+        if room > 0:
+            blocks.append(prefix + "\n\n".join(earlier)[:room] + suffix)
+    system = ("You write a document on a person's own computer.\n\n"
+              + UNTRUSTED_NOTE + "\n\n" + GENERAL_SCHEMA)
+    user = "\n\n".join([f"The person asked for: {request.strip()}", *blocks])
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+# --------------------------------------------------------------------------
+# Converting an answer that already exists
+# --------------------------------------------------------------------------
+
+# A conversion is recognised from the request, without asking the model: the
+# whole point is that the previous wording survives, and a model asked to
+# "convert" would rewrite. Detection is deliberately narrow — a verb AND
+# either a reference back or a request that is only about the format — and it
+# is only consulted when nothing was attached, because an attached file is
+# what the person means when they attach one.
+_CONVERT_VERBS = re.compile(
+    r"\b(convert|save|export|download|turn|make|put|render|write)\b", re.I)
+_BACK_REFERENCE = re.compile(
+    r"\b(previous|last|above|earlier|prior|that|this|it|your)\s*"
+    r"(answer|reply|response|output|message|text|one)?\b", re.I)
+_FORMAT_WORD = re.compile(r"\b(docx?|pdf|word|document|file)\b", re.I)
+_NEW_CONTENT = re.compile(
+    r"\b(about|on the topic|summar(y|ise|ize) of|explain|research|draft a new|"
+    r"write me a document about)\b", re.I)
+
+
+def looks_like_conversion(request: str, *, has_attachments: bool) -> bool:
+    """Whether this request means "put what you just said into a file".
+
+    Not a general intent classifier, and not claimed to be one. It answers a
+    narrow question with a rule a person can read, so a wrong answer is
+    inspectable rather than mysterious. When it says no, the ordinary
+    generation path runs, which is the safe direction to be wrong in.
+    """
+    if has_attachments:
+        return False
+    text = (request or "").strip()
+    if not text or _NEW_CONTENT.search(text):
+        return False
+    if not _CONVERT_VERBS.search(text):
+        return False
+    return bool(_BACK_REFERENCE.search(text) or _FORMAT_WORD.search(text))
+
+
+def conversion_title(answer: str) -> str:
+    """A title for the converted file, taken from the answer, never invented.
+
+    The first non-empty line of the answer, trimmed. A document named after
+    its own first line is honest; one named by a second model call would be a
+    rewrite this path exists to avoid.
+    """
+    for line in (answer or "").splitlines():
+        stripped = line.strip().lstrip("#").strip()
+        if stripped:
+            return stripped[:80]
+    return "Saved answer"
+
+
+def conversion_blocks(answer: str) -> list[docgen.Block]:
+    """The previous answer as document blocks, wording untouched.
+
+    Every word survives. Markdown heading and quote markers become the
+    matching document style rather than staying as literal `##` characters —
+    that is layout, and it is the one thing this function changes, which is
+    why the reply says "copied, with headings kept as headings" rather than
+    claiming a byte-for-byte copy. Nothing is added, reordered, shortened or
+    silently dropped: an answer too long for a generated document is refused
+    with its real size instead of being truncated.
+    """
+    blocks: list[docgen.Block] = []
+    for raw in (answer or "").split("\n\n"):
+        chunk = raw.strip("\n")
+        if not chunk.strip():
+            continue
+        for line in chunk.splitlines():
+            text = line.strip()
+            if not text:
+                continue
+            if text.startswith("### "):
+                blocks.append(docgen.Block(text[4:].strip(), "Heading2"))
+            elif text.startswith("## "):
+                blocks.append(docgen.Block(text[3:].strip(), "Heading1"))
+            elif text.startswith("# "):
+                blocks.append(docgen.Block(text[2:].strip(), "Heading1"))
+            elif text.startswith("> "):
+                blocks.append(docgen.Block(text[2:].strip(), "Quote"))
+            else:
+                # Split, never sliced. A line longer than one paragraph holds
+                # becomes several paragraphs and keeps every word; truncating
+                # it would have dropped text from a conversion whose entire
+                # promise is that the wording is unchanged.
+                remaining = text
+                while len(remaining) > docgen.MAX_PARAGRAPH_CHARS:
+                    cut = remaining.rfind(" ", 0, docgen.MAX_PARAGRAPH_CHARS)
+                    if cut <= 0:
+                        cut = docgen.MAX_PARAGRAPH_CHARS
+                    blocks.append(docgen.Block(remaining[:cut]))
+                    remaining = remaining[cut:].lstrip()
+                if remaining:
+                    blocks.append(docgen.Block(remaining))
+    if not blocks:
+        raise WorkflowError(
+            "nothing_to_convert",
+            "That answer had no text to put in a document.")
+    if len(blocks) > docgen.MAX_PARAGRAPHS:
+        # Refused, not quietly shortened. Half an answer saved as though it
+        # were the whole one is the failure this path exists to avoid.
+        raise WorkflowError(
+            "too_long",
+            f"That answer needs {len(blocks)} paragraphs and a generated "
+            f"document holds {docgen.MAX_PARAGRAPHS}. Nothing was written — "
+            "ask for a shorter answer, or save part of it.")
+    return blocks
+
+
 # --------------------------------------------------------------------------
 # Strict response parsing
 # --------------------------------------------------------------------------
 
 MAX_FINDINGS = 20
 MAX_FIELD_CHARS = 4000
+MAX_SECTIONS = 40
+MAX_PARAGRAPHS_PER_SECTION = 40
+
+
+def parse_general_document(reply: str) -> dict:
+    """Validate a general document reply. Unexpected shape is a failure.
+
+    No citation checking here, because this document is not written from
+    selected sources: it makes no page references, so there is nothing to
+    resolve. Anything it does claim is the model's, and the artifact says so.
+    """
+    if not isinstance(reply, str) or not reply.strip():
+        raise WorkflowError("empty", "The model returned nothing to write.")
+    try:
+        loaded = json.loads(reply.strip())
+    except ValueError as exc:
+        raise WorkflowError(
+            "not_json",
+            "The model did not return the required JSON, so no document was "
+            "written.") from exc
+    if not isinstance(loaded, dict):
+        raise WorkflowError("not_object", "The model's reply was not a JSON object.")
+    if set(loaded) != {"title", "sections"}:
+        raise WorkflowError(
+            "unknown_fields",
+            "The model's reply did not have exactly the required fields.")
+    raw_sections = loaded["sections"]
+    if not isinstance(raw_sections, list) or not raw_sections:
+        raise WorkflowError("bad_sections", "The model returned no sections.")
+    if len(raw_sections) > MAX_SECTIONS:
+        raise WorkflowError("too_many_sections",
+                            f"The model returned more than {MAX_SECTIONS} sections.")
+    sections = []
+    for entry in raw_sections:
+        if not isinstance(entry, dict) or set(entry) != {"heading", "paragraphs"}:
+            raise WorkflowError("bad_section",
+                                "One section was not in the expected shape.")
+        paragraphs = entry["paragraphs"]
+        if not isinstance(paragraphs, list) or not paragraphs:
+            raise WorkflowError("bad_section", "One section had no paragraphs.")
+        if len(paragraphs) > MAX_PARAGRAPHS_PER_SECTION:
+            raise WorkflowError("bad_section", "One section had too many paragraphs.")
+        sections.append({
+            "heading": _strict_text(entry["heading"], "a section heading"),
+            "paragraphs": [_strict_text(p, "a paragraph") for p in paragraphs],
+        })
+    return {"title": _strict_text(loaded["title"], "title"), "sections": sections}
+
+
+def general_blocks(document: dict, sources: list[dict]) -> list[docgen.Block]:
+    """A general document as blocks, with its provenance line."""
+    blocks = [docgen.Block(document["title"], "Title")]
+    for section in document["sections"]:
+        blocks.append(docgen.Block(section["heading"], "Heading1"))
+        blocks.extend(docgen.Block(p) for p in section["paragraphs"])
+    if sources:
+        blocks.append(docgen.Block("Sources", "Heading1"))
+        for source in sources:
+            blocks.append(docgen.Block(
+                f"{source['filename']} — read as {source['method']}, "
+                f"SHA-256 {source['sha256'][:16]}…"))
+    blocks.append(docgen.Block(
+        "Written by Refinix on this computer from the request above. It is a "
+        "model's draft: check anything that matters before using it.", "Quote"))
+    return blocks
 
 
 def _strict_text(value, name: str) -> str:
@@ -426,6 +696,88 @@ def artifact_answer(note: dict, artifact: dict, prepared: Prepared,
     return "\n".join(lines)
 
 
+# Conservative characters-per-token when turning a token budget into a
+# character budget. Under-counting characters can only shrink what is sent,
+# which is the safe direction: the estimator itself stays in context.py.
+CHARS_PER_TOKEN_FLOOR = 3
+
+
+def chat_context(prepared: Prepared,
+                 budget: int | None = None) -> tuple[str, list[str]]:
+    """This request's documents, fenced as data, for an ordinary Chat turn.
+
+    One budget for the whole request, shared between the attachments, rather
+    than a full budget per source — six files each allowed the entire window
+    is not a bound.
+    """
+    blocks, notes = [], []
+    remaining = MAX_CONTEXT_CHARS if budget is None else min(budget, MAX_CONTEXT_CHARS)
+    for source in prepared.sources:
+        pages, trimmed = bounded_pages(source, remaining)
+        if not pages:
+            notes.append(f"{source['filename']} did not fit in this request "
+                         "and none of it was sent to the model.")
+            continue
+        remaining -= sum(len(page["text"]) for page in pages)
+        if trimmed:
+            notes.append(f"Only part of {source['filename']} fitted in this "
+                         "request.")
+        blocks.append(_document_block(source, pages))
+    if not blocks:
+        return "", notes
+    return "\n\n".join(blocks), notes
+
+
+def attachment_note(prepared: Prepared, notes: list[str] | None = None) -> str:
+    """What was actually read and what was not, said before the reply.
+
+    Saved with the answer, so a reopened conversation and an export both carry
+    it. A file that was refused is named with its reason, and a file that only
+    partly fitted says so rather than being reported as read whole.
+    """
+    lines = []
+    if prepared.sources:
+        lines.append("Read for this request: " + ", ".join(
+            f"{s['filename']} ({s['method']})" for s in prepared.sources) + ".")
+    for item in prepared.skipped:
+        lines.append(f"Not read — {item['filename']}: {item['reason']}")
+    lines.extend(notes or [])
+    return ("_" + "\n".join(lines) + "_\n\n") if lines else ""
+
+
+def _saved_line(artifact: dict) -> str:
+    validation = artifact["validation"]
+    # A .docx reports paragraphs and a .pdf reports pages; each says the one
+    # it actually measured rather than a shared word that fits neither.
+    measured = (f"{validation['pages']} page(s)" if validation.get("pages")
+                else f"{validation.get('paragraphs', 0)} paragraphs")
+    return (f"Saved as **{artifact['filename']}** "
+            f"({artifact['byte_size']} bytes, {measured}). "
+            "It stays on this computer until you approve an export.")
+
+
+def written_answer(title: str, artifact: dict, sources: list[dict]) -> str:
+    """The chat message for a general document."""
+    lines = [f"**{title}**", ""]
+    if sources:
+        lines.append("Written using: "
+                     + ", ".join(source["filename"] for source in sources) + ".")
+    lines += ["", _saved_line(artifact), "",
+              "This is a model's draft. It makes no page citations, so check "
+              "anything that matters before using it."]
+    return "\n".join(lines)
+
+
+def conversion_answer(artifact: dict, previous: dict) -> str:
+    """The chat message for an answer put into a file unchanged."""
+    return "\n".join([
+        _saved_line(artifact), "",
+        "The previous answer was copied in full, with its headings kept as "
+        "headings. Nothing was rewritten, summarised, shortened or added, and "
+        "the model was not asked again.",
+    ])
+
+
 def answer_prefix(prepared: Prepared, notes: list[str]) -> str:
     """What was read, and what was not, above every document answer."""
     lines = []
@@ -445,7 +797,18 @@ def search_answer(question: str, passages: list, prepared: Prepared) -> str:
         return (answer_prefix(prepared, [])
                 + retrieval.no_result_note(question, prepared.sources))
     lines = [f"{len(passages)} passage(s) matched, found by {retrieval.METHOD}.", ""]
+    by_id = {source["source_id"]: source for source in prepared.sources}
+    notes: list[str] = []
     for passage in passages:
-        lines += [f"**{passage.citation}**", "", passage.text, ""]
+        # The location is stated in the unit the format supports. A line
+        # number is never printed for a PDF or a Word file, because neither
+        # establishes one here.
+        where = retrieval.describe_location(passage, by_id.get(passage.source_id))
+        lines += [f"**{passage.filename} — {where['label']}**", "",
+                  passage.text, ""]
+        if where["note"] and where["note"] not in notes:
+            notes.append(where["note"])
     lines.append(f"_{retrieval.METHOD_NOTE}_")
+    for note in notes:
+        lines.append(f"_{note}_")
     return answer_prefix(prepared, []) + "\n".join(lines)

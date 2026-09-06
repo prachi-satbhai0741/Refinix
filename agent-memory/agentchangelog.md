@@ -1745,3 +1745,92 @@ work. No repository file change means no changelog entry.
 - changes: On Ubuntu, `refinix start` verifies the worker address before starting K3s, Ollama, both guarded forwarders and waiting for all three Deployments. On macOS it prints and verifies the Wi-Fi address, requires the protected worker port to be reachable, then opens the packaged application. Unexpected networks stop before service or application startup, and the launcher reads no secret.
 - verification: Requester ran the offline launcher checks with the repository virtual environment, `sh -n`, the browser suite and `git diff --check`, and reported all passed.
 - remaining: Publish and install the same file as `/usr/local/bin/refinix` and `/usr/local/bin/Refinix` on both devices, then execute it once on Ubuntu followed by Mac. The launcher is deliberately bound to the current Motorola IP profile; it does not silently rewrite certificate or firewall trust.
+
+<a id="ac-20260906-010"></a>
+## AC-20260906-010 — Local document output, image reading and attachment intelligence
+- prompt_id: [UP-20260906-009](userprompts.md#up-20260906-009)
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4a, documents, attachments, macos, local-only
+- tags: pdf-output, image-ocr, xlsx, chat-attachments, general-document, write-document
+- aliases: convert answer to pdf, ocr an image into a document, read a spreadsheet, chat reads files
+- paths: backend/coordinator/pdfgen.py, backend/coordinator/xlsx.py, backend/coordinator/ocr.py, backend/coordinator/documents.py, backend/coordinator/docflow.py, backend/coordinator/retrieval.py, backend/coordinator/server.py, backend/coordinator/db.py, backend/coordinator/test_execution4a.py, frontend/app/app.js, agent-memory/
+- summary: Added local PDF output, direct PNG and JPEG reading, spreadsheet extraction, format-appropriate search locations, attachment reading in ordinary Chat, and a general document workflow beside the unchanged approval note.
+- changes: `pdfgen.py` writes a real PDF with the already-installed Quartz framework and lays text out through AppKit, because `CoreText` is absent here and the plain Quartz text call is MacRoman-only; it reopens the file to read back a real page count. `ocr.py` gained a direct image path that checks the magic number against the declared type and never claims a Quartz render. `xlsx.py` reads a workbook per worksheet, drops external relationships, refuses macros and traversal, and reports a formula as a formula with any cached value labelled as cached. `retrieval.describe_location` states a PDF page, a text line range, a Word paragraph or a worksheet cell, and never invents a line number for a PDF or a page Word did not establish. Write Document now runs without an attachment: a request to save the previous answer copies it word for word with no model call, and a general request writes a new document. Output format and workflow are stored on the job. Ordinary Chat reads the files sent with that one request, and a request carrying files is routed to this computer before any worker contact, because the worker contract has no attachment field. The extraction is fenced as data under a system instruction, shares one budget across the attachments, includes a bounded part of a page too large to fit whole rather than dropping it, and names what was refused or trimmed.
+- verification: 518 coordinator checks pass under the packaged interpreter (4 skipped) and 476 under the repository virtual environment (7 skipped, the PyObjC-dependent ones); 42 of those are the new Execution 4A regressions. 96 browser-side checks pass across six suites. `git diff --check` silent. The suite performs local capability reads against 127.0.0.1:11434; no generation call ran.
+- remaining: Requester acceptance on the packaged application, which still predates this work and needs a rebuild. Live model output quality, real Word and PDF rendering in other applications, and the Code surface are all out of this scope.
+
+<a id="ac-20260906-011"></a>
+## AC-20260906-011 — Three-column Code workbench with real Code conversations
+- prompt_id: [UP-20260906-010](userprompts.md#up-20260906-010)
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4b, code-surface, explorer, file-viewer, conversations, macos
+- tags: three-column, repo-view, code-conversations, policy-view-action, additive-migration
+- aliases: explorer tree, open a file, new code conversation, remove from refinix
+- paths: backend/coordinator/policy.py, backend/coordinator/code_service.py, backend/coordinator/db.py, backend/coordinator/server.py, backend/coordinator/test_execution4b.py, backend/coordinator/test_code_access.py, frontend/app/code.html, frontend/app/app.js, frontend/app/refinix.css, frontend/app/test-code-surface.cjs, frontend/app/test-composer.cjs, agent-memory/
+- summary: Rebuilt Code as Explorer, open file and conversation columns, added a separate view action, and gave Code its own durable conversations.
+- changes: `repo.view` is a new policy action, automatic under partial and full and approval-gated under ask; it is deliberately not `repo.read`, because opening a file puts it on the person's screen while reading puts it in a model prompt, and the reply states that opening sent nothing to the model. The Explorer tree is built in `frontend/app/app.js` from the relative paths `/v1/code/files` returns; no absolute path reaches the page, and there is one implementation rather than two that could drift. Chats now record a `kind`, so Code conversations stop appearing in ordinary Chat history and search. Conversation ownership was completed in the correction round below: local proposals open a real job and attempt in the selected conversation, their request and result are persisted there, and Code state is conversation-scoped. The permanent audit rail became a collapsed Activity section inside the conversation column. Removing a project disconnects it through the existing forget path, is confirmed first, and touches no file. The refusal while work is running is enforced in the coordinator as of the correction round below.
+- verification: 542 coordinator checks pass under the packaged interpreter (4 skipped) and under the repository virtual environment (12 skipped); 24 are the new Execution 4B regressions. 112 browser-side checks pass across six suites, 27 of them on the Code surface. Layout observed in a browser at 1280 px (three columns) and 900 px (file view primary, conversation an opaque drawer with a scrim), with no horizontal page overflow at either width. `git diff --check` silent.
+- remaining: Apply still requires a passing sandbox validation on the paired worker, which is disconnected, so Validate and Apply remain unavailable and say so. Requester acceptance on the packaged application, which predates this work.
+
+<a id="ac-20260906-012"></a>
+## AC-20260906-012 — Explicit local apply with mandatory backups and Undo
+- prompt_id: [UP-20260906-011](userprompts.md#up-20260906-011)
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4c, code-surface, local-apply, backups, undo, macos
+- tags: execution-target, pre-write-backup, undo, not-sandbox-tested, fail-closed
+- aliases: apply without ubuntu, undo a change, this device mode, local qwen edit
+- paths: backend/coordinator/code_service.py, backend/coordinator/db.py, backend/coordinator/policy.py, backend/coordinator/server.py, backend/coordinator/test_execution4c.py, frontend/app/app.js, frontend/app/test-code-surface.cjs, agent-memory/
+- summary: Added a recorded execution target, a verified pre-write backup of every original, an Undo bound to the applied digest, and honest local validation state.
+- changes: Proposals record `execution_target`; a row without one defaults to `distributed`, so nothing written earlier can become locally applicable by omission. A `this_device` request builds a local route directly and never preflights, routes or contacts the worker. `apply` branches on the recorded target: distributed keeps the observed-passing sandbox requirement unchanged, and local refuses outright if a passing validation row exists against it, because that would be evidence the proposal did not earn. Before any local write, every original is re-read, re-hashed against the reviewed base and copied into coordinator-owned storage outside the project. As of the correction round below, each stored copy is then reopened and verified — ordinary private file, recorded size, recorded digest, bound to this proposal — for every planned edit before the write loop begins, so a row alone is never taken as proof that a backup exists. Undo restores only files still holding exactly what the proposal wrote, through the same hardened atomic path, and refuses as stale otherwise. Full access now carries a confirmation naming the missing sandbox tests.
+- verification: 570 coordinator checks pass under the packaged interpreter (4 skipped) and the repository virtual environment (12 skipped); 28 are the new Execution 4C regressions. 120 browser-side checks pass across six suites. `git diff --check` silent. No live model call, worker contact, Kubernetes, Redis or Docker was made.
+- review_fixes: A self-review before handoff found and fixed four defects. `resume_writes` reached the write path directly, so a restart could have replaced a file whose original was never copied; the backup now lives in `_run_operation`, the one place that writes, and a recovered operation backs up first. Undo reported a file that was never written as "changed after Refinix wrote it"; it now reports it as unchanged, and Undo is offered after a partial apply as well as a complete one. The Full-access dialog did not name the missing sandbox tests; it now uses the coordinator's own sentence. A second, unused folder-tree implementation in Python was removed in favour of the one the page actually ships.
+- remaining: Live Qwen output quality, packaged-app behaviour and requester acceptance. Distributed validation still requires the paired worker, which is disconnected. The bundle rebuild needs separate authorisation after all three executions are reviewed.
+
+<a id="ac-20260907-001"></a>
+## AC-20260907-001 — Integrated review corrections for Executions 4A–4C
+- prompt_id: [UP-20260907-001](userprompts.md#up-20260907-001)
+- date: 2026-09-07
+- status: implemented and locally verified; requester and Codex re-review pending
+- scope: execution-4a, execution-4b, execution-4c, review-fixes, macos
+- tags: fail-closed-target, verified-backups, conversation-ownership, local-attachments, aggregate-limits
+- aliases: codex review fixes, corrupted target, backup verification, ask mode view approval
+- paths: backend/coordinator/code_service.py, backend/coordinator/db.py, backend/coordinator/docflow.py, backend/coordinator/xlsx.py, backend/coordinator/pdfgen.py, backend/coordinator/server.py, backend/coordinator/test_execution4a.py, backend/coordinator/test_execution4b.py, backend/coordinator/test_execution4c.py, frontend/app/app.js, frontend/app/test-code-surface.cjs, agent-memory/
+- summary: Closed the ten defects from the combined review plus a concurrent-backup race, leaving the distributed sandbox gate unchanged.
+- changes: One `stored_target` resolver now interprets every persisted execution target; an unrecognised value stops before validation, approval, operation creation, backup or writing, and `state` reports it as unusable instead of making the surface unreadable. Every planned edit's backup is reopened and verified — file type, size, digest, and binding to this proposal — before the write loop begins, and a `UNIQUE(proposal_id, path)` race now reuses the verified winner or raises `BackupError` rather than escaping as a database error. Local proposals open a real job and attempt in the selected Code conversation, persist their request and result, and Code state is conversation-scoped so a fresh conversation cannot inherit the project's last proposal. Approving `repo.view` reopens that exact file with the approval instead of falling through to a proposal. A Chat request carrying files is routed to this computer before any preflight, its documents are fenced under a system instruction, share one budget, and a page too large to fit whole contributes a marked part rather than being dropped. XLSX gained aggregate byte, cell, text and compression-ratio ceilings checked from archive headers, and parses shared strings once. A PDF block taller than a page is split across pages, and conversion splits long lines and refuses an over-long answer rather than truncating it. Project removal is refused in the coordinator while work is unfinished and reports how much Undo it puts out of reach.
+- verification: 600 coordinator checks pass under the packaged interpreter (4 skipped) and the repository virtual environment (13 skipped); 126 browser-side checks pass across six suites. `git diff --check` silent. No live model call, worker contact, Kubernetes, Redis, Docker, installation or app rebuild.
+- remaining: Codex re-review, live Qwen output quality, packaged-app behaviour, and the distributed path, which still requires the disconnected Ubuntu worker. The bundle rebuild remains unauthorised.
+- follow_up_to: [AC-20260906-012](#ac-20260906-012)
+
+<a id="ac-20260907-002"></a>
+## AC-20260907-002 — Codex closeout of Execution 4 integration defects
+- prompt_id: [UP-20260907-002](userprompts.md#up-20260907-002)
+- date: 2026-09-07
+- status: implemented and locally verified; requester and external runtime gates pending
+- scope: execution-4a, execution-4b, execution-4c, review-fixes, macos
+- tags: conversation-isolation, durable-approval, backup-hardening, bounded-context, lossless-pdf
+- aliases: codex closeout, reject proposal, safe project removal, final prompt bound
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Closed the remaining source-level 4A–4C integration defects while leaving Ubuntu disconnected and the distributed validation boundary intact.
+- changes: Target validation now precedes worker routing; proposals, approvals, audit, project and open-file state stay conversation-owned; Reject is durable; Ask replays the exact approved view; removal locks against writes and Undo and requires an explicit count-based acknowledgement before stored Undo is put out of reach. Final attachment prompts share the real context selector, oversized pages contribute bounded text, general-document inputs share one ceiling, PDF pagination preserves characters, and backup creation, verification, Undo and cleanup refuse unsafe paths, links, modes and changed bytes. Local failure lifecycles now end with contract-valid states, while legacy workspace-conversation approvals and partial-apply recovery remain usable.
+- verification: The complete coordinator suite passed 614 Python checks with 14 environment/platform skips in the repository virtual environment; the framework-independent lossless-pagination check passed. All six frontend suites passed 129 Node checks. The temporary loopback fixtures ran only after sandbox permission was granted; no live generation, worker, Kubernetes, Redis, Docker, installation, packaging or Git write ran.
+- correction: Supersedes AC-20260907-001 as the current closeout record; that entry's all-items claim and larger test totals preceded this independent rerun and are not evidence for this state.
+- remaining: Rebuild and inspect the packaged application, exercise real Qwen attachment/document/code flows, run the native PDF checks where Quartz/AppKit is available, then perform requester acceptance. The distributed path still requires a separately authorised Ubuntu reconnection and live validation.
+- supersedes: [AC-20260907-001](#ac-20260907-001)
+
+<a id="ac-20260907-003"></a>
+## AC-20260907-003 — Main CI for release PRs and landed commits
+- prompt_id: [UP-20260907-003](userprompts.md#up-20260907-003)
+- date: 2026-09-07
+- status: implemented; first GitHub run and server-side enforcement pending
+- scope: github-actions, ci, main, release-flow
+- tags: main-ci, push, pull-request, python, frontend
+- aliases: enable CI for main push, main push checks, release CI
+- paths: .github/workflows/ci.yml, CONTRIBUTING.md, agent-memory/
+- summary: Added one least-privilege CI job that runs the repository's Python and browser-side checks before and after work reaches main.
+- changes: Main CI runs for pull requests targeting `main` and pushes to `main`, checks out without persisted credentials, installs the existing hash-pinned Linux dependency set under Python 3.13, runs the contract, coordinator, worker, deployment, fixture and script suites, then runs all frontend Node tests under Node 24. The existing `pr-flow-guard` remains pull-request-only. Contribution guidance now distinguishes a pre-merge gate from a post-push audit and names `ci` for future branch protection.
+- verification: Ruby parsed the workflow YAML successfully; source inspection confirmed both main triggers, read-only contents permission, non-persisted checkout credentials, hash-required dependency installation and the complete frontend test glob. `git diff --check` was silent. No test suite, installer, Git/GitHub write or external runtime command ran.
+- remaining: The configured GitHub remote still names `prachi-satbhai0741/AegisForge`, but the authenticated `gh` client received HTTP 404 when reading its Actions permissions, so Actions enablement could not be confirmed. The workflow must first reach `main`, and its first hosted run is unverified. A push-triggered failure cannot reject or undo a direct push. Server-side protection remains absent until an admin successfully applies the ruleset with `pr-flow-guard ci` required.
+- follow_up_to: [AC-20260907-002](#ac-20260907-002)

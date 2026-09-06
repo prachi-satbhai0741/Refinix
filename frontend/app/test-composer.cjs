@@ -109,6 +109,7 @@ function page({ bridge } = {}) {
     notice = (...a) => notices.push(a);
     renderMarkdown = (box, text) => { box.textContent = text; };
     confirmDialog = async () => true;
+    codeConversation = 'test-conversation';
   `, scope);
   const run = (code) => vm.runInContext(code, scope);
   const json = (code) => JSON.parse(JSON.stringify(run(code)));
@@ -149,8 +150,12 @@ test('the access selector lives in the composer, beside +', () => {
 });
 
 test('the audit history is behind Details, not in the work area', () => {
+  // Execution 4B moved the conversation into the right column. The audit is
+  // still there and still collapsed — removing the panel must not remove the
+  // record it held.
   const rail = codeHtml.slice(codeHtml.indexOf('<aside'));
   assert.match(rail, /id="audit-list"/);
+  assert.match(rail, /<details[\s\S]*?id="audit-list"/);
   assert.match(codeHtml, /id="rail-toggle"[\s\S]*?Details/);
 });
 
@@ -177,7 +182,8 @@ test('Code file loading is not gated by a removed dashboard element', () => {
 
 test('the attachment notice describes the selected document skill truthfully', () => {
   assert.doesNotMatch(source, /cannot read documents yet/);
-  assert.match(source, /Plain Chat saved them[\s\S]*did not read them/);
+  assert.match(source, /Plain Chat reads only the files sent with this request/);
+  assert.doesNotMatch(source, /Plain Chat saved them[\s\S]*did not read them/);
 });
 
 test('artifact approval ids travel in a POST body, not a logged URL', () => {
@@ -386,6 +392,9 @@ test('connecting a folder uses the native dialog and never a typed path', async 
 
   const connecting = p.run('connectRepository()');
   await tick();
+  p.requests.shift().reply({ chat_id: 'test-conversation', repo_id: 'repo-b',
+                             open_path: null });
+  await tick();
   p.requests.shift().reply(stateBody('repo-b'));
   await tick();
   if (p.requests.length) p.requests.shift().reply({ files: [] });
@@ -512,4 +521,43 @@ test('model choices fill the three grid columns instead of the tick column', () 
                    ['mp-tick', 'mp-model-name', 'mp-tag']);
   assert.equal(selected.children[1].textContent, 'qwen3.5:4b-q4_K_M');
   assert.equal(selected.getAttribute('aria-checked'), 'true');
+});
+
+test('Write Document offers an explicit Word or PDF choice', () => {
+  const p = page();
+  p.run(`appendDocumentChoices(document.body);`);
+  const groups = p.document.body.children.filter(
+    (node) => node.className === 'mp-choices');
+  assert.equal(groups.length, 2, 'a format group and a workflow group');
+  const [format, workflow] = groups;
+  assert.equal(format.getAttribute('aria-label'), 'Save as');
+  assert.equal(workflow.getAttribute('aria-label'), 'Workflow');
+  const names = (group) => group.children[1].children.map(
+    (row) => row.children[1].textContent);
+  assert.deepEqual(names(format), ['Word (.docx)', 'PDF (.pdf)']);
+  assert.deepEqual(names(workflow),
+                   ['General document', 'Inspection approval note']);
+});
+
+test('the document choices start on Word and the general workflow', () => {
+  const p = page();
+  p.run(`appendDocumentChoices(document.body);`);
+  const groups = p.document.body.children.filter(
+    (node) => node.className === 'mp-choices');
+  const checked = (group) => group.children[1].children
+    .filter((row) => row.getAttribute('aria-checked') === 'true')
+    .map((row) => row.children[1].textContent);
+  assert.deepEqual(checked(groups[0]), ['Word (.docx)']);
+  assert.deepEqual(checked(groups[1]), ['General document']);
+});
+
+test('the document choices travel with the request, not just the page', () => {
+  assert.match(source,
+    /output_format: skill\?\.id === 'write-document' \? outputFormat : undefined/,
+    'the chosen format is submitted with the request');
+  assert.match(source,
+    /doc_workflow: skill\?\.id === 'write-document' \? docWorkflow : undefined/,
+    'the chosen workflow is submitted with the request');
+  assert.match(source, /appendDocumentChoices\(box\)/,
+    'the choices are offered where the model is chosen');
 });

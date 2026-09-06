@@ -45,8 +45,16 @@
       </a>
     </div>
     <div class="nav-list">
-      <p class="lbl nav-list-h">Projects</p>
-      <div id="repo-list"></div>
+      <div class="explorer-head">
+        <p class="lbl nav-list-h">Explorer</p>
+        <button class="round-btn round-btn-sm" type="button" id="connect-btn-nav"
+                title="Connect a project folder"
+                aria-label="Connect a project folder">+</button>
+      </div>
+      <!-- Projects and their files. The tree is built from the relative paths
+           the coordinator returns; no absolute path ever reaches this page. -->
+      <div class="explorer" id="explorer" role="tree"
+           aria-label="Projects and files"></div>
     </div>
     <div class="nav-foot">
       <a class="nav-secondary" href="/control.html">
@@ -110,6 +118,50 @@
 
     <div id="notices" role="status" aria-live="polite"></div>
 
+    <!-- Centre column: the open file. One file at a time, read only in this
+         phase. Contents arrive through the coordinator's bounded repository
+         boundary, so this page holds a relative path and never a real one. -->
+    <div class="viewer" id="viewer">
+      <div class="viewer-tabs" id="viewer-tabs" role="tablist"
+           aria-label="Open file" hidden>
+        <div class="viewer-tab" id="viewer-tab" role="tab" aria-selected="true"
+             tabindex="0">
+          <span class="viewer-tab-name" id="viewer-tab-name"></span>
+          <button class="viewer-tab-close" type="button" id="viewer-close"
+                  aria-label="Close file">×</button>
+        </div>
+      </div>
+      <p class="viewer-crumb" id="viewer-crumb" hidden></p>
+      <div class="viewer-body" id="viewer-body">
+        <p class="viewer-empty" id="viewer-empty">
+          Choose a project in the Explorer, then open a file to read it here.
+          Opening a file does not send it to the model.
+        </p>
+      </div>
+    </div>
+
+  </main>
+
+  <aside class="rail rail-conversation" id="rail" aria-label="Code conversation">
+    <header class="conv-head">
+      <h2 class="conv-title" id="conv-title">Code conversation</h2>
+      <button class="panel-toggle" type="button" id="conv-new"
+              title="New conversation" aria-label="New conversation">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M8 3.4v9.2M3.4 8h9.2"/>
+        </svg>
+      </button>
+      <button class="panel-toggle" type="button" id="conv-history"
+              aria-haspopup="dialog" aria-expanded="false"
+              title="Conversation history" aria-label="Conversation history">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <circle cx="8" cy="8" r="5.4"/>
+          <path d="M8 5.2V8l2 1.4"/>
+        </svg>
+      </button>
+    </header>
+    <div class="conv-history" id="conv-history-list" role="dialog"
+         aria-label="Code conversations" hidden></div>
     <!-- Results are chronological, like a conversation. There are no permanent
          Access mode / Proposed change / What Refinix did dashboard panels:
          access lives in the composer, proposals and diffs arrive here as
@@ -191,14 +243,14 @@
         </div>
       </div>
     </form>
-  </main>
-
-  <aside class="rail" id="rail">
-    <section class="rail-sec">
-      <span class="lbl">Advanced — what Refinix did</span>
-      <ul class="cap-list" id="audit-list"></ul>
-    </section>
-    <section class="rail-sec">
+    <!-- The permanent audit panel is gone, but its evidence is not. Activity
+         stays reachable here, collapsed, alongside the actions no mode
+         enables. Removing the panel must not remove the record. -->
+    <section class="rail-sec conv-activity">
+      <details class="quiet">
+        <summary class="lbl">Activity — what Refinix did</summary>
+        <ul class="cap-list" id="audit-list"></ul>
+      </details>
       <details class="quiet">
         <summary class="lbl">Not available in any mode</summary>
         <ul class="cap-list" id="unavailable-list"></ul>

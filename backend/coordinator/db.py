@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import stat
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -22,7 +24,7 @@ from unicodedata import category
 
 from backend.contracts import v1
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # ponytail: one coordinator database; use per-database locks if hosting several.
 LOCK = threading.RLock()
@@ -47,7 +49,8 @@ CREATE TABLE IF NOT EXISTS chats (
     title        TEXT NOT NULL,
     pinned       INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
+    updated_at   TEXT NOT NULL,
+    open_path    TEXT
 );
 -- Unsent drafts are workspace-owned local state, never model input and never
 -- part of search or export. The NEW_CHAT_DRAFT slot holds a draft typed before
@@ -113,8 +116,8 @@ CREATE TABLE IF NOT EXISTS events (
     UNIQUE (job_id, sequence)
 );
 CREATE INDEX IF NOT EXISTS events_by_job ON events(job_id, sequence);
--- Files the user selected for a request. Execution 1 stores and describes them;
--- nothing reads their contents, so `state` never claims more than `received`.
+-- Files the user selected for a request. Intake stores them as `received`;
+-- a request-scoped local reader may later extract them.
 -- chat_id carries the NEW_CHAT_DRAFT slot before a conversation exists, so it
 -- deliberately has no foreign key.
 CREATE TABLE IF NOT EXISTS attachments (
@@ -221,6 +224,7 @@ CREATE TABLE IF NOT EXISTS approvals (
     approval_id   TEXT PRIMARY KEY,
     workspace_id  TEXT NOT NULL,
     repo_id       TEXT NOT NULL,
+    conversation_id TEXT,
     proposal_id   TEXT,
     action        TEXT NOT NULL,
     target        TEXT NOT NULL,
@@ -244,6 +248,29 @@ CREATE INDEX IF NOT EXISTS approvals_by_repo ON approvals(repo_id, requested_at)
 -- This table is what a restart resumes. `approval_id` is UNIQUE, so a
 -- double-click or a retried request cannot create a second operation for one
 -- decision.
+-- Execution 4C. One row per original file kept before a local, unvalidated
+-- write, so Undo can restore exactly what was there. Bound to the proposal
+-- digest as well as the path: a backup must never be usable to restore a
+-- file that some other proposal changed.
+CREATE TABLE IF NOT EXISTS write_backups (
+    backup_id     TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL,
+    repo_id       TEXT NOT NULL,
+    conversation_id TEXT,
+    proposal_id   TEXT NOT NULL,
+    proposal_digest TEXT NOT NULL,
+    operation_id  TEXT,
+    path          TEXT NOT NULL,
+    original_sha256 TEXT NOT NULL,
+    proposed_sha256 TEXT NOT NULL,
+    stored_name   TEXT NOT NULL,
+    byte_size     INTEGER NOT NULL,
+    state         TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    UNIQUE(proposal_id, path)
+);
+CREATE INDEX IF NOT EXISTS backups_by_proposal
+    ON write_backups(proposal_id, state);
 CREATE TABLE IF NOT EXISTS write_operations (
     operation_id  TEXT PRIMARY KEY,
     workspace_id  TEXT NOT NULL,
@@ -284,6 +311,7 @@ CREATE TABLE IF NOT EXISTS code_audit (
     audit_id     TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
     repo_id      TEXT,
+    conversation_id TEXT,
     action       TEXT NOT NULL,
     outcome      TEXT NOT NULL,
     mode         TEXT,
@@ -401,10 +429,42 @@ def connect(path: Path) -> sqlite3.Connection:
         conn.execute("ALTER TABLE attempts ADD COLUMN metrics_json TEXT")
     if "selection_json" not in existing:
         conn.execute("ALTER TABLE attempts ADD COLUMN selection_json TEXT")
-    if "skill_id" not in {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}:
+    chat_columns = {r["name"] for r in conn.execute("PRAGMA table_info(chats)")}
+    if "kind" not in chat_columns:
+        # Which surface a conversation belongs to. Everything that existed
+        # before this column was an ordinary Chat, except the one workspace
+        # Code conversation, which is relabelled below by its recorded id
+        # rather than by matching its title.
+        conn.execute("ALTER TABLE chats ADD COLUMN kind TEXT NOT NULL"
+                     " DEFAULT 'chat'")
+        recorded = conn.execute(
+            "SELECT value FROM meta WHERE key='code_chat_id'").fetchone()
+        if recorded:
+            conn.execute("UPDATE chats SET kind='code' WHERE chat_id=?",
+                         (recorded["value"],))
+    if "repo_id" not in chat_columns:
+        # The project a Code conversation was working in, when there was one.
+        # Older Code history keeps NULL: nothing recorded a project for it, so
+        # nothing is guessed now.
+        conn.execute("ALTER TABLE chats ADD COLUMN repo_id TEXT")
+    if "open_path" not in chat_columns:
+        conn.execute("ALTER TABLE chats ADD COLUMN open_path TEXT")
+
+    job_columns = {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}
+    if "skill_id" not in job_columns:
         # Which capability a request ran under. Older jobs keep NULL, meaning
         # ordinary Chat, rather than being relabelled.
         conn.execute("ALTER TABLE jobs ADD COLUMN skill_id TEXT")
+    if "output_format" not in job_columns:
+        # Which file a Write Document request asked for. NULL means the job
+        # predates the choice; the reader treats that as the docx default
+        # rather than claiming a PDF was ever offered.
+        conn.execute("ALTER TABLE jobs ADD COLUMN output_format TEXT")
+    if "doc_workflow" not in job_columns:
+        # General document, or the fixed inspection approval note. NULL means
+        # the job predates the choice, and those jobs all ran the fixed
+        # workflow, so that is what a reopened conversation reports.
+        conn.execute("ALTER TABLE jobs ADD COLUMN doc_workflow TEXT")
     if "relationship_id" not in existing:
         # Which paired relationship an attempt ran through. NULL means local,
         # which is what every attempt before C06 actually was.
@@ -414,6 +474,15 @@ def connect(path: Path) -> sqlite3.Connection:
         # attempts keep NULL rather than being back-filled with a guess.
         conn.execute("ALTER TABLE attempts ADD COLUMN reasoning_json TEXT")
     proposal_columns = {r["name"] for r in conn.execute("PRAGMA table_info(proposals)")}
+    if "execution_target" not in proposal_columns:
+        # Where this proposal was generated and where it may be applied. Rows
+        # written before the choice existed all came from the distributed
+        # path, and that is the strict one, so defaulting them there fails
+        # closed: an old proposal can never become locally applicable by
+        # having no recorded target.
+        conn.execute(
+            "ALTER TABLE proposals ADD COLUMN execution_target TEXT NOT NULL"
+            " DEFAULT 'distributed'")
     if "selection_json" not in proposal_columns:
         conn.execute(
             "ALTER TABLE proposals ADD COLUMN selection_json TEXT NOT NULL DEFAULT '[]'")
@@ -428,9 +497,13 @@ def connect(path: Path) -> sqlite3.Connection:
     # readable and simply records no workflow binding — which is the truth
     # about it, rather than a back-filled guess.
     approval_columns = {r["name"] for r in conn.execute("PRAGMA table_info(approvals)")}
-    for column in ("workflow_id", "job_id", "step_id", "attempt_id"):
+    for column in ("workflow_id", "job_id", "step_id", "attempt_id",
+                   "conversation_id"):
         if column not in approval_columns:
             conn.execute(f"ALTER TABLE approvals ADD COLUMN {column} TEXT")
+    audit_columns = {r["name"] for r in conn.execute("PRAGMA table_info(code_audit)")}
+    if "conversation_id" not in audit_columns:
+        conn.execute("ALTER TABLE code_audit ADD COLUMN conversation_id TEXT")
     # Full-text search is created only where this SQLite build has FTS5. Its
     # absence disables document search and says so; it never fails a startup.
     try:
@@ -611,12 +684,12 @@ def search(conn, term: str, limit: int = 40) -> list[dict]:
         SELECT c.chat_id, c.title, c.pinned, c.updated_at,
                'title' AS field, c.title AS snippet, NULL AS message_id
           FROM chats c
-         WHERE c.title LIKE ? ESCAPE '\\'
+         WHERE c.title LIKE ? ESCAPE '\\' AND c.kind = 'chat'
         UNION ALL
         SELECT c.chat_id, c.title, c.pinned, m.created_at,
                m.role AS field, m.text AS snippet, m.message_id
           FROM messages m JOIN chats c ON c.chat_id = m.chat_id
-         WHERE m.text LIKE ? ESCAPE '\\'
+         WHERE m.text LIKE ? ESCAPE '\\' AND c.kind = 'chat'
          ORDER BY updated_at DESC
          LIMIT ?
         """,
@@ -744,10 +817,8 @@ def export_chat(conn, chat_id: str, fmt: str = "md") -> tuple[str, str]:
 # --------------------------------------------------------------------------
 # Attachments
 #
-# Execution 1 establishes intake only. The bytes are stored so a later
-# execution has something real to read, and nothing in this file or in the
-# runtime path opens them. An attachment is described to the user as
-# `received`, never as understood.
+# Intake stores the bytes; request-scoped document readers decide whether they
+# can extract them. `received` never by itself means understood.
 # --------------------------------------------------------------------------
 
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
@@ -1093,23 +1164,111 @@ def forget_repository(conn, repo_id: str, workspace_id: str) -> bool:
     if row is None:
         return False
     with conn:
+        conn.execute(
+            "UPDATE approvals SET decision='denied', actor_id='coordinator',"
+            " decided_at=? WHERE repo_id=? AND workspace_id=?"
+            " AND decision='pending'", (now(), repo_id, workspace_id))
         conn.execute("DELETE FROM repositories WHERE repo_id=?", (repo_id,))
     return True
 
 
 CODE_CHAT_TITLE = "Code activity"
+CHAT_KIND = "chat"
+CODE_KIND = "code"
+
+
+@serialized
+def create_code_conversation(conn, workspace_id: str, *, title: str,
+                             repo_id: str | None = None) -> dict:
+    """One durable Code conversation.
+
+    Code work is no longer poured into a single workspace-level conversation.
+    Each one owns its own jobs, attempts, proposals and approvals through the
+    ordinary `chat_id` foreign key, so isolation between conversations is the
+    same isolation the rest of the system already has, not a second mechanism
+    that could disagree with it.
+    """
+    chat_id, stamp = new_id(), now()
+    clean = (title or "").strip()[:120] or "Code conversation"
+    with conn:
+        conn.execute(
+            "INSERT INTO chats(chat_id, workspace_id, title, pinned, created_at,"
+            " updated_at, kind, repo_id) VALUES (?,?,?,?,?,?,?,?)",
+            (chat_id, workspace_id, clean, 0, stamp, stamp, CODE_KIND, repo_id))
+    return {"chat_id": chat_id, "title": clean, "repo_id": repo_id,
+            "created_at": stamp, "updated_at": stamp}
+
+
+def code_conversations(conn, workspace_id: str, limit: int = 100) -> list[dict]:
+    """Code conversations only, newest first.
+
+    A project that was disconnected stays named as unavailable rather than
+    being resolved or dropped: the conversation really did happen in it, and
+    reopening the history must not quietly reconnect the folder.
+    """
+    rows = conn.execute(
+        "SELECT c.chat_id, c.title, c.repo_id, c.open_path, c.created_at, c.updated_at,"
+        "       r.name AS repo_name"
+        "  FROM chats c LEFT JOIN repositories r"
+        "    ON r.repo_id = c.repo_id AND r.workspace_id = c.workspace_id"
+        " WHERE c.workspace_id = ? AND c.kind = ?"
+        " ORDER BY c.updated_at DESC LIMIT ?",
+        (workspace_id, CODE_KIND, limit)).fetchall()
+    return [{
+        "chat_id": row["chat_id"], "title": row["title"],
+        "repo_id": row["repo_id"], "open_path": row["open_path"],
+        "repo_name": row["repo_name"],
+        "project_available": bool(row["repo_id"]) and row["repo_name"] is not None,
+        "created_at": row["created_at"], "updated_at": row["updated_at"],
+    } for row in rows]
+
+
+@serialized
+def code_conversation(conn, chat_id: str, workspace_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT c.chat_id, c.title, c.repo_id, c.open_path, c.created_at,"
+        " c.updated_at, r.name AS repo_name FROM chats c"
+        " LEFT JOIN repositories r ON r.repo_id=c.repo_id"
+        " AND r.workspace_id=c.workspace_id WHERE c.chat_id=?"
+        " AND c.workspace_id=? AND c.kind=?",
+        (chat_id, workspace_id, CODE_KIND)).fetchone()
+    if row is None:
+        return None
+    return {"chat_id": row["chat_id"], "title": row["title"],
+            "repo_id": row["repo_id"], "open_path": row["open_path"],
+            "repo_name": row["repo_name"],
+            "project_available": bool(row["repo_id"]) and row["repo_name"] is not None,
+            "created_at": row["created_at"], "updated_at": row["updated_at"]}
+
+
+def set_conversation_repo(conn, chat_id: str, workspace_id: str,
+                          repo_id: str | None) -> None:
+    """Bind a Code conversation to the project it is working in."""
+    with conn:
+        conn.execute(
+            "UPDATE chats SET repo_id=?, open_path=NULL, updated_at=? WHERE chat_id=? AND"
+            " workspace_id=? AND kind=?",
+            (repo_id, now(), chat_id, workspace_id, CODE_KIND))
+
+
+@serialized
+def set_conversation_open_path(conn, chat_id: str, workspace_id: str,
+                               open_path: str | None) -> None:
+    """Remember only the relative file shown in one Code conversation."""
+    with conn:
+        conn.execute(
+            "UPDATE chats SET open_path=?, updated_at=? WHERE chat_id=? AND"
+            " workspace_id=? AND kind=?",
+            (open_path, now(), chat_id, workspace_id, CODE_KIND))
 
 
 @serialized
 def code_chat(conn, workspace_id: str) -> str:
-    """The one conversation Code jobs belong to, created on first use.
+    """The legacy workspace Code conversation, created on first use.
 
-    The shared `Job` record requires a `chat_id`, and a Code request has no
-    conversation of its own. Rather than weaken the contract or invent a null,
-    the Code surface gets one durable workspace-level conversation: its job,
-    attempt and event history is then readable through exactly the same
-    surfaces as everything else, instead of living somewhere only Code knows
-    how to read.
+    Named Code conversations own new work. This one remains as the truthful
+    owner for jobs and approvals created before that choice existed, rather
+    than back-filling old history with a conversation it never recorded.
     """
     row = conn.execute("SELECT value FROM meta WHERE key='code_chat_id'").fetchone()
     if row:
@@ -1122,8 +1281,8 @@ def code_chat(conn, workspace_id: str) -> str:
     with conn:
         conn.execute(
             "INSERT INTO chats(chat_id, workspace_id, title, pinned, created_at,"
-            " updated_at) VALUES (?,?,?,?,?,?)",
-            (chat_id, workspace_id, CODE_CHAT_TITLE, 0, stamp, stamp))
+            " updated_at, kind) VALUES (?,?,?,?,?,?,?)",
+            (chat_id, workspace_id, CODE_CHAT_TITLE, 0, stamp, stamp, CODE_KIND))
         conn.execute(
             "INSERT INTO meta(key, value) VALUES ('code_chat_id', ?)"
             " ON CONFLICT(key) DO UPDATE SET value=excluded.value", (chat_id,))
@@ -1135,15 +1294,20 @@ def code_chat(conn, workspace_id: str) -> str:
 @serialized
 def create_proposal(conn, *, workspace_id, repo_id, job_id, attempt_id,
                     request: str, summary: str, digest: str, edits: list[dict],
-                    selection: list[dict] | None = None) -> dict:
+                    selection: list[dict] | None = None,
+                    execution_target: str = "distributed") -> dict:
+    """One reviewable proposal. `execution_target` is recorded, never inferred:
+    a proposal generated here may only be applied here, and one generated for
+    the worker keeps the sandbox requirement it was made under."""
     proposal_id, stamp = new_id(), now()
     with conn:
         conn.execute(
             "INSERT INTO proposals(proposal_id, workspace_id, repo_id, job_id,"
-            " attempt_id, request, summary, digest, selection_json, state, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            " attempt_id, request, summary, digest, selection_json, state, created_at,"
+            " execution_target) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (proposal_id, workspace_id, repo_id, job_id, attempt_id, request[:4000],
-             summary, digest, json.dumps(selection or []), "proposed", stamp))
+             summary, digest, json.dumps(selection or []), "proposed", stamp,
+             execution_target))
         for edit in edits:
             conn.execute(
                 "INSERT INTO proposal_edits(edit_id, proposal_id, rel_path, base_sha256,"
@@ -1171,7 +1335,11 @@ def get_proposal(conn, proposal_id: str, workspace_id: str) -> dict | None:
             "job_id": row["job_id"], "attempt_id": row["attempt_id"],
             "summary": row["summary"], "digest": row["digest"],
             "selection": json.loads(row["selection_json"] or "[]"),
-            "state": row["state"], "created_at": row["created_at"], "edits": edits}
+            "state": row["state"], "created_at": row["created_at"], "edits": edits,
+            # Recorded on the row, so a caller cannot decide it later. Missing
+            # means the strict distributed gate, never the local one.
+            "execution_target": (row["execution_target"] if "execution_target"
+                                 in row.keys() else None) or "distributed"}
 
 
 @serialized
@@ -1200,11 +1368,56 @@ def set_proposal_state(conn, proposal_id: str, state: str) -> None:
 
 
 @serialized
-def latest_proposal(conn, repo_id: str, workspace_id: str) -> dict | None:
+def reject_proposal(conn, proposal_id: str, workspace_id: str,
+                    conversation_id: str, actor_id: str) -> bool:
+    """Reject one still-pending proposal and its unused write approvals."""
     row = conn.execute(
-        "SELECT proposal_id FROM proposals WHERE repo_id=? AND workspace_id=?"
-        " ORDER BY created_at DESC, rowid DESC LIMIT 1",
-        (repo_id, workspace_id)).fetchone()
+        "SELECT p.state FROM proposals p JOIN jobs j ON j.job_id=p.job_id"
+        " WHERE p.proposal_id=? AND p.workspace_id=? AND j.chat_id=?",
+        (proposal_id, workspace_id, conversation_id)).fetchone()
+    if row is None or row["state"] != "proposed":
+        return False
+    if conn.execute(
+            "SELECT 1 FROM write_operations WHERE proposal_id=? AND workspace_id=?"
+            " AND state IN ('pending','applying','applied','partially_applied')",
+            (proposal_id, workspace_id)).fetchone():
+        return False
+    stamp = now()
+    with conn:
+        conn.execute("UPDATE proposals SET state='rejected' WHERE proposal_id=?",
+                     (proposal_id,))
+        conn.execute(
+            "UPDATE proposal_edits SET state='rejected' WHERE proposal_id=?"
+            " AND state='proposed'", (proposal_id,))
+        conn.execute(
+            "UPDATE approvals SET decision='denied', actor_id=?, decided_at=?"
+            " WHERE proposal_id=? AND workspace_id=? AND conversation_id=?"
+            " AND decision='pending'", (actor_id, stamp, proposal_id,
+                                         workspace_id, conversation_id))
+    return True
+
+
+@serialized
+def latest_proposal(conn, repo_id: str, workspace_id: str,
+                    conversation_id: str | None = None) -> dict | None:
+    """The newest proposal for a project, optionally within one conversation.
+
+    Scoping matters: without it, opening a fresh Code conversation showed the
+    project's previous proposal as though it belonged there, and a refresh
+    could paint one conversation's work into another.
+    """
+    if conversation_id:
+        row = conn.execute(
+            "SELECT p.proposal_id FROM proposals p"
+            "  JOIN jobs j ON j.job_id = p.job_id"
+            " WHERE p.repo_id=? AND p.workspace_id=? AND j.chat_id=?"
+            " ORDER BY p.created_at DESC, p.rowid DESC LIMIT 1",
+            (repo_id, workspace_id, conversation_id)).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT proposal_id FROM proposals WHERE repo_id=? AND workspace_id=?"
+            " ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (repo_id, workspace_id)).fetchone()
     return get_proposal(conn, row["proposal_id"], workspace_id) if row else None
 
 
@@ -1217,7 +1430,7 @@ def _expiry(seconds: int = APPROVAL_TTL_SECONDS) -> str:
 
 @serialized
 def request_approval(conn, *, workspace_id, repo_id, proposal_id, action, target,
-                     action_sha256, payload: dict,
+                     action_sha256, payload: dict, conversation_id: str | None = None,
                      ttl_seconds: int = APPROVAL_TTL_SECONDS,
                      workflow_id: str | None = None, job_id: str | None = None,
                      step_id: str | None = None,
@@ -1227,10 +1440,11 @@ def request_approval(conn, *, workspace_id, repo_id, proposal_id, action, target
     # request; returning it keeps the decision one-shot and the card single.
     existing = conn.execute(
         "SELECT approval_id FROM approvals WHERE workspace_id=? AND repo_id=?"
-        " AND proposal_id IS ? AND action=? AND action_sha256=? AND decision='pending'"
+        " AND conversation_id IS ? AND proposal_id IS ? AND action=?"
+        " AND action_sha256=? AND decision='pending'"
         " AND attempt_id IS ? AND expires_at > ? ORDER BY requested_at DESC LIMIT 1",
-        (workspace_id, repo_id, proposal_id, action, action_sha256, attempt_id,
-         now())).fetchone()
+        (workspace_id, repo_id, conversation_id, proposal_id, action,
+         action_sha256, attempt_id, now())).fetchone()
     if existing:
         return public_approval(conn, existing["approval_id"], workspace_id)
 
@@ -1238,12 +1452,12 @@ def request_approval(conn, *, workspace_id, repo_id, proposal_id, action, target
     expires = _expiry(ttl_seconds)
     with conn:
         conn.execute(
-            "INSERT INTO approvals(approval_id, workspace_id, repo_id, proposal_id,"
+            "INSERT INTO approvals(approval_id, workspace_id, repo_id, conversation_id, proposal_id,"
             " action, target, action_sha256, payload_json, decision, actor_id,"
             " requested_at, expires_at, decided_at, consumed_at,"
             " workflow_id, job_id, step_id, attempt_id)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (approval_id, workspace_id, repo_id, proposal_id, action, target,
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (approval_id, workspace_id, repo_id, conversation_id, proposal_id, action, target,
              action_sha256, json.dumps(payload), "pending", None, stamp, expires,
              None, None, workflow_id, job_id, step_id, attempt_id))
     return public_approval(conn, approval_id, workspace_id)
@@ -1266,6 +1480,8 @@ def public_approval(conn, approval_id: str, workspace_id: str) -> dict | None:
     payload = json.loads(row["payload_json"])
     keys = row.keys()
     return {"approval_id": row["approval_id"], "repo_id": row["repo_id"],
+            "conversation_id": (row["conversation_id"]
+                                if "conversation_id" in keys else None),
             "proposal_id": row["proposal_id"], "action": row["action"],
             "target": row["target"], "action_sha256": row["action_sha256"],
             "decision": _decide_expiry(row), "requested_at": row["requested_at"],
@@ -1282,12 +1498,16 @@ def public_approval(conn, approval_id: str, workspace_id: str) -> dict | None:
 
 
 @serialized
-def pending_approvals(conn, workspace_id: str, repo_id: str | None = None) -> list[dict]:
+def pending_approvals(conn, workspace_id: str, repo_id: str | None = None,
+                      conversation_id: str | None = None) -> list[dict]:
     sql = "SELECT approval_id FROM approvals WHERE workspace_id=? AND decision='pending'"
     args = [workspace_id]
     if repo_id:
         sql += " AND repo_id=?"
         args.append(repo_id)
+    if conversation_id:
+        sql += " AND conversation_id=?"
+        args.append(conversation_id)
     sql += " ORDER BY requested_at LIMIT 20"
     rows = [r["approval_id"] for r in conn.execute(sql, tuple(args))]
     return [a for a in (public_approval(conn, r, workspace_id) for r in rows)
@@ -1334,7 +1554,8 @@ def decide_approval(conn, approval_id: str, workspace_id: str, *, approved: bool
 @serialized
 def claim_approval(conn, approval_id: str, workspace_id: str, action: str,
                    action_sha256: str, *, repo_id: str | None = None,
-                   proposal_id: str | None = None) -> dict:
+                   proposal_id: str | None = None,
+                   conversation_id: str | None = None) -> dict:
     """Consume an approved decision exactly once, for exactly its own action."""
     row = conn.execute(
         "SELECT * FROM approvals WHERE approval_id=? AND workspace_id=?",
@@ -1350,6 +1571,9 @@ def claim_approval(conn, approval_id: str, workspace_id: str, action: str,
     if proposal_id is not None and row["proposal_id"] != proposal_id:
         raise ApprovalError("mismatch",
                             "That approval was for a different proposal. Ask again.")
+    if conversation_id is not None and row["conversation_id"] != conversation_id:
+        raise ApprovalError("mismatch",
+                            "That approval belongs to another conversation. Ask again.")
     if row["consumed_at"] is not None:
         raise ApprovalError("used", "That approval was already used.")
     decision = _decide_expiry(row)
@@ -1374,7 +1598,8 @@ OPERATION_OPEN_STATES = ("pending", "applying")
 @serialized
 def claim_approval_for_write(conn, approval_id: str, workspace_id: str, *,
                              action: str, action_sha256: str, repo_id: str,
-                             proposal_id: str, edits: list[dict]) -> dict:
+                             proposal_id: str, edits: list[dict],
+                             conversation_id: str | None = None) -> dict:
     """Consume the approval and create the write record in ONE transaction.
 
     This is the whole point of the function. Consuming the approval first and
@@ -1397,6 +1622,9 @@ def claim_approval_for_write(conn, approval_id: str, workspace_id: str, *,
     if row["repo_id"] != repo_id or row["proposal_id"] != proposal_id:
         raise ApprovalError("mismatch",
                             "That approval was for a different target. Ask again.")
+    if conversation_id is not None and row["conversation_id"] != conversation_id:
+        raise ApprovalError("mismatch",
+                            "That approval belongs to another conversation. Ask again.")
     if row["consumed_at"] is not None:
         existing = conn.execute(
             "SELECT operation_id FROM write_operations WHERE approval_id=?",
@@ -1622,28 +1850,37 @@ def _validation_row(row) -> dict:
 
 @serialized
 def record_audit(conn, *, workspace_id, repo_id, action, outcome, mode=None,
-                 approval_id=None, detail: dict | None = None) -> str:
+                 approval_id=None, conversation_id: str | None = None,
+                 detail: dict | None = None) -> str:
     audit_id = new_id()
     with conn:
         conn.execute(
-            "INSERT INTO code_audit(audit_id, workspace_id, repo_id, action, outcome,"
-            " mode, approval_id, detail_json, occurred_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            (audit_id, workspace_id, repo_id, action, outcome, mode, approval_id,
-             json.dumps(detail or {}), now()))
+            "INSERT INTO code_audit(audit_id, workspace_id, repo_id, conversation_id,"
+            " action, outcome, mode, approval_id, detail_json, occurred_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (audit_id, workspace_id, repo_id, conversation_id, action, outcome,
+             mode, approval_id, json.dumps(detail or {}), now()))
     return audit_id
 
 
 @serialized
 def recent_audit(conn, workspace_id: str, repo_id: str | None = None,
-                 limit: int = 40) -> list[dict]:
+                 limit: int = 40,
+                 conversation_id: str | None = None) -> list[dict]:
     sql = "SELECT * FROM code_audit WHERE workspace_id=?"
     args = [workspace_id]
     if repo_id:
         sql += " AND repo_id=?"
         args.append(repo_id)
+    if conversation_id:
+        sql += " AND conversation_id=?"
+        args.append(conversation_id)
     sql += " ORDER BY occurred_at DESC, rowid DESC LIMIT ?"
     args.append(limit)
-    return [{"audit_id": r["audit_id"], "action": r["action"], "outcome": r["outcome"],
+    return [{"audit_id": r["audit_id"],
+             "conversation_id": (r["conversation_id"]
+                                 if "conversation_id" in r.keys() else None),
+             "action": r["action"], "outcome": r["outcome"],
              "mode": r["mode"], "approval_id": r["approval_id"],
              "detail": json.loads(r["detail_json"]), "occurred_at": r["occurred_at"]}
             for r in conn.execute(sql, tuple(args))]
@@ -1657,6 +1894,210 @@ def artifacts_root(state_path: Path) -> Path:
     """Coordinator-owned storage. Generated documents never leave it without
     an approved export."""
     return state_path.parent / "artifacts"
+
+
+def backups_root(state_path: Path) -> Path:
+    """Where originals are kept before a local write.
+
+    Coordinator-owned, and deliberately **not** inside the connected project:
+    a backup written into the repository would show up as a change the person
+    never asked for, could be picked up by their own tools, and would be
+    destroyed by the very edit it exists to undo.
+    """
+    return state_path.parent / "backups"
+
+
+# Retention: enough to serve the visible Undo, not a second history of the
+# project. A proposal's backups are removed once its Undo is used or once the
+# newest allowance pushes it out.
+MAX_BACKUP_PROPOSALS = 20
+
+
+def verify_backup(root: Path, row: dict) -> bytes:
+    """Prove one stored backup is still the file its row describes.
+
+    A row is not a backup. Between the row being written and the write loop
+    running — a restart, a cleaner, a person tidying a directory — the copy can
+    vanish or change, and the only way to know is to open it and check. The
+    file must still be an ordinary private file of the recorded size whose
+    contents hash to the recorded digest.
+    """
+    root = Path(root).resolve()
+    stored_name = row["stored_name"]
+    if (not isinstance(stored_name, str)
+            or Path(stored_name).name != stored_name):
+        raise BackupError(
+            f"the stored original for {row['path']} has an unsafe name.")
+    stored = root / stored_name
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if not nofollow:
+        raise BackupError("this computer cannot safely open stored originals.")
+    descriptor = None
+    try:
+        descriptor = os.open(stored, os.O_RDONLY | nofollow)
+        info = os.fstat(descriptor)
+    except OSError as exc:
+        raise BackupError(
+            f"the stored original for {row['path']} is missing: {exc}") from exc
+    try:
+        if not stat.S_ISREG(info.st_mode):
+            raise BackupError(
+                f"the stored original for {row['path']} is not an ordinary file.")
+        if stat.S_IMODE(info.st_mode) & 0o077:
+            raise BackupError(
+                f"the stored original for {row['path']} is not private.")
+        if info.st_size != row["byte_size"]:
+            raise BackupError(
+                f"the stored original for {row['path']} changed size since it was "
+                "written.")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = None
+            data = handle.read(int(row["byte_size"]) + 1)
+    except OSError as exc:
+        raise BackupError(
+            f"the stored original for {row['path']} could not be read: {exc}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if len(data) != row["byte_size"] \
+            or hashlib.sha256(data).hexdigest() != row["original_sha256"]:
+        raise BackupError(
+            f"the stored original for {row['path']} no longer matches what was "
+            "backed up.")
+    return data
+
+
+@serialized
+def record_backup(conn, root: Path, *, workspace_id, repo_id, conversation_id,
+                  proposal_id, proposal_digest, path, original: bytes,
+                  original_sha256, proposed_sha256) -> dict:
+    """Store one original file and its binding, flushed before it counts.
+
+    Returns only after the bytes are on disk and read back, because "the
+    backup exists" is the fact the write that follows depends on.
+    """
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        root.chmod(0o700)
+    except OSError:
+        pass
+    backup_id, stamp = new_id(), now()
+    stored = root / f"{backup_id}.bak"
+    temporary = root / f".{backup_id}.tmp"
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                             0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(original)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, stored)
+        temporary = None
+    finally:
+        if temporary is not None:
+            Path(temporary).unlink(missing_ok=True)
+    try:
+        stored.chmod(0o600)
+    except OSError as exc:
+        stored.unlink(missing_ok=True)
+        raise BackupError(f"The backup of {path} could not be made private.") from exc
+    # Read back before the row is written. A backup that cannot be re-read is
+    # not a backup, and the caller must be able to trust the row it sees.
+    verification_row = {"stored_name": stored.name, "path": path,
+                        "byte_size": len(original),
+                        "original_sha256": original_sha256}
+    try:
+        verify_backup(root, verification_row)
+    except BackupError:
+        stored.unlink(missing_ok=True)
+        raise
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO write_backups(backup_id, workspace_id, repo_id,"
+                " conversation_id, proposal_id, proposal_digest, operation_id, path,"
+                " original_sha256, proposed_sha256, stored_name, byte_size, state,"
+                " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (backup_id, workspace_id, repo_id, conversation_id, proposal_id,
+                 proposal_digest, None, path, original_sha256, proposed_sha256,
+                 stored.name, len(original), "stored", stamp))
+    except sqlite3.IntegrityError:
+        # UNIQUE(proposal_id, path). Two applies raced for the same file. The
+        # winner's copy is the one that counts, so this one's file is removed
+        # and the existing row is reused — but only after it is verified, so a
+        # race can never be the reason an unverified backup is trusted. If the
+        # existing row is unusable this raises BackupError, which stops the
+        # write, instead of escaping as an unhandled database error.
+        stored.unlink(missing_ok=True)
+        existing = conn.execute(
+            "SELECT * FROM write_backups WHERE proposal_id=? AND path=?"
+            " AND workspace_id=?", (proposal_id, path, workspace_id)).fetchone()
+        if existing is None:
+            raise BackupError(
+                f"the backup of {path} could not be recorded.") from None
+        row = dict(existing)
+        if row["original_sha256"] != original_sha256 \
+                or row["proposal_digest"] != proposal_digest:
+            raise BackupError(
+                f"a different original is already stored for {path}.") from None
+        verify_backup(root, row)
+        return {"backup_id": row["backup_id"], "path": path,
+                "byte_size": row["byte_size"],
+                "original_sha256": row["original_sha256"],
+                "proposed_sha256": row["proposed_sha256"],
+                "stored_name": row["stored_name"], "reused": True}
+    return {"backup_id": backup_id, "path": path, "byte_size": len(original),
+            "original_sha256": original_sha256,
+            "proposed_sha256": proposed_sha256, "stored_name": stored.name,
+            "reused": False}
+
+
+class BackupError(RuntimeError):
+    """A backup could not be made or verified. Nothing may be written."""
+
+
+def proposal_backups(conn, proposal_id: str, workspace_id: str) -> list[dict]:
+    return [dict(row) for row in conn.execute(
+        "SELECT * FROM write_backups WHERE proposal_id=? AND workspace_id=?"
+        " AND state='stored' ORDER BY path", (proposal_id, workspace_id))]
+
+
+@serialized
+def consume_backups(conn, root: Path, proposal_id: str, workspace_id: str) -> int:
+    """Mark a proposal's backups used and remove their files.
+
+    Called after a successful Undo. The row is kept, with its state changed,
+    so the audit still shows a restore happened; only the copy goes.
+    """
+    rows = proposal_backups(conn, proposal_id, workspace_id)
+    for row in rows:
+        _unlink_stored(root, row["stored_name"])
+    with conn:
+        conn.execute(
+            "UPDATE write_backups SET state='used' WHERE proposal_id=? AND"
+            " workspace_id=?", (proposal_id, workspace_id))
+    return len(rows)
+
+
+@serialized
+def prune_backups(conn, root: Path, workspace_id: str,
+                  keep: int = MAX_BACKUP_PROPOSALS) -> int:
+    """Bounded retention. The backup store serves Undo, not project history."""
+    proposals = [row["proposal_id"] for row in conn.execute(
+        "SELECT proposal_id, MAX(created_at) AS newest FROM write_backups"
+        " WHERE workspace_id=? AND state='stored' GROUP BY proposal_id"
+        " ORDER BY newest DESC", (workspace_id,))]
+    removed = 0
+    for proposal_id in proposals[keep:]:
+        for row in proposal_backups(conn, proposal_id, workspace_id):
+            _unlink_stored(root, row["stored_name"])
+            removed += 1
+        with conn:
+            conn.execute(
+                "UPDATE write_backups SET state='expired' WHERE proposal_id=?"
+                " AND workspace_id=?", (proposal_id, workspace_id))
+    return removed
 
 
 @serialized
@@ -1827,7 +2268,10 @@ def set_artifact_state(conn, artifact_id: str, workspace_id: str, state: str) ->
 
 @serialized
 def create_job(conn, *, workspace_id, chat_id, request, task_type="chat",
-               skill_id=None) -> str:
+               skill_id=None, output_format=None, doc_workflow=None) -> str:
+    """One job row. The document choices travel with the request that made
+    them, so a reopened conversation reports what actually ran rather than
+    whatever the composer happens to be showing now."""
     job_id, stamp = new_id(), now()
     row = dict(workspace_id=workspace_id, workflow_id=new_id(), job_id=job_id,
                chat_id=chat_id, state="created", active_attempt_id=None,
@@ -1837,11 +2281,38 @@ def create_job(conn, *, workspace_id, chat_id, request, task_type="chat",
         conn.execute(
             "INSERT INTO jobs(job_id, workspace_id, workflow_id, chat_id, state,"
             " active_attempt_id, original_request, task_type, created_at, updated_at,"
-            " skill_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            " skill_id, output_format, doc_workflow) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (job_id, workspace_id, row["workflow_id"], chat_id, "created", None,
-             request, task_type, stamp, stamp, skill_id),
+             request, task_type, stamp, stamp, skill_id, output_format,
+             doc_workflow),
         )
     return job_id
+
+
+def latest_completed_answer(conn, chat_id: str, *, before_job_id: str | None = None):
+    """The most recent assistant reply in this chat that actually finished.
+
+    "Finished" means the job that produced it reached `completed`. A cancelled,
+    failed or still-running turn left text on screen that a person can see, and
+    converting that into a document would save a fragment as though it were the
+    answer. A message with no job at all is history from before jobs were
+    recorded and is not offered either, because nothing can establish that it
+    completed.
+
+    `before_job_id` excludes the request currently being served, which is a
+    user turn with no answer yet and must never select itself.
+    """
+    row = conn.execute(
+        "SELECT m.message_id, m.text, m.job_id, m.created_at"
+        " FROM messages m JOIN jobs j ON j.job_id = m.job_id"
+        " WHERE m.chat_id = ? AND m.role = 'assistant' AND j.state = 'completed'"
+        "   AND (? IS NULL OR m.job_id <> ?) AND TRIM(m.text) <> ''"
+        " ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1",
+        (chat_id, before_job_id, before_job_id)).fetchone()
+    if row is None:
+        return None
+    return {"message_id": row["message_id"], "text": row["text"],
+            "job_id": row["job_id"], "created_at": row["created_at"]}
 
 
 @serialized

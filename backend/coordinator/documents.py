@@ -7,13 +7,17 @@ is actually installed, not by what the interface would like to offer:
 * **Word** — `.docx`. A `.docx` is a ZIP of OOXML, so the standard library
   reads it: `zipfile` plus `xml.etree`. Paragraphs and table cells, split into
   pages at explicit page breaks.
+* **Excel** — `.xlsx`. Also a ZIP of OOXML, read by `xlsx.py`, one page per
+  worksheet so a cell reference resolves. No formula is ever calculated.
 * **PDF** — rendered page by page with the macOS Quartz framework and read by
   the local vision model (`pdfrender.py` and `ocr.py`). Where PyObjC or the
   model is absent, `probe()` reports the exact missing prerequisite and the
   file is refused rather than half-read.
-* **loose images (OCR)** — refused. C08 reads scans that arrive as PDF pages,
-  which is the workflow's input; a bare `.png` has no page structure and no
-  intake path, so nothing here invents text for one.
+* **images** — `.png` and `.jpg`/`.jpeg`, sent straight to the local vision
+  model as one page. A supplied image already *is* a page image, so there is
+  no renderer in that path and the method string never claims one. Other
+  picture formats are refused by name rather than accepted on the strength of
+  the transport carrying any bytes.
 
 A vision reading is never described as more than it is: it carries the exact
 model tag, no per-word confidence, and no layout detection.
@@ -45,7 +49,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from backend.coordinator import ocr, pdfrender
+from backend.coordinator import ocr, pdfrender, xlsx
 
 # Bounds. Visible in the errors, so a refusal explains itself.
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
@@ -61,11 +65,21 @@ TEXT_SUFFIXES = {".txt": "text/plain", ".md": "text/markdown",
                  ".csv": "text/csv", ".json": "application/json"}
 WORD_SUFFIX = ".docx"
 
+SHEET_SUFFIX = ".xlsx"
+
 # Formats a parser exists for, and the ones that need something this computer
 # does not have. Neither list is guessed: `probe()` derives both.
 PDF_SUFFIX = ".pdf"
 NEEDS_PDF_PARSER = {PDF_SUFFIX}
-NEEDS_OCR = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".heic", ".webp"}
+
+# Images sent straight to the local vision model. The whole path — signature
+# check, transport, reply schema — has been exercised for these two.
+IMAGE_SUFFIXES = dict(ocr.IMAGE_SUFFIXES)
+
+# Pictures this build will not claim to read. Listing them separately is the
+# point: they are refused by name rather than accepted because the transport
+# would carry any bytes. Adding one means exercising it first.
+NEEDS_OCR = {".tif", ".tiff", ".heic", ".webp"}
 
 
 class DocumentError(ValueError):
@@ -91,6 +105,8 @@ def probe(runtime_state: dict | None = None,
     """
     scan = (ocr.probe(ocr_model) if runtime_state is None
             else _scan_capability(runtime_state, ocr_model))
+    image = (ocr.image_probe(ocr_model) if runtime_state is None
+             else _image_capability(runtime_state, ocr_model))
     return {
         "text": {
             "available": True,
@@ -108,15 +124,19 @@ def probe(runtime_state: dict | None = None,
             "module": scan["renderer"].get("module"),
             "detail": scan["detail"],
         },
-        # OCR here means "reading pixels", which is exactly what the PDF path
-        # does. A loose image file still has no intake path, so the formats
-        # list stays empty even when the capability is present.
+        # OCR here means "reading pixels". The PDF path renders first; a
+        # supplied image is already a page image and is sent as it is. The two
+        # share the model prerequisite but not the renderer, so an image can be
+        # readable on a computer where PDF rendering is not.
         "ocr": {
-            "available": scan["available"], "formats": [],
-            "module": scan["model"].get("model") if scan["available"] else None,
-            "detail": (scan["detail"] if scan["available"] else
+            "available": image["available"] or scan["available"],
+            "formats": (sorted(s.lstrip(".") for s in IMAGE_SUFFIXES)
+                        if image["available"] else []),
+            "module": (image["model"].get("model") if image["available"]
+                       else None),
+            "detail": (image["detail"] if image["available"] else
                        "Refinix does not guess at words in a picture. "
-                       + scan["detail"]),
+                       + image["detail"]),
         },
     }
 
@@ -146,12 +166,36 @@ def _scan_capability(runtime_state: dict,
                        + ocr.STANDALONE_NOTE)}
 
 
+def _image_capability(runtime_state: dict,
+                      ocr_model: str = ocr.runtime.OCR_MODEL) -> dict:
+    """`ocr.image_probe()` against a runtime observation someone else made.
+
+    The renderer is deliberately absent: a supplied image needs the model and
+    nothing else, so a missing PyObjC must not hide a capability that works.
+    """
+    caps = None
+    if runtime_state.get("reachable") and \
+            ocr_model in (runtime_state.get("models") or []):
+        caps = ocr.runtime.model_capabilities(ocr_model)
+    model = ocr.runtime.model_state_from(
+        runtime_state, ocr_model,
+        requires=ocr.runtime.VISION_CAPABILITY, capabilities=caps)
+    if model["state"] != "installed":
+        return {"available": False, "model": model, "detail": model["detail"]}
+    return {"available": True, "model": model,
+            "detail": (f"Supplied images are read by {model['model']} on the "
+                       f"local runtime. " + ocr.STANDALONE_NOTE)}
+
+
 def supported_suffixes(runtime_state: dict | None = None,
                        ocr_model: str = ocr.runtime.OCR_MODEL) -> list[str]:
     """Exactly what `extract` implements on this computer, right now."""
-    suffixes = [*TEXT_SUFFIXES, WORD_SUFFIX]
-    if probe(runtime_state, ocr_model)["pdf"]["available"]:
+    capability = probe(runtime_state, ocr_model)
+    suffixes = [*TEXT_SUFFIXES, WORD_SUFFIX, SHEET_SUFFIX]
+    if capability["pdf"]["available"]:
         suffixes.append(PDF_SUFFIX)
+    if capability["ocr"]["formats"]:
+        suffixes.extend(IMAGE_SUFFIXES)
     return sorted(suffixes)
 
 
@@ -430,6 +474,60 @@ def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
     return pages, read["method"], list(read["uncertain"]), read["page_count"]
 
 
+def _extract_xlsx(data: bytes, filename: str) -> tuple[list[Page], str, list[str], int | None]:
+    """Read an .xlsx with the standard library, one page per worksheet.
+
+    A worksheet is the natural page here: it is what a person points at when
+    they say where a value is, and it makes `Sheet2!B7` resolvable. Nothing is
+    calculated — a formula cell reports its formula and any cached value Excel
+    left behind, labelled as cached.
+    """
+    try:
+        book = xlsx.read(data, filename)
+    except xlsx.SheetError as exc:
+        raise DocumentError(exc.code, str(exc)) from exc
+
+    pages = [Page(number=index, text=_clean(xlsx.as_text([sheet])),
+                  note=f"worksheet {sheet['name']}")
+             for index, sheet in enumerate(book["sheets"], start=1)]
+    uncertain = [
+        "Cell values are read as the workbook stores them. No formula was "
+        "calculated: a formula cell reports its formula and, where Excel left "
+        "one, its cached value marked as cached rather than recomputed.",
+    ]
+    if book["skipped"]:
+        uncertain.append("Not read: " + ", ".join(book["skipped"]) + ".")
+    return pages, "xlsx (OOXML, standard library)", uncertain, len(pages)
+
+
+def _extract_image(data: bytes, filename: str, media_type: str, *,
+                   should_cancel=None,
+                   ocr_model: str = ocr.runtime.OCR_MODEL):
+    """Send one supplied image to the local vision model, as page 1.
+
+    No renderer and no Quartz: the file already is a page image. The method
+    string says exactly that, so a reader is never told a PDF was rendered
+    when none was.
+    """
+    state = ocr.image_probe(ocr_model)
+    if not state["available"]:
+        code = {"runtime_unavailable": "runtime_unavailable",
+                "absent": "no_ocr_model",
+                "missing_capability": "model_cannot_read_images",
+                "capability_unknown": "model_capability_unknown",
+                }.get(state["model"]["state"], "no_ocr_model")
+        raise DocumentError(code, state["detail"])
+    try:
+        read = ocr.extract_image(data, filename=filename, media_type=media_type,
+                                 should_cancel=should_cancel, model=ocr_model)
+    except ocr.OcrError as exc:
+        raise DocumentError(exc.code, str(exc)) from exc
+    pages = [Page(number=page["number"], text=_clean(page["text"]),
+                  confidence=None, note=page["note"])
+             for page in read["pages"]]
+    return pages, read["method"], list(read["uncertain"]), read["page_count"]
+
+
 def extract(path: Path, *, source_id: str, filename: str, media_type: str,
             expected_sha256: str, should_cancel=None,
             ocr_model: str = ocr.runtime.OCR_MODEL) -> Extraction:
@@ -475,12 +573,14 @@ def extract(path: Path, *, source_id: str, filename: str, media_type: str,
 
     suffix = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
     if suffix in NEEDS_OCR:
-        # A loose image has no page structure and no intake path of its own.
-        # The capability that reads pixels exists, but it reads PDF pages.
+        # Not "cannot read pictures" — this build reads PNG and JPEG. These
+        # formats are refused because their path has not been exercised, and
+        # saying so is more use than a generic refusal.
+        supported = ", ".join(sorted(s.lstrip(".") for s in IMAGE_SUFFIXES))
         raise DocumentError(
-            "no_ocr",
-            f"Refinix reads scanned pages inside a PDF, not a bare {suffix.lstrip('.')} "
-            "image. Attach the scan as a PDF.")
+            "unsupported_image",
+            f"Refinix reads {supported} images directly, and reads other scans "
+            f"inside a PDF. {suffix.lstrip('.')} is not supported here yet.")
 
     declared_pages: int | None = None
     if suffix in TEXT_SUFFIXES:
@@ -488,11 +588,18 @@ def extract(path: Path, *, source_id: str, filename: str, media_type: str,
         declared_pages = 1
     elif suffix == WORD_SUFFIX:
         pages, method, uncertain, declared_pages = _extract_docx(data, filename)
+    elif suffix == SHEET_SUFFIX:
+        pages, method, uncertain, declared_pages = _extract_xlsx(data, filename)
+    elif suffix in IMAGE_SUFFIXES:
+        pages, method, uncertain, declared_pages = _extract_image(
+            data, filename, media_type, should_cancel=should_cancel,
+            ocr_model=ocr_model)
     elif suffix == PDF_SUFFIX:
         pages, method, uncertain, declared_pages = _extract_pdf(
             data, filename, should_cancel=should_cancel, ocr_model=ocr_model)
     else:
-        readable = sorted([*TEXT_SUFFIXES, WORD_SUFFIX, PDF_SUFFIX])
+        readable = sorted([*TEXT_SUFFIXES, WORD_SUFFIX, SHEET_SUFFIX,
+                           PDF_SUFFIX, *IMAGE_SUFFIXES])
         raise DocumentError(
             "unsupported",
             f"Refinix cannot read {suffix or 'a file without an extension'} yet. "

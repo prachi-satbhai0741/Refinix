@@ -1863,3 +1863,270 @@
   font-size: 12.5px;
   font-weight: 600;
 }
+
+/* ---- Execution 4B: the Code workbench ---------------------------------- */
+
+/* Three columns: Explorer, the open file, the Qwen conversation. The grid and
+   its collapse states already exist in app.css; only the widths change, and
+   only on this surface, because a conversation needs more room than the audit
+   rail it replaced. */
+.app:has(.rail-conversation) {
+  --nav-w: 264px;
+  --rail-w: 380px;
+}
+
+.explorer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.round-btn-sm {
+  width: 22px;
+  height: 22px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.explorer { display: grid; gap: 1px; }
+
+/* One row shape for a project, a folder and a file. The indent is a padding
+   step rather than a nested box, so a deep tree cannot walk off the left. */
+.tree-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-row:hover:not(:disabled), .tree-row:focus-visible {
+  background: var(--veil-sunken);
+  color: var(--text);
+}
+
+.tree-row[aria-selected="true"] {
+  background: var(--veil-sunken);
+  border-color: var(--signal);
+  color: var(--text);
+}
+
+.tree-row[data-kind="project"] { font-weight: 600; color: var(--text); }
+
+/* The twisty reports the state that is on, so a collapsed folder reads as
+   collapsed rather than as an instruction to collapse it. */
+.tree-twisty {
+  display: flex;
+  justify-content: center;
+  color: var(--text-faint);
+  transition: transform var(--dur) var(--ease);
+}
+
+.tree-row[aria-expanded="true"] > .tree-twisty { transform: rotate(90deg); }
+
+.tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-data);
+}
+
+.tree-meta { flex: none; font-size: 10px; color: var(--text-faint); }
+
+.tree-children { display: grid; gap: 1px; }
+
+.tree-note {
+  margin: 2px 0 6px 22px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* ---- the open file ----------------------------------------------------- */
+
+.viewer {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 0;
+  min-width: 0;
+}
+
+.viewer-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.viewer-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 22rem;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.viewer-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-data);
+}
+
+.viewer-tab-close {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.viewer-tab-close:hover, .viewer-tab-close:focus-visible { color: var(--text); }
+
+.viewer-crumb {
+  margin: 0;
+  padding: 6px var(--sp-4);
+  font-family: var(--font-data);
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* Both scrollbars live here, so a long line scrolls the file rather than the
+   page: the window itself must never scroll sideways. */
+.viewer-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+
+.viewer-empty, .viewer-state {
+  max-width: 46ch;
+  margin: var(--sp-5) auto;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.viewer-state[data-kind="error"] { color: var(--st-fault); }
+
+/* Line numbers are a separate, non-selectable column: copying the file must
+   not copy the numbering with it. */
+.code-lines {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0 var(--sp-3);
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.code-num {
+  text-align: right;
+  color: var(--text-faint);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.code-text { white-space: pre; color: var(--text); }
+
+.code-lines .code-num[data-current="true"],
+.code-lines .code-text[data-current="true"] {
+  background: var(--veil-sunken);
+  color: var(--text);
+}
+
+/* ---- the conversation column ------------------------------------------- */
+
+.rail-conversation {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-height: 0;
+  padding: 0;
+}
+
+.conv-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.conv-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.conv-history {
+  display: grid;
+  gap: 1px;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.conv-item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conv-item:hover, .conv-item:focus-visible {
+  background: var(--veil-sunken);
+  color: var(--text);
+}
+
+.conv-item[aria-current="true"] { border-color: var(--signal); color: var(--text); }
+
+.conv-item-name { font-size: 12.5px; }
+
+.conv-item-meta { font-size: 10.5px; color: var(--text-faint); }
+
+.rail-conversation .thread { min-height: 0; overflow-y: auto; }
+
+.rail-conversation .composer { padding: var(--sp-3); }
+
+/* A narrow window keeps the file primary; both walls become drawers, which is
+   the behaviour app.css already implements for this grid. */
+@media (max-width: 1180px) {
+  .app:has(.rail-conversation) { --rail-w: 380px; }
+  .rail-conversation { width: min(400px, 92vw); }
+}

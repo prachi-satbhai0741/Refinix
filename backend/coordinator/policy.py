@@ -51,13 +51,21 @@ MODE_SUMMARIES = {
 # gating them once would make the matrix and the audit disagree about how the
 # work was authorised.
 ACTION_LIST = "repo.list"                  # enumerate candidate files
+ACTION_VIEW = "repo.view"                  # show one file to the person, not the model
 ACTION_READ = "repo.read_and_propose"      # read the selection and send it to the model
 ACTION_WRITE = "canonical.write"           # replace an existing selected file
 
-SUPPORTED_ACTIONS = (ACTION_LIST, ACTION_READ, ACTION_WRITE)
+SUPPORTED_ACTIONS = (ACTION_LIST, ACTION_VIEW, ACTION_READ, ACTION_WRITE)
 
+# `repo.view` is deliberately its own action rather than a use of `repo.read`.
+# The two send the file to different places: viewing puts it on the person's
+# own screen, reading puts it in a model prompt. Gating them together would
+# make the audit say a file was sent to the model when it was only opened,
+# and would make "ask before the model sees my code" impossible to honour
+# while still letting someone look at their own file.
 ACTION_LABELS = {
     ACTION_LIST: "list the text files in this project",
+    ACTION_VIEW: "show one file from this project on this screen",
     ACTION_READ: "read the selected files and send them to the model on this computer",
     ACTION_WRITE: "write the reviewed change to this project",
 }
@@ -92,12 +100,12 @@ APPROVAL_REQUIRED = "approval_required"
 DENIED = "denied"
 
 _MATRIX = {
-    "partial": {ACTION_LIST: AUTOMATIC, ACTION_READ: AUTOMATIC,
-                ACTION_WRITE: APPROVAL_REQUIRED},
-    "full": {ACTION_LIST: AUTOMATIC, ACTION_READ: AUTOMATIC,
-             ACTION_WRITE: AUTOMATIC},
-    "ask": {ACTION_LIST: APPROVAL_REQUIRED, ACTION_READ: APPROVAL_REQUIRED,
-            ACTION_WRITE: APPROVAL_REQUIRED},
+    "partial": {ACTION_LIST: AUTOMATIC, ACTION_VIEW: AUTOMATIC,
+                ACTION_READ: AUTOMATIC, ACTION_WRITE: APPROVAL_REQUIRED},
+    "full": {ACTION_LIST: AUTOMATIC, ACTION_VIEW: AUTOMATIC,
+             ACTION_READ: AUTOMATIC, ACTION_WRITE: AUTOMATIC},
+    "ask": {ACTION_LIST: APPROVAL_REQUIRED, ACTION_VIEW: APPROVAL_REQUIRED,
+            ACTION_READ: APPROVAL_REQUIRED, ACTION_WRITE: APPROVAL_REQUIRED},
 }
 
 # Audit outcomes. Denials never collapse into a generic failure.
@@ -151,17 +159,34 @@ def decide(mode: str, action: str) -> Decision:
         reason = (f"{MODE_LABELS[mode]} allows this without asking."
                   if action != ACTION_WRITE else
                   "Full access applies edits inside this folder without asking each time.")
+    elif action == ACTION_WRITE:
+        reason = "This change needs your approval before any file is written."
+    elif action == ACTION_VIEW:
+        # Said precisely: opening a file shows it to the person, and nothing
+        # about opening it sends it to the model.
+        reason = ("Ask before actions needs your approval before this file is "
+                  "opened on screen. Opening it does not send it to the model.")
     else:
-        reason = ("This change needs your approval before any file is written."
-                  if action == ACTION_WRITE else
-                  "Ask before actions needs your approval before reading this folder.")
+        reason = "Ask before actions needs your approval before reading this folder."
     return Decision(outcome, action, mode, reason)
+
+
+# What Full access must say before it is switched on for a project. Automatic
+# local writing is the one place where nobody looks at the change before it
+# lands, so the sentence has to be the one a person would want to have read.
+FULL_LOCAL_WARNING = (
+    "Full access applies changes to this project without asking each time. "
+    "On this device the Ubuntu sandbox tests do not run, so a change is "
+    "written after Refinix's own checks and nothing else. Refinix keeps a copy "
+    "of every file it replaces so you can undo it.")
 
 
 def mode_options() -> list[dict]:
     """What the Code surface offers, straight from this module."""
     return [{"id": mode, "label": MODE_LABELS[mode], "summary": MODE_SUMMARIES[mode],
-             "confirm": mode == "full"} for mode in MODES]
+             "confirm": mode == "full",
+             "confirm_note": FULL_LOCAL_WARNING if mode == "full" else None}
+            for mode in MODES]
 
 
 def unavailable_actions() -> list[dict]:

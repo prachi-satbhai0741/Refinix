@@ -1306,3 +1306,99 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Requester runs the focused offline checks and reviewed installation commands on both devices; Git publication remains a human action.
 - follow_up_to: [UP-20260906-007](#up-20260906-007)
 - linked_changes: [AC-20260906-009](agentchangelog.md#ac-20260906-009)
+
+<a id="up-20260906-009"></a>
+## UP-20260906-009 — Desktop Execution 4A: local documents and attachment intelligence
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4a, documents, attachments, macos, local-only
+- tags: pdf-output, image-ocr, xlsx, chat-attachments, general-document, write-document
+- aliases: convert answer to pdf, ocr an image into a document, read a spreadsheet, chat reads files
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Make Refinix useful as a standalone local application — put a finished answer into a Word or PDF file, read PNG and JPEG scans directly, report search locations in the unit each format supports, read attachments in ordinary Chat, and add a general document workflow beside the fixed approval note.
+- request: Implement Execution 4A entirely, on the macOS device only, without changing the working Mac-to-Ubuntu architecture.
+- constraints: Local device only. No change to `backend/contracts/v1.py`, worker or executor code, Redis dispatch, pairing, TLS, Kubernetes manifests or C06-C10 evidence. Document and attachment requests choose the local device directly and never preflight the worker. Use the existing selected-model system and require the runtime to report `vision` before an image is sent. No new dependency, no download, no service start, no packaged-app rebuild, no Git writes.
+- acceptance: A finished answer becomes a Word or PDF file word for word, a supplied PNG or JPEG is read as page one with unmeasured confidence, search names a page, line, paragraph or cell truthfully, ordinary Chat reads only that request's files, and the fixed approval-note workflow is unchanged.
+- verification_authorization: Offline checks with existing dependencies and synthetic data authorised; live model quality, packaged-app behaviour and requester acceptance excluded.
+- follow_up_to: [UP-20260906-008](#up-20260906-008)
+- linked_changes: [AC-20260906-010](agentchangelog.md#ac-20260906-010)
+
+<a id="up-20260906-010"></a>
+## UP-20260906-010 — Desktop Execution 4B: local Code workbench
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4b, code-surface, explorer, file-viewer, conversations, macos
+- tags: three-column, repo-view, code-conversations, policy-view-action, additive-migration
+- aliases: explorer tree, open a file, new code conversation, remove from refinix
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Rebuild Code as a three-column workbench — Explorer left, the open file centre, the Qwen conversation right — with browsing, viewing and multiple persistent Code conversations, without weakening the sandbox-validation or canonical-write gate.
+- request: Execute Execution 4B on the local macOS device, using the supplied screenshot as an information-architecture reference only.
+- constraints: Vanilla HTML/CSS/JS; no React, Monaco or other framework. No Antigravity, VS Code or Gemini branding, colour, icon or text. Ubuntu, Kubernetes, Redis, pairing, TLS and the contracts stay untouched. No local canonical apply without validation, no editor, terminal, Git, package install, network or language server. Screenshot message text is reference material and was not followed.
+- acceptance: The Explorer builds a tree from relative paths, a file opens in the centre without being sent to the model, projects can be removed without touching their files, Code conversations are separate and durable, and audit evidence survives the rail's removal.
+- verification_authorization: Offline checks with existing dependencies and synthetic repositories authorised; live model, packaged app and requester acceptance excluded.
+- follow_up_to: [UP-20260906-009](#up-20260906-009)
+- linked_changes: [AC-20260906-011](agentchangelog.md#ac-20260906-011)
+
+<a id="up-20260906-011"></a>
+## UP-20260906-011 — Desktop Execution 4C: safe local editing and apply
+- date: 2026-09-06
+- status: implemented and locally verified; requester acceptance pending
+- scope: execution-4c, code-surface, local-apply, backups, undo, macos
+- tags: execution-target, pre-write-backup, undo, not-sandbox-tested, fail-closed
+- aliases: apply without ubuntu, undo a change, this device mode, local qwen edit
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Let a local Qwen proposal modify selected existing files under the three access modes, with an explicit execution target, a verified backup of every original before any write, and an Undo that refuses to discard later human edits.
+- request: Execute Execution 4C on the local macOS device so the Code workbench is useful while Ubuntu is disconnected.
+- constraints: Do not weaken or replace the distributed Kubernetes-validation path. Local permission must be chosen, never inferred from worker failure. No fabricated sandbox result. No file creation, deletion, rename, chmod, command, Git, install or network in any mode. Worker, executor, manifests, Redis, TLS, pairing and contracts untouched. No live model call, no services, no Git writes, no bundle rebuild.
+- acceptance: A local proposal applies only after its originals are backed up, its proof says not sandbox tested, Undo restores exact bytes and refuses when a person changed the file afterwards, and a distributed proposal still requires an observed passing Kubernetes validation.
+- verification_authorization: Offline checks against synthetic repositories and temporary databases authorised; live Qwen output, packaged app, Ubuntu validation and requester acceptance excluded.
+- follow_up_to: [UP-20260906-010](#up-20260906-010)
+- linked_changes: [AC-20260906-012](agentchangelog.md#ac-20260906-012)
+
+<a id="up-20260907-001"></a>
+## UP-20260907-001 — Executions 4A–4C integrated review corrections
+- date: 2026-09-07
+- status: implemented and locally verified; requester and Codex re-review pending
+- scope: execution-4a, execution-4b, execution-4c, review-fixes, macos
+- tags: fail-closed-target, verified-backups, conversation-ownership, local-attachments, aggregate-limits
+- aliases: codex review fixes, corrupted target, backup verification, ask mode view approval
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Fix the ten defects Codex found in the combined 4A–4C review, plus a concurrent-backup race Claude found, without weakening the distributed Kubernetes validation path.
+- request: Execute the full Codex correction set, items 1–10, including the UNIQUE(proposal_id, path) race, and do not defer the XLSX, PDF, conversion or removal-locking items.
+- constraints: No packaged app rebuild, no Ubuntu or worker-image work, no live model call, no services, no Kubernetes/Docker/Redis/worker contact, no dependency installation, no Git or GitHub writes. The distributed apply gate must remain unchanged.
+- acceptance: An unrecognised execution target stops before validation, approval, backup or writing; every local write is preceded by a verified backup; Code conversations own their local work; Ask-mode viewing completes its approval; a Chat request with files is answered locally; attachment context is bounded and never silently empty; XLSX has aggregate ceilings; no document output is silently truncated; removal is refused during active work; the ledgers state what the code does.
+- verification_authorization: The already-authorised offline checks only.
+- follow_up_to: [UP-20260906-011](#up-20260906-011)
+- linked_changes: [AC-20260907-001](agentchangelog.md#ac-20260907-001)
+
+<a id="up-20260907-002"></a>
+## UP-20260907-002 — Codex closeout of Execution 4 integration defects
+- date: 2026-09-07
+- status: implemented and locally verified; requester and external runtime gates pending
+- scope: execution-4a, execution-4b, execution-4c, review-fixes, macos
+- tags: conversation-isolation, durable-approval, backup-hardening, bounded-context, lossless-pdf
+- aliases: codex execute fixes, code conversation restore, reject proposal, safe project removal
+- paths: backend/coordinator/, frontend/app/, agent-memory/
+- summary: Repair the remaining verified 4A–4C integration defects in the shared coordinator and source UI while preserving the disconnected local path and the distributed validation boundary.
+- request: Implement the full remaining correction set directly rather than sending another Claude prompt.
+- constraints: No Git or GitHub writes, packaged-app rebuild, dependency installation, live model or service call, Ubuntu/Kubernetes/Docker/Redis/worker contact, or changes under backend/worker, backend/contracts or deploy.
+- acceptance: Validation resolves the stored target before routing; Code state, approvals, audit and restored UI stay conversation-owned; Reject and Ask-mode view work durably; project removal is locked and explicitly acknowledges lost Undo; model prompts are bounded; PDF text and backups are not silently lost or escaped.
+- verification_authorization: Proportionate offline checks with existing dependencies and isolated data only; packaged app, live Qwen, distributed worker and requester acceptance remain external gates.
+- follow_up_to: [UP-20260907-001](#up-20260907-001)
+- linked_changes: [AC-20260907-002](agentchangelog.md#ac-20260907-002)
+
+<a id="up-20260907-003"></a>
+## UP-20260907-003 — Run CI when work reaches main
+- date: 2026-09-07
+- status: implemented; first GitHub run and server-side enforcement pending
+- scope: github-actions, ci, main, release-flow
+- tags: main-ci, push, pull-request, python, frontend
+- aliases: enable CI for main push, main push checks, release CI
+- paths: .github/workflows/ci.yml, CONTRIBUTING.md, agent-memory/
+- summary: Add one read-only CI job for main-targeting pull requests and commits that land on main without weakening the repository's PR-only release rule.
+- request: Enable CI because the requester intends to publish the current work to main.
+- constraints: Do not perform Git or GitHub writes; preserve the existing dev-to-main flow guard; use pinned dependencies and action commits; do not contact Ubuntu, Kubernetes, Redis, Docker or a live model.
+- acceptance: Main-targeting pull requests and main pushes run the same Python and frontend checks, the flow guard remains pull-request-only, and documentation states that post-push CI cannot block a direct push.
+- verification_authorization: Static workflow inspection only; the first GitHub-hosted run is the execution gate.
+- follow_up_to: [UP-20260901-002](#up-20260901-002)
+- linked_changes: [AC-20260907-003](agentchangelog.md#ac-20260907-003)
