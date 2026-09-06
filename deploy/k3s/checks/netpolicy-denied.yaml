@@ -1,0 +1,106 @@
+# Isolation check, DENIED half.
+#
+# Carries no app: aegisforge-worker label, so the NetworkPolicy must refuse it.
+# It carries the full restricted Pod Security context — without that, admission
+# rejects the Pod before any connection is attempted, and a "failure" would say
+# nothing about the network at all.
+#
+# Run netpolicy-allowed.yaml FIRST and require exit 0. On its own this probe
+# only shows that *this* Pod could not reach Redis, which is equally consistent
+# with a stopped Redis, a wrong Secret or a broken Service. It becomes evidence
+# of isolation only once the allowed half has proven that the same Service name
+# and the same mounted credential do work from a labelled Pod.
+#
+# Expect: RESULT=blocked-by-policy, exit 7.
+# A NetworkPolicy may be enforced by dropping the packet or by rejecting it, and
+# both are the policy working:
+#   * timeout exit 124   — the packet is dropped and the client waits.
+#   * Connection refused — the packet is rejected immediately. K3s's default
+#                          kube-router ends the Pod's chain with
+#                          `REJECT --reject-with icmp-port-unreachable`, which
+#                          is what the Ubuntu worker actually returned.
+# Both emit the same RESULT=blocked-by-policy prefix and exit 7, naming the
+# observed mechanism in parentheses, so one stable string matches either.
+#
+# RESULT=POLICY-NOT-ENFORCED means the policy is not being applied — report
+# that immediately, because every later isolation claim depends on it.
+# DNS, credential, authentication, protected-mode and tooling errors stay
+# distinct failures: each means the probe never reached the network at all.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: netcheck-denied
+  namespace: aegisforge
+  labels:
+    app: netcheck-unlabelled        # deliberately NOT the selected label
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10002
+    runAsGroup: 10002
+    fsGroup: 10002              # so the group-readable Secret is actually readable
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probe
+      image: redis@sha256:e17e3a1993da428251cbd88dbdb3de8c8d4007f840d7350eb17a2d8695fa705f
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -u
+          # Separate every failure mode, so a network refusal is never confused
+          # with DNS, a wrong password, protected mode, or missing tooling.
+          command -v redis-cli >/dev/null || { echo "RESULT=tooling-missing"; exit 3; }
+          command -v timeout   >/dev/null || { echo "RESULT=tooling-missing (timeout)"; exit 3; }
+          getent hosts redis >/dev/null 2>&1 || { echo "RESULT=dns-failed"; exit 4; }
+
+          # An unreadable or empty credential must be reported as such, never
+          # mistaken for the network blocking the connection.
+          [ -r /etc/redis-secret/password ] || { echo "RESULT=credential-unreadable"; exit 11; }
+          auth=$(cat /etc/redis-secret/password)
+          [ -n "$auth" ] || { echo "RESULT=credential-empty"; exit 11; }
+
+          # redis-cli 7.2 has NO -t option; `timeout` bounds the call instead,
+          # with -k so a hung client is terminated rather than left running,
+          # and REDISCLI_AUTH keeps the password out of the process arguments.
+          out=$(REDISCLI_AUTH="$auth" timeout -k 2 5 redis-cli -h redis ping 2>&1)
+          status=$?
+
+          # Exit status is classified, not just output: empty output alone does
+          # not prove blocking.
+          # A dropped packet and an immediate rejection are two enforcement
+          # mechanisms for the same NetworkPolicy, so both report success.
+          if [ "$status" -eq 124 ]; then
+            echo "RESULT=blocked-by-policy (timeout exit 124)"; exit 7
+          fi
+          case "$out" in
+            PONG*)                echo "RESULT=POLICY-NOT-ENFORCED"; exit 1 ;;
+            *NOAUTH*|*WRONGPASS*) echo "RESULT=auth-failed ($out)"; exit 5 ;;
+            *DENIED*)             echo "RESULT=redis-protected-mode ($out)"; exit 6 ;;
+            *"Connection refused"*) echo "RESULT=blocked-by-policy (connection refused: $out)"; exit 7 ;;
+            "")                   echo "RESULT=empty-output status=$status"; exit 10 ;;
+            *)                    echo "RESULT=other status=$status ($out)"; exit 8 ;;
+          esac
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits:   {cpu: 200m, memory: 64Mi}
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: credential
+          mountPath: /etc/redis-secret
+          readOnly: true
+  volumes:
+    - name: tmp
+      emptyDir: {}
+    - name: credential
+      secret:
+        secretName: redis-credential
+        defaultMode: 0440

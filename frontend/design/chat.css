@@ -1,0 +1,212 @@
+/* Refinix — Chat surface.
+ * Load after tokens.css and app.css; only Chat-specific rules live here.
+ */
+
+/* ------------------------------------------------------------- thread --- */
+
+/* The conversation sits in a centred reading column rather than filling the
+   window. Past roughly 75 characters a line stops being comfortable to read,
+   and the middle column is now much wider than that when both walls fold away
+   — so the column is capped and centred, and folding the walls moves the
+   conversation to the centre of the screen instead of stretching it. */
+.thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5) var(--sp-5) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-height: 0;
+  scroll-behavior: smooth;
+  /* Text dissolves into the header and composer bands instead of stopping at
+     a hard line under them. This is what makes the glass on those two read as
+     glass — something is genuinely passing beneath their edges. */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+}
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 100%;
+  max-width: var(--read-w);
+  margin: 0 auto;
+}
+/* The two turns are shaped differently on purpose, which is the single
+   strongest cue a chat interface has. What you said is a bounded object,
+   right-aligned and narrower than the column. What the model said is not
+   bubbled at all — it is a document, set to the full reading width, because
+   it carries plans, tables, citations and artifacts that a bubble would
+   squeeze. */
+.turn-user { align-self: center; align-items: flex-end; }
+
+/* Solid, not glass — see the note in app.css about .thread's mask making a
+   backdrop-filter here degrade to a flat fill anyway. This is that fill,
+   declared honestly. */
+.bubble {
+  background: var(--bubble-fill);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-bubble);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-read);
+  line-height: 1.55;
+  max-width: 46ch;
+}
+/* A user turn is anchored to the right, so the corner on that side is
+   tightened — the shape points back at whoever said it. */
+.turn-user .bubble {
+  border-radius: var(--radius-bubble) 7px var(--radius-bubble) var(--radius-bubble);
+}
+/* The agent turn keeps no bubble, no fill and no border. */
+.turn-agent .bubble {
+  border: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.turn-agent .prose { font-size: var(--fs-read); line-height: 1.62; }
+.turn-agent .prose p { margin: 0 0 var(--sp-3); }
+.turn-agent .prose p:last-child { margin: 0; }
+
+.turn-meta { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* streaming caret for an output.delta that has not terminated */
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  background: var(--signal);
+  border-radius: 2px;
+  vertical-align: -2px;
+  margin-left: 2px;
+  animation: blink 1.05s steps(2, start) infinite;
+}
+@keyframes blink { to { visibility: hidden; } }
+
+/* --------------------------------------------------------- plan steps --- */
+
+/* Purple rail: this list is the model's own plan, not a system claim. That is
+   the whole job of --agent — provenance, never state. */
+.plan {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  border-left: 2px solid var(--agent);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+.plan li {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: var(--sp-2);
+  align-items: baseline;
+  padding: 5px 0 5px var(--sp-3);
+  position: relative;
+}
+.plan .mark { font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: -.02em; }
+/* the capability that ran the step — the model's own doing, so it is purple
+   wherever it appears, here and in the Documents pipeline */
+.plan .cap {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--agent);
+  white-space: nowrap;
+}
+.step-done .mark { color: var(--st-enforced); }
+.step-run  .mark { color: var(--signal); }
+.step-idle .mark,
+.step-idle .txt { color: var(--text-faint); }
+
+/* ----------------------------------------------------------- composer --- */
+
+/* The composer is a band, not a footer. No top rule: .thread is masked, so the
+   conversation fades out into it, and a hairline there would cut that fade in
+   half and put the band back into a boxed footer. */
+.composer {
+  padding: var(--sp-2) var(--sp-5) var(--sp-4);
+}
+.composer-box {
+  width: 100%;
+  max-width: var(--read-w);
+  margin: 0 auto;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-xl);
+  overflow: hidden;   /* the bar inside picks up the box's own curve */
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+/* Focus lands on the box, not on the textarea inside it — the whole object is
+   what you are typing into, so the whole object responds. */
+.composer-box:focus-within {
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px var(--signal-soft);
+}
+.composer-input {
+  width: 100%;
+  min-height: 52px;
+  max-height: 180px;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-read);
+  line-height: 1.5;
+  padding: var(--sp-3) var(--sp-4);
+  display: block;
+}
+.composer-input::placeholder { color: var(--text-faint); }
+.composer-input:focus { outline: none; }
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--line-soft);
+  flex-wrap: wrap;
+}
+
+/* execution target: Auto | this device | trusted devices | a named node.
+   Shared with Documents and Code — every surface starts a job the same way. */
+/* Wraps rather than clips. With five destinations this group is wider than a
+   375px composer, and the box it sits in clips its overflow — so the last node
+   was simply unreachable on a phone. A destination you cannot pick is worse
+   than a group that takes two rows. */
+.targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  max-width: 100%;
+}
+.target {
+  font-size: var(--fs-label);
+  padding: 4px 10px;
+  color: var(--text-dim);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.target:last-child { border-right: 0; }
+.target:hover { color: var(--text); background: var(--veil-sunken); }
+.target[aria-pressed="true"] { color: var(--signal); background: var(--signal-soft); }
+/* An unpaired node stays visible and legible — it is information, not noise.
+   Recessed onto the sunken ground, struck through, and never colour-coded. */
+.target:disabled {
+  color: var(--text-faint);
+  background: var(--veil-sunken);
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.target:disabled:hover { background: var(--veil-sunken); color: var(--text-faint); }
+
+.composer-send { margin-left: auto; }
+
+@media (max-width: 760px) {
+  .thread { padding: var(--sp-4); }
+  .composer { padding: var(--sp-3) var(--sp-4); }
+}
+@media (prefers-reduced-motion: reduce) { .caret { visibility: visible; } }

@@ -1,0 +1,262 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code — Refinix</title>
+<link rel="icon" href="/assets/refinix-mark.png">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/overrides.css">
+<link rel="stylesheet" href="/refinix.css">
+<!-- Theme resolves before the first paint. Without this the page paints the
+     default palette and then swaps, which reads as a flash on every load. -->
+<script>
+  (function () {
+    try {
+      var stored = localStorage.getItem('refinix.theme');
+      var dark = stored ? stored === 'dark'
+        : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    } catch (_) { /* private window, blocked storage: the CSS default stands */ }
+  })();
+</script>
+<div class="app">
+  <nav class="nav" id="nav">
+    <div class="brand">
+      <img class="brand-logo" src="/assets/refinix-wordmark.png" alt="Refinix">
+    </div>
+
+    <!-- The two surfaces as one switch under the mark. Both destinations stay
+         on screen and the thumb sits under the one you are on, so changing
+         surface costs a click rather than open-then-choose, and the wall
+         spends a single row on it instead of a band of tabs. -->
+    <div class="surface-switch" data-on="code">
+      <span class="switch-thumb" aria-hidden="true"></span>
+      <a class="switch-seg" href="/">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <rect x="2" y="3" width="12" height="8.4" rx="2.4"/>
+          <path d="M5.6 11.4v2.3l2.9-2.3"/>
+        </svg>
+        <span>Chat</span>
+      </a>
+      <a class="switch-seg" href="/code.html" aria-current="page">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M6 4.4 2.6 8 6 11.6M10 4.4 13.4 8 10 11.6"/>
+        </svg>
+        <span>Code</span>
+      </a>
+    </div>
+    <div class="nav-list">
+      <div class="explorer-head">
+        <p class="lbl nav-list-h">Explorer</p>
+        <button class="round-btn round-btn-sm" type="button" id="connect-btn-nav"
+                title="Connect a project folder"
+                aria-label="Connect a project folder">+</button>
+      </div>
+      <!-- Projects and their files. The tree is built from the relative paths
+           the coordinator returns; no absolute path ever reaches this page. -->
+      <div class="explorer" id="explorer" role="tree"
+           aria-label="Projects and files"></div>
+    </div>
+    <div class="nav-foot">
+      <a class="nav-secondary" href="/control.html">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M12.4 8h1.8M10.2 11.8l.9 1.6M5.8 11.8l-.9 1.6M3.6 8H1.8M5.8 4.2l-.9-1.6M10.2 4.2l.9-1.6"/>
+          <circle cx="8" cy="8" r="4.4"/>
+          <circle cx="8" cy="8" r="1.8"/>
+        </svg>
+        <span>Settings</span>
+      </a>
+      <p class="ready-line" id="ready-line">Checking this computer…</p>
+    </div>
+  </nav>
+
+  <main class="main">
+    <header class="main-head">
+      <button class="panel-toggle panel-toggle-left" type="button"
+              id="nav-toggle" data-panel-toggle="nav"
+              aria-controls="nav" aria-expanded="true"
+              aria-label="Navigation panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
+      <h1 class="head-title">Code</h1>
+      <div class="head-spacer"></div>
+      <!-- Icon only, and the icon reports the theme that is on rather than the
+           one a click would bring: a moon and star while dark is on, a sun and
+           cloud while light is on. -->
+      <button class="panel-toggle theme-toggle" type="button" id="theme-toggle">
+        <svg class="theme-icon theme-icon-day" viewBox="0 0 20 20"
+             aria-hidden="true" focusable="false">
+          <path class="sun-rays" d="M2.9 6.6H1.4M7 2.5V1M4.1 3.7 3 2.6M9.9 3.7 11 2.6M4.1 9.5 3 10.6"/>
+          <circle cx="7" cy="6.6" r="2.7"/>
+          <g class="cloud">
+            <circle cx="8.6" cy="13.6" r="2.5"/>
+            <circle cx="12.2" cy="12.9" r="3.2"/>
+            <circle cx="15.4" cy="13.8" r="2.3"/>
+            <rect x="8.6" y="13" width="6.8" height="3.1"/>
+          </g>
+        </svg>
+        <svg class="theme-icon theme-icon-night" viewBox="0 0 20 20"
+             aria-hidden="true" focusable="false">
+          <path d="M12.88 12.43A4.88 4.88 0 1 1 7.57 7.13 3.79 3.79 0 0 0 12.88 12.43z"/>
+          <path d="M14.6 2.2l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L11.7 5.1l2.05-.85z"/>
+        </svg>
+      </button>
+      <button class="panel-toggle panel-toggle-right" type="button"
+              id="rail-toggle" data-panel-toggle="rail"
+              aria-controls="rail" aria-expanded="true"
+              aria-label="Details panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
+    </header>
+
+    <div id="notices" role="status" aria-live="polite"></div>
+
+    <!-- Centre column: the open file. One file at a time, read only in this
+         phase. Contents arrive through the coordinator's bounded repository
+         boundary, so this page holds a relative path and never a real one. -->
+    <div class="viewer" id="viewer">
+      <div class="viewer-tabs" id="viewer-tabs" role="tablist"
+           aria-label="Open file" hidden>
+        <div class="viewer-tab" id="viewer-tab" role="tab" aria-selected="true"
+             tabindex="0">
+          <span class="viewer-tab-name" id="viewer-tab-name"></span>
+          <button class="viewer-tab-close" type="button" id="viewer-close"
+                  aria-label="Close file">×</button>
+        </div>
+      </div>
+      <p class="viewer-crumb" id="viewer-crumb" hidden></p>
+      <div class="viewer-body" id="viewer-body">
+        <p class="viewer-empty" id="viewer-empty">
+          Choose a project in the Explorer, then open a file to read it here.
+          Opening a file does not send it to the model.
+        </p>
+      </div>
+    </div>
+
+  </main>
+
+  <aside class="rail rail-conversation" id="rail" aria-label="Code conversation">
+    <header class="conv-head">
+      <h2 class="conv-title" id="conv-title">Code conversation</h2>
+      <button class="panel-toggle" type="button" id="conv-new"
+              title="New conversation" aria-label="New conversation">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M8 3.4v9.2M3.4 8h9.2"/>
+        </svg>
+      </button>
+      <button class="panel-toggle" type="button" id="conv-history"
+              aria-haspopup="dialog" aria-expanded="false"
+              title="Conversation history" aria-label="Conversation history">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <circle cx="8" cy="8" r="5.4"/>
+          <path d="M8 5.2V8l2 1.4"/>
+        </svg>
+      </button>
+    </header>
+    <div class="conv-history" id="conv-history-list" role="dialog"
+         aria-label="Code conversations" hidden></div>
+    <!-- Results are chronological, like a conversation. There are no permanent
+         Access mode / Proposed change / What Refinix did dashboard panels:
+         access lives in the composer, proposals and diffs arrive here as
+         results, approvals appear inline where the work paused, and the audit
+         history sits under Details. -->
+    <div class="thread" id="thread">
+      <article class="turn turn-agent" id="intro">
+        <div class="prose">
+          <p>Choose a project folder, pick the files to change, and describe the
+             edit. You see the complete diff before anything is written.</p>
+          <p class="prose-note">Refinix replaces the contents of existing text files you
+             select. Creating, deleting or renaming files, running project
+             commands, using Git and installing anything are <strong>not
+             available</strong> in any access mode.</p>
+        </div>
+      </article>
+    </div>
+
+    <form class="composer" id="code-composer">
+      <!-- Icon only: a labelled pill sat over the conversation it was offering
+           to scroll, and this control is only ever offered when you are already
+           looking at the text it would cover. -->
+      <button class="jump-latest" id="jump-latest" type="button" hidden
+              title="Jump to latest" aria-label="Jump to latest">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M8 3.25V12.5M4.4 8.9 8 12.5l3.6-3.6"/>
+        </svg>
+      </button>
+
+      <!-- The project chooser sits immediately above the prompt box. -->
+      <div class="project-row">
+        <button class="project-chooser" type="button" id="connect-btn">
+          <span class="project-icon" aria-hidden="true"></span>
+          <span id="project-name">Choose project</span>
+        </button>
+        <button class="project-switch" type="button" id="switch-btn" hidden>Switch</button>
+        <span class="lbl" id="selection-hint">No files selected</span>
+      </div>
+
+      <!-- Turns and shines only while a job is actually running. app.js
+           drives it from the job state, so it cannot outlive the work. -->
+      <div class="working" id="working" role="status" hidden>
+        <span class="working-mark" aria-hidden="true">
+          <img src="/assets/refinix-mark.png" alt="">
+        </span>
+        <span class="working-label">Refinix Working</span>
+      </div>
+
+      <div class="composer-box" id="composer-box">
+        <ul class="attachments" id="code-context" hidden
+            aria-label="Files selected as context"></ul>
+
+        <div class="composer-line">
+          <label class="visually-hidden" for="code-input">Describe the change</label>
+          <textarea class="composer-input" id="code-input" rows="1"
+                    placeholder="Describe the change you want in the selected files."></textarea>
+        </div>
+        <p class="skill-status" id="code-status" hidden></p>
+
+        <div class="composer-bar">
+          <button class="round-btn" type="button" id="plus-btn"
+                  aria-haspopup="menu" aria-expanded="false"
+                  aria-label="Choose files to include">+</button>
+          <!-- The access selector lives here, lower-left, beside +. -->
+          <button class="mode-pill" type="button" id="mode-pill"
+                  aria-haspopup="menu" aria-expanded="false" hidden>
+            <span id="mode-name">—</span>
+          </button>
+          <div class="head-spacer"></div>
+          <button class="model-pill" type="button" id="model-pill"
+                  aria-haspopup="dialog" aria-expanded="false" hidden>
+            <span class="model-name" id="model-name">—</span>
+            <span class="model-reasoning" id="model-reasoning" hidden>Reasoning</span>
+            <svg class="model-caret" viewBox="0 0 16 16" aria-hidden="true"
+                 focusable="false"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg>
+          </button>
+          <button class="btn btn-stop" type="button" id="code-stop" hidden>Stop</button>
+          <button class="btn btn-primary" type="submit" id="code-send">Propose</button>
+        </div>
+      </div>
+    </form>
+    <!-- The permanent audit panel is gone, but its evidence is not. Activity
+         stays reachable here, collapsed, alongside the actions no mode
+         enables. Removing the panel must not remove the record. -->
+    <section class="rail-sec conv-activity">
+      <details class="quiet">
+        <summary class="lbl">Activity — what Refinix did</summary>
+        <ul class="cap-list" id="audit-list"></ul>
+      </details>
+      <details class="quiet">
+        <summary class="lbl">Not available in any mode</summary>
+        <ul class="cap-list" id="unavailable-list"></ul>
+      </details>
+    </section>
+  </aside>
+</div>
+<div class="panel-scrim" id="scrim"></div>
+<script type="module" src="/app.js"></script>

@@ -1,0 +1,7 @@
+# Shared desktop runtime declaration; platform dependencies come from pywebview.
+# Source: https://pypi.org/project/pywebview/6.2.1/ (BSD-3-Clause).
+# macOS setup uses the complete, hash-pinned requirements-macos.lock instead.
+# Windows/Linux still need their native WebView dependencies and device checks;
+# the macOS-only py2app builder is deliberately absent from this shared file.
+-r ../backend/requirements.txt
+pywebview==6.2.1

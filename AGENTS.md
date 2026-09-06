@@ -109,6 +109,35 @@ ledgers, and archiving. Writing rules:
 - Add the smallest runnable check for non-trivial logic and run proportionate
   validation before reporting.
 
+## Human checkpoints
+
+- Agents should follow the authorised chunk and device-based human checkpoints
+  in [tasks.md](tasks.md#numbered-execution-tasks). Anyone may implement any
+  module; a device named for a setup action is not an exclusive code owner.
+- Build, review and fix within the authorised scope without repeated permission
+  requests for ordinary coding. Resolve routine implementation questions from
+  repository evidence, the established requirements and authoritative upstream
+  documentation rather than relaying them as checkpoints; the scope also covers
+  review fixes and proportionate offline checks on existing dependencies and
+  isolated test data. Stop at a required human action or missing permission —
+  repository evidence answers technical questions but never grants permission —
+  and do not skip to another chunk or perform that action by assumption.
+- Before stopping, prepare a reviewable handoff identifying the **device role**
+  — for example `macOS coordinator` or `Ubuntu worker` — rather than a team
+  member, with its OS, architecture, shell, actual directory, exact commands or
+  UI steps, expected results and evidence to return. Downloads need approved
+  sources, versions, licences, integrity and storage requirements; host changes
+  need applicable rollback instructions.
+- If required values or artifacts do not exist yet, request the concrete
+  decision or prerequisite first. Do not provide speculative setup commands.
+- Resume only after that device reports back and the relevant result is verified
+  with permitted checks. A review pass or an install report alone does not prove
+  the runtime acceptance gate or authorise a later chunk.
+- Keep checks proportional to the changed behavior and required gates. After
+  each build and review cycle, explain **Built**, **Verified**, and **Next / Human
+  action** in plain language with an example, limitations and the actual device
+  names.
+
 ## AegisForge invariants
 
 From [`docs/prd.md`](docs/prd.md) and

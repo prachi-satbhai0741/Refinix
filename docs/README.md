@@ -31,7 +31,7 @@ contain a verified runtime, installer, or model bundle.
 4. [security.md](security.md) — trust, privacy, sandbox, supply chain, and sovereignty evidence
 5. [model-catalog.md](model-catalog.md) — model packs, manifests, provisioning, and selection
 6. [devicespecifications.md](devicespecifications.md) — current fleet evidence and open hardware checks
-7. [evaluation.md](evaluation.md) — five-day plan, measurements, acceptance, risks, and demo
+7. [evaluation.md](evaluation.md) — task acceptance, measurements, acceptance, risks, and demo
 8. [sih-ppt-submission-brief.md](sih-ppt-submission-brief.md) — non-normative SIH portal/PPT research, six-slide copy, evidence, and judge preparation
 
 The PRD owns product scope. Each focused document owns implementation detail
@@ -52,6 +52,9 @@ requirements.
 ## Repository-level documents
 
 - [../README.md](../README.md) — project entry point
+- [../TechStack.md](../TechStack.md) — recommended languages and technologies by layer, with current/proposed status and trade-offs
+- [../tasks.md](../tasks.md) — shared execution chunks, named human checkpoints, stop/resume instructions and acceptance gates
+- [handover-pack.md](handover-pack.md) — the one-time requester input handover and authorisation scope that replaces per-chunk questions
 - [../AGENTS.md](../AGENTS.md) — shared coding-agent rules
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — branch, review, and release workflow
 - [../LICENSE](../LICENSE) — current repository licence

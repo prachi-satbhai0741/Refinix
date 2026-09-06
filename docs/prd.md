@@ -30,15 +30,19 @@ organisation-managed private server without changing the user's workspace.
 > One private agent application for chat, documents, and code that works on one
 > device and can safely use trusted local compute when available.
 
-The five-day alpha also proves the mentor-directed deployment shape: a
+The alpha also proves the mentor-directed deployment shape: a
 Docker-built worker image runs as Kubernetes-managed Pods, a Kubernetes Service
 exposes the authenticated worker API, and Redis coordinates bounded ephemeral
 work. Kubernetes is an execution profile for trusted compute; it does not make
 standalone use depend on a cluster.
 
-The repository currently contains product planning and documentation, not a
-verified runtime. No model, performance, security, or hardware claim becomes
-current product evidence until it is reproduced and recorded.
+The repository contains product planning, the shared contract draft, and a
+**running local coordinator** covering Chat and a minimum Control Center over
+one local model. The distributed half of the product — worker, pairing, cluster,
+Documents and Code workflows, approvals and offline evidence — is not built, and
+each of those surfaces reports itself unavailable rather than implying otherwise.
+No model, performance, security, or hardware claim becomes current product
+evidence until it is reproduced and recorded.
 
 ## 2. Problem and intended outcome
 
@@ -160,7 +164,7 @@ The enforceable boundaries are detailed in [security.md](security.md).
 
 ## 7. Release scope
 
-### 7.1 Five-day alpha: P0
+### 7.1 Alpha: P0
 
 The alpha must prove:
 
@@ -279,12 +283,12 @@ Detailed measurement rules and the demo sequence are in
 |---|---|---|
 | OD-01 | Confirm the authoritative SIH26117 wording and submission/IP terms | Before v1 baseline |
 | OD-02 | Resolve the final product name and Apache-2.0 versus another ownership direction | Before substantial distribution |
-| OD-03 | Choose the first cross-platform local runtime after hardware proof | Before implementation |
+| OD-03 | Choose the first cross-platform local runtime after hardware proof | **Resolved C02** — Ollama; see [model-catalog.md](model-catalog.md#od-03--ollama-is-the-first-runtime) |
 | OD-04 | Choose the desktop packaging approach after the local harness path works | Before installer work |
-| OD-05 | Select the main, document, coding, and embedding models from measured evidence | Before the demo baseline |
-| OD-06 | Define prototype pairing credentials versus finals-grade pairing | Before the paired-worker milestone |
+| OD-05 | Select the main, document, coding, and embedding models from measured evidence | **Main engine resolved C02** — `qwen3.5:4b-q4_K_M`; the rest stay unprovisioned until C07 |
+| OD-06 | Define prototype pairing credentials versus finals-grade pairing | **Recorded C02, unimplemented** — see [security.md §4.1](security.md#41-od-06--the-prototype-pairing-decision) |
 | OD-07 | Decide whether semantic retrieval is enabled by default after footprint testing | Before onboarding is frozen |
-| OD-08 | Pin the K3s release, Redis 7.2 patch and image digest, worker/sandbox image digests, and Service port | Before AF-002 |
+| OD-08 | Pin the K3s release, Redis 7.2 patch and image digest, worker/sandbox image digests, and Service port | **Partly resolved C02** — K3s, Redis and base image pinned in [architecture.md §8.1](architecture.md#81-od-08--resolved-infrastructure-pins); worker/sandbox digests follow C04; ports 8443/30443 fixed by C01, deployment enforcement follows C05 |
 
 ## 12. Canonical document map
 

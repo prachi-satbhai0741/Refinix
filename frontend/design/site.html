@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refinix — private agent workbench for confidential industrial work</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Bodoni+Moda:opsz,wght@6..96,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=Michroma&family=Pixelify+Sans:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<!-- Marks the document scripted before any content paints, so the reveal
+     styles apply without a flash. Kept inside <body> so single-file builds
+     that strip the document head still carry it. -->
+<script>document.documentElement.classList.add('js');</script>
+
+<!--
+  The Refinix mark: three curved arrows around an inner pinwheel, drawn to the
+  supplied artwork. Geometry is generated rather than eyeballed, so the arcs
+  actually meet their arrowheads; viewBox 0 0 120 120, centre 60,60.
+
+  It is filled with a brushed-steel ramp rather than currentColor. Two ramps,
+  tilted against each other, so the outer ring and the inner blades catch light
+  from slightly different angles the way struck metal does — a single gradient
+  across the whole mark reads as flat foil.
+
+  The symbol is name-neutral, so it serves as both the Refinix product mark and
+  the Rokunin Sync team mark. #rk-mark stays as an alias for the surfaces that
+  reference it by that name.
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="rfx-steel" x1="0" y1="0" x2="0.18" y2="1">
+      <stop offset="0%"   stop-color="#FFFFFF"/>
+      <stop offset="11%"  stop-color="#E8EDF1"/>
+      <stop offset="25%"  stop-color="#B4BDC5"/>
+      <stop offset="39%"  stop-color="#79828B"/>
+      <stop offset="49%"  stop-color="#464E57"/>
+      <stop offset="52%"  stop-color="#2A3037"/>
+      <stop offset="62%"  stop-color="#737C85"/>
+      <stop offset="76%"  stop-color="#BAC3CA"/>
+      <stop offset="89%"  stop-color="#F2F6F8"/>
+      <stop offset="100%" stop-color="#A5AEB6"/>
+    </linearGradient>
+    <linearGradient id="rfx-steel-2" x1="0.1" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#F6F9FB"/>
+      <stop offset="18%"  stop-color="#C6CED5"/>
+      <stop offset="38%"  stop-color="#858E97"/>
+      <stop offset="50%"  stop-color="#3B424A"/>
+      <stop offset="64%"  stop-color="#8D959D"/>
+      <stop offset="82%"  stop-color="#DDE3E8"/>
+      <stop offset="100%" stop-color="#8F979F"/>
+    </linearGradient>
+  </defs>
+
+  <symbol id="rfx-mark" viewBox="0 0 120 120">
+    <!-- outer ring: three curved arrows -->
+    <g fill="url(#rfx-steel)" stroke="#0B0D10" stroke-width="0.7" stroke-linejoin="round">
+      <path d="M116.19 65.91 A56.5 56.5 0 0 1 60 116.5 L60 125 L45.24 108.29 L60 96 L60 104.5 A44.5 44.5 0 0 0 104.26 64.65 Z"/>
+      <path d="M26.79 105.71 A56.5 56.5 0 0 1 11.07 31.75 L3.71 27.5 L25.56 23.07 L28.82 42 L21.46 37.75 A44.5 44.5 0 0 0 33.84 96 Z"/>
+      <path d="M37.02 8.38 A56.5 56.5 0 0 1 108.93 31.75 L116.29 27.5 L109.21 48.64 L91.18 42 L98.54 37.75 A44.5 44.5 0 0 0 41.9 19.35 Z"/>
+    </g>
+    <!-- inner pinwheel: three bent blades spiralling to the centre -->
+    <g fill="url(#rfx-steel-2)" stroke="#0B0D10" stroke-width="0.7" stroke-linejoin="round">
+      <path d="M96.2 79.25 Q70.75 97.49 46.41 87.86 L44.66 91.46 L45.03 71.7 L58.68 62.7 L56.93 66.29 Q63.31 71.54 73.24 67.04 Z"/>
+      <path d="M25.23 81.73 Q22.16 50.57 42.67 34.3 L40.43 30.98 L57.36 41.18 L58.32 57.51 L56.09 54.2 Q48.36 57.1 47.28 67.95 Z"/>
+      <path d="M58.57 19.02 Q87.09 31.95 90.92 57.84 L94.91 57.56 L77.62 67.12 L62.99 59.79 L66.98 59.51 Q68.34 51.37 59.48 45.01 Z"/>
+    </g>
+    <!-- the engraved hatching on each blade face -->
+    <g stroke="#12151A" stroke-width="1.1" stroke-linecap="round" opacity=".7" fill="none">
+      <path d="M75.83 75.28 L87.33 86.4 M71.06 77.03 L79.01 89.27 M66.36 77.48 L70.88 89.88 M62.06 76.77 L63.5 88.49"/>
+      <path d="M38.85 66.06 L23.47 70.47 M39.73 61.06 L25.15 61.83 M41.68 56.77 L28.68 54.48 M44.44 53.4 L33.58 48.79"/>
+      <path d="M65.32 38.65 L69.19 23.13 M69.22 41.91 L75.84 28.9 M71.96 45.75 L80.44 35.64 M73.5 49.83 L82.92 42.73"/>
+    </g>
+  </symbol>
+
+  <!-- alias: chat.html and the app surfaces reference the mark by this name -->
+  <symbol id="rk-mark" viewBox="0 0 120 120"><use href="#rfx-mark"/></symbol>
+</svg>
+
+<!--
+  Refinix public distribution site — static design reference.
+
+  Trust boundary 1 in docs/security.md. It explains the product and publishes
+  installers and checksums. It never runs inference, never stores a chat, and
+  never participates in the offline runtime. No installer exists yet, so the
+  download section renders its honest pre-release state.
+
+  Surface system: near-black ground, layered radial lighting, glass panels with
+  hairline borders and backdrop blur. Ornament is three engraved plates drawn as
+  inline SVG for the owl, temple and labyrinth; the hero carries a supplied
+  video clip instead. The drawn motifs are Athena's: the owl and olive are her
+  emblems and the Parthenon her temple. They are placeholders and say so.
+-->
+
+<div class="atmos" aria-hidden="true"></div>
+<canvas class="grain" aria-hidden="true"></canvas>
+
+
+<!-- SVG turbulence used by the glitch on exit -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="turb">
+    <feTurbulence type="fractalNoise" baseFrequency="0.004 0.012" numOctaves="2" seed="9" result="n">
+      <animate attributeName="baseFrequency" dur="1s" begin="indefinite"
+               values="0.002 0.006; 0.04 0.11; 0.006 0.02" fill="freeze"/>
+    </feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" xChannelSelector="R" yChannelSelector="G" scale="0">
+      <animate attributeName="scale" dur="1s" begin="indefinite" values="0; 90; 26; 0" fill="freeze"/>
+    </feDisplacementMap>
+  </filter>
+
+  <!-- Pixel corruption for the figure on the page.
+       The trick is the discrete transfer: quantising the turbulence into flat
+       steps makes the displacement move in BLOCKS rather than flowing, which
+       is what reads as pixels breaking up. Smooth turbulence gives a liquid
+       warp, and stacked clip-path bands give a slice tear - neither looks
+       digital. The channel offsets add the colour fringing a real signal
+       fault produces. -->
+  <filter id="pixglitch" x="-14%" y="-14%" width="128%" height="128%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.05 0.17" numOctaves="1" seed="3" result="n">
+      <animate attributeName="seed" dur="0.52s" begin="indefinite"
+               values="3;19;7;26;12" fill="freeze"/>
+    </feTurbulence>
+    <feComponentTransfer in="n" result="q">
+      <feFuncR type="discrete" tableValues="0 0.3 0.58 0.8 1"/>
+      <feFuncG type="discrete" tableValues="0 0.42 0.74 1"/>
+    </feComponentTransfer>
+    <feDisplacementMap in="SourceGraphic" in2="q" xChannelSelector="R" yChannelSelector="G"
+                       scale="0" result="d">
+      <animate attributeName="scale" dur="0.52s" begin="indefinite"
+               values="0;23;7;17;0" fill="freeze"/>
+    </feDisplacementMap>
+    <feOffset in="d" dx="-3" result="ro"/>
+    <feColorMatrix in="ro" type="matrix" result="rc"
+      values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0"/>
+    <feOffset in="d" dx="3" result="bo"/>
+    <feColorMatrix in="bo" type="matrix" result="bc"
+      values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .5 0"/>
+    <feMerge>
+      <feMergeNode in="rc"/>
+      <feMergeNode in="bc"/>
+      <feMergeNode in="d"/>
+    </feMerge>
+  </filter>
+</svg>
+
+<div class="intro" id="intro">
+  <canvas class="net" aria-hidden="true"></canvas>
+  <video class="intro-video" autoplay muted loop playsinline preload="auto">
+    <!-- The supplied master first, so a served copy plays it untouched. Any
+         transcode is a generation of loss; this avoids it entirely. The WebM
+         is only a fallback: a single-file build cannot carry a 15 MB master,
+         so there the mp4 404s and the browser moves to the next source. -->
+    <source src="assets/hero-loop.mp4" type="video/mp4">
+    <source src="assets/intro.webm" type="video/webm">
+  </video>
+  <span class="bolt" aria-hidden="true"></span>
+  <span class="bolt b" aria-hidden="true"></span>
+  <span class="smoke" aria-hidden="true"></span>
+  <span class="smoke b" aria-hidden="true"></span>
+  <div class="deity-reveal" role="presentation"></div>
+  <span class="eye eye-l"></span>
+  <span class="eye eye-r"></span>
+  <!-- The stacked lockup: mark over wordmark, as supplied. The <img> is a swap
+       hook — drop a rendered assets/refinix-lockup-v.png in and it replaces the
+       drawn lockup wholesale; until then it removes itself and the SVG shows. -->
+  <div class="intro-mark">
+    <img class="intro-lockup" src="assets/refinix-lockup-v.png" alt="Refinix"
+         onerror="this.remove()">
+    <div class="lockup lockup-v">
+      <svg class="lockup-mark" viewBox="0 0 120 120" aria-hidden="true"><use href="#rfx-mark"/></svg>
+      <p class="wordmark">REFINIX</p>
+    </div>
+  </div>
+  <button class="enter" id="enter" type="button">
+    <span>Get started</span>
+    <span class="go">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 12h15"/><path d="m12.5 5.5 6.5 6.5-6.5 6.5"/>
+      </svg>
+    </span>
+  </button>
+</div>
+<div class="page">
+
+<div class="nav-shell">
+  <nav class="nav">
+    <a class="nav-brand" href="#">
+      <img class="brand-lockup" src="assets/refinix-lockup-h.png" alt="Refinix"
+           onerror="this.remove()">
+      <span class="lockup lockup-h">
+        <svg class="lockup-mark" viewBox="0 0 120 120" aria-hidden="true"><use href="#rfx-mark"/></svg>
+        <span class="wordmark">Refinix</span>
+      </span>
+      <span class="chip">Pre-release</span>
+    </a>
+    <div class="nav-links">
+      <a href="#proof">Proof</a>
+      <a href="#surfaces">Surfaces</a>
+      <a href="#work">What it does</a>
+      <a href="#get">Download</a>
+      <a href="docs.html">Docs</a>
+    </div>
+    <button class="theme-btn" type="button" id="theme">Light</button>
+  </nav>
+</div>
+
+<main>
+
+  <!-- ================================================================ hero -->
+  <div class="wrap">
+    <section class="hero">
+      <div class="reveal">
+        <p class="eyebrow"><b>Apache-2.0</b> &middot; Air-gapped &middot; Open-weight models</p>
+        <!-- Six words in three pairs. The spans are the line breaks: at this size
+             the browser's own wrapping would put four words on the first line and
+             strand the last, and the pairing is the point of the setting. -->
+        <h1><span>Sovereign intelligence,</span><span>behind your</span><span>own walls.</span></h1>
+        <p class="lede">
+          A private agent workbench for confidential industrial work — chat, documents
+          and code, running entirely on hardware inside your perimeter.
+          <strong>The proof is a live counter at zero</strong>, not a promise in a brochure.
+        </p>
+
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#get">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+            </svg>
+            Get Refinix
+          </a>
+          <a class="btn" href="#proof">See the proof</a>
+          <a class="btn" href="#surfaces">Explore the surfaces</a>
+        </div>
+
+        <div class="term">
+          <div class="term-tabs" role="tablist" aria-label="Install method">
+            <button class="term-tab" role="tab" aria-selected="true"  aria-controls="t-verify"  id="tb-verify"  type="button">Verify a build</button>
+            <button class="term-tab" role="tab" aria-selected="false" aria-controls="t-offline" id="tb-offline" type="button">Offline install</button>
+            <button class="term-copy" type="button" data-copy>Copy</button>
+          </div>
+          <div class="term-body">
+            <div class="term-panel" id="t-verify" role="tabpanel" aria-labelledby="tb-verify">
+<pre><span class="cmt"># every build is published with its checksum</span>
+<span class="pr">$</span> sha256sum refinix-0.1.0-windows-x64.msi
+<span class="cmt"># compare against the signed manifest</span>
+<span class="pr">$</span> refinix verify --manifest refinix-0.1.0.manifest.json</pre>
+            </div>
+            <div class="term-panel" id="t-offline" role="tabpanel" aria-labelledby="tb-offline" hidden>
+<pre><span class="cmt"># mount the verified bundle, then install from it</span>
+<span class="pr">$</span> refinix install --bundle /media/refinix-0.1.0-bundle
+<span class="cmt"># no network is contacted at any point</span>
+<span class="pr">$</span> refinix selftest --offline</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ hero clip, with a still from it as fallback ============ -->
+      <figure class="plate plate-hero reveal d2">
+        <div class="hero-plate">
+          <div class="hero-art" role="img" aria-label="Line engraving of a seated deity within a crescent, planets above."></div>
+        </div>
+      </figure>
+    </section>
+  </div>
+
+  <!-- ============================================================= formula -->
+  <div class="formula">
+    <div class="wrap">
+      <p class="reveal"><b>Sovereign</b> <span class="plus">=</span> <b>Local</b> <span class="plus">+</span> <b>Agentic</b> <span class="plus">+</span> <b>Proven</b></p>
+    </div>
+  </div>
+
+  <!-- ===================================================== the long middle
+       Order set by the owner: download first, then approach, product, what
+       it does, the evidence rule, and the counts. -->
+  <div class="wrap">
+    <!-- =========================================================== statement -->
+    <section class="sec">
+      <p class="label reveal">Design approach</p>
+      <h2 class="statement reveal d1">Nothing leaves.<span>Everything is recorded.</span></h2>
+
+      <div class="cards" style="margin-top:56px">
+        <article class="card reveal">
+          <span class="card-n">01</span>
+          <h3>One coordinator, one policy boundary</h3>
+          <p>Chat, Documents and Code are entry points into a single local harness.
+             They do not keep separate identity, memory, routing or audit systems.</p>
+        </article>
+        <article class="card reveal d1">
+          <span class="card-n">02</span>
+          <h3>Capabilities arrive as packs</h3>
+          <p>Enable document work or code work and the installer resolves the smallest
+             model and tool plan for it, showing source, licence and size first.</p>
+        </article>
+        <article class="card reveal d2">
+          <span class="card-n">03</span>
+          <h3>Routing you can override</h3>
+          <p>Auto picks a device from capability and health evidence. The chosen model,
+             the device and the reason stay on screen, and you can overrule them.</p>
+        </article>
+        <article class="card reveal d3">
+          <span class="card-n">04</span>
+          <h3>Every run is replayable</h3>
+          <p>Job state, tool calls, artifacts and approvals land on one append-only
+             event stream, so a run can be inspected after the fact.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============================================================ surfaces -->
+    <section class="sec" id="surfaces" style="padding-top:0">
+      <!-- The sun ornament. It sits in the band of empty page beside the
+           heading — measured at 729x233 on a 1440 screen — and it is positioned
+           absolutely so it fills that emptiness rather than adding to it. In
+           normal flow it was pushing the page 203px taller, which is the
+           opposite of what an ornament in a gap is for.
+
+           It removes itself if the file is absent, exactly like the lockups,
+           so the page is never left with a broken-image icon mid-section. -->
+      <figure class="sun" aria-hidden="true">
+        <img src="assets/sun.png" alt="" onerror="this.closest('.sun').remove()">
+      </figure>
+      <p class="label reveal">The product</p>
+      <h2 class="sec-h reveal d1">Four surfaces, one harness.</h2>
+      <p class="sec-lede reveal d1">
+        Pick a surface to see what it shows. Every value below is sample content,
+        not a measurement.
+      </p>
+
+      <div class="demo reveal d2">
+        <div class="demo-bar">
+          <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="demo-name">refinix &mdash; node-01</span>
+          <div class="demo-tabs" role="tablist" aria-label="Surface">
+            <button class="demo-tab" role="tab" aria-selected="true"  aria-controls="d-chat" id="db-chat" type="button">Chat</button>
+            <button class="demo-tab" role="tab" aria-selected="false" aria-controls="d-docs" id="db-docs" type="button">Documents</button>
+            <button class="demo-tab" role="tab" aria-selected="false" aria-controls="d-code" id="db-code" type="button">Code</button>
+            <button class="demo-tab" role="tab" aria-selected="false" aria-controls="d-cc"   id="db-cc"   type="button">Control Center</button>
+          </div>
+        </div>
+
+        <div class="demo-body">
+
+          <!-- chat -->
+          <div class="demo-panel" id="d-chat" role="tabpanel" aria-labelledby="db-chat">
+            <div>
+              <p class="demo-lead">
+                <b>&ldquo;Read the scanned inspection report and draft an approval note.&rdquo;</b>
+                Four steps. The extraction pass needs the vision model, so it routes to
+                node-02 and the rest stays here.
+              </p>
+              <ul class="mini">
+                <li class="done"><span class="tick">[&times;]</span><span>Extracted 14 pages, mapped findings to page numbers</span><span class="cap">document.extract</span></li>
+                <li class="done"><span class="tick">[&times;]</span><span>Retrieved SOP-114 clauses 4.2 and 9.1</span><span class="cap">knowledge.retrieve</span></li>
+                <li><span class="tick">[&gt;]</span><span>Drafting the note with citations to pages 6, 9 and 11</span><span class="cap">document.generate</span></li>
+                <li><span class="tick">[ ]</span><span>Validate, then ask you to approve the write</span><span class="cap">approval</span></li>
+              </ul>
+              <div class="mini-file">approval-note-SR-4471.docx <span class="sz">41 KB &middot; unsigned</span></div>
+              <div class="pillbar">
+                <span class="p on">Auto</span><span class="p">This device</span><span class="p">Trusted devices</span><span class="p">node-02</span>
+              </div>
+            </div>
+            <div class="demo-side">
+              <h4>Routing</h4>
+              <div class="kv"><span>Selected</span><b>node-02</b></div>
+              <div class="kv"><span>Reason</span><b>vision resident</b></div>
+              <div class="kv"><span>Overridable</span><b>yes</b></div>
+              <h4 style="margin-top:10px">State</h4>
+              <div class="kv"><span>Job</span><b>running</b></div>
+              <div class="kv"><span>Attempt</span><b>1</b></div>
+            </div>
+          </div>
+
+          <!-- documents -->
+          <div class="demo-panel" id="d-docs" role="tabpanel" aria-labelledby="db-docs" hidden>
+            <div>
+              <p class="demo-lead">
+                <b>Scans in, real deliverables out.</b> OCR and vision run on device,
+                and every extracted finding keeps the page it came from so a draft can
+                be traced back to the sheet.
+              </p>
+              <ul class="mini">
+                <li class="done"><span class="tick">[&times;]</span><span>SR-4471.pdf &mdash; 14 pages, 300 dpi, scanned</span><span class="cap">ocr</span></li>
+                <li class="done"><span class="tick">[&times;]</span><span>6 findings extracted, 2 above the clause 4.2 threshold</span><span class="cap">vision</span></li>
+                <li class="done"><span class="tick">[&times;]</span><span>Citations bound to pages 6, 9, 11</span><span class="cap">retrieve</span></li>
+                <li><span class="tick">[&gt;]</span><span>Rendering .docx and validating against the template</span><span class="cap">validate</span></li>
+              </ul>
+              <div class="mini-file">SR-4471.pdf <span class="sz">14 pp &middot; local</span></div>
+              <div class="mini-file">approval-note-SR-4471.docx <span class="sz">draft</span></div>
+            </div>
+            <div class="demo-side">
+              <h4>Index</h4>
+              <div class="kv"><span>Scope</span><b>local disks</b></div>
+              <div class="kv"><span>Documents</span><b>1,284</b></div>
+              <div class="kv"><span>Embeddings</span><b>on device</b></div>
+              <h4 style="margin-top:10px">Egress</h4>
+              <div class="kv"><span>External</span><b>none</b></div>
+            </div>
+          </div>
+
+          <!-- code -->
+          <div class="demo-panel" id="d-code" role="tabpanel" aria-labelledby="db-code" hidden>
+            <div>
+              <p class="demo-lead">
+                <b>Changes are proposed, run, and only then offered.</b> Execution happens
+                in a sandbox with networking disabled and bounded CPU, memory and
+                filesystem access.
+              </p>
+              <pre class="diff"><span class="ctx">--- a/tools/tag_export.py</span>
+<span class="ctx">+++ b/tools/tag_export.py</span>
+<span class="ctx">@@ -18,7 +18,9 @@</span>
+<span class="del">-    rows = read_tags(path)</span>
+<span class="add">+    rows = read_tags(path)</span>
+<span class="add">+    if not rows:</span>
+<span class="add">+        raise EmptyTagFile(path)</span>
+     return normalise(rows)</pre>
+              <div class="mini-file">pytest &mdash; 24 passed, 0 failed <span class="sz">sandbox</span></div>
+            </div>
+            <div class="demo-side">
+              <h4>Sandbox</h4>
+              <div class="kv"><span>Network</span><b>disabled</b></div>
+              <div class="kv"><span>Writes</span><b>temp only</b></div>
+              <div class="kv"><span>Timeout</span><b>120 s</b></div>
+              <h4 style="margin-top:10px">Patch</h4>
+              <div class="kv"><span>Status</span><b>awaiting approval</b></div>
+            </div>
+          </div>
+
+          <!-- control center -->
+          <div class="demo-panel" id="d-cc" role="tabpanel" aria-labelledby="db-cc" hidden>
+            <div>
+              <p class="demo-lead">
+                <b>Enforced, observed, unavailable.</b> Three different claims, never
+                sharing a colour, each naming the layer or observer it came from.
+              </p>
+              <ul class="ev">
+                <li><span>Public egress policy<span class="src">host firewall ruleset</span></span><span class="n">active</span><span class="tag t-enf">Enforced</span></li>
+                <li><span>Public outbound flows<span class="src">coordinator observer &middot; 30 min</span></span><span class="n">0</span><span class="tag t-obs">Observed</span></li>
+                <li><span>External AI/API calls<span class="src">coordinator observer &middot; 30 min</span></span><span class="n">0</span><span class="tag t-obs">Observed</span></li>
+                <li><span>Blocked attempts<span class="src">host firewall counters</span></span><span class="n">3</span><span class="tag t-enf">Enforced</span></li>
+                <li class="unk"><span>Kernel packet capture<span class="src">observer not installed on this host</span></span><span class="n">&mdash;</span><span class="tag t-unk">Unavailable</span></li>
+              </ul>
+            </div>
+            <div class="demo-side">
+              <h4>Devices</h4>
+              <div class="kv"><span>This</span><b>node-01</b></div>
+              <div class="kv"><span>Paired</span><b>1 trusted</b></div>
+              <h4 style="margin-top:10px">Models</h4>
+              <div class="kv"><span>Main engine</span><b>installed</b></div>
+              <div class="kv"><span>Vision</span><b>node-02</b></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ work -->
+    <section class="sec" id="work" style="padding-top:0">
+      <figure class="plate reveal" aria-hidden="true" style="margin-bottom:clamp(40px,5vw,72px)">
+        <svg viewBox="0 0 1000 300" role="img"
+             aria-label="Elevation of a Doric temple: pediment, triglyph frieze and fluted columns.">
+          <g fill="none" stroke="var(--ink-dim)" stroke-width="1.5">
+            <!-- pediment -->
+            <path d="M180,120 L500,34 L820,120"/>
+            <path d="M196,120 L500,50 L804,120"/>
+            <path d="M196,120 L804,120"/>
+            <!-- acroteria -->
+            <path d="M500,34 C494,24 496,14 504,10 C508,18 506,28 500,34 Z"/>
+            <path d="M180,120 C172,114 172,104 180,100 C186,106 186,114 180,120 Z"/>
+            <path d="M820,120 C828,114 828,104 820,100 C814,106 814,114 820,120 Z"/>
+            <!-- tympanum figures, suggested rather than drawn -->
+            <g opacity=".55" stroke-width="1.1">
+              <path d="M330,116 C336,96 352,88 360,98 C368,88 382,94 384,112"/>
+              <path d="M420,114 C428,88 452,80 462,94 C472,80 494,86 498,110"/>
+              <path d="M540,112 C548,86 572,80 582,94 C592,82 612,90 616,114"/>
+              <path d="M650,116 C658,98 672,92 680,102 C688,92 700,98 704,116"/>
+            </g>
+            <!-- entablature -->
+            <path d="M168,120 L832,120 L832,136 L168,136 Z"/>
+            <path d="M172,136 L828,136 L828,176 L172,176 Z"/>
+            <path d="M164,176 L836,176 L836,190 L164,190 Z"/>
+          </g>
+
+          <!-- triglyphs -->
+          <g fill="none" stroke="var(--ink-dim)" stroke-width="1.2" opacity=".85">
+            <g><rect x="186" y="140" width="26" height="32"/><path d="M195,140 v32 M203,140 v32"/></g>
+            <g><rect x="266" y="140" width="26" height="32"/><path d="M275,140 v32 M283,140 v32"/></g>
+            <g><rect x="346" y="140" width="26" height="32"/><path d="M355,140 v32 M363,140 v32"/></g>
+            <g><rect x="426" y="140" width="26" height="32"/><path d="M435,140 v32 M443,140 v32"/></g>
+            <g><rect x="506" y="140" width="26" height="32"/><path d="M515,140 v32 M523,140 v32"/></g>
+            <g><rect x="586" y="140" width="26" height="32"/><path d="M595,140 v32 M603,140 v32"/></g>
+            <g><rect x="666" y="140" width="26" height="32"/><path d="M675,140 v32 M683,140 v32"/></g>
+            <g><rect x="746" y="140" width="26" height="32"/><path d="M755,140 v32 M763,140 v32"/></g>
+          </g>
+
+          <!-- columns: capital, fluted shaft, base -->
+          <g fill="none" stroke="var(--ink-dim)" stroke-width="1.4">
+            <g><path d="M186,190 h50 v12 h-50 Z"/><path d="M192,202 h38 v72 h-38 Z"/>
+               <path d="M199,202 v72 M206,202 v72 M213,202 v72 M220,202 v72" opacity=".6" stroke-width="1"/></g>
+            <g><path d="M280,190 h50 v12 h-50 Z"/><path d="M286,202 h38 v72 h-38 Z"/>
+               <path d="M293,202 v72 M300,202 v72 M307,202 v72 M314,202 v72" opacity=".6" stroke-width="1"/></g>
+            <g><path d="M374,190 h50 v12 h-50 Z"/><path d="M380,202 h38 v72 h-38 Z"/>
+               <path d="M387,202 v72 M394,202 v72 M401,202 v72 M408,202 v72" opacity=".6" stroke-width="1"/></g>
+            <g><path d="M468,190 h50 v12 h-50 Z"/><path d="M474,202 h38 v72 h-38 Z"/>
+               <path d="M481,202 v72 M488,202 v72 M495,202 v72 M502,202 v72" opacity=".6" stroke-width="1"/></g>
+            <g><path d="M562,190 h50 v12 h-50 Z"/><path d="M568,202 h38 v72 h-38 Z"/>
+               <path d="M575,202 v72 M582,202 v72 M589,202 v72 M596,202 v72" opacity=".6" stroke-width="1"/></g>
+            <g><path d="M656,190 h50 v12 h-50 Z"/><path d="M662,202 h38 v72 h-38 Z"/>
+               <path d="M669,202 v72 M676,202 v72 M683,202 v72 M690,202 v72" opacity=".6" stroke-width="1"/></g>
+            <g><path d="M750,190 h50 v12 h-50 Z"/><path d="M756,202 h38 v72 h-38 Z"/>
+               <path d="M763,202 v72 M770,202 v72 M777,202 v72 M784,202 v72" opacity=".6" stroke-width="1"/></g>
+          </g>
+
+          <!-- stylobate -->
+          <g fill="none" stroke="var(--ink-dim)" stroke-width="1.5">
+            <path d="M156,274 h688 M144,286 h712 M132,298 h736"/>
+          </g>
+        </svg>
+      </figure>
+
+      <p class="label reveal">Capabilities</p>
+      <h2 class="sec-h reveal d1">Built for the work a plant actually generates.</h2>
+      <p class="sec-lede reveal d1">
+        Approval notes, inspection reports, engineering calculations, internal tooling
+        code, and drawings that arrive as scans.
+      </p>
+
+      <div class="caps">
+        <article class="cap-row reveal">
+          <span class="cap-n">01</span>
+          <h3>Read what is on paper</h3>
+          <p>Scanned reports, handwritten annotations, P&amp;IDs and photographs, through
+             on-device OCR and vision. Findings keep their page numbers, so a draft
+             traces back to the sheet.</p>
+        </article>
+        <article class="cap-row reveal">
+          <span class="cap-n">02</span>
+          <h3>Ground it in your own manuals</h3>
+          <p>A local retrieval connector over your SOPs, standards and past
+             correspondence. Citations point at your own disks, and the index never
+             leaves them.</p>
+        </article>
+        <article class="cap-row reveal">
+          <span class="cap-n">03</span>
+          <h3>Produce the actual deliverable</h3>
+          <p>Approval notes, spreadsheets and decks that open correctly as
+             <code>.docx</code>, <code>.xlsx</code> and <code>.pptx</code> — plus code
+             changes validated in a sandbox with networking off.</p>
+        </article>
+        <article class="cap-row reveal">
+          <span class="cap-n">04</span>
+          <h3>Use the machines you have</h3>
+          <p>One workstation is a complete installation. Pair a second trusted device
+             and a vision job can run there while a coding job runs here — one job, one
+             model, one device, never weights split across machines.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============================================================== proof -->
+    <section class="sec" id="proof" style="padding-top:0">
+      <div class="split" style="margin-bottom:56px">
+        <div class="reveal">
+          <p class="label">The evidence rule</p>
+          <h2 class="sec-h">A claim, an observation and a blank are three different things.</h2>
+          <p class="sec-lede">
+            A green tick cannot tell you whether a control is running, or whether
+            anyone was watching. So Refinix does not draw one.
+          </p>
+          <!-- The rule itself, as three lines rather than three paragraphs. The
+               numerals carry the state colours, so the system the cards below use
+               is introduced here before it is used. -->
+          <ol class="rule">
+            <li>Every figure names its source.</li>
+            <li>A missing source stays visibly missing.</li>
+            <li>No fourth state quietly means <em>probably fine</em>.</li>
+          </ol>
+        </div>
+
+        <!-- ============ the supplied motion clip, in place of the owl ============
+             Copied into assets byte-for-byte — no transcode, so no generation of
+             loss and the source frame rate is whatever the file already carries.
+             Paused while off screen: the page has a second clip on the intro and
+             decoding both at once is what costs frames. -->
+        <figure class="plate plate-clip reveal d2">
+          <video class="evidence-clip" autoplay muted loop playsinline preload="metadata"
+                 aria-label="Motion graphic: configuration and measurement icons animating.">
+            <source src="assets/evidence-loop.mp4" type="video/mp4">
+          </video>
+        </figure>
+      </div>
+
+      <!-- Three states, three treatments, no shared colour. The old copy
+           described the hatching; these cards draw it, so the third card is
+           legibly a different kind of thing before a word of it is read. -->
+      <div class="claims">
+        <article class="claim claim-enforced reveal">
+          <span class="claim-tag">Enforced</span>
+          <h3>A named control is active</h3>
+          <p>The host firewall ruleset is loaded and blocking, and the layer doing
+             the enforcing is named beside the claim.</p>
+          <p class="claim-src">nftables &middot; inet/filter</p>
+        </article>
+        <article class="claim claim-observed reveal d1">
+          <span class="claim-tag">Observed</span>
+          <h3>A named observer saw a count</h3>
+          <p>Zero public outbound flows, on stated interfaces, in a stated window.
+             No observer and no window means no figure.</p>
+          <p class="claim-src">flow-probe &middot; 24 h window</p>
+        </article>
+        <article class="claim claim-unknown reveal d2">
+          <span class="claim-tag">Unavailable</span>
+          <h3>There is no evidence</h3>
+          <p>No observer installed on this host. Drawn as missing &mdash; never as a
+             zero, because absence is not proof.</p>
+          <p class="claim-src">no source</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- =============================================================== stats -->
+    <section class="sec" style="padding-top:0">
+      <div class="stats">
+        <div class="stat reveal">
+          <b>2</b><span>Execution targets without leaving your policy boundary</span>
+          <em>This device, or a trusted paired device</em>
+        </div>
+        <div class="stat reveal d1">
+          <b>4</b><span>Surfaces over one harness</span>
+          <em>Chat, Documents, Code, Control Center</em>
+        </div>
+        <div class="stat reveal d2">
+          <b>0</b><span>Public network calls in offline runtime</span>
+          <em>A design invariant, not a benchmark</em>
+        </div>
+        <div class="stat reveal d3">
+          <b>3</b><span>Kinds of evidence claim</span>
+          <em>Enforced, observed, unavailable</em>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================================================= closing -->
+  <div class="wrap">
+    <section class="closing" id="get">
+      <div class="lockup lockup-v lockup-lg reveal" role="img" aria-label="Refinix">
+        <svg class="lockup-mark" viewBox="0 0 120 120" aria-hidden="true"><use href="#rfx-mark"/></svg>
+        <p class="wordmark">REFINIX</p>
+      </div>
+      <h2 class="sec-h reveal d1" style="max-width:24ch">Confidential work deserves better than a policy nobody can check.</h2>
+      <p class="sec-lede reveal d1">
+        One local harness for chat, documents and code &mdash; every run recorded,
+        every figure sourced, and nothing leaving your perimeter.
+      </p>
+      <div class="cta-row reveal d2">
+        <a class="btn btn-primary" href="#get">Download</a>
+        <a class="btn" href="#">Read the security model</a>
+        <a class="btn" href="#">Source on GitHub</a>
+      </div>
+    </section>
+  </div>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="#surfaces">Surfaces</a></li>
+          <li><a href="#proof">Sovereignty proof</a></li>
+          <li><a href="#work">Capabilities</a></li>
+          <li><a href="#get">Download</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Documentation</h4>
+        <ul>
+          <li><a href="docs.html#start">Getting started</a></li>
+          <li><a href="docs.html#manual">User manual</a></li>
+          <li><a href="docs.html#limits">Limits and answers</a></li>
+          <li><a href="docs.html#questions">Common questions</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <ul>
+          <li><a href="#">Source repository</a></li>
+          <li><a href="#">Licence — Apache-2.0</a></li>
+          <li><a href="#">Report an issue</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Built by</h4>
+        <div class="team-logo" role="img" aria-label="Rokunin Sync" data-team-logo></div>
+        <dl>
+          <dd>Team Rokunin Sync</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="foot-base">
+      <span>Refinix &middot; pre-release</span>
+      <span>This site runs no inference and stores no chats</span>
+      <span>Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---- tab groups: terminal and surface switcher share one behaviour ---- */
+  function wireTabs(container, tabSel) {
+    var tabs = [].slice.call(container.querySelectorAll(tabSel));
+    if (tabs.length < 2) return;
+    tabs.forEach(function (tab, i) {
+      tab.addEventListener('click', function () { select(i); });
+      tab.addEventListener('keydown', function (e) {
+        var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+        if (!d) return;
+        e.preventDefault();
+        var n = (i + d + tabs.length) % tabs.length;
+        select(n);
+        tabs[n].focus();
+      });
+    });
+    function select(i) {
+      tabs.forEach(function (t, j) {
+        t.setAttribute('aria-selected', String(j === i));
+        var panel = document.getElementById(t.getAttribute('aria-controls'));
+        if (panel) panel.hidden = j !== i;
+      });
+    }
+  }
+  document.querySelectorAll('.term').forEach(function (t) { wireTabs(t, '.term-tab[role="tab"]'); });
+  document.querySelectorAll('.demo').forEach(function (d) { wireTabs(d, '.demo-tab'); });
+
+  /* ---- copy the visible command block ---- */
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var box = btn.closest('.term');
+      var panel = box.querySelector('.term-panel:not([hidden]) pre');
+      if (!panel) return;
+      var text = panel.innerText.split('\n')
+        .filter(function (l) { return l.trim() && l.trim()[0] !== '#'; })
+        .map(function (l) { return l.replace(/^\s*\$\s?/, ''); })
+        .join('\n');
+      var done = function () {
+        btn.textContent = 'Copied';
+        btn.classList.add('done');
+        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1600);
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, done);
+      else done();
+    });
+  });
+
+  /* ---- reveal on scroll ----
+     A position check rather than IntersectionObserver on purpose. An anchor
+     jump (#surfaces, #get) moves elements past the viewport without ever
+     crossing an intersection threshold, so an observer never fires for them and
+     they stay at opacity 0 permanently. Testing "has reached the fold line"
+     also catches everything already scrolled past. */
+  var items = [].slice.call(document.querySelectorAll('.reveal'));
+  if (reduced) {
+    items.forEach(function (el) { el.classList.add('in'); });
+  } else {
+    var ticking = false;
+    var check = function () {
+      ticking = false;
+      var line = window.innerHeight * 0.92;
+      for (var i = items.length - 1; i >= 0; i--) {
+        if (items[i].getBoundingClientRect().top < line) {
+          items[i].classList.add('in');
+          items.splice(i, 1);
+        }
+      }
+      if (!items.length) {
+        removeEventListener('scroll', onScroll);
+        removeEventListener('resize', onScroll);
+      }
+    };
+    var onScroll = function () {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(check);
+    };
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', onScroll);
+    /* The browser restores an anchor position after this script parses, and a
+       fragment jump fires no scroll event — so re-check on load and hashchange,
+       with one delayed sweep to cover late layout (webfonts, images). */
+    addEventListener('load', onScroll);
+    addEventListener('hashchange', onScroll);
+    setTimeout(check, 400);
+    check();
+  }
+
+  /* ---- hero clip ----
+     The clip is ~15 MB, which is far past what a single-file build can inline,
+     so any such build falls back to the engraved plate. Marking the fallback
+     on error rather than hiding the plate up front means the plate is what
+     shows whenever the clip is genuinely unavailable, not a blank circle.
+     Reduced motion gets the still plate too. */
+  var media = document.querySelector('.hero-media');
+  if (media) {
+    var clip = media.querySelector('video');
+    var toFallback = function () { media.setAttribute('data-fallback', ''); };
+    if (reduced) {
+      toFallback();
+      if (clip) { try { clip.pause(); } catch (e) {} }
+    } else if (clip) {
+      clip.addEventListener('error', toFallback, true);
+      var src = clip.querySelector('source');
+      if (src) src.addEventListener('error', toFallback);
+      /* autoplay can still be refused even when muted; nothing on screen is
+         worse than the plate, so treat a stalled clip as unavailable */
+      setTimeout(function () {
+        if (!clip.videoWidth) toFallback();
+      }, 2500);
+    }
+  }
+
+  /* ---- network field ----
+     Nodes drifting on a slow current, linked to their near neighbours. The
+     cursor pulls nodes toward it, brightens them and draws its own links, so
+     the field reacts under the pointer. Used twice: behind the page, and
+     behind the intro clip where it fills the space either side of a portrait
+     video. Colours come from CSS custom properties so it follows the theme. */
+  function makeNet(canvas, opts) {
+    if (!canvas) return null;
+    opts = opts || {};
+    var ctx = canvas.getContext('2d');
+    /* Capped at 1.25: this is a soft decorative field, and full retina
+       density quadruples the pixel work for no visible gain. */
+    var dpr = Math.min(window.devicePixelRatio || 1, 1.25);
+    var w = 0, h = 0, nodes = [], raf = 0, mx = -9999, my = -9999;
+    var LINK = opts.link || 158, REACH = opts.reach || 200;
+    var inkRGB = '214,222,232', accRGB = '127,182,232';
+
+    var readColours = function () {
+      var cs = getComputedStyle(root);
+      inkRGB = (cs.getPropertyValue('--grain-ink') || inkRGB).trim();
+      accRGB = (cs.getPropertyValue('--grain-brand') || accRGB).trim();
+    };
+
+    var seed = function () {
+      var n = Math.max(40, Math.min(90, Math.round(w * h / 20000)));
+      nodes = [];
+      for (var i = 0; i < n; i++) {
+        nodes.push({
+          x: Math.random() * w, y: Math.random() * h,
+          vx: (Math.random() - .5) * .24, vy: (Math.random() - .5) * .24,
+          r: Math.random() < .18 ? 2.2 : 1.3,
+          warm: Math.random() < .22,
+          lift: 0
+        });
+      }
+    };
+
+    var resize = function () {
+      var b = canvas.getBoundingClientRect();
+      w = Math.max(1, Math.round(b.width)); h = Math.max(1, Math.round(b.height));
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      seed();
+      if (typeof draw === 'function') draw();
+    };
+
+    var draw = function () {
+      ctx.clearRect(0, 0, w, h);
+      var i, j, a, b, dx, dy, d;
+
+      for (i = 0; i < nodes.length; i++) {
+        a = nodes[i];
+        a.x += a.vx; a.y += a.vy;
+        if (a.x < 0 || a.x > w) a.vx *= -1;
+        if (a.y < 0 || a.y > h) a.vy *= -1;
+        dx = a.x - mx; dy = a.y - my;
+        d = Math.sqrt(dx * dx + dy * dy);
+        if (d < REACH) {
+          var f = 1 - d / REACH;
+          a.x -= (dx / (d || 1)) * f * 1.1;   // drawn toward the pointer
+          a.y -= (dy / (d || 1)) * f * 1.1;
+          a.lift = Math.max(a.lift, f);
+        }
+        a.lift *= .94;
+      }
+
+      /* Links batched into two paths rather than one stroke() per link.
+         Measured at 0.5 ms/frame per canvas before, 0.05 ms after — and two
+         of these run at once while the intro is up. */
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(' + inkRGB + ',.16)';
+      ctx.beginPath();
+      for (i = 0; i < nodes.length; i++) {
+        a = nodes[i];
+        for (j = i + 1; j < nodes.length; j++) {
+          b = nodes[j];
+          dx = a.x - b.x; dy = a.y - b.y;
+          if (dx > LINK || dx < -LINK || dy > LINK || dy < -LINK) continue;
+          if (dx * dx + dy * dy > LINK * LINK) continue;
+          ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        }
+      }
+      ctx.stroke();
+
+      /* only the pointer-touched links are drawn individually, and there are
+         few of them */
+      ctx.strokeStyle = 'rgba(' + accRGB + ',.42)';
+      ctx.beginPath();
+      for (i = 0; i < nodes.length; i++) {
+        a = nodes[i];
+        if (a.lift > .05) { ctx.moveTo(a.x, a.y); ctx.lineTo(mx, my); }
+      }
+      ctx.stroke();
+
+      for (i = 0; i < nodes.length; i++) {
+        a = nodes[i];
+        ctx.fillStyle = 'rgba(' + (a.warm ? accRGB : inkRGB) + ',' + Math.min(.30 + a.lift * .7, 1).toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(a.x, a.y, a.r + a.lift * 1.6, 0, 6.2832); ctx.fill();
+      }
+    };
+
+    var frame = function () { raf = requestAnimationFrame(frame); draw(); };
+    var start = function () { if (!raf) raf = requestAnimationFrame(frame); };
+    var stop = function () { if (raf) { cancelAnimationFrame(raf); raf = 0; } };
+
+    addEventListener('pointermove', function (e) {
+      var b = canvas.getBoundingClientRect();
+      mx = e.clientX - b.left; my = e.clientY - b.top;
+    }, { passive: true });
+    addEventListener('pointerleave', function () { mx = my = -9999; });
+    addEventListener('resize', resize);
+    /* A window resize event is not always enough — the canvas can change size
+       from layout alone, and a stale buffer then stretches the drawing.
+       Observe the element itself. */
+    if (window.ResizeObserver) {
+      var ro = new ResizeObserver(function () {
+        var b = canvas.getBoundingClientRect();
+        if (Math.abs(b.width - w) > 1 || Math.abs(b.height - h) > 1) resize();
+      });
+      ro.observe(canvas);
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) stop(); else start();
+    });
+
+    readColours(); resize(); draw(); start();
+    return { recolour: function () { readColours(); draw(); },
+             resize: resize, start: start, stop: stop };
+  }
+
+  var nets = [], pageNet = null, introNet = null;
+  if (!reduced) {
+    pageNet = makeNet(document.querySelector('.grain'));
+    introNet = makeNet(document.querySelector('.intro .net'));
+    if (pageNet) nets.push(pageNet);
+    if (introNet) nets.push(introNet);
+    /* Only one field runs at a time. Two full-screen canvases animating while
+       a video decodes is the difference between smooth and not. */
+    if (pageNet && document.getElementById('intro')) pageNet.stop();
+  }
+  window.__grainRecolour = function () { nets.forEach(function (n) { n.recolour(); }); };
+
+  /* ---- the evidence clip plays only while it is on screen ----
+     The page can have two clips alive at once (this and the intro), and
+     decoding both is what costs frames. Nothing here re-encodes or rescales the
+     file — it is played exactly as supplied. */
+  var evClip = document.querySelector('.evidence-clip');
+  if (evClip) {
+    if (reduced) {
+      evClip.setAttribute('controls', '');
+    } else if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { evClip.play().catch(function () {}); }
+          else { evClip.pause(); }
+        });
+      }, { threshold: 0.01, rootMargin: '120px' }).observe(evClip);
+    } else {
+      evClip.play().catch(function () {});
+    }
+  }
+
+  /* ---- the figure corrupts every few seconds on the page ----
+     The SVG filter is restarted each burst so the block pattern differs every
+     time; without beginElement it would freeze on its last frame and every
+     burst would break up identically. */
+  var pageArt = document.querySelector('.hero-art');
+  if (pageArt && !reduced) {
+    var pixAnims = document.querySelectorAll('#pixglitch animate');
+    setInterval(function () {
+      if (document.hidden) return;
+      for (var p = 0; p < pixAnims.length; p++) { try { pixAnims[p].beginElement(); } catch (e) {} }
+      pageArt.classList.add('pixglitch');
+      setTimeout(function () { pageArt.classList.remove('pixglitch'); }, 520);
+    }, 3000);
+  }
+
+  /* ---- intro gate ----
+     Clip, then glitch, then the figure holds for 0.6s and travels right onto
+     its place in the page. Each stage is a class on the container so the CSS
+     owns the motion and this only sequences it. The rays and the lightning are
+     timed to finish inside that hold - see the cancel rules in site.css, since
+     an animated opacity cannot be overridden by a plain declaration. */
+  var intro = document.getElementById('intro');
+  var enter = document.getElementById('enter');
+  if (intro && enter) {
+    var eyes = intro.querySelectorAll('.eye');
+    var deity = intro.querySelector('.deity-reveal');
+    /* The eyes are placed from the artwork's own box, not the viewport, so
+       they stay on the face at any size. Fractions are of the image. */
+    var EYE = [{ x: .491, y: .3855 }, { x: .5255, y: .3845 }];
+    var placeEyes = function () {
+      var b = deity.getBoundingClientRect();
+      if (!b.width) return;
+      for (var i = 0; i < eyes.length; i++) {
+        /* a slit, not a dot: the light escapes from under the cloth */
+        eyes[i].style.width = (b.width * .030) + 'px';
+        eyes[i].style.height = (b.width * .0062) + 'px';
+        eyes[i].style.left = (b.left + b.width * EYE[i].x) + 'px';
+        eyes[i].style.top = (b.top + b.height * EYE[i].y) + 'px';
+      }
+    };
+    addEventListener('resize', placeEyes);
+
+    document.body.style.overflow = 'hidden';
+    var leave = function () {
+      if (intro.dataset.done) return;
+      intro.dataset.done = '1';
+      intro.classList.add('glitching');
+      var anims = document.querySelectorAll('#turb animate');
+      for (var i = 0; i < anims.length; i++) { try { anims[i].beginElement(); } catch (e) {} }
+
+      setTimeout(function () {
+        intro.classList.remove('glitching');
+        var vid = intro.querySelector('.intro-video');
+        if (vid) { try { vid.pause(); } catch (e) {} vid.style.display = 'none'; }
+        intro.classList.add('revealing');
+        placeEyes();
+        setTimeout(function () {
+          /* Measure the hero artwork and map the figure onto it, so it
+             travels right and settles exactly where the page shows it. */
+          var target = document.querySelector('.hero-art');
+          if (target) {
+            var t = target.getBoundingClientRect();
+            var c = deity.getBoundingClientRect();
+            if (t.width && c.width) {
+              var s = t.width / c.width;
+              var dx = (t.left + t.width / 2) - (c.left + c.width / 2);
+              var dy = (t.top + t.height / 2) - (c.top + c.height / 2);
+              deity.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px) scale(' + s.toFixed(3) + ')';
+            }
+          }
+          intro.classList.add('exiting');
+          setTimeout(function () {
+            intro.classList.add('gone');
+            document.body.style.overflow = '';
+            if (introNet) introNet.stop();
+            if (pageNet) pageNet.start();
+            setTimeout(function () { intro.hidden = true; }, 900);
+          }, 300);
+          /* The hold. Shortening this alone would have cut the reveal off
+             mid-stroke — the arrival, the lightning and the blink were all
+             timed against the old 1300, and the bolts alone ran to 1.2s. They
+             are rescaled in site.css to finish inside this window. */
+        }, 600);
+      }, 1000);
+    };
+    enter.addEventListener('click', leave);
+  }
+
+
+  /* ---- theme toggle. Suppress transitions across the swap so colours do
+          not animate, which reads as lag and can strand a stale value. ---- */
+  var btn = document.getElementById('theme');
+  /* The host may already have stamped a theme on the root, so read the live
+     state rather than assuming the page opened dark. */
+  var isLight = function () { return root.getAttribute('data-theme') === 'light'; };
+  btn.textContent = isLight() ? 'Dark' : 'Light';
+  btn.addEventListener('click', function () {
+    var toLight = !isLight();
+    root.setAttribute('data-theme-switching', '');
+    root.setAttribute('data-theme', toLight ? 'light' : 'dark');
+    btn.textContent = toLight ? 'Dark' : 'Light';
+    /* Recolour synchronously: the custom properties have already changed, and
+       deferring this to rAF leaves the field on the old theme's colour for any
+       tab where frames are throttled. Only the transition suppression needs
+       to wait for a frame. */
+    if (window.__grainRecolour) window.__grainRecolour();
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        root.removeAttribute('data-theme-switching');
+      });
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

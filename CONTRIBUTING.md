@@ -6,9 +6,8 @@
 > now `main` and `dev` have **no ruleset and no branch protection** — anyone
 > with write access can still push to them directly. The local `pre-push` hook
 > guards both branches but is skippable and absent in a fresh clone, and it is
-> now the **only** guard. A direct push is still perfectly visible — the commit
-> lands in branch history and the repository activity feed like any other — but
-> nothing prevents it and nothing announces it. Someone has to look.
+> now the **only preventive** guard. A direct push still lands immediately;
+> Main CI reports its result afterward but cannot undo or block the push.
 >
 > Protection goes live when a repository admin runs
 > `./scripts/setup-branch-protection.sh` **and it succeeds**. That may require
@@ -33,8 +32,8 @@ through a pull request.
 
 That is the *only* hard rule. Everything else is open: anyone may open, review,
 or merge a PR, including their own. Member → `dev` PRs run no automated CI.
-Automated checks run only on the `dev` → `main` release PR, which merges when
-those checks are green. No approval quota or owner sign-off is required.
+Automated checks run on the `dev` → `main` release PR and again after its commit
+lands on `main`. No approval quota or owner sign-off is required.
 
 ## One-time setup
 
@@ -77,7 +76,7 @@ Both the bare name and the `name/topic` form are accepted into `dev`.
 Do not push to someone else's branch. Open a PR against it if you need to
 contribute there.
 
-## Daily flow
+## Contribution flow
 
 ```bash
 # 1. Start from the latest dev
@@ -104,7 +103,8 @@ them directly; the accumulated `dev` branch is checked at release time.
 ## Releasing to `main`
 
 Only `dev` opens a PR into `main`. This is the only PR type that starts
-automated CI. Any other source branch fails `pr-flow-guard`.
+pre-merge CI. Any other source branch fails `pr-flow-guard`. Main CI also runs
+after every commit that lands on `main`, whether by merge or direct push.
 
 ```bash
 gh pr create --base main --head dev --title "Release: <what is in it>"
@@ -127,6 +127,12 @@ are pure notification noise. Ask for a review when you want one.
 Work on `dev` until it is genuinely ready, then take it to `main` in one PR.
 Anyone can open and merge that release PR.
 
+For the alpha build, follow the [execution review and named human
+checkpoints](tasks.md#numbered-execution-tasks) before promotion.
+These are work-acceptance gates; they do not add a GitHub approval quota or
+change the workflow triggers. Git publication remains a human action unless
+explicitly authorised under [AGENTS.md](AGENTS.md#git).
+
 Reviewing is still worth doing. When you do, check:
 
 - **Evidence.** [Evaluation rules](docs/evaluation.md#1-evidence-labels):
@@ -135,7 +141,7 @@ Reviewing is still worth doing. When you do, check:
 - **Honest labels.** Features are labelled planned, prototyped, verified,
   deferred, or rejected. "Prototyped" presented as "verified" is a bug.
 - **No mocked paths sold as real.** The
-  [Day 1 gate](docs/evaluation.md#day-1-baseline-and-one-local-engine) requires
+  [C05 gate](docs/evaluation.md#c05-contracts-and-local-execution) requires
   no mocked inference in the claimed path.
 - **AI output was actually read.** Do not merge generated output nobody has
   reviewed.
@@ -157,21 +163,18 @@ Use synthetic or explicitly approved non-sensitive test fixtures.
 
 ## Enforcement
 
-Two layers, weakest to strongest:
+Three layers, weakest to strongest:
 
 | Layer | What it does | Can it be bypassed? |
 |---|---|---|
 | [`.githooks/pre-push`](.githooks/pre-push) | Blocks direct pushes to `main`/`dev` locally | Yes — `--no-verify`, or a clone that never ran the installer |
+| [Main CI](.github/workflows/ci.yml) | Tests pull requests into `main` and commits that land on `main` | Yes as prevention — push checks run only after the commit lands |
 | Branch ruleset | Server-side rejection — **not applied yet** | Once applied, no: `bypass_actors` is empty, so admins are included |
 
-There is deliberately **no** GitHub Actions audit of pushes. Automated checks
-run only on pull requests targeting `main`, so Actions minutes are spent on the
-release gate and nothing else. The trade-off is worth stating plainly: until
-the ruleset is applied, nothing prevents a direct push to `main` or `dev` and
-nothing alerts you to one. The commit is not hidden — it appears in `git log`,
-in the branch's commit list, and in the repository activity feed — but finding
-it depends on somebody checking. Install the hook, and treat the rule as a team
-commitment.
+Main CI audits every push to `main`, but it does not turn a failed check into a
+rejected push. Until the ruleset is applied, nothing server-side prevents a
+direct push to `main` or `dev`. Install the hook and treat the PR-only rule as a
+team commitment.
 
 Both rulesets require a PR. Only the `main` ruleset requires passing status
 checks; the `dev` ruleset has none. Neither requires approvals —
@@ -196,14 +199,14 @@ The ruleset is applied by
 requires **repository admin**. Until it succeeds, direct pushes to both `main`
 and `dev` rely entirely on the local hook and team discipline.
 
-### Adding a build or test gate
+### Main CI and required checks
 
-Right now the only main-release check is `pr-flow-guard`. As build, test, and
-lint jobs land, configure them to run for PRs targeting `main`, then add their
-**job names** to the main release list:
+The `ci` job runs the pinned Python and browser-side suites on pull requests
+targeting `main` and on pushes to `main`. To make it a merge gate when applying
+the main ruleset, include its **job name** in the release list:
 
 ```bash
-MAIN_REQUIRED_CHECKS="pr-flow-guard build test lint" ./scripts/setup-branch-protection.sh
+MAIN_REQUIRED_CHECKS="pr-flow-guard ci" ./scripts/setup-branch-protection.sh
 ```
 
 The name must match the workflow's `jobs.<id>.name` and that job must run on

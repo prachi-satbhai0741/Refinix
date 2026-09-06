@@ -1,0 +1,271 @@
+{
+  "fixture": "c07-documents-v1",
+  "purpose": "Deterministic expected results for the C08 Documents workflow. Every value below is checkable against the fixture text; nothing here is a model judgement.",
+  "not_a_benchmark": "These are correctness expectations for extraction and citation, not a quality score. A model answer that is fluent and wrong still fails them.",
+  "sources": {
+    "inspection-report.txt": {
+      "role": "inspection report",
+      "pages": 3,
+      "page_marker": "--- PAGE n ---"
+    },
+    "sop-mech-014.txt": {
+      "role": "supporting SOP",
+      "pages": 3,
+      "page_marker": "--- PAGE n ---"
+    },
+    "inspection-report-scan.pdf": {
+      "role": "raster scan of the inspection report",
+      "pages": 3,
+      "page_marker": "none - this is an image, page numbers are PDF pages",
+      "text_layer": "none",
+      "ground_truth": "inspection-report.txt",
+      "why": "The extraction pipeline must read pixels. The .txt is what a correct reading produces; this is what it has to read to get there."
+    }
+  },
+  "expected_facts": [
+    {
+      "field": "report_number",
+      "value": "NG-2026-0417",
+      "source": "inspection-report.txt",
+      "page": 1,
+      "scan_page": 1
+    },
+    {
+      "field": "asset",
+      "value": "Transfer pump P-204",
+      "source": "inspection-report.txt",
+      "page": 1,
+      "scan_page": 1
+    },
+    {
+      "field": "inspection_date",
+      "value": "2026-04-17",
+      "source": "inspection-report.txt",
+      "page": 1,
+      "scan_page": 1
+    },
+    {
+      "field": "standard_applied",
+      "value": "SOP-MECH-014 rev 3",
+      "source": "inspection-report.txt",
+      "page": 1,
+      "scan_page": 1
+    },
+    {
+      "field": "vibration_drive_end_mm_s",
+      "value": "7.9",
+      "source": "inspection-report.txt",
+      "page": 2,
+      "scan_page": 2
+    },
+    {
+      "field": "vibration_non_drive_end_mm_s",
+      "value": "4.1",
+      "source": "inspection-report.txt",
+      "page": 2,
+      "scan_page": 2
+    },
+    {
+      "field": "bearing_temperature_de_c",
+      "value": "71",
+      "source": "inspection-report.txt",
+      "page": 2,
+      "scan_page": 2
+    },
+    {
+      "field": "discharge_pressure_bar",
+      "value": "3.4",
+      "source": "inspection-report.txt",
+      "page": 2,
+      "scan_page": 2
+    },
+    {
+      "field": "motor_current_a",
+      "value": "18.2",
+      "source": "inspection-report.txt",
+      "page": 2,
+      "scan_page": 2
+    },
+    {
+      "field": "vibration_alarm_limit_mm_s",
+      "value": "7.1",
+      "source": "sop-mech-014.txt",
+      "page": 1
+    },
+    {
+      "field": "bearing_temperature_limit_c",
+      "value": "80",
+      "source": "sop-mech-014.txt",
+      "page": 1
+    },
+    {
+      "field": "reinspection_days",
+      "value": "14",
+      "source": "sop-mech-014.txt",
+      "page": 2
+    },
+    {
+      "field": "anchor_bolt_torque_nm",
+      "value": "95",
+      "source": "sop-mech-014.txt",
+      "page": 2
+    }
+  ],
+  "expected_missing": [
+    {
+      "field": "suction_pressure_bar",
+      "reported_as": "not recorded",
+      "reason": "the gauge is illegible",
+      "source": "inspection-report.txt",
+      "page": 2,
+      "must_not_be": [
+        "0",
+        "0.0",
+        "within limit",
+        "as per previous report",
+        "3.4"
+      ],
+      "why": "SOP-MECH-014 2.3 forbids entering a missing reading as zero, as in specification, or inferred from a previous report. A pipeline that fills this field has fabricated a measurement.",
+      "scan_page": 2
+    },
+    {
+      "field": "anchor_bolt_torque_recorded",
+      "reported_as": "not recorded",
+      "reason": "torque was not recorded at the time of inspection",
+      "source": "inspection-report.txt",
+      "page": 1,
+      "scan_page": 1
+    },
+    {
+      "field": "countersignature",
+      "reported_as": "not countersigned at time of issue",
+      "source": "inspection-report.txt",
+      "page": 3,
+      "scan_page": 3
+    }
+  ],
+  "expected_uncertainty": [
+    {
+      "item": "suction pressure",
+      "expected_state": "unknown",
+      "acceptable_wordings": [
+        "not recorded",
+        "could not be verified",
+        "illegible gauge"
+      ],
+      "unacceptable": [
+        "normal",
+        "nominal",
+        "no issue found",
+        "0 bar"
+      ],
+      "scan_page": 2,
+      "also_on_scan_page": 1
+    },
+    {
+      "item": "casing corrosion depth",
+      "expected_state": "unknown",
+      "why": "the report says 'no through-wall loss observed' and gives no depth; a numeric depth in the output is invented.",
+      "scan_page": 1
+    }
+  ],
+  "expected_findings": [
+    {
+      "id": "F-1",
+      "claim": "drive-end vibration exceeds the alarm limit",
+      "requires_citations": [
+        {
+          "source": "inspection-report.txt",
+          "page": 3,
+          "scan_page": 3
+        },
+        {
+          "source": "sop-mech-014.txt",
+          "page": 1
+        }
+      ],
+      "required_action": "re-inspection within 14 days",
+      "action_clause": {
+        "source": "sop-mech-014.txt",
+        "page": 2,
+        "clause": "3.1",
+        "quote": "3.1  A vibration alarm requires re-inspection within 14 days."
+      }
+    },
+    {
+      "id": "F-2",
+      "claim": "two baseplate anchor bolts are loose",
+      "requires_citations": [
+        {
+          "source": "inspection-report.txt",
+          "page": 3,
+          "scan_page": 3
+        },
+        {
+          "source": "sop-mech-014.txt",
+          "page": 2
+        }
+      ],
+      "required_action": "re-torque to 95 Nm and record the value",
+      "action_clause": {
+        "source": "sop-mech-014.txt",
+        "page": 2,
+        "clause": "3.3",
+        "quote": "3.3  Loose baseplate anchor bolts shall be re-torqued to 95 Nm"
+      }
+    },
+    {
+      "id": "F-3",
+      "claim": "suction pressure could not be verified",
+      "requires_citations": [
+        {
+          "source": "inspection-report.txt",
+          "page": 3,
+          "scan_page": 3
+        },
+        {
+          "source": "sop-mech-014.txt",
+          "page": 3
+        }
+      ],
+      "required_action": "list as an open item; replace the gauge before the next routine inspection",
+      "action_clause": {
+        "source": "sop-mech-014.txt",
+        "page": 3,
+        "clause": "5.2",
+        "quote": "5.2  An approval note shall list every value the report recorded as"
+      }
+    }
+  ],
+  "trap_expectations": [
+    {
+      "trap": "removal from service",
+      "wrong_answer": "the pump must be removed from service because vibration is in alarm",
+      "correct_answer": "the pump may remain in service; SOP-MECH-014 3.2 says a vibration alarm alone does not require removal, and bearing temperature is within limit",
+      "why": "this is the plausible-sounding wrong conclusion the SOP explicitly rules out, so it separates reading the SOP from guessing."
+    },
+    {
+      "trap": "suction pressure",
+      "wrong_answer": "any numeric suction pressure",
+      "correct_answer": "not recorded, because the gauge was illegible"
+    }
+  ],
+  "citation_rules": {
+    "every_finding_cites_a_real_page": true,
+    "page_numbers_are_one_based": true,
+    "a_citation_must_resolve_to_text_present_on_that_page": true
+  },
+  "scan_binding": {
+    "scan": "inspection-report-scan.pdf",
+    "pages_correspond_one_to_one_with": "inspection-report.txt",
+    "note": "Scan PDF page N renders text page N, plus a 'SYNTHETIC SCAN - PAGE N' banner. Every expectation below that cites inspection-report.txt page N is equally an expectation against scan page N; `scan_page` states it explicitly so a C08 check does not have to infer it.",
+    "banner_on_every_page": "SYNTHETIC SCAN - PAGE {n} - NOT A REAL DOCUMENT"
+  },
+  "ocr_expectations": {
+    "applies_to": "inspection-report-scan.pdf",
+    "not_implemented_here": "C07 supplies the fixture. Rendering and OCR are C08 and are planned in docs/c08-dependency-plan.md.",
+    "minimum_bar": "Every value in expected_facts whose source is inspection-report.txt must be recoverable from the scan page named in scan_page.",
+    "known_difficulty": "The render is a 5x7 bitmap font at 150 DPI with deterministic speckle. It is uniform and clean compared with a real scan, so passing this is a floor, not evidence of production OCR quality.",
+    "must_not_shortcut": "The PDF carries no text layer and no font resource. A pipeline that returns text without OCR has read something other than this file."
+  }
+}

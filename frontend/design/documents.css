@@ -1,0 +1,162 @@
+/* Refinix — Documents surface.
+ * Load after tokens.css and app.css.
+ *
+ * The workflow drawn here is inspection_report_to_approval_note from
+ * docs/workflows.md section 5. Two things it must never do: present an
+ * extracted value without the page it came from, and quietly resolve a field
+ * the extractor was unsure about. Both are given their own treatment below.
+ */
+
+/* ------------------------------------------------------------- intake --- */
+
+/* Separated cards, not a hairline-divided strip: the gap-as-divider trick
+   needs an opaque parent, which would block the glass behind every card. */
+.intake {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: var(--sp-3);
+}
+.source {
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3) var(--sp-4);
+}
+.source h3 { margin: 0 0 4px; font-size: var(--fs-sm); font-weight: 600; }
+.source .meta {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------ pipeline --- */
+/* Each step may run on a different node; the coordinator passes typed output
+   between them. The node is shown per step for exactly that reason. */
+
+.pipe {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.pipe > li {
+  display: grid;
+  grid-template-columns: 22px 1fr auto auto;
+  gap: var(--sp-3);
+  align-items: baseline;
+  padding: 10px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.pipe > li:last-child { border-bottom: 0; }
+.pipe .mark { font-family: var(--font-data); font-size: var(--fs-micro); }
+/* the capability is the model's own doing — purple, matching Chat's plan.
+   the node it ran on is a routing fact, so it stays silver. */
+.pipe .cap {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--agent);
+  white-space: nowrap;
+}
+.pipe .on {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.step-done .mark { color: var(--st-enforced); }
+.step-run  .mark { color: var(--signal); }
+.step-idle .mark,
+.step-idle .txt { color: var(--text-faint); }
+
+/* ---------------------------------------------------------- extraction --- */
+/* A finding always carries its page. An uncertain one is hatched and keeps
+   the extractor's own words rather than a cleaned-up guess. */
+
+.findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.findings > li {
+  display: grid;
+  grid-template-columns: 58px 1fr auto;
+  gap: var(--sp-3);
+  align-items: start;
+  padding: 10px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.findings > li:last-child { border-bottom: 0; }
+.findings .page {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  text-align: center;
+  white-space: nowrap;
+}
+.findings .txt { font-size: var(--fs-sm); }
+.findings .txt small {
+  display: block;
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+/* the extractor was not sure — say so, and do not fill the gap */
+.finding-unsure {
+  background: repeating-linear-gradient(-45deg, transparent 0 5px, var(--line-soft) 5px 6px);
+}
+.finding-unsure .txt em { font-style: normal; color: var(--st-unknown); }
+
+/* ---------------------------------------------------------- citations --- */
+
+.cites { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.cite {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  color: var(--text-dim);
+  background: var(--veil);
+}
+.cite b { color: var(--text); font-weight: 500; }
+
+/* --------------------------------------------------- artifact validation --- */
+/* Readability, citations, origin job and checksum are recorded per
+   docs/workflows.md step 8. A check with no result is unavailable, never a
+   silent pass. */
+
+.checks {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.checks > li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: 8px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-sm);
+}
+.checks > li:last-child { border-bottom: 0; }
+.checks .detail {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  display: block;
+  overflow-wrap: anywhere;
+}

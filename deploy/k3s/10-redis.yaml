@@ -1,0 +1,158 @@
+# Redis 7.2.16 — bounded ephemeral coordination, never canonical storage.
+#
+# ClusterIP only. Never NodePort, LoadBalancer, Ingress or a host port, so it is
+# unreachable from the LAN by construction rather than by firewall alone.
+#
+# A password is REQUIRED, not optional. Redis refuses non-loopback connections
+# when protected mode is on and no password is set, so an unauthenticated Redis
+# here would reject the worker with DENIED even where NetworkPolicy allows it.
+# See https://redis.io/docs/latest/operate/oss_and_stack/management/security/
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: aegisforge
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: aegisforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        fsGroup: 10002
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          # OD-08 pin. linux/amd64 digest, not a floating tag.
+          image: redis@sha256:e17e3a1993da428251cbd88dbdb3de8c8d4007f840d7350eb17a2d8695fa705f
+          imagePullPolicy: IfNotPresent
+          # The password reaches redis-server through a config file written to
+          # the Pod's own tmpfs, never through argv. Shell expansion of
+          # --requirepass "$VAR" would still place the value in the process
+          # arguments, visible to anything that can read /proc.
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              umask 077
+              # An unreadable or empty credential must fail loudly here,
+              # not as a confusing NOAUTH from a client later.
+              [ -r /etc/redis-secret/password ] || {
+                echo "FATAL: redis credential is not readable" >&2; exit 78; }
+              password=$(cat /etc/redis-secret/password)
+              [ -n "$password" ] || {
+                echo "FATAL: redis credential is empty" >&2; exit 78; }
+              printf 'requirepass %s\n' "$password" > /run/redis/redis.conf
+              unset password
+              exec redis-server /run/redis/redis.conf \
+                --save "" \
+                --appendonly no \
+                --maxmemory 256mb \
+                --maxmemory-policy noeviction
+          ports:
+            - containerPort: 6379
+              name: redis
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 320Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /run/redis
+            - name: data
+              mountPath: /data
+            - name: credential
+              mountPath: /etc/redis-secret
+              readOnly: true
+          # Authenticated, or the probe gets NOAUTH and the Pod never goes Ready.
+          # REDISCLI_AUTH keeps the password out of argv; redis-cli reads it
+          # from the environment. `timeout` bounds the call because redis-cli
+          # 7.2 has no -t option — that flag would be parsed as a command.
+          readinessProbe:
+            exec: &authenticated_ping
+              command:
+                - sh
+                - -c
+                - |
+                  [ -r /etc/redis-secret/password ] || exit 78
+                  auth=$(cat /etc/redis-secret/password)
+                  [ -n "$auth" ] || exit 78
+                  REDISCLI_AUTH="$auth" timeout 5 redis-cli ping | grep -q PONG
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 6
+          livenessProbe:
+            exec: *authenticated_ping
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 6
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        # The generated config carries the password, so it lives in bounded RAM
+        # and never reaches disk.
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: data
+          emptyDir: {}
+        - name: credential
+          secret:
+            secretName: redis-credential      # operator-created, never committed
+            # Group-readable so fsGroup 10002 can read it as a non-root user.
+            defaultMode: 0440
+---
+# Redis accepts connections only from the worker, and initiates none.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-ingress-from-worker-only
+  namespace: aegisforge
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: aegisforge-worker
+      ports:
+        - protocol: TCP
+          port: 6379

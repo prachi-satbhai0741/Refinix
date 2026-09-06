@@ -30,10 +30,28 @@ It cannot hard-code secure, blocked, healthy, or zero-traffic states.
 
 ## Status: no scaffolding yet
 
-There is no package.json, source tree, or dependency set.
+`frontend/app/` is the **application-owned** C03 UI: plain HTML, CSS and
+JavaScript served by the coordinator, with no package.json, build step or
+dependency set. Its stylesheet is derived from the design tokens but loads **no
+external font**, so the running application makes no network request outside
+loopback.
 
-The five-day alpha uses local HTML, CSS, and JavaScript served by the coordinator
-instead of adding a frontend build chain or desktop wrapper. Chat and Control
-Center form the first usable slice; Documents and Code reuse the same job form,
+The two tracks no longer disagree on type metrics. `--font-ui` was
+`IBM Plex Sans Condensed`, which the application could never load and always
+replaced with a non-condensed system face — so the design rendered narrower than
+the product by design. It is now `IBM Plex Sans`, the same family in its normal
+cut: the design track loads it from Google Fonts, the application falls through
+to `system-ui`, and the two now differ by a typeface rather than by a width.
+Clipped labels or unusable controls remain functional defects.
+
+`frontend/design/` remains the design track's own reference area and is not
+served, linked or redirected into by the application.
+
+The recorded alpha baseline uses local HTML, CSS, and JavaScript served by the
+coordinator. [TechStack.md](../TechStack.md#3-frontend-and-product-surfaces)
+proposes React + TypeScript + Vite for C03, with built assets still served
+locally; this is a recommendation, not an implemented framework change.
+
+Chat and Control Center form the first usable slice; Documents and Code reuse the same job form,
 event stream, artifact links, and truthful unavailable states. Packaging remains
 deferred until the complete demonstration path works.
