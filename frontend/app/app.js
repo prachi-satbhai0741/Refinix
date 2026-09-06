@@ -827,6 +827,18 @@ function openModelPopover() {
   toggle.focus();
 }
 
+/* The row is a name and a location inside one narrow popover, and the name is
+ * the identity: "qwen3.5:4b-q4_K_M" and "qwen3:4b" differ only in the middle,
+ * so a name clipped to "qwen…" names nothing. The location prose is wider than
+ * the name it was displacing, and the machine reads just as clearly short.
+ * Only the display is shortened; the inventory keeps naming both in full. */
+const LOCATION_SHORT = { 'macOS coordinator': 'Mac', 'Ubuntu worker': 'Ubuntu' };
+
+function locationLabel(locations) {
+  if (!locations?.length) return 'not installed';
+  return locations.map((where) => LOCATION_SHORT[where] || where).join(' + ');
+}
+
 function appendModelChoices(box, scope, labelText) {
   const group = document.createElement('div');
   group.className = 'mp-choices';
@@ -855,8 +867,7 @@ function appendModelChoices(box, scope, labelText) {
     button.dataset.selected = String(selected);
     button.setAttribute('role', 'radio');
     button.setAttribute('aria-checked', String(selected));
-    const location = candidate.locations?.length
-      ? candidate.locations.join(' + ') : 'not installed';
+    const location = locationLabel(candidate.locations);
     appendModelChoiceParts(button, selected, candidate.id,
       candidate.installed && unavailable
         ? `${location} — unavailable for this workflow` : location);

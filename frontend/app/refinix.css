@@ -1062,7 +1062,7 @@
 
 .mp-model {
   display: grid;
-  grid-template-columns: 14px 1fr auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
@@ -1103,8 +1103,17 @@
   font-family: var(--font-data);
 }
 
+/* Capped, and it clips before the name does. The name column is `1fr` and the
+   tag column is `auto`, so an `auto` track sized to its whole text takes what
+   it needs first and the name absorbs every bit of the squeeze — which is how
+   the one row naming BOTH machines ended up as the one row whose model could
+   not be read. The tag is the annotation and yields; the id is the identity. */
 .mp-tag {
-  flex: none;
+  min-width: 0;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 10px;
   letter-spacing: .04em;
   text-transform: uppercase;
