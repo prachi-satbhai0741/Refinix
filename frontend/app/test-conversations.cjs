@@ -16,13 +16,15 @@ function page() {
   };
   const scope = vm.createContext({
     document: { getElementById: node },
-    /* app.js evaluates PANEL_MQ at module scope, so a harness without
-       matchMedia throws before a single test runs. Non-matching queries are
-       the desktop layout these checks assume. */
-    window: { addEventListener() {},
-              matchMedia: () => ({ matches: false, addEventListener() {},
-                                   removeEventListener() {}, addListener() {},
-                                   removeListener() {} }) },
+    window: {
+      addEventListener() {},
+      /* app.js evaluates matchMedia at module scope: the panel breakpoints and
+         the theme's system preference. Answering "no match" gives the wide
+         window and the light default, both of which are ordinary states. */
+      matchMedia: () => ({ matches: false, addEventListener() {},
+                           removeEventListener() {}, addListener() {},
+                           removeListener() {} }),
+    },
     fetch: (path, options) => new Promise(resolve => requests.push({ path, options,
       reply(body = {}, ok = true) { resolve({ ok, json: async () => body }); } })),
     setTimeout: fn => { scope.timer = fn; return 1; },

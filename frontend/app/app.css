@@ -68,21 +68,28 @@
   color-scheme: light;
 
   /* --- surfaces: neutral daylight, deliberately not white and not blue --- */
-  --bg:            #E7E7E5;
-  --surface:       #F3F3F1;
-  --surface-raised:#FBFBFA;
-  --surface-sunken:#DDDDDA;
-  --line:          #C3C3BF;
-  --line-soft:     #DBDBD7;
+  /* White, not a warm off-white. The four grounds are the SAME white — the
+     walls, the canvas and every lifted panel — and the 1px --line between
+     them is what separates one from the next. The old ladder (#E7E7E5 canvas,
+     #DDDDDA walls, #FBFBFA panels) put three greys on screen at once and read
+     as grubby beside the near-black dark theme. Depth in light is now carried
+     by rules and shadow rather than by tinting the paper. */
+  --bg:            #FFFFFF;
+  --surface:       #FFFFFF;
+  --surface-raised:#FFFFFF;
+  --surface-sunken:#FFFFFF;
+  /* Doing more work than before, since they are the only separation left. */
+  --line:          #D0D0D0;
+  --line-soft:     #E4E4E4;
 
   /* --- text ---------------------------------------------------------------
    * Every tier is measured against the darkest ground it can land on
    * (--surface-sunken) AND the lightest (--surface-raised), because this UI is
    * read at 10-13px all day and cards sit on the raised tone. */
-  --text:          #171717;
-  --text-dim:      #464646;
-  --text-faint:    #545454;
-  --text-invert:   #FBFBFA;
+  --text:          #0B0B0B;   /* 19.6:1 on white */
+  --text-dim:      #2E2E2E;   /* 13.1:1 */
+  --text-faint:    #464646;   /*  9.2:1 — the faintest tier still reads black */
+  --text-invert:   #FFFFFF;
 
   /* --- signal: live. Focus, selection, running, awaiting you. ------------ */
   --brand:         #6B6B6B;
@@ -90,18 +97,26 @@
   --signal-soft:   #DCE7F1;
 
   /* --- the brand strip -----------------------------------------------------
-   * The supplied REFINIX lockup is brushed metal on a black ground, and it is
-   * a raster: it cannot recolour for a light theme the way drawn artwork can.
-   * So the strip that carries it keeps its own near-black ground in BOTH
-   * themes, and the mark reads identically everywhere rather than sitting in
-   * a grey box on light. These three are deliberately not theme-scoped — they
-   * are the same value in every block, which is the point. */
-  --brand-ground:  #050505;
-  --brand-edge:    #242424;
-  /* Anything set on that strip is measured against #050505, not against the
-     theme's ground, in both themes. 5.90:1 — --text-faint would be wrong here
-     in light, where it is a dark grey. */
-  --brand-tag:     #8A8A8A;
+   * This block used to say the strip keeps a near-black ground in BOTH themes,
+   * because the lockup is a raster and "cannot recolour the way drawn artwork
+   * can". The premise was wrong. The masters are opaque JPEGs — bright metal
+   * on a uniform near-black plate (scripts/build-brand-assets.py pastes the
+   * crop onto GROUND = 5,6,8) — and inverting an image like that is exactly
+   * the recolour the note said was impossible: the plate goes to near-white
+   * and the metal goes to dark graphite. A touch of brightness and contrast
+   * clips the plate the rest of the way to #FFF, and multiply against the
+   * white strip disposes of what is left, so no box survives. The mark keeps
+   * its brushed texture; it just reads engraved rather than polished.
+   *
+   * So the strip is now themed like everything else: white here, near-black
+   * in both dark blocks, and --brand-logo-filter carries the correction. What
+   * sits on it is measured against the strip's own ground, not the canvas. */
+  --brand-ground:  #FFFFFF;
+  --brand-edge:    #E2E2E2;
+  --brand-tag:     #3A3A3A;
+  --brand-metal:   #101010;
+  --brand-logo-filter: invert(1) brightness(1.06) contrast(1.12);
+  --brand-logo-blend:  multiply;
 
   /* --- agent provenance. Not a state. See the header note. --------------- */
   --agent:         #57379B;
@@ -119,12 +134,12 @@
    * the single largest blue object on the Chat surface, so it is now graphite:
    * neutral paper in light, neutral slate in dark. Still opaque, still square,
    * still unmistakably a document rather than another panel. */
-  --bp-ground:     #EFEFED;
-  --bp-surface:    #F7F7F5;
-  --bp-ink:        #1F1F1F;
-  --bp-line:       #C4C4C0;
-  --bp-dim:        #5A5A58;
-  --bp-void:       rgba(31, 31, 31, .10);
+  --bp-ground:     #FFFFFF;
+  --bp-surface:    #FFFFFF;
+  --bp-ink:        #0F0F0F;
+  --bp-line:       #CBCBCB;
+  --bp-dim:        #454545;
+  --bp-void:       rgba(15, 15, 15, .10);
 
   /* --- type ----------------------------------------------------------------
    * The UI face is IBM Plex Sans, NOT the condensed cut. Condensed reads as
@@ -185,16 +200,19 @@
    *
    * saturate() stays near 100%. At 150% it multiplied every tint behind the
    * glass, which is a large part of why the old build read blue. */
-  /* In light the fields must LIFT, not tint down: a dark wash at 10% over a
-     light ground costs contrast for dark text. */
-  --atmo-1: rgba(255, 255, 255, .58);
-  --atmo-2: rgba(228, 218, 250, .30);
-  --atmo-3: rgba(255, 255, 255, .34);
+  /* Off in light. Two of the three were white on a near-white ground and did
+     nothing; the third was a violet wash at 30% and it was the whole reason
+     the light canvas read as tinted grey rather than as paper. White means
+     white, so the fields are spent in dark only, where they have somewhere to
+     lift from. */
+  --atmo-1: rgba(255, 255, 255, 0);
+  --atmo-2: rgba(255, 255, 255, 0);
+  --atmo-3: rgba(255, 255, 255, 0);
 
   --glass-base:  rgba(255, 255, 255, .62);
   --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.58), rgba(255,255,255,.24));
   --glass-line:  rgba(255, 255, 255, .82);
-  --glass-edge:  rgba(120, 120, 118, .28);
+  --glass-edge:  rgba(84, 84, 84, .34);
   --glass-blur:  blur(20px) saturate(108%);
   --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .90);
   --glass-shadow: 0 14px 34px rgba(0, 0, 0, .09);
@@ -222,6 +240,10 @@
 
   --rail-w: 244px;
   --nav-w:  246px;
+  /* Half the conversation scroller's reserved gutter, measured at runtime and
+     mirrored onto the composer — see the note on .composer. A platform with
+     overlay scrollbars reserves nothing and this stays 0. */
+  --scroll-gutter: 0px;
   /* The conversation's reading column. Capped and centred so folding the walls
      away moves the text to the middle of the screen rather than stretching a
      line past the point where it is comfortable to read. */
@@ -251,6 +273,15 @@
     --text-dim:      #B0B0B0;
     --text-faint:    #949494;
     --text-invert:   #0A0A0A;
+
+    /* --- the brand strip: see the note in the light block ----------------- */
+    --brand-ground:  #050505;
+    --brand-edge:    #242424;
+    --brand-tag:     #8A8A8A;
+    --brand-metal:   #CFCFCF;
+    /* The raster is already metal on near-black. Nothing to correct. */
+    --brand-logo-filter: none;
+    --brand-logo-blend:  normal;
 
     --brand:         #CFCFCF;
     --signal:        #74B7F5;
@@ -314,6 +345,15 @@
   --text-dim:      #B0B0B0;
   --text-faint:    #949494;
   --text-invert:   #0A0A0A;
+
+  /* --- the brand strip: see the note in the light block ----------------- */
+  --brand-ground:  #050505;
+  --brand-edge:    #242424;
+  --brand-tag:     #8A8A8A;
+  --brand-metal:   #CFCFCF;
+  /* The raster is already metal on near-black. Nothing to correct. */
+  --brand-logo-filter: none;
+  --brand-logo-blend:  normal;
 
   --brand:         #CFCFCF;
   --signal:        #74B7F5;
@@ -541,6 +581,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   opacity: 0;
   visibility: hidden;
   border-color: transparent;
+  /* Transparent hid the seam but kept the pixel. A 1px border on a zero-width
+     track is still one pixel of layout, and box-sizing cannot compress a
+     border-box below its own borders — so the grid finished one pixel past
+     the viewport, which is all it takes for the browser to draw a horizontal
+     scrollbar across the bottom of the entire window. The width has to go
+     with the colour. */
+  border-width: 0;
   pointer-events: none;
 }
 
@@ -557,8 +604,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
  * The supplied REFINIX lockup, not a drawn stand-in. It is brushed metal on a
  * black ground and it is a raster, so it cannot recolour for the light theme
  * the way the site's drawn lockups can — which is why the strip carries
- * --brand-ground in BOTH themes. That is the same decision the application
- * already made in refinix.css, and the two tracks now agree on it.
+ * --brand-ground, which is now themed like every other ground. That is the
+ * same decision the application makes in refinix.css, and the two tracks
+ * still agree on it.
  *
  * The site (site.html) still draws its lockups. It has a genuinely light
  * surface with no strip to sit the mark on, so the reasoning in
@@ -1119,6 +1167,17 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
      glass — something is genuinely passing beneath their edges. */
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
   mask-image: linear-gradient(180deg, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+  /* The composer is a sibling of this element, not a child, so it centres in
+     the full width of .main while the conversation centred inside a box the
+     scrollbar had made 15px narrower. Two centre lines 7.5px apart, which is
+     exactly the drift you see running your eye down the left edge from the
+     replies to the prompt box.
+     Reserving the gutter on BOTH edges keeps this scroller symmetric, so the
+     two share one centre line whether or not the scrollbar is showing — and
+     it stops the conversation shifting sideways the moment a reply grows long
+     enough to need scrolling. Overlay scrollbars reserve nothing, so touch
+     platforms are unaffected. */
+  scrollbar-gutter: stable both-edges;
 }
 .turn {
   display: flex;
@@ -1219,8 +1278,18 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* The composer is a band, not a footer. No top rule: .thread is masked, so the
    conversation fades out into it, and a hairline there would cut that fade in
    half and put the band back into a boxed footer. */
+/* The conversation scrolls and this does not, so the scrollbar makes their
+   two centre lines diverge: the replies centre inside a box the scrollbar has
+   narrowed, this centres in the full width, and you see the drift running your
+   eye down the left edge.
+   .thread reserves its gutter symmetrically (scrollbar-gutter: stable
+   both-edges), which lines the two up wherever --read-width is doing the
+   capping. Below that width nothing caps them, and then the scroller is
+   simply the narrower box — so its gutter is mirrored here too, and the two
+   agree at every width. The value is measured rather than assumed because a
+   scrollbar's width is the platform's to decide. */
 .composer {
-  padding: var(--sp-2) var(--sp-5) var(--sp-4);
+  padding: var(--sp-2) calc(var(--sp-5) + var(--scroll-gutter)) var(--sp-4);
 }
 .composer-box {
   width: 100%;

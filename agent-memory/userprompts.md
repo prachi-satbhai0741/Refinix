@@ -1145,3 +1145,36 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Run focused and proportionate offline tests and static checks only; no live service, cluster or model execution.
 - follow_up_to: [UP-20260905-015](#up-20260905-015)
 - linked_changes: [AC-20260906-001](agentchangelog.md#ac-20260906-001)
+
+<a id="up-20260905-017"></a>
+## UP-20260905-017 — A turning mark and a shining "Refinix Working" while the model runs
+- date: 2026-09-05
+- tags: refinix, chat, code-surface, composer, working-indicator, brand-mark, animation
+- aliases: it just gets stuck then dumps the output, claude orange thinking animation, spin the logo, refinix working shine, bottom of chat and code
+- paths: frontend/app/
+- summary: Requester reported that Chat and Code show nothing between sending a request and the answer appearing, so the application reads as stuck. Asked for a Claude-style activity indicator at the bottom of both surfaces: the attached Refinix mark spinning continuously until the whole output is delivered, with small translucent "Refinix Working" text beside it carrying a continuous shine.
+- constraints: Use the supplied Refinix mark, spin it because the artwork is circular, keep spinning for the full output, place it at the bottom as Claude does, and give the label a shining/reflecting animation.
+- follow_up_to: [UP-20260905-006](#up-20260905-006)
+- linked_changes: [AC-20260905-016](agentchangelog.md#ac-20260905-016)
+
+<a id="up-20260905-018"></a>
+## UP-20260905-018 — Copy as an icon on the right, and a round arrow for Jump to latest
+- date: 2026-09-05
+- tags: refinix, chat, code-surface, copy-control, jump-latest, icons
+- aliases: copy reply icon after the output, small copy logo to the right, as it is on left now, arrow type circle icon, jump to latest screenshot
+- paths: frontend/app/
+- summary: Requester asked for two controls to become icons. The reply's "Copy reply" button under each answer becomes a small copy glyph at the right-hand end of the row rather than a worded button on the left. "Jump to latest" becomes the round outlined down-arrow shown in the supplied screenshot.
+- constraints: Copy control moves to the right and becomes a small icon; the jump control takes the circular down-arrow form from the attached screenshot.
+- follow_up_to: [UP-20260905-017](#up-20260905-017)
+- linked_changes: [AC-20260905-017](agentchangelog.md#ac-20260905-017)
+
+<a id="up-20260905-019"></a>
+## UP-20260905-019 — Switch between installed models, drop the standing hint, tighten the chat box
+- date: 2026-09-05
+- tags: refinix, chat, model-selection, composer, coordinator-api, ollama
+- aliases: switch model via that drop down arrow, more than one model installed, delete runs on this computer, big space heightwise looking bad
+- paths: frontend/app/, backend/coordinator/
+- summary: Three changes to the Chat composer. The model pill must become a real switcher — a computer with more than one model installed should be able to choose which one runs, from a list behind the pill's arrow, as in the attached screenshot. The standing "Runs on this computer" line comes out of the composer. The prompt box carries too much empty height and should be tightened.
+- constraints: The switcher must actually switch, not just list. Screenshot supplied showing the model list above the pill.
+- follow_up_to: [UP-20260905-018](#up-20260905-018)
+- linked_changes: [AC-20260905-018](agentchangelog.md#ac-20260905-018)

@@ -84,13 +84,13 @@ function page({ bridge } = {}) {
     window: {
       addEventListener(type, fn) { listeners[type] = fn; },
       location: { port: '8770' },
-      /* app.js evaluates PANEL_MQ at module scope, so a harness without
-         matchMedia throws before a single test runs. Non-matching queries
-         are the desktop layout, which is what these checks assume. */
+      pywebview: bridge ? { api: bridge } : undefined,
+      /* app.js evaluates matchMedia at module scope: the panel breakpoints and
+         the theme's system preference. Answering "no match" gives the wide
+         window and the light default, both of which are ordinary states. */
       matchMedia: () => ({ matches: false, addEventListener() {},
                            removeEventListener() {}, addListener() {},
                            removeListener() {} }),
-      pywebview: bridge ? { api: bridge } : undefined,
     },
     navigator: {},
     fetch: (path, options) => new Promise((resolve, reject) => requests.push({

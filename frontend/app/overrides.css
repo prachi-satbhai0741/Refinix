@@ -15,9 +15,53 @@
    tint set the temperature of the whole application. The link, code and
    emphasis accents keep their hues — those are doing a job. See the header
    note in app.css: a grey that is not R = G = B turns the room blue. */
-:root {
-  --read-width: 76ch;
+/* Three states, the same three app.css uses: a bare :root carrying the whole
+   LIGHT palette, a media query for viewers on the system default, and a
+   [data-theme] block for an explicit in-app choice.
 
+   This block used to be inverted — dark on bare :root, light only inside
+   @media (prefers-color-scheme: light) — which was survivable while the theme
+   could only come from the machine. It is not survivable now that the header
+   carries a toggle: choosing light on a dark-set machine matched neither the
+   media query nor any [data-theme] block, so the chrome went light while the
+   prose text stayed #ECECEC on it. Every value below is declared in all three
+   states, exactly as the note at the top of app.css requires. */
+:root {
+  /* The conversation's cap, shared by the replies and the composer.
+     76ch -> 88ch -> 104ch over two passes, because the column still read as
+     compact against a wide window. Note the unit is measured on the 13px UI
+     font while the prose sets at 16px, so 104ch here is nearer 90 rendered
+     characters a line than 104 — the top of the comfortable range rather than
+     past it, and in the same territory as other chat surfaces. */
+  --read-width: 104ch;
+
+  /* Every tier a shade darker than it was, and the raised tone is now the
+     same white as everything else. The reading column is the largest block of
+     text in the product, so this is where "dark in light mode" is felt. */
+  --prose-link: #0A4FAE;      /*  7.4:1 on white */
+  --prose-code: #0E5540;      /*  8.0:1 */
+  --prose-code-bg: rgba(14, 85, 64, .07);
+  --prose-emphasis: #7C3A0C;  /*  8.1:1 — was 5.9:1 */
+  --prose-text: #0B0B0B;      /* 19.6:1 */
+  --prose-muted: #3C3C3C;     /* 10.9:1 */
+  --prose-rule: rgba(60, 60, 60, .28);
+  --surface-raised: #FFFFFF;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --prose-link: #78B7FF;
+    --prose-code: #92D5AA;
+    --prose-code-bg: rgba(146, 213, 170, .10);
+    --prose-emphasis: #E6A36C;
+    --prose-text: #ECECEC;
+    --prose-muted: #ABABAB;
+    --prose-rule: rgba(171, 171, 171, .22);
+    --surface-raised: #1B1B1B;
+  }
+}
+
+:root[data-theme="dark"] {
   --prose-link: #78B7FF;
   --prose-code: #92D5AA;
   --prose-code-bg: rgba(146, 213, 170, .10);
@@ -26,19 +70,6 @@
   --prose-muted: #ABABAB;
   --prose-rule: rgba(171, 171, 171, .22);
   --surface-raised: #1B1B1B;
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --prose-link: #0B5FCC;
-    --prose-code: #12664A;
-    --prose-code-bg: rgba(18, 102, 74, .08);
-    --prose-emphasis: #9A4B12;
-    --prose-text: #171717;
-    --prose-muted: #4E4E4E;
-    --prose-rule: rgba(78, 78, 78, .25);
-    --surface-raised: #FBFBFA;
-  }
 }
 
 /* ---- reading column -------------------------------------------------- */
@@ -244,21 +275,50 @@
    conversation, and it sits outside .thread, so its backdrop-filter can sample
    the thread painted beneath it rather than being cut off by that element's
    mask. Only the geometry is set here. */
+/* A round icon rather than a labelled pill, and centred over the reading
+   column rather than pushed into the corner: the arrow already says which
+   way it goes, and centred is where the eye is when it is following a reply
+   down the page. Sized past the 24px touch floor.
+
+   Anchored to the composer, not to a fixed offset from the bottom of .main.
+   The old 7.5rem was measured against one particular composer height, and
+   the composer is not one height: the prompt box grows to 14em as you type
+   and the working indicator adds a row above it. Either one slid the button
+   down over the box it was supposed to sit above. bottom:100% cannot. */
+.composer { position: relative; }
+
 .jump-latest {
   position: absolute;
-  right: 1.2rem;
-  bottom: 7.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 100%;
+  margin-bottom: var(--sp-2);
   z-index: 5;
-  font: inherit;
-  font-size: .85em;
-  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--text-dim);
   border: 1px solid var(--glass-edge);
-  border-radius: var(--radius-pill);
-  padding: .35em .9em;
+  border-radius: 50%;
   cursor: pointer;
   box-shadow: var(--glass-hi), var(--glass-shadow);
+  transition: color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
 }
-.jump-latest:hover { border-color: var(--text-faint); }
+.jump-latest svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jump-latest:hover { color: var(--text); border-color: var(--text-faint); }
 .main { position: relative; }
 
 /* The overlay behaviour for both walls now lives in app.css, keyed off

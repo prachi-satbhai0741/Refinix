@@ -22,6 +22,28 @@ const api = (p, o) => fetch(p, o).then(async (r) => {
   return body;
 });
 
+/* A stroked 16x16 glyph. Geometry only — weight, size and colour are the
+ * stylesheet's, so an icon inherits whatever control it is dropped into. */
+function svgIcon(d) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', d);
+  svg.append(path);
+  return svg;
+}
+
+/* Two sheets, the back one drawn open so the front can overlap it without
+ * needing a fill to hide behind — the control sits on glass, which has no
+ * one colour to fill with. */
+const ICON_COPY = 'M2.25 7.85a1.6 1.6 0 0 1 1.6-1.6h4.3a1.6 1.6 0 0 1 1.6 1.6v4.3'
+  + 'a1.6 1.6 0 0 1-1.6 1.6h-4.3a1.6 1.6 0 0 1-1.6-1.6z'
+  + 'M6.25 6.25V3.85a1.6 1.6 0 0 1 1.6-1.6h4.3a1.6 1.6 0 0 1 1.6 1.6v4.3'
+  + 'a1.6 1.6 0 0 1-1.6 1.6h-2.4';
+const ICON_TICK = 'M3.5 8.4 6.4 11.3 12.5 5.2';
+
 /* An unavailable fact is rendered, never omitted and never filled in. */
 function cell(value, note) {
   const dd = document.createElement('dd');
@@ -214,14 +236,25 @@ function turn(role, text, attachments, plain, host, skill, artifacts) {
     bar.className = 'turn-meta';
     const copy = document.createElement('button');
     copy.type = 'button';
-    copy.className = 'code-copy';
-    copy.textContent = 'Copy reply';
+    copy.className = 'turn-copy';
+    /* Icon-only now, so everything the label used to say has to go somewhere
+     * a label is not: the glyph becomes a tick, the accessible name and the
+     * tooltip both change, and only a failure spends colour. */
+    const setCopyState = (state) => {
+      const label = state === 'copied' ? 'Copied'
+        : state === 'failed' ? 'Copy failed' : 'Copy reply';
+      copy.dataset.copy = state;
+      copy.title = label;
+      copy.setAttribute('aria-label', label);
+      copy.replaceChildren(svgIcon(state === 'copied' ? ICON_TICK : ICON_COPY));
+    };
+    setCopyState('idle');
     copy.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(box.dataset.raw || '');
-        copy.textContent = 'Copied';
-      } catch { copy.textContent = 'Copy failed'; }
-      setTimeout(() => { copy.textContent = 'Copy reply'; }, 1500);
+        setCopyState('copied');
+      } catch { setCopyState('failed'); }
+      setTimeout(() => setCopyState('idle'), 1500);
     });
     bar.append(copy);
     article.append(bar);
@@ -253,7 +286,17 @@ function setActive(state) {
     stop.textContent = stopping ? 'Stopping…' : 'Stop';
   }
   if (send) send.hidden = active;
+  setWorking(active);
   refreshSend();
+}
+
+/* The turning mark and the shining word, shared by Chat and Code. It reports
+ * work that is genuinely running and nothing else: Chat drives it from the
+ * job state the coordinator reports, Code turns it off in a finally, so a
+ * failed proposal cannot leave it spinning over nothing. */
+function setWorking(on) {
+  const el = $('working');
+  if (el) el.hidden = !on;
 }
 
 function setJobChip(state) {
@@ -612,7 +655,6 @@ function chooseSkill(id) {
 function renderSkill() {
   const chip = $('skill-chip');
   const status = $('skill-status');
-  const hint = $('send-hint');
   if (!chip) return;
   const skill = selectedSkill();
   const live = skill ? (capabilities.find((c) => c.id === skill.id) || skill) : null;
@@ -621,7 +663,6 @@ function renderSkill() {
   if (!live) {
     chip.hidden = true;
     if (status) { status.hidden = true; status.textContent = ''; }
-    if (hint) hint.textContent = 'Runs on this computer';
     refreshSend();
     return;
   }
@@ -636,12 +677,10 @@ function renderSkill() {
   if (status) {
     status.hidden = live.state === 'available';
     // The capability's own sentence already says what is missing; prefixing it
-    // with the name only repeats it.
-    status.textContent = live.state === 'available' ? '' : live.detail;
-  }
-  if (hint) {
-    hint.textContent = live.state === 'available'
-      ? 'Runs on this computer' : 'Remove the skill to send an ordinary request';
+    // with the name only repeats it. What to do about it follows, because the
+    // composer no longer carries a standing hint line to put it on.
+    status.textContent = live.state === 'available' ? ''
+      : `${live.detail} Remove the skill to send an ordinary request.`;
   }
   refreshSend();
 }
@@ -656,6 +695,7 @@ function refreshSend() {
   send.disabled = sending || blocked;
   send.title = blocked ? `${skill.name} is not available yet.` : '';
 }
+
 
 /* ---- the model pill and its Reasoning switch -------------------------- */
 
@@ -2217,6 +2257,7 @@ async function proposeChange(approvalId) {
   proposing = true;
   $('code-send').hidden = true;
   $('code-stop').hidden = false;
+  setWorking(true);
   const status = $('code-status');
   status.hidden = false;
   status.textContent = 'Reading the selected files and asking the model on this computer…';
@@ -2237,6 +2278,7 @@ async function proposeChange(approvalId) {
     proposing = false;
     $('code-send').hidden = false;
     $('code-stop').hidden = true;
+    setWorking(false);
     await loadCodeState(activeRepo);
   }
 }
@@ -2857,29 +2899,394 @@ function renderCapabilityCard(s) {
   }
 }
 
+/* ---- Advanced: the activity charts ------------------------------------ *
+ *
+ * Three charts drawn from records the coordinator already keeps, not from
+ * anything measured for the sake of a picture:
+ *
+ *   reply time    updated_at - created_at per job. The one number on this
+ *                 page a person running a model locally actually wants.
+ *   by hour       created_at bucketed into the 24 hours of local time.
+ *   outcomes      jobs_by_state, which is the authoritative all-time count —
+ *                 the job LIST is a recent window, so the two are not the
+ *                 same population and the captions say which is which.
+ *
+ * Hand-drawn: bars in CSS so their labels stay crisp at any width, and the
+ * donut in SVG because an arc is not a box. No chart library is fetched —
+ * this application makes no network request outside 127.0.0.1.
+ */
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/* Local wall-clock, to agree with the by-hour chart. Slicing the ISO string
+   shows UTC, which is a different clock from the one the reader is on. */
+function fmtClock(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso).slice(11, 19);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function fmtSecs(s) {
+  if (s < 1) return '<1s';
+  if (s < 60) return Math.round(s) + 's';
+  const m = Math.floor(s / 60);
+  const rest = Math.round(s % 60);
+  return rest ? `${m}m ${rest}s` : `${m}m`;
+}
+
+function chartHead(title, sub) {
+  const cap = document.createElement('figcaption');
+  const t = document.createElement('span');
+  t.className = 'chart-title';
+  t.textContent = title;
+  const s = document.createElement('span');
+  s.className = 'chart-sub';
+  s.textContent = sub;
+  cap.append(t, s);
+  return cap;
+}
+
+function chartEmpty(text) {
+  const p = document.createElement('p');
+  p.className = 'chart-empty unavailable';
+  p.textContent = text;
+  return p;
+}
+
+function chartFoot(pairs) {
+  const ul = document.createElement('ul');
+  ul.className = 'chart-foot';
+  for (const [name, value] of pairs) {
+    const li = document.createElement('li');
+    const n = document.createElement('span');
+    n.textContent = name;
+    const v = document.createElement('b');
+    v.textContent = value;
+    li.append(n, v);
+    ul.append(li);
+  }
+  return ul;
+}
+
+/* How long each job took, oldest at the left so the row reads as time. */
+function renderDurationChart(host, jobs) {
+  if (!host) return;
+  host.replaceChildren();
+  const rows = (jobs || [])
+    .map((j) => ({
+      secs: (Date.parse(j.updated_at) - Date.parse(j.created_at)) / 1000,
+      state: j.state,
+      request: j.original_request || '',
+    }))
+    .filter((r) => Number.isFinite(r.secs) && r.secs >= 0)
+    .reverse();
+
+  host.append(chartHead('Reply time',
+    rows.length ? `${rows.length} recent jobs, oldest first` : 'nothing recorded'));
+  if (!rows.length) {
+    host.append(chartEmpty('no job has run on this computer yet'));
+    return;
+  }
+
+  const secs = rows.map((r) => r.secs);
+  const max = Math.max(...secs, 1);
+  const sorted = [...secs].sort((a, b) => a - b);
+  const mid = sorted.length / 2;
+  const median = sorted.length % 2
+    ? sorted[Math.floor(mid)]
+    : (sorted[mid - 1] + sorted[mid]) / 2;
+
+  const plot = document.createElement('div');
+  plot.className = 'plot';
+
+  const rule = document.createElement('span');
+  rule.className = 'plot-rule';
+  rule.style.bottom = (median / max * 100).toFixed(2) + '%';
+  const tag = document.createElement('i');
+  tag.textContent = 'median ' + fmtSecs(median);
+  rule.append(tag);
+
+  const bars = document.createElement('div');
+  bars.className = 'bars';
+  for (const r of rows) {
+    const bar = document.createElement('span');
+    bar.className = 'bar';
+    bar.dataset.state = r.state;
+    /* A job that finished inside a second is still a job that ran, so it keeps
+       a visible stub rather than collapsing to nothing. */
+    bar.style.height = Math.max(3, r.secs / max * 100).toFixed(2) + '%';
+    bar.title = `${fmtSecs(r.secs)} · ${r.state}\n${r.request.slice(0, 120)}`;
+    bars.append(bar);
+  }
+
+  plot.append(bars, rule);
+  host.append(plot, chartFoot([
+    ['median', fmtSecs(median)],
+    ['slowest', fmtSecs(max)],
+  ]));
+}
+
+/* When this computer was working, over the 24 hours of local time. */
+function renderHourChart(host, jobs) {
+  if (!host) return;
+  host.replaceChildren();
+  const buckets = new Array(24).fill(0);
+  let counted = 0;
+  for (const j of jobs || []) {
+    const d = new Date(j.created_at);
+    if (Number.isNaN(d.getTime())) continue;
+    buckets[d.getHours()] += 1;
+    counted += 1;
+  }
+
+  host.append(chartHead('By hour',
+    counted ? `${counted} recent jobs, local time` : 'nothing recorded'));
+  if (!counted) {
+    host.append(chartEmpty('no job has run on this computer yet'));
+    return;
+  }
+
+  const max = Math.max(...buckets, 1);
+  const plot = document.createElement('div');
+  plot.className = 'plot';
+  const bars = document.createElement('div');
+  bars.className = 'bars bars-tight';
+  buckets.forEach((n, hour) => {
+    const bar = document.createElement('span');
+    bar.className = 'bar';
+    /* An empty hour is drawn as an empty hour. A minimum bar height here
+       would invent activity that did not happen, so zero gets no bar and the
+       axis underneath carries the position. */
+    bar.style.height = n ? Math.max(6, n / max * 100).toFixed(2) + '%' : '0';
+    bar.title = `${String(hour).padStart(2, '0')}:00 — ${n} job${n === 1 ? '' : 's'}`;
+    bars.append(bar);
+  });
+  plot.append(bars);
+
+  const axis = document.createElement('div');
+  axis.className = 'plot-axis';
+  for (const label of ['00', '06', '12', '18', '24']) {
+    const s = document.createElement('span');
+    s.textContent = label;
+    axis.append(s);
+  }
+
+  const busiest = buckets.indexOf(max);
+  host.append(plot, axis, chartFoot([
+    ['busiest', `${String(busiest).padStart(2, '0')}:00`],
+    ['peak', `${max} job${max === 1 ? '' : 's'}`],
+  ]));
+}
+
+/* Outcomes, as a share of everything this workspace has ever run. */
+function renderOutcomeDonut(host, byState) {
+  if (!host) return;
+  host.replaceChildren();
+  const rows = Object.entries(byState || {})
+    .map(([state, n]) => [state, Number(n) || 0])
+    .filter(([, n]) => n > 0);
+  const total = rows.reduce((sum, [, n]) => sum + n, 0);
+
+  host.append(chartHead('Outcomes', total ? `${total} jobs, all time` : 'nothing recorded'));
+  if (!total) {
+    host.append(chartEmpty('no job has run on this computer yet'));
+    return;
+  }
+
+  const R = 40;
+  const CIRC = 2 * Math.PI * R;
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('class', 'donut');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label',
+    rows.map(([s, n]) => `${n} ${s}`).join(', '));
+
+  const track = document.createElementNS(SVG_NS, 'circle');
+  track.setAttribute('cx', '50');
+  track.setAttribute('cy', '50');
+  track.setAttribute('r', String(R));
+  track.setAttribute('class', 'donut-track');
+  svg.append(track);
+
+  let offset = 0;
+  for (const [state, n] of rows) {
+    const len = n / total * CIRC;
+    const arc = document.createElementNS(SVG_NS, 'circle');
+    arc.setAttribute('cx', '50');
+    arc.setAttribute('cy', '50');
+    arc.setAttribute('r', String(R));
+    arc.setAttribute('class', 'donut-arc');
+    arc.setAttribute('data-state', state);
+    /* A hair of gap between arcs so two neighbours never read as one. */
+    arc.setAttribute('stroke-dasharray', `${Math.max(0, len - 1)} ${CIRC - len + 1}`);
+    arc.setAttribute('stroke-dashoffset', String(-offset));
+    const title = document.createElementNS(SVG_NS, 'title');
+    title.textContent = `${state}: ${n}`;
+    arc.append(title);
+    svg.append(arc);
+    offset += len;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'donut-wrap';
+  const mid = document.createElement('div');
+  mid.className = 'donut-mid';
+  const done = rows.reduce((n, [s, c]) => n + (s === 'completed' ? c : 0), 0);
+  const pct = document.createElement('b');
+  pct.textContent = Math.round(done / total * 100) + '%';
+  const cap = document.createElement('span');
+  cap.textContent = 'completed';
+  mid.append(pct, cap);
+  wrap.append(svg, mid);
+
+  const legend = document.createElement('ul');
+  legend.className = 'donut-legend';
+  for (const [state, n] of rows) {
+    const li = document.createElement('li');
+    const sw = document.createElement('span');
+    sw.className = 'sw';
+    sw.dataset.state = state;
+    const nm = document.createElement('span');
+    nm.textContent = state;
+    const num = document.createElement('b');
+    num.textContent = String(n);
+    li.append(sw, nm, num);
+    legend.append(li);
+  }
+  host.append(wrap, legend);
+}
+
+/* ---- Advanced panel readouts ----------------------------------------- *
+ *
+ * Four of these draw rather than list. Nothing here invents a value: each one
+ * renders numbers the coordinator already publishes, and says so plainly when
+ * a number is missing instead of drawing an empty shape as if it were zero.
+ */
+
+/* Whether the engine answered is the first thing anyone opening this panel
+   wants to know, and a dot carries it faster than a row of text can. */
+function renderProbeLine(host, r) {
+  if (!host) return;
+  host.replaceChildren();
+  const dot = document.createElement('span');
+  dot.className = 'probe-dot';
+  dot.dataset.state = r.reachable ? 'up' : 'down';
+  const text = document.createElement('span');
+  text.textContent = r.reachable
+    ? `answering on ${r.endpoint}`
+    : `no answer from ${r.endpoint}`;
+  host.append(dot, text);
+}
+
+/* The installed models as tags, with the configured one marked. A comma-joined
+   string of model ids was the single worst offender for mid-word wrapping. */
+function renderModelTags(host, configured, installed) {
+  if (!host) return;
+  host.replaceChildren();
+  if (!installed || !installed.length) {
+    const li = document.createElement('li');
+    li.className = 'unavailable';
+    li.textContent = 'the runtime did not answer';
+    host.append(li);
+    return;
+  }
+  for (const name of installed) {
+    const li = document.createElement('li');
+    li.className = 'tag';
+    li.textContent = name;
+    if (name === configured) {
+      li.dataset.current = 'true';
+      li.title = 'the configured model';
+    }
+    host.append(li);
+  }
+}
+
+/* The context window as one bar. The remainder past the conversation budget
+   and the reply allowance is DRAWN, not dropped: it is the part of the window
+   the contract holds back, and leaving it out would make the two published
+   numbers look like they filled the window when they do not. */
+function renderBudget(host, c) {
+  if (!host) return;
+  host.replaceChildren();
+  const win = Number(c && c.window_tokens) || 0;
+  if (!win) {
+    const p = document.createElement('figcaption');
+    p.className = 'unavailable';
+    p.textContent = 'no window reported';
+    host.append(p);
+    return;
+  }
+  const budget = Math.max(0, Number(c.conversation_budget_tokens) || 0);
+  const reply = Math.max(0, Number(c.reply_allowance_tokens) || 0);
+  const held = Math.max(0, win - budget - reply);
+
+  const cap = document.createElement('figcaption');
+  cap.textContent = `${win.toLocaleString()} token window`;
+
+  const bar = document.createElement('div');
+  bar.className = 'budget-bar';
+  const legend = document.createElement('ul');
+  legend.className = 'budget-legend';
+
+  for (const [kind, label, tokens] of [
+    ['budget', 'conversation', budget],
+    ['reply', 'reply allowance', reply],
+    ['held', 'held back', held],
+  ]) {
+    if (!tokens) continue;
+    const seg = document.createElement('span');
+    seg.className = 'budget-seg';
+    seg.dataset.kind = kind;
+    seg.style.width = (tokens / win * 100).toFixed(2) + '%';
+    seg.title = `${label}: ${tokens.toLocaleString()} tokens`;
+    bar.append(seg);
+
+    const li = document.createElement('li');
+    const sw = document.createElement('span');
+    sw.className = 'sw';
+    sw.dataset.kind = kind;
+    const nm = document.createElement('span');
+    nm.textContent = label;
+    const nu = document.createElement('b');
+    nu.textContent = tokens.toLocaleString();
+    li.append(sw, nm, nu);
+    legend.append(li);
+  }
+  host.append(cap, bar, legend);
+}
+
+/* The state of a job, in the chip vocabulary the rest of the product uses. */
+function jobChipClass(state) {
+  if (state === 'completed') return 'chip-enforced';
+  if (state === 'failed' || state === 'interrupted') return 'chip-fault';
+  if (state === 'cancelled') return 'chip-unknown';
+  if (state === 'running') return 'chip-observed';
+  return 'chip-caution';
+}
+
 function renderAdvanced(s, jobs) {
   if (!$('kv-runtime')) return;
   const r = s.runtime;
+  renderProbeLine($('probe-line'), r);
   kv($('kv-runtime'), [
-    ['endpoint', r.endpoint],
-    ['reachable', r.reachable ? 'yes' : 'no'],
     ['server version', r.server_version, r.error || 'no server answered'],
     ['loaded model', r.loaded && r.loaded.model, 'nothing resident'],
     ['resident bytes', r.loaded && r.loaded.size_bytes, 'not reported'],
     ['GPU bytes', r.loaded && r.loaded.size_vram_bytes, 'not reported'],
     ['probe error', r.error, 'none'],
   ]);
+  renderModelTags($('model-tags'), s.model_configured, r.models);
   kv($('kv-models'), [
     ['configured', s.model_configured],
-    ['installed', r.models.length ? r.models.join(', ') : null, 'runtime did not answer'],
     ['num_ctx', s.bounded.num_ctx],
     ['num_predict', s.bounded.num_predict],
     ['thinking', s.bounded.think ? 'on' : 'off (required for this model)'],
   ]);
+  renderBudget($('budget'), s.context);
   kv($('kv-context'), [
-    ['context window', `${s.context.window_tokens} tokens`],
-    ['reply allowance', `${s.context.reply_allowance_tokens} tokens`],
-    ['conversation budget', `${s.context.conversation_budget_tokens} tokens`],
     ['counting method', s.context.counting_method],
     ['policy', s.context.policy],
   ]);
@@ -2906,20 +3313,35 @@ function renderAdvanced(s, jobs) {
     ['jobs repaired on start', s.repaired_on_start],
     ['method', 'attempts left executing become interrupted with a typed reason'],
   ]);
-  const counts = Object.entries(s.jobs_by_state);
-  kv($('kv-jobs'), counts.length ? counts : [['jobs', null, 'none recorded yet']]);
+  renderDurationChart($('chart-duration'), jobs);
+  renderHourChart($('chart-hours'), jobs);
+  renderOutcomeDonut($('chart-outcomes'), s.jobs_by_state);
   kv($('kv-unavailable'), Object.entries(s.unavailable).map(([k, v]) => [k, null, v]));
   const ul = $('job-list');
   if (ul) {
     ul.replaceChildren();
+    if (!jobs.length) {
+      const li = document.createElement('li');
+      li.className = 'unavailable';
+      li.textContent = 'no jobs recorded yet';
+      ul.append(li);
+    }
     for (const j of jobs.slice(0, 12)) {
       const li = document.createElement('li');
-      const kind = document.createElement('span');
-      kind.className = 'kind';
-      kind.textContent = j.state;
+      const state = document.createElement('span');
+      state.className = 'chip ' + jobChipClass(j.state);
+      state.textContent = j.state;
+      /* The full request stays in the title; the row itself truncates in CSS
+         rather than being cut at 60 characters, so widening the window shows
+         more of it instead of the same clipped string. */
+      const text = document.createElement('span');
+      text.className = 'job-text';
+      text.textContent = j.original_request;
+      text.title = j.original_request;
       const time = document.createElement('time');
-      time.textContent = j.created_at.slice(11, 19);
-      li.append(kind, document.createTextNode(' ' + j.original_request.slice(0, 60)), time);
+      time.textContent = fmtClock(j.created_at);
+      time.dateTime = j.created_at;
+      li.append(state, text, time);
       ul.append(li);
     }
   }
@@ -3056,6 +3478,99 @@ function connect() {
 
 let sending = false;
 
+/* ---- theme, the surface menu and the conversation search ------------- *
+ *
+ * Three surfaces share one header control, so the theme lives beside the panel
+ * wiring rather than on any one page. Each page's inline boot script has
+ * already resolved the attribute before the first paint; this keeps the button
+ * in step with it, records a change, and stops following the machine once
+ * someone has stated a preference.
+ */
+const THEME_KEY = 'refinix.theme';
+const SYSTEM_DARK = window.matchMedia('(prefers-color-scheme: dark)');
+
+function storedTheme() {
+  try { return localStorage.getItem(THEME_KEY); } catch (_) { return null; }
+}
+
+function currentTheme() {
+  return document.documentElement.dataset.theme
+    || (SYSTEM_DARK.matches ? 'dark' : 'light');
+}
+
+function applyTheme(mode, animate) {
+  const root = document.documentElement;
+  /* A token swap must not transition — see the note in app.css. The attribute
+     is dropped two frames later, so ordinary interaction keeps its motion and
+     the swap itself lands in one paint. */
+  if (animate) {
+    root.setAttribute('data-theme-switching', '');
+    requestAnimationFrame(() => requestAnimationFrame(
+      () => root.removeAttribute('data-theme-switching')));
+  }
+  root.dataset.theme = mode;
+  const btn = $('theme-toggle');
+  if (!btn) return;
+  const dark = mode === 'dark';
+  /* The label names the state first and the action second, because the icon
+     shows the state and a label that contradicted it would be worse than
+     none. */
+  const label = dark ? 'Dark mode is on. Switch to light mode.'
+                     : 'Light mode is on. Switch to dark mode.';
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('aria-pressed', String(dark));
+  btn.title = label;
+}
+
+/* CSS can reserve a scrollbar gutter but cannot name its width, and the
+   composer needs the same one the conversation reserves. Measured from the
+   scroller itself, so an overlay-scrollbar platform correctly reports zero. */
+function syncScrollGutter() {
+  const thread = $('thread');
+  if (!thread) return;
+  const reserved = thread.offsetWidth - thread.clientWidth;
+  document.documentElement.style.setProperty(
+    '--scroll-gutter', (reserved / 2).toFixed(2) + 'px');
+}
+
+function wireTheme() {
+  applyTheme(currentTheme(), false);
+  const btn = $('theme-toggle');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const next = currentTheme() === 'dark' ? 'light' : 'dark';
+      applyTheme(next, true);
+      try { localStorage.setItem(THEME_KEY, next); } catch (_) {}
+    });
+  }
+  SYSTEM_DARK.addEventListener('change', (e) => {
+    if (!storedTheme()) applyTheme(e.matches ? 'dark' : 'light', true);
+  });
+}
+
+/* The field is folded away until you ask for it: the icon in the heading is
+   the whole control when you are not searching. Closing it clears the term, so
+   the list you are left looking at is never a filtered one with no visible
+   reason for being short. */
+function wireSearchToggle() {
+  const btn = $('chat-search-btn');
+  const field = $('chat-search');
+  if (!btn || !field) return;
+
+  const set = (open) => {
+    field.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) { field.focus(); return; }
+    if (field.value) { field.value = ''; runSearch(''); }
+  };
+  set(false);
+
+  btn.addEventListener('click', () => set(field.hidden));
+  field.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { set(false); btn.focus(); }
+  });
+}
+
 /* Both walls fold away so the conversation can have the window.
  *
  * Two modes, one pair of controls. On a wide window the grid track collapses
@@ -3153,6 +3668,9 @@ function wirePanels() {
 
 window.addEventListener('DOMContentLoaded', () => {
   wirePanels();
+  wireTheme();
+  syncScrollGutter();
+  window.addEventListener('resize', syncScrollGutter);
   const thread = $('thread');
   if (thread) {
     thread.addEventListener('scroll', () => {
@@ -3179,6 +3697,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Escape') { search.value = ''; runSearch(''); }
     });
   }
+  wireSearchToggle();
   const draftInput = $('input');
   if (draftInput) draftInput.addEventListener('input', () => {
     ++draftVersion;
@@ -3249,6 +3768,7 @@ window.addEventListener('DOMContentLoaded', () => {
         $('composer').requestSubmit();
       }
     });
+    wireAutogrow($('input'));
     $('new-chat').onclick = newChat;
     $('cancel-btn').onclick = async () => {
       if (!activeJob || stopping) return;

@@ -25,7 +25,6 @@
    app.css, because the design track's application surfaces carry the same
    strip. Declaring them again here would give one mark two sources of truth. */
 :root {
-  --brand-metal:  #CFCFCF;
   --card-radius:  var(--radius-lg);
 }
 
@@ -40,12 +39,20 @@
 }
 
 /* The complete horizontal symbol-and-name logo, cropped to its content in
-   scripts/build-brand-assets.py so it stays legible at header size. */
+   scripts/build-brand-assets.py so it stays legible at header size.
+
+   The raster is an opaque plate: bright metal on near-black. In dark that is
+   already right and the filter is none. In light it is inverted — plate to
+   white, metal to graphite — then multiplied against the white strip so the
+   plate leaves nothing behind. One image, both themes, no second asset to
+   keep in step with the first. See the brand note in app.css. */
 .brand-logo {
   height: 26px;
   width: auto;
   display: block;
   image-rendering: auto;
+  filter: var(--brand-logo-filter);
+  mix-blend-mode: var(--brand-logo-blend);
 }
 
 /* ---- simplified navigation ------------------------------------------- */
@@ -75,13 +82,27 @@
 .nav-foot { display: grid; gap: var(--sp-2); }
 
 .nav-secondary {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   color: var(--text-dim);
   text-decoration: none;
   font-size: 12px;
+}
+
+/* The gear takes the link's colour, so it lifts with the label on hover and
+   on the current page rather than sitting at a fixed tone beside it. */
+.nav-secondary svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
 }
 
 .nav-secondary:hover { color: var(--text); border-color: var(--text-faint); }
@@ -847,3 +868,989 @@
 
 /* Code results are turns, so they inherit the thread's reading width. */
 #thread .card { margin: 0; }
+
+/* ---- working indicator ------------------------------------------------- */
+
+/* Shown for exactly as long as the coordinator is doing work, on Chat and on
+   Code. It reports work; it never predicts it. app.js drives it from the job's
+   own state, and [hidden] at the top of this file makes hiding it display:none
+   — so neither animation keeps ticking once the answer is finished.
+
+   Sits immediately above the prompt box in the reading column, so the turning
+   mark is next to the Stop control that acts on the same work. */
+.working {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  /* The same expression .composer-box resolves: app.css sizes the reading
+     column with --read-w, overrides.css then re-bases it on --read-width,
+     and only the second one is what the box below actually ends up at. Any
+     other value here and the mark hangs off the side of the box. */
+  max-width: var(--read-width, var(--read-w));
+  margin: 0 auto var(--sp-2);
+  /* Base and highlight for the label sweep. Both move AWAY from the ground —
+     darker in light, lighter in dark — so the shine spends contrast rather
+     than washing the word out at 12px. */
+  --work-base:  var(--text-faint);
+  --work-shine: var(--text);
+}
+
+/* The mark is the brand raster: brushed metal on a near-black ground. It is
+   corrected for light exactly as the wordmark is — see .brand-logo above — so
+   the disc follows --brand-ground rather than staying near-black under a white
+   composer. Round, because a rotating circle has no moving edge; and the square
+   original is inset 1px so the circle clips only that ground and never an
+   arrow (the art reaches 1.05x the inscribed radius at 18px square, 0.94x once
+   inset). isolation holds the clip over a transformed child in WebKit. */
+.working-mark {
+  flex: none;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  padding: 1px;
+  border-radius: 50%;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--brand-ground);
+  box-shadow: 0 0 0 1px var(--brand-edge);
+}
+
+/* Clockwise, the direction the outer arrows travel. The mark has three-fold
+   symmetry, so a full turn reads as continuous rather than as three restarts. */
+.working-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  will-change: transform;
+  animation: refinix-turn 2.4s linear infinite;
+  filter: var(--brand-logo-filter);
+  mix-blend-mode: var(--brand-logo-blend);
+}
+
+@keyframes refinix-turn { to { transform: rotate(360deg); } }
+
+/* One band of light crossing the word, left to right, for as long as the work
+   runs. The travel is stated in em — multiples of the word itself — because a
+   background wider than its box takes percentage positions in reverse, which
+   is the kind of detail that silently flips a sweep the wrong way. */
+.working-label {
+  font-size: 12px;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  background-image: linear-gradient(
+      100deg,
+      var(--work-base) 0%, var(--work-base) 36%,
+      var(--work-shine) 50%,
+      var(--work-base) 64%, var(--work-base) 100%);
+  background-size: 16em 100%;
+  /* repeat-x, not no-repeat: a background narrower than the text leaves the
+     rest of it with no paint at all, and text filled with transparent is
+     text you cannot read. Both ends of the ramp are --work-base, so the
+     tile abuts itself invisibly and every letter always has a colour. */
+  background-repeat: repeat-x;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: refinix-shine 2.4s linear infinite;
+}
+
+/* One tile of travel, so the loop closes on itself with no jump. The tile is
+   twice the width of the word, which is what puts a rest between sweeps
+   rather than running one band into the next. */
+@keyframes refinix-shine {
+  from { background-position: 0 0; }
+  to   { background-position: 16em 0; }
+}
+
+/* Reduced motion: app.css already drops every animation, which would strand
+   the label on whichever slice of the gradient happened to be under it. Paint
+   it flat instead, so the word stays a word. */
+@media (prefers-reduced-motion: reduce) {
+  .working-label {
+    background-image: none;
+    color: var(--text-dim);
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* Forced colours discard the gradient, and text with a transparent fill would
+   go with it. */
+@media (forced-colors: active) {
+  .working-label {
+    background-image: none;
+    color: CanvasText;
+    -webkit-text-fill-color: CanvasText;
+  }
+}
+
+/* ---- the reply's copy control ------------------------------------------ */
+
+/* .turn-meta carries nothing but this button, so the row is what pushes it to
+   the far edge. The reply is the object and the control acts on the whole of
+   it, which is the right-hand end of the block, not tucked under its first
+   word. Code blocks keep their own labelled Copy in the block header — that
+   one names which of several blocks it belongs to, so it still needs words. */
+.turn-meta { justify-content: flex-end; }
+
+.turn-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font: inherit;
+  color: var(--text-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+}
+
+.turn-copy:hover, .turn-copy:focus-visible {
+  color: var(--text);
+  border-color: var(--glass-edge);
+}
+
+.turn-copy svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Success is the tick and full-strength silver, not green: in this palette
+   green means a named control is enforced or a lifecycle step completed, and
+   a clipboard write is neither. A failure is genuinely a fault, so that one
+   does spend colour. */
+.turn-copy[data-copy="copied"] { color: var(--text); }
+.turn-copy[data-copy="failed"] { color: var(--st-fault); }
+
+/* ---- the model list inside the pill's popover -------------------------- */
+
+/* The caret is the only thing on the pill that says the list exists, so it
+   turns with the popover rather than sitting there inert. */
+.model-caret {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.model-pill[aria-expanded="true"] .model-caret { transform: rotate(180deg); }
+
+.mp-models {
+  display: grid;
+  gap: 1px;
+  margin: calc(var(--sp-2) * -1);
+  margin-bottom: 0;
+}
+
+.mp-model {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 7px var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mp-model:hover:not(:disabled), .mp-model:focus-visible {
+  background: var(--veil-sunken);
+  color: var(--text);
+}
+
+/* The one that runs. Sky, because this is the live selection — the same job
+   --signal does for focused, selected and running everywhere else. */
+.mp-model[aria-checked="true"] { color: var(--text); }
+.mp-model[aria-checked="true"] .mp-tick { color: var(--signal); }
+
+/* Still listed, still legible, and not selectable. A name that disappeared
+   would read as the page losing it rather than the computer not having it. */
+.mp-model:disabled { color: var(--text-faint); cursor: not-allowed; }
+
+.mp-tick { display: flex; justify-content: center; }
+.mp-tick svg { width: 14px; height: 14px; fill: currentColor; stroke: none; }
+
+/* The id is the identity: long, punctuated, and never re-wrapped mid-name. */
+.mp-model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-data);
+}
+
+.mp-tag {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.mp-tag[data-missing="true"] { color: var(--st-caution); }
+
+
+/* ---- surface switch --------------------------------------------------- *
+ * Chat and Code as one control directly under the mark, replacing first a
+ * band of permanent tabs and then a caret menu. A track, two equal segments
+ * and a thumb that sits under the segment you are on: the labels never move,
+ * the thumb carries the state, and both destinations are one click away
+ * instead of open-then-choose.
+ *
+ * The thumb is a real element rather than a background on the active link,
+ * so the position is a transform and the control can slide if the state ever
+ * changes in place. Across a page load it simply starts where it belongs. */
+
+.surface-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: var(--sp-3) var(--sp-3) var(--sp-2);
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--veil-sunken);
+}
+
+/* Inset by the track's own padding on every side, so it can only ever cover
+   one segment exactly and never bleeds over the track's border radius. */
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: calc(var(--radius) - 3px);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-soft);
+  transition: transform var(--dur) var(--ease),
+              opacity var(--dur-fast) var(--ease);
+}
+
+.surface-switch[data-on="code"] .switch-thumb { transform: translateX(100%); }
+/* Settings is neither surface, so the switch claims neither. */
+.surface-switch[data-on="none"] .switch-thumb { opacity: 0; }
+
+.switch-seg {
+  position: relative;   /* over the thumb */
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 6px var(--sp-2);
+  border-radius: calc(var(--radius) - 3px);
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.switch-seg svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The nav can be dragged narrow; the label gives way before the icon does. */
+.switch-seg span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switch-seg:hover { color: var(--text-dim); }
+.switch-seg[aria-current="page"] { color: var(--text); }
+
+/* ---- conversations: heading, search and the new-conversation row ----- */
+
+.nav-list-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3) var(--sp-2) var(--sp-4);
+}
+
+/* The heading already sets the row's left padding, so it gives its own back. */
+.nav-list-head .nav-list-h { flex: 1; min-width: 0; padding: 0; margin: 0; }
+
+.list-search-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+
+.list-search-btn svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.list-search-btn:hover,
+.list-search-btn:focus-visible { color: var(--text); background: var(--wall-hover); }
+.list-search-btn[aria-expanded="true"] { color: var(--text); background: var(--wall-active); }
+
+/* The field was full-bleed against both walls of a panel that has no
+   horizontal padding of its own. It is inset to the same gutter the rows use.
+   Scoped to the nav list so the copy inside the Code file menu keeps its own
+   sizing. */
+.nav-list > .chat-search {
+  width: auto;
+  margin: 0 var(--sp-2) var(--sp-2);
+  border-radius: var(--radius-sm);
+  border-color: var(--line);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.nav-list > .chat-search::placeholder { color: var(--text-faint); }
+.nav-list > .search-state { padding: 0 var(--sp-4); }
+
+/* First in the list, so it reads as the thing you do rather than the thing
+   you scroll to. The one row here that is an action gets a rule under it. */
+.nav-item.new-chat {
+  color: var(--text);
+  border: 1px dashed var(--line);
+  margin-bottom: var(--sp-2);
+  padding: 7px var(--sp-3);
+  width: calc(100% - var(--sp-4));
+  background: none;
+  cursor: pointer;
+}
+
+.nav-item.new-chat:hover,
+.nav-item.new-chat:focus-visible {
+  background: var(--wall-hover);
+  border-style: solid;
+  border-color: var(--text-faint);
+}
+
+/* ---- theme toggle ----------------------------------------------------- *
+ * It takes the .panel-toggle shell so the three controls at the right of the
+ * header read as one set. The icon reports the theme that is ON — a moon and
+ * star while dark, a sun and cloud while light — rather than the theme a
+ * click would bring, because a switch that shows its destination and a switch
+ * that shows its state look identical and mean opposite things.
+ *
+ * Three states again: the bare rule is light, the media query covers a viewer
+ * on the system default, and the [data-theme] rules cover the explicit
+ * choice. The last pair is declared last so it wins in both directions. */
+
+.theme-toggle .theme-icon {
+  display: none;
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.theme-toggle .theme-icon .sun-rays {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.theme-toggle .theme-icon-day { display: block; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle .theme-icon-day { display: none; }
+  :root:not([data-theme="light"]) .theme-toggle .theme-icon-night { display: block; }
+}
+
+:root[data-theme="dark"] .theme-toggle .theme-icon-day { display: none; }
+:root[data-theme="dark"] .theme-toggle .theme-icon-night { display: block; }
+:root[data-theme="light"] .theme-toggle .theme-icon-day { display: block; }
+:root[data-theme="light"] .theme-toggle .theme-icon-night { display: none; }
+
+/* ---- Advanced panel --------------------------------------------------- *
+ * Six narrow columns of key/value pairs was the wrong shape for this data.
+ * The values here are endpoints, UUIDs, model ids and whole sentences of
+ * policy, and the old grid gave them roughly eight characters of width, so
+ * every one of them wrapped mid-word into a vertical ribbon.
+ *
+ * Now: fewer, wider panels, each a surface of its own; readouts stack label
+ * over value so the value gets the panel's full width; and the four groups
+ * that are really quantities — the probe's up/down, the installed models, the
+ * token window and the job counts — are drawn instead of listed. */
+
+.adv-grid {
+  grid-template-columns: repeat(auto-fit, minmax(21rem, 1fr));
+  gap: var(--sp-3);
+}
+
+.adv-panel {
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--veil);
+}
+
+.adv-panel h3 { margin-bottom: var(--sp-3); }
+
+/* Label over value. The label is the small print here — the value is what
+   somebody opened this panel to read. */
+.adv-panel .kv div {
+  grid-template-columns: 1fr;
+  gap: 1px;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.adv-panel .kv div:last-child { border-bottom: 0; }
+.adv-panel .kv div:first-child { padding-top: 0; }
+
+.adv-panel .kv dt {
+  font-size: var(--fs-micro);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.adv-panel .kv dd {
+  font-family: var(--font-data);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  text-align: left;
+  /* A UUID or an endpoint has no word boundary to break at, and breaking one
+     across two lines is ordinary. Sentences of policy still break on spaces,
+     because they have spaces to break on. */
+  overflow-wrap: anywhere;
+}
+
+/* The hatch stays — it is how this product says "no evidence", and it must
+   never be mistakable for a healthy zero. But a stacked value is full-width,
+   so the stripes ran the whole panel and read as damage rather than as a
+   strike. inline-block puts them back behind the words only. The colour is
+   left to .unavailable, which owns that meaning. */
+.adv-panel .kv dd.unavailable {
+  display: inline-block;
+  padding: 0 4px;
+  font-family: var(--font-ui);
+  font-style: italic;
+}
+
+/* ---- runtime probe: a status line ------------------------------------- */
+
+.probe-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-data);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.probe-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--st-unknown);
+}
+
+/* Reachable is an observation, not an enforced control, but it is the one
+   green thing here people actually look for, so it takes the enforced tone. */
+.probe-dot[data-state="up"] { background: var(--st-enforced); }
+.probe-dot[data-state="down"] { background: var(--st-fault); }
+
+/* ---- models as tags --------------------------------------------------- */
+
+.tag-row {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+}
+
+.tag-row .tag {
+  padding: 3px var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.tag-row .tag[data-current="true"] {
+  color: var(--text);
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+
+.tag-row .unavailable { font-size: var(--fs-sm); }
+
+/* ---- the token window as one bar -------------------------------------- */
+
+.budget { margin: 0 0 var(--sp-3); }
+
+.budget figcaption {
+  font-family: var(--font-data);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  margin-bottom: var(--sp-2);
+}
+
+/* Square, not rounded: this is a readout, and the geometry note in app.css
+   says an instrument face stays square. */
+.budget-bar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  background: var(--surface-sunken);
+}
+
+.budget-seg { display: block; height: 100%; }
+/* Three tones of one hue, not three different meanings: the segments are
+   parts of a single quantity, so they must not read as three states. */
+.budget-seg[data-kind="budget"] { background: var(--signal); }
+.budget-seg[data-kind="reply"]  { background: var(--agent); }
+.budget-seg[data-kind="held"]   { background: var(--line); }
+
+.budget-legend {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.budget-legend li {
+  display: grid;
+  grid-template-columns: 9px 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+}
+
+.budget-legend .sw {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.budget-legend .sw[data-kind="budget"] { background: var(--signal); }
+.budget-legend .sw[data-kind="reply"]  { background: var(--agent); }
+.budget-legend .sw[data-kind="held"]   { background: var(--line); }
+
+.budget-legend b {
+  font-family: var(--font-data);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ---- recent jobs ------------------------------------------------------ */
+
+.job-rows { list-style: none; margin: 0; padding: 0; }
+
+.job-rows li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.job-rows li:last-child { border-bottom: 0; }
+.job-rows li:first-child { padding-top: 0; }
+
+/* One line, ellipsised. The full request is on the row's title, so widening
+   the window reveals more of it rather than re-clipping the same string. */
+.job-rows .job-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+
+.job-rows time {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.job-rows .unavailable { font-size: var(--fs-sm); }
+
+/* ---- not observed yet -------------------------------------------------- *
+ * These rows are all note and no value, so they read better as one column of
+ * sentences than as a label/value pair where the value is always missing. */
+
+#kv-unavailable dd.unavailable { font-size: var(--fs-sm); }
+
+/* Every row here is a note with no value, and they are short. Down one column
+   of a panel that spans the whole grid they left most of the width empty. */
+.adv-panel #kv-unavailable {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 0 var(--sp-5);
+}
+
+.adv-panel #kv-unavailable div:first-child { padding-top: var(--sp-2); }
+
+@media (max-width: 620px) {
+  .job-rows li { grid-template-columns: auto 1fr; }
+  .job-rows time { grid-column: 2; }
+}
+
+/* ---- Advanced: the activity charts ------------------------------------ *
+ * Bars are CSS boxes rather than SVG rects, so their labels stay at the UI's
+ * own type size instead of scaling with a viewBox; the donut is SVG, because
+ * an arc is not a box. Nothing is fetched to draw any of this. */
+
+.chart-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--sp-5);
+}
+
+.chart { margin: 0; min-width: 0; }
+
+.chart figcaption { display: grid; gap: 1px; margin-bottom: var(--sp-3); }
+
+.chart-title { font-size: var(--fs-sm); color: var(--text); }
+
+.chart-sub {
+  font-size: var(--fs-micro);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* The plot floor is a real rule; the gridlines above it are not, so they are
+   drawn faintly and never compete with the bars. */
+.plot {
+  position: relative;
+  height: 108px;
+  border-bottom: 1px solid var(--line);
+  background:
+    repeating-linear-gradient(to top, transparent 0 26px, var(--line-soft) 26px 27px);
+}
+
+.bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.bars-tight { gap: 2px; }
+
+.bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--st-observed);
+  transition: filter var(--dur-fast) var(--ease);
+}
+
+.bar:hover { filter: brightness(1.25); }
+
+/* The chip vocabulary again: a bar and a chip must never disagree. */
+.bar[data-state="completed"] { background: var(--st-enforced); }
+.bar[data-state="cancelled"] { background: var(--st-unknown); }
+.bar[data-state="failed"],
+.bar[data-state="interrupted"] { background: var(--st-fault); }
+.bar[data-state="running"] { background: var(--signal); }
+
+.plot-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--text-faint);
+  pointer-events: none;
+}
+
+.plot-rule i {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  padding: 0 3px;
+  font-style: normal;
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  background: var(--surface);
+}
+
+.plot-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+.chart-foot {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+}
+
+.chart-foot li { display: grid; gap: 1px; }
+
+.chart-foot span {
+  font-size: var(--fs-micro);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.chart-foot b {
+  font-family: var(--font-data);
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.chart-empty { margin: 0; padding: var(--sp-3) 0; font-size: var(--fs-sm); }
+
+/* ---- outcomes donut ---------------------------------------------------- */
+
+.donut-wrap { position: relative; width: 132px; margin: 0 auto; }
+
+.donut { display: block; width: 100%; height: auto; }
+.donut circle { fill: none; stroke-width: 12; }
+.donut-track { stroke: var(--line-soft); }
+
+.donut-arc {
+  /* Start at twelve o'clock rather than three, which is where a reader
+     expects a share to begin. */
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  stroke: var(--st-observed);
+  stroke-linecap: butt;
+}
+
+.donut-arc[data-state="completed"] { stroke: var(--st-enforced); }
+.donut-arc[data-state="cancelled"] { stroke: var(--st-unknown); }
+.donut-arc[data-state="failed"],
+.donut-arc[data-state="interrupted"] { stroke: var(--st-fault); }
+.donut-arc[data-state="running"] { stroke: var(--signal); }
+
+.donut-mid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.donut-mid b {
+  font-family: var(--font-data);
+  font-weight: 400;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.donut-mid span {
+  font-size: var(--fs-micro);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.donut-legend {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.donut-legend li {
+  display: grid;
+  grid-template-columns: 9px 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+}
+
+.donut-legend .sw {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--st-observed);
+}
+
+.donut-legend .sw[data-state="completed"] { background: var(--st-enforced); }
+.donut-legend .sw[data-state="cancelled"] { background: var(--st-unknown); }
+.donut-legend .sw[data-state="failed"],
+.donut-legend .sw[data-state="interrupted"] { background: var(--st-fault); }
+.donut-legend .sw[data-state="running"] { background: var(--signal); }
+
+.donut-legend b {
+  font-family: var(--font-data);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ---- pairing and the worker self-test --------------------------------- *
+ *
+ * The markup and the behaviour here belong to the pairing work and are not
+ * touched: every selector below is appearance only. They arrived unstyled,
+ * which in practice meant Arial on a user-agent grey with square corners,
+ * sitting inside a card that is otherwise IBM Plex on our own surfaces — so
+ * the controls are dressed in the same tokens every other field in the
+ * product already uses, and the card reads as one object again.
+ */
+
+.pair-form {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Label above field, in the same micro-caps tier the readouts use, so a form
+   inside a settings card reads as part of the card rather than as a browser
+   dialog that landed in one. */
+.pair-form label {
+  font-size: var(--fs-micro);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.pair-form input,
+.pair-form textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 7px var(--sp-2);
+  margin: 0 0 var(--sp-2);
+  transition: border-color var(--dur-fast) var(--ease),
+              box-shadow var(--dur-fast) var(--ease);
+}
+
+/* A port, a fingerprint and a PEM block are machine strings — read character
+   by character, and in the fingerprint's case compared by eye against another
+   screen. They take the data face so the comparison is actually possible. */
+.pair-form #pair-port,
+.pair-form #pair-fingerprint,
+.pair-form #pair-certificate {
+  font-family: var(--font-data);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.pair-form textarea { resize: vertical; min-height: 4.4em; }
+
+.pair-form input::placeholder,
+.pair-form textarea::placeholder { color: var(--text-faint); }
+
+/* The same focus ring the composer takes, so focus means one thing product
+   wide rather than whatever the user agent happens to draw. */
+.pair-form input:focus,
+.pair-form textarea:focus {
+  outline: none;
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px var(--signal-soft);
+}
+
+/* Beats .card p, which is a class plus a type and would otherwise win. */
+.card .card-note {
+  margin: 0 0 var(--sp-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* The self-test result. It stays genuinely empty until the button is pressed —
+   it sends a real request and must never run on its own — so the container
+   collapses rather than leaving a gap above the actions while nothing has
+   been asked for. */
+.selftest {
+  display: grid;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.selftest:empty { display: none; }
+
+/* The headline is the verdict, so it takes the reading tier while the rows
+   beneath it stay at the readout tier. */
+.selftest > p {
+  margin: 0;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}

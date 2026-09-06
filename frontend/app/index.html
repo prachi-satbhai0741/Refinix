@@ -8,29 +8,78 @@
 <link rel="stylesheet" href="/refinix.css">
 <!-- No external font or script. The running application makes no network
      request outside 127.0.0.1. -->
+<!-- Theme resolves before the first paint. Without this the page paints the
+     default palette and then swaps, which reads as a flash on every load. -->
+<script>
+  (function () {
+    try {
+      var stored = localStorage.getItem('refinix.theme');
+      var dark = stored ? stored === 'dark'
+        : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    } catch (_) { /* private window, blocked storage: the CSS default stands */ }
+  })();
+</script>
 <div class="app">
   <nav class="nav" id="nav">
     <div class="brand">
       <img class="brand-logo" src="/assets/refinix-wordmark.png" alt="Refinix">
     </div>
 
-    <div class="surfaces">
-      <a class="surface-link" aria-current="page" href="/">Chat</a>
-      <a class="surface-link" href="/code.html">Code</a>
+    <!-- The two surfaces as one switch under the mark. Both destinations stay
+         on screen and the thumb sits under the one you are on, so changing
+         surface costs a click rather than open-then-choose, and the wall
+         spends a single row on it instead of a band of tabs. -->
+    <div class="surface-switch" data-on="chat">
+      <span class="switch-thumb" aria-hidden="true"></span>
+      <a class="switch-seg" href="/" aria-current="page">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <rect x="2" y="3" width="12" height="8.4" rx="2.4"/>
+          <path d="M5.6 11.4v2.3l2.9-2.3"/>
+        </svg>
+        <span>Chat</span>
+      </a>
+      <a class="switch-seg" href="/code.html">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M6 4.4 2.6 8 6 11.6M10 4.4 13.4 8 10 11.6"/>
+        </svg>
+        <span>Code</span>
+      </a>
     </div>
 
     <div class="nav-list">
-      <p class="lbl nav-list-h">Conversations</p>
+      <!-- The heading owns the search: an icon at its right opens the field, so
+           the wall spends a row on searching only while you are searching. -->
+      <div class="nav-list-head">
+        <p class="lbl nav-list-h">Conversations</p>
+        <button class="list-search-btn" id="chat-search-btn" type="button"
+                aria-expanded="false" aria-controls="chat-search"
+                aria-label="Search conversations" title="Search conversations">
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <circle cx="7" cy="7" r="4.3"/>
+            <path d="M10.1 10.1 13.6 13.6"/>
+          </svg>
+        </button>
+      </div>
       <label class="visually-hidden" for="chat-search">Search conversations</label>
       <input class="chat-search" id="chat-search" type="search"
-             placeholder="Search conversations" autocomplete="off">
+             placeholder="Search conversations" autocomplete="off" hidden>
       <p class="lbl search-state" id="search-state" hidden></p>
+      <!-- Above the list, not under it: starting a conversation is the one
+           action here whose reach does not depend on how long the list is. -->
+      <button class="nav-item new-chat" id="new-chat">+ New conversation</button>
       <div id="chat-list"></div>
-      <button class="nav-item" id="new-chat">+ New conversation</button>
     </div>
 
     <div class="nav-foot">
-      <a class="nav-secondary" href="/control.html">Settings</a>
+      <a class="nav-secondary" href="/control.html">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M12.4 8h1.8M10.2 11.8l.9 1.6M5.8 11.8l-.9 1.6M3.6 8H1.8M5.8 4.2l-.9-1.6M10.2 4.2l.9-1.6"/>
+          <circle cx="8" cy="8" r="4.4"/>
+          <circle cx="8" cy="8" r="1.8"/>
+        </svg>
+        <span>Settings</span>
+      </a>
       <p class="ready-line" id="ready-line">Checking this computer…</p>
     </div>
   </nav>
@@ -50,6 +99,27 @@
       <h1 class="head-title" id="head-title">Chat</h1>
       <span class="chip chip-unknown" id="job-chip">no job</span>
       <div class="head-spacer"></div>
+      <!-- Icon only, and the icon reports the theme that is on rather than the
+           one a click would bring: a moon and star while dark is on, a sun and
+           cloud while light is on. -->
+      <button class="panel-toggle theme-toggle" type="button" id="theme-toggle">
+        <svg class="theme-icon theme-icon-day" viewBox="0 0 20 20"
+             aria-hidden="true" focusable="false">
+          <path class="sun-rays" d="M2.9 6.6H1.4M7 2.5V1M4.1 3.7 3 2.6M9.9 3.7 11 2.6M4.1 9.5 3 10.6"/>
+          <circle cx="7" cy="6.6" r="2.7"/>
+          <g class="cloud">
+            <circle cx="8.6" cy="13.6" r="2.5"/>
+            <circle cx="12.2" cy="12.9" r="3.2"/>
+            <circle cx="15.4" cy="13.8" r="2.3"/>
+            <rect x="8.6" y="13" width="6.8" height="3.1"/>
+          </g>
+        </svg>
+        <svg class="theme-icon theme-icon-night" viewBox="0 0 20 20"
+             aria-hidden="true" focusable="false">
+          <path d="M12.88 12.43A4.88 4.88 0 1 1 7.57 7.13 3.79 3.79 0 0 0 12.88 12.43z"/>
+          <path d="M14.6 2.2l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L11.7 5.1l2.05-.85z"/>
+        </svg>
+      </button>
       <button class="panel-toggle panel-toggle-right" type="button"
               id="rail-toggle" data-panel-toggle="rail"
               aria-controls="rail" aria-expanded="true"
@@ -72,9 +142,26 @@
       </article>
     </div>
 
-    <button class="jump-latest" id="jump-latest" hidden>Jump to latest</button>
-
     <form class="composer" id="composer">
+      <!-- Icon only: a labelled pill sat over the conversation it was offering
+           to scroll, and this control is only ever offered when you are already
+           looking at the text it would cover. -->
+      <button class="jump-latest" id="jump-latest" type="button" hidden
+              title="Jump to latest" aria-label="Jump to latest">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M8 3.25V12.5M4.4 8.9 8 12.5l3.6-3.6"/>
+        </svg>
+      </button>
+
+      <!-- Turns and shines only while a job is actually running. app.js
+           drives it from the job state, so it cannot outlive the work. -->
+      <div class="working" id="working" role="status" hidden>
+        <span class="working-mark" aria-hidden="true">
+          <img src="/assets/refinix-mark.png" alt="">
+        </span>
+        <span class="working-label">Refinix Working</span>
+      </div>
+
       <div class="composer-box" id="composer-box">
         <div class="drop-hint" id="drop-hint" hidden>Drop files to attach them</div>
 
@@ -90,7 +177,7 @@
                     aria-label="Remove the selected skill">&#215;</button>
           </span>
           <label class="visually-hidden" for="input">Your request</label>
-          <textarea class="composer-input" id="input" rows="2"
+          <textarea class="composer-input" id="input" rows="1"
                     placeholder="Ask, or describe the task. Enter sends, Shift+Enter for a new line."></textarea>
         </div>
 
@@ -105,12 +192,13 @@
                   aria-haspopup="dialog" aria-expanded="false" hidden>
             <span id="context-figure">Context</span>
           </button>
-          <span class="lbl" id="send-hint">Runs on this computer</span>
           <div class="head-spacer"></div>
           <button class="model-pill" type="button" id="model-pill"
                   aria-haspopup="dialog" aria-expanded="false" hidden>
             <span class="model-name" id="model-name">—</span>
             <span class="model-reasoning" id="model-reasoning" hidden>Reasoning</span>
+            <svg class="model-caret" viewBox="0 0 16 16" aria-hidden="true"
+                 focusable="false"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg>
           </button>
           <button class="btn btn-stop" type="button" id="cancel-btn" hidden>Stop</button>
           <button class="btn btn-primary" type="submit" id="send">Send</button>
