@@ -231,6 +231,11 @@ class TestValidationSandbox(unittest.TestCase):
                     if k == "ValidatingAdmissionPolicyBinding"
                     and n == "aegisforge-validation-job"))
 
+    def test_admission_map_keys_use_cel_membership(self):
+        policy = self.admission()
+        self.assertIn("'aegisforge.dev/attempt' in object.metadata.labels", policy)
+        self.assertNotIn("has(object.metadata.labels['", policy)
+
     def test_validation_jobs_use_the_credential_free_service_account(self):
         accounts = {n: t for _, k, n, t in documents() if k == "ServiceAccount"}
         self.assertIn("aegisforge-validation", accounts)

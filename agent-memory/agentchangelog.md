@@ -1661,3 +1661,17 @@ work. No repository file change means no changelog entry.
 - changes: All four runtime image references now use manifest digest `sha256:774218db...`; provenance records the observed config digest, archive SHA-256 and byte size. The handoff records step A passed, uses the new digest in the admission probe and limits its history scan to AegisForge-created layers so the upstream Python signing key is not a false positive. The execution ledger now distinguishes the passed image build from pending C06 runtime acceptance.
 - verification: Requester output showed the linux/amd64 build's offline layer pass, manifest and config digests, and a root-owned mode-0600 archive outside the repository with SHA-256 `06013413...` and 49,579,008 bytes. Locally, 79 manifest checks passed, provenance parsed as JSON, every live image consumer matched the recorded digest, and `git diff --check` passed.
 - remaining: Publish these eight files, pull them on Ubuntu, import and alias the image in K3s containerd, then recreate the address-bound TLS identity and resume the guarded C06 rollout. No cluster object or service was changed by Codex.
+
+<a id="ac-20260906-004"></a>
+## AC-20260906-004 — C09 admission policy compiles its map-key check
+- prompt_id: [UP-20260906-003](userprompts.md#up-20260906-003)
+- date: 2026-09-06
+- status: implemented and offline-checked; Ubuntu server dry-run retry pending
+- scope: c06, c09, kubernetes, admission-policy, runtime-handoff
+- tags: cel, validatingadmissionpolicy, map-membership, pvc, rollout-order
+- aliases: invalid argument to has macro, aegisforge jobs not found, pending worker
+- paths: deploy/k3s/50-validation.yaml, deploy/k3s/test_manifests.py, docs/c07-c10-runtime-handoff.md, agent-memory/
+- summary: Replaced an invalid CEL map-key `has` call with membership and ordered C09 prerequisites before the worker rollout that mounts their PVC.
+- changes: The admission identity rule now uses `'aegisforge.dev/attempt' in object.metadata.labels`, the Kubernetes-supported form, while retaining the outer labels-field presence guard. A focused regression rejects the invalid map-index macro. The runtime handoff now runs `50-validation.yaml` after digest pinning and before rolling out either consumer.
+- verification: Requester output proved the previous server dry-run failed closed without creating resources and named the exact CEL compilation error. Locally, 80 manifest checks passed and `git diff --check` passed. The live K3s server dry-run remains required after publication.
+- remaining: Publish these five files, pull them on Ubuntu, re-render the manifest with cluster IP `10.43.0.1`, and rerun server dry-run. The old worker remains Ready; the new worker stays Pending until the jobs PVC exists.

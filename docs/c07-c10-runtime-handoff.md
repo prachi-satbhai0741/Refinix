@@ -52,11 +52,11 @@ Step J puts the decision in front of you. Nothing is downloaded without it.
 ```
 A  image           Ubuntu   rebuild the worker image with C09, record the digest
 B  pin             Ubuntu   put the new digest in the four manifest fields
+G  C09 components  Ubuntu   jobs volume, RBAC, network policies
 C  loopback TLS    Ubuntu   re-run C06 step D against the new image
 D  LAN forwarder   Ubuntu   C06 step E, open 30443 to the one Mac address
 E  pair            both     confirm the fingerprint, redeem the code
 F  relationship    both     read the ID on the Mac, patch the Secret on Ubuntu
-G  C09 components  Ubuntu   jobs volume, RBAC, network policies
 H  executor        Ubuntu   deploy the consumer with its ServiceAccount
 I  C06 acceptance  both     inference, cancellation, disconnect recovery
 J  C08 decision    macOS    choose a scan-reading model, or accept unavailable
@@ -69,9 +69,10 @@ wrong looks like a working system that quietly cannot work:
 
 * **The executor cannot be deployed before pairing**, because it serves one
   relationship ID that pairing mints.
-* **The C09 components must exist before the executor**, because the executor
-  now names a ServiceAccount. Without `50-validation.yaml` applied, the Pod
-  does not schedule at all — which is the correct closed state, not a fault.
+* **The C09 components must exist before the worker rollout and executor.** The
+  worker mounts the jobs PVC and the executor names its ServiceAccount. Without
+  `50-validation.yaml` applied, both stay closed rather than running without
+  their required storage or authority.
 
 ---
 
@@ -146,6 +147,10 @@ worker Deployment pins the recorded build, and one asserts the validation image
 is pinned by digest **and matches** it. A mismatch fails loudly rather than
 letting validation run a different build from the executor.
 
+Run section G now, before C. The C09 worker mounts the jobs PVC created there;
+rolling it out first leaves the new Pod Pending while Kubernetes safely retains
+the old worker.
+
 ---
 
 ## C. Ubuntu worker — re-run the loopback TLS check against the new image
@@ -187,7 +192,7 @@ the Mac, patch the `worker-credential` Secret on Ubuntu.
 
 ## G. Ubuntu worker — apply the C09 components
 
-**New.** These do not exist yet on the cluster.
+**Run after B and before C.** These do not exist yet on the cluster.
 
 Read the Kubernetes API address first. It is per-cluster and is deliberately
 **not** recorded in the repository:

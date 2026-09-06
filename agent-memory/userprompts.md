@@ -1210,3 +1210,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Focused offline manifest and source consistency checks only; Ubuntu publication and cluster actions remain human gates.
 - follow_up_to: [UP-20260906-001](#up-20260906-001)
 - linked_changes: [AC-20260906-003](agentchangelog.md#ac-20260906-003)
+
+<a id="up-20260906-003"></a>
+## UP-20260906-003 — Repair the live C09 admission dry-run
+- date: 2026-09-06
+- status: implemented; Ubuntu server dry-run retry pending
+- scope: c06, c09, kubernetes, admission-policy, runtime-handoff
+- tags: cel, validatingadmissionpolicy, map-membership, pvc, rollout-order
+- aliases: invalid argument to has macro, aegisforge jobs not found, pending worker
+- paths: deploy/k3s/50-validation.yaml, deploy/k3s/test_manifests.py, docs/c07-c10-runtime-handoff.md, agent-memory/
+- summary: Fix the invalid CEL map-key check and move C09 prerequisites before the worker rollout that consumes their PVC.
+- request: Continue setup after the new worker stayed Pending on the missing jobs PVC and the server dry-run rejected the admission expression.
+- constraints: Preserve fail-closed admission, use the Kubernetes-supported map membership operator, and do not apply anything until server dry-run passes.
+- acceptance: Focused manifest checks pass and the live K3s server accepts every rendered object in dry-run.
+- verification_authorization: Focused offline manifest checks locally; the Ubuntu server dry-run remains the authoritative compiler check.
+- follow_up_to: [UP-20260906-002](#up-20260906-002)
+- linked_changes: [AC-20260906-004](agentchangelog.md#ac-20260906-004)
