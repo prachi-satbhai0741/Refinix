@@ -830,6 +830,8 @@ function openModelPopover() {
 function appendModelChoices(box, scope, labelText) {
   const group = document.createElement('div');
   group.className = 'mp-choices';
+  group.setAttribute('role', 'radiogroup');
+  group.setAttribute('aria-label', labelText);
   const label = document.createElement('p');
   label.className = 'mp-label';
   label.textContent = labelText;
@@ -838,7 +840,9 @@ function appendModelChoices(box, scope, labelText) {
   const auto = document.createElement('button');
   auto.type = 'button';
   auto.className = 'mp-model';
-  auto.textContent = 'Auto model — after internal hackathon';
+  auto.setAttribute('role', 'radio');
+  auto.setAttribute('aria-checked', 'false');
+  appendModelChoiceParts(auto, false, 'Auto model', 'after internal hackathon');
   auto.disabled = true;
   group.append(auto);
 
@@ -849,9 +853,13 @@ function appendModelChoices(box, scope, labelText) {
     const selected = modelSelections[scope] === candidate.id;
     const unavailable = !candidate.eligible_scopes?.includes(scope);
     button.dataset.selected = String(selected);
-    button.textContent = `${selected ? '✓ ' : ''}${candidate.id}`
-      + (candidate.locations?.length ? ` — ${candidate.locations.join(' + ')}` : ' — not installed')
-      + (candidate.installed && unavailable ? ' — unavailable for this workflow' : '');
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-checked', String(selected));
+    const location = candidate.locations?.length
+      ? candidate.locations.join(' + ') : 'not installed';
+    appendModelChoiceParts(button, selected, candidate.id,
+      candidate.installed && unavailable
+        ? `${location} — unavailable for this workflow` : location);
     button.disabled = unavailable;
     button.onclick = async () => {
       button.disabled = true;
@@ -870,6 +878,19 @@ function appendModelChoices(box, scope, labelText) {
     group.append(button);
   }
   box.append(group);
+}
+
+function appendModelChoiceParts(button, selected, name, tag) {
+  const tick = document.createElement('span');
+  tick.className = 'mp-tick';
+  tick.textContent = selected ? '✓' : '';
+  const modelName = document.createElement('span');
+  modelName.className = 'mp-model-name';
+  modelName.textContent = name;
+  const modelTag = document.createElement('span');
+  modelTag.className = 'mp-tag';
+  modelTag.textContent = tag;
+  button.append(tick, modelName, modelTag);
 }
 
 /* ---- attachments ------------------------------------------------------ */

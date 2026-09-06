@@ -1703,3 +1703,45 @@ work. No repository file change means no changelog entry.
 - changes: The recovery allowance is unchanged; only its invalid indentation changed. A focused manifest regression now requires the field at Pod level and rejects it inside the container.
 - verification: Requester ran 82 manifest checks on the macOS coordinator; all passed. `git diff --check` was silent. The failed Ubuntu apply had created only the executor ConfigMap and ingress NetworkPolicy; K3s rejected the Deployment before any executor Pod existed.
 - remaining: Commit and push these three files, pull them on Ubuntu, reapply `40-executor.yaml`, and prove the executor Deployment Ready. The earlier pairing-state reload defect remains to be repaired before final acceptance.
+
+<a id="ac-20260906-007"></a>
+## AC-20260906-007 — Model choices use their existing three-column layout
+- prompt_id: [UP-20260906-006](userprompts.md#up-20260906-006)
+- date: 2026-09-06
+- status: implemented and locally verified; publication and packaged-app rebuild pending
+- scope: refinix, frontend, model-selection, c06-acceptance
+- tags: model-selector, css-grid, accessibility, chat, routing
+- aliases: vertical model text, fourteen pixel column, broken model dropdown
+- paths: frontend/app/app.js, frontend/app/test-composer.cjs, agent-memory/
+- summary: Split every model option into the tick, model-name and location cells its existing CSS grid expects.
+- changes: The selector now renders three spans instead of one raw text node in the 14-pixel tick column, while retaining the existing inventory, selection API and visual styles. Radio roles and checked state expose the same choice semantics to assistive technology.
+- verification: Requester ran the focused browser suite after the correction: 31 checks passed, including the three-cell regression. The live selector screenshot showed horizontal readable choices and the Ubuntu model was selected successfully. `git diff --check` was silent.
+- remaining: Publish the source and rebuild the packaged Refinix application before presentation use. No routing, model inventory or visual token changed.
+
+<a id="ac-20260906-008"></a>
+## AC-20260906-008 — SIGTERM leaves work recoverable and fresh codes visible
+- prompt_id: [UP-20260906-007](userprompts.md#up-20260906-007)
+- date: 2026-09-06
+- status: implemented and locally verified; worker-image rebuild and live retry pending
+- scope: c06, worker, executor, recovery, pairing
+- tags: sigterm, redis-streams, restart-recovery, pairing-reload, worker-image
+- aliases: cancelled before completion, rollout restart lost work, fresh pairing code refused
+- paths: backend/worker/executor.py, backend/worker/pairing.py, backend/worker/test_executor.py, agent-memory/
+- summary: Restored the intended unacknowledged shutdown path and made the running API reload codes written by the host CLI.
+- changes: Executor shutdown now raises the existing `Stopped` signal through both generation and validation instead of emitting a false cancellation and acknowledging the stream entry. Pairing redemption reloads the shared file under its existing lock before matching a CLI-issued code.
+- verification: Requester ran the focused executor suite with the repository virtual environment and reported all checks passed, including regressions for pending SIGTERM work and a code minted by a second store process. `git diff --check` was silent.
+- remaining: Publish, rebuild the linux/amd64 worker image once, repin its observed digest and repeat the live pairing-without-restart and executor-rollout recovery checks. The previous live image still contains both defects.
+
+<a id="ac-20260906-009"></a>
+## AC-20260906-009 — One guarded presentation-start command for both devices
+- prompt_id: [UP-20260906-008](userprompts.md#up-20260906-008)
+- date: 2026-09-06
+- status: implemented and locally verified; publication and device installation pending
+- scope: c06, presentation, launcher, macos, ubuntu
+- tags: refinix-start, motorola-hotspot, systemd, k3s, fail-closed
+- aliases: Refinix start, college presentation, two-device startup
+- paths: scripts/refinix, scripts/test_refinix_launcher.py, agent-memory/
+- summary: Added one cross-platform launcher for the fixed Motorola hotspot presentation profile.
+- changes: On Ubuntu, `refinix start` verifies the worker address before starting K3s, Ollama, both guarded forwarders and waiting for all three Deployments. On macOS it prints and verifies the Wi-Fi address, requires the protected worker port to be reachable, then opens the packaged application. Unexpected networks stop before service or application startup, and the launcher reads no secret.
+- verification: Requester ran the offline launcher checks with the repository virtual environment, `sh -n`, the browser suite and `git diff --check`, and reported all passed.
+- remaining: Publish and install the same file as `/usr/local/bin/refinix` and `/usr/local/bin/Refinix` on both devices, then execute it once on Ubuntu followed by Mac. The launcher is deliberately bound to the current Motorola IP profile; it does not silently rewrite certificate or firewall trust.

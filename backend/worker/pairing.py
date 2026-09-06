@@ -188,6 +188,9 @@ class PairingStore:
         if not isinstance(code, str) or not code:
             raise PairingError("invalid_request", "a pairing code is required")
         with self._lock:
+            # The host CLI and worker API are separate processes sharing this
+            # file. Reload so a code minted after the API started is visible.
+            self._state = self._load()
             self._expire_codes()
             matched = None
             for stored, record in list(self._state["codes"].items()):

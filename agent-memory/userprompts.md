@@ -1258,3 +1258,51 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Requester runs the focused manifest suite and live K3s apply; Git publication remains a human action.
 - follow_up_to: [UP-20260906-004](#up-20260906-004)
 - linked_changes: [AC-20260906-006](agentchangelog.md#ac-20260906-006)
+
+<a id="up-20260906-006"></a>
+## UP-20260906-006 — Repair the collapsed model selector
+- date: 2026-09-06
+- status: implemented and locally verified; publication and packaged-app rebuild pending
+- scope: refinix, frontend, model-selection, c06-acceptance
+- tags: model-selector, css-grid, accessibility, chat, routing
+- aliases: vertical model text, fourteen pixel column, broken model dropdown
+- paths: frontend/app/app.js, frontend/app/test-composer.cjs, agent-memory/
+- summary: Render each model choice into the tick, name and location cells already defined by the selector's CSS grid.
+- request: Repair the unusable model chooser exposed while switching Chat from PaddleOCR to the paired worker model during live C06 acceptance.
+- constraints: Reuse the existing CSS and coordinator selection API; do not change routing, model inventory or visual tokens.
+- acceptance: The browser check proves each option has three cells, the selector is legible after reload, and the worker model can be selected.
+- verification_authorization: Requester runs the focused browser test and visually verifies the live selector; Git publication remains a human action.
+- follow_up_to: [UP-20260906-005](#up-20260906-005)
+- linked_changes: [AC-20260906-007](agentchangelog.md#ac-20260906-007)
+
+<a id="up-20260906-007"></a>
+## UP-20260906-007 — Preserve work across an executor rollout
+- date: 2026-09-06
+- status: implemented and locally verified; worker-image rebuild and live retry pending
+- scope: c06, worker, executor, recovery, pairing
+- tags: sigterm, redis-streams, restart-recovery, pairing-reload, worker-image
+- aliases: cancelled before completion, rollout restart lost work, fresh pairing code refused
+- paths: backend/worker/executor.py, backend/worker/pairing.py, backend/worker/test_executor.py, agent-memory/
+- summary: Keep an in-flight entry recoverable on executor shutdown and make the running worker API see codes minted by the separate host CLI.
+- request: Continue C06 after the live executor-rollout check preserved partial output but terminally cancelled the attempt instead of recovering it.
+- constraints: Preserve explicit user cancellation and deadline behavior; keep the entry pending without a false terminal event; rebuild the worker image only once for both live-proven defects.
+- acceptance: Focused executor checks pass, the rebuilt image pairs without an API restart, and a live executor rollout resumes the same attempt to completion.
+- verification_authorization: Requester runs the focused offline suite and the reviewed Ubuntu rebuild and recovery steps; Git publication remains a human action.
+- follow_up_to: [UP-20260906-006](#up-20260906-006)
+- linked_changes: [AC-20260906-008](agentchangelog.md#ac-20260906-008)
+
+<a id="up-20260906-008"></a>
+## UP-20260906-008 — Add one-command presentation startup
+- date: 2026-09-06
+- status: implemented and locally verified; publication and device installation pending
+- scope: c06, presentation, launcher, macos, ubuntu
+- tags: refinix-start, motorola-hotspot, systemd, k3s, fail-closed
+- aliases: Refinix start, college presentation, two-device startup
+- paths: scripts/refinix, scripts/test_refinix_launcher.py, agent-memory/
+- summary: Add one cross-platform command that verifies the fixed Motorola hotspot addresses before opening the Mac coordinator or starting the guarded Ubuntu stack.
+- request: Make `Refinix start` a presentation-day command on both devices while the same Motorola hotspot travels with the team.
+- constraints: Refuse unexpected addresses before changing host state, expose no secret, preserve the guarded listener, and reuse existing services and deployments.
+- acceptance: Offline launcher checks pass, both command spellings install on each device, Ubuntu reaches Ready, and Mac opens Refinix only after the worker port is reachable.
+- verification_authorization: Requester runs the focused offline checks and reviewed installation commands on both devices; Git publication remains a human action.
+- follow_up_to: [UP-20260906-007](#up-20260906-007)
+- linked_changes: [AC-20260906-009](agentchangelog.md#ac-20260906-009)

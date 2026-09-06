@@ -485,8 +485,31 @@ test('an unsupported platform offers no connect button', async () => {
 test('the model selector lists inventory and keeps Auto disabled for now', () => {
   assert.match(source, /for \(const candidate of models\)/,
     'the selector is populated from the coordinator inventory');
-  assert.match(source, /Auto model — after internal hackathon/);
+  assert.match(source,
+    /appendModelChoiceParts\(auto, false, 'Auto model', 'after internal hackathon'\)/);
   assert.match(source, /auto\.disabled = true/);
   assert.match(source, /skill\?\.id === 'search-documents'\) return null/,
     'search does not claim to select a model it never runs');
+});
+
+test('model choices fill the three grid columns instead of the tick column', () => {
+  const p = page();
+  p.run(`
+    models = [{
+      id: 'qwen3.5:4b-q4_K_M', installed: true,
+      eligible_scopes: ['chat'], locations: ['this computer']
+    }];
+    modelSelections = { chat: 'qwen3.5:4b-q4_K_M' };
+    appendModelChoices(document.body, 'chat', 'Chat model');
+  `);
+  const group = p.document.body.children[0];
+  const auto = group.children[1];
+  const selected = group.children[2];
+  assert.deepEqual(auto.children.map((node) => node.className),
+                   ['mp-tick', 'mp-model-name', 'mp-tag']);
+  assert.equal(auto.children[1].textContent, 'Auto model');
+  assert.deepEqual(selected.children.map((node) => node.className),
+                   ['mp-tick', 'mp-model-name', 'mp-tag']);
+  assert.equal(selected.children[1].textContent, 'qwen3.5:4b-q4_K_M');
+  assert.equal(selected.getAttribute('aria-checked'), 'true');
 });
