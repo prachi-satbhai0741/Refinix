@@ -582,6 +582,14 @@ class TestRuntimeEgressIsSeparate(unittest.TestCase):
         self.assertIn("/32", policy, "a single host, not a subnet")
         self.assertNotIn("0.0.0.0/0", policy)
 
+    def test_runtime_endpoint_matches_the_egress_policy(self):
+        endpoint = 'AEGIS_RUNTIME_HOST: "http://10.42.0.1:11434"'
+        for path in ("20-worker.yaml", "40-executor.yaml"):
+            self.assertIn(endpoint, (ROOT / "deploy/k3s" / path).read_text())
+        policy = (ROOT / "deploy/k3s/30-runtime-egress.yaml").read_text()
+        self.assertIn("cidr: 10.42.0.1/32", policy)
+        self.assertIn("port: 11434", policy)
+
 
 class TestProbeBudget(unittest.TestCase):
     """/v1/health calls runtime.probe(), which makes three HTTP calls. A probe

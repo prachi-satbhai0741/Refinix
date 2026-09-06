@@ -1226,3 +1226,19 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Focused offline manifest checks locally; the Ubuntu server dry-run remains the authoritative compiler check.
 - follow_up_to: [UP-20260906-002](#up-20260906-002)
 - linked_changes: [AC-20260906-004](agentchangelog.md#ac-20260906-004)
+
+<a id="up-20260906-004"></a>
+## UP-20260906-004 — Connect C09 Pods to the observed runtime bridge
+- date: 2026-09-06
+- status: implemented; publication and live Pod verification pending
+- scope: c06, c09, runtime, configmap, network-policy, handoff
+- tags: ollama, cni0, runtime-host, egress, worker, executor
+- aliases: health unavailable, 10.42.0.1, protected Ollama bridge
+- paths: deploy/k3s/20-worker.yaml, deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, docs/c07-c10-runtime-handoff.md, agent-memory/
+- summary: Point both C09 consumers at the observed guarded cni0 Ollama bridge and keep that endpoint locked to the narrow egress policy.
+- request: Continue setup after the exact C09 worker passed loopback TLS but reported runtime health unavailable while the preserved bridge was stopped.
+- constraints: Reuse the existing C05 socket proxy and guard; do not widen Ollama beyond loopback or grant Pod egress beyond the observed bridge /32 and port 11434.
+- acceptance: Worker and executor ConfigMaps match the runtime-egress policy, focused checks pass, and the live worker later reports the installed model through the bridge.
+- verification_authorization: Focused offline manifest checks locally; publication, policy apply and live worker health remain device gates.
+- follow_up_to: [UP-20260906-003](#up-20260906-003)
+- linked_changes: [AC-20260906-005](agentchangelog.md#ac-20260906-005)

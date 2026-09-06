@@ -1675,3 +1675,17 @@ work. No repository file change means no changelog entry.
 - changes: The admission identity rule now uses `'aegisforge.dev/attempt' in object.metadata.labels`, the Kubernetes-supported form, while retaining the outer labels-field presence guard. A focused regression rejects the invalid map-index macro. The runtime handoff now runs `50-validation.yaml` after digest pinning and before rolling out either consumer.
 - verification: Requester output proved the previous server dry-run failed closed without creating resources and named the exact CEL compilation error. Locally, 80 manifest checks passed and `git diff --check` passed. The live K3s server dry-run remains required after publication.
 - remaining: Publish these five files, pull them on Ubuntu, re-render the manifest with cluster IP `10.43.0.1`, and rerun server dry-run. The old worker remains Ready; the new worker stays Pending until the jobs PVC exists.
+
+<a id="ac-20260906-005"></a>
+## AC-20260906-005 — C09 consumers use the guarded Ollama bridge
+- prompt_id: [UP-20260906-004](userprompts.md#up-20260906-004)
+- date: 2026-09-06
+- status: implemented and offline-checked; publication and live worker verification pending
+- scope: c06, c09, runtime, configmap, network-policy, handoff
+- tags: ollama, cni0, runtime-host, egress, worker, executor
+- aliases: health unavailable, 10.42.0.1, protected Ollama bridge
+- paths: deploy/k3s/20-worker.yaml, deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, docs/c07-c10-runtime-handoff.md, agent-memory/
+- summary: Pointed both C09 consumers at the observed guarded cni0 Ollama forwarder and tied the endpoint to the existing /32 egress policy.
+- changes: Worker and executor ConfigMaps now use `http://10.42.0.1:11434`; a focused check requires that endpoint to match `10.42.0.1/32` port 11434 in the separate runtime policy. The live handoff now includes the previously missing runtime-bridge step before LAN exposure and pairing.
+- verification: Requester output showed cni0 `10.42.0.1/24`, Ollama 0.33.2 and both expected model digests, the host runtime still bound only to `127.0.0.1:11434`, the guarded proxy bound to `10.42.0.1:11434`, Pod-CIDR ACCEPT followed by broader DROP, and the bridge returning the runtime version. Locally, 81 manifest checks and `git diff --check` passed.
+- remaining: Publish these six files, pull them on Ubuntu, apply `30-runtime-egress.yaml` and reapply only `20-worker.yaml`, then confirm the worker advertises the installed model. The executor remains undeployed until pairing creates its relationship ID.

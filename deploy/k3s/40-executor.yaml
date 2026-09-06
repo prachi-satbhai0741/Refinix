@@ -21,7 +21,7 @@ data:
   AEGIS_REDIS_PORT: "6379"
   # Same runtime address as the worker: the protected Ollama bridge decided at
   # the C05 checkpoint. Neither Pod may reach anything else.
-  AEGIS_RUNTIME_HOST: "http://127.0.0.1:11434"
+  AEGIS_RUNTIME_HOST: "http://10.42.0.1:11434"
   AEGIS_MODEL: "qwen3.5:4b-q4_K_M"
   AEGIS_NUM_CTX: "4096"
   AEGIS_NUM_PREDICT: "2048"

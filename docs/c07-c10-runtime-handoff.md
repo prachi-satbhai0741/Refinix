@@ -54,6 +54,7 @@ A  image           Ubuntu   rebuild the worker image with C09, record the digest
 B  pin             Ubuntu   put the new digest in the four manifest fields
 G  C09 components  Ubuntu   jobs volume, RBAC, network policies
 C  loopback TLS    Ubuntu   re-run C06 step D against the new image
+C2 runtime bridge  Ubuntu   point Pods at the guarded cni0 Ollama forwarder
 D  LAN forwarder   Ubuntu   C06 step E, open 30443 to the one Mac address
 E  pair            both     confirm the fingerprint, redeem the code
 F  relationship    both     read the ID on the Mac, patch the Secret on Ubuntu
@@ -169,6 +170,14 @@ curl -sS --cacert /etc/aegisforge/tls/tls.crt --resolve aegisforge-worker:30443:
 will be `degraded` until pairing exists — that is correct and fail-closed, not
 a failure. Getting a TLS handshake and an authenticated 200 is the proof this
 step is for.
+
+### C2. Ubuntu worker — connect Pods to the guarded runtime bridge
+
+Observe `cni0`, start the existing C05 guard and socket, and confirm Ollama is
+still loopback-only while the bridge answers. Set `AEGIS_RUNTIME_HOST` in both
+worker ConfigMaps to that observed bridge address, apply
+`30-runtime-egress.yaml`, and reapply only `20-worker.yaml`. Do not deploy the
+executor before pairing.
 
 ---
 
