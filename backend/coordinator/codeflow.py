@@ -21,9 +21,11 @@ Standard library only.
 
 from __future__ import annotations
 
+import base64
 import difflib
 import hashlib
 import json
+import uuid
 
 MAX_SUMMARY_CHARS = 2000
 MAX_EDITS = 8
@@ -230,6 +232,113 @@ def action_digest(repo_id: str, edits: list[dict]) -> str:
                     "after": e["after_sha256"]} for e in edits]},
         sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+# --------------------------------------------------------------------------
+# AF-010 bounded resource package
+# --------------------------------------------------------------------------
+#
+# The worker never learns where the project lives. It receives opaque resource
+# ids, relative paths and content — the canonical root, the repository id and
+# the identity record all stay here.
+#
+# These ceilings mirror `backend/worker/packages.py`. They are repeated rather
+# than imported because the coordinator must not acquire a build-time
+# dependency on worker code that is not in its environment; the offline check
+# below asserts the two stay in step.
+
+MAX_PACKAGE_FILES = 32
+MAX_PACKAGE_TOTAL_BYTES = 2 * 1024 * 1024
+MAX_PACKAGE_FILE_BYTES = 256 * 1024
+
+_MEDIA_TYPES = {
+    "py": "text/x-python", "md": "text/markdown", "txt": "text/plain",
+    "json": "application/json", "cfg": "text/plain", "toml": "text/plain",
+    "yaml": "text/yaml", "yml": "text/yaml", "ini": "text/plain",
+    "js": "text/javascript", "ts": "text/plain", "css": "text/css",
+    "html": "text/html", "sh": "text/x-shellscript", "sql": "text/plain",
+}
+
+
+def media_type_for(path: str) -> str:
+    return _MEDIA_TYPES.get(path.rsplit(".", 1)[-1].lower() if "." in path
+                            else "", "text/plain")
+
+
+class PackageError(ValueError):
+    """The selection cannot be packaged. Never a partial upload."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def package_digest(entries: list[dict]) -> str:
+    """Must match `backend.worker.packages.package_digest` exactly."""
+    material = json.dumps(
+        sorted(({"resource_id": item["resource_id"], "path": item["path"],
+                 "media_type": item["media_type"],
+                 "size_bytes": item["size_bytes"], "sha256": item["sha256"]}
+                for item in entries), key=lambda item: item["resource_id"]),
+        sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def build_package(selected: list[dict], *, workspace_id: str,
+                  relationship_id: str, attempt_id: str) -> dict:
+    """Turn a validated selection into one upload body and its ResourceRefs.
+
+    `selected` is what `_read_selection` produced: relative paths, text and the
+    digest each file had when it was read through the containment boundary.
+    Nothing is re-read here, so the package describes exactly the bytes the
+    proposal will later be validated against.
+    """
+    if not selected:
+        raise PackageError("no_selection", "Select at least one file to change.")
+    if len(selected) > MAX_PACKAGE_FILES:
+        raise PackageError(
+            "too_many",
+            f"A remote code request sends at most {MAX_PACKAGE_FILES} files.")
+    entries, resources, mapping, total = [], [], {}, 0
+    for item in selected:
+        content = item["text"].encode("utf-8")
+        if len(content) > MAX_PACKAGE_FILE_BYTES:
+            raise PackageError(
+                "too_large",
+                f"{item['path']} is larger than "
+                f"{MAX_PACKAGE_FILE_BYTES // 1024} KB.")
+        total += len(content)
+        if total > MAX_PACKAGE_TOTAL_BYTES:
+            raise PackageError(
+                "too_large",
+                f"The selected files add up to more than "
+                f"{MAX_PACKAGE_TOTAL_BYTES // 1024} KB.")
+        digest = hashlib.sha256(content).hexdigest()
+        if digest != item["sha256"]:
+            # The read boundary already hashed these bytes. A mismatch means
+            # the text and its digest disagree, which must never be uploaded.
+            raise PackageError("digest_mismatch",
+                               f"{item['path']} no longer matches what was read.")
+        resource_id = str(uuid.uuid4())
+        media_type = media_type_for(item["path"])
+        entries.append({
+            "resource_id": resource_id, "path": item["path"],
+            "media_type": media_type, "size_bytes": len(content),
+            "sha256": digest,
+            "content_base64": base64.b64encode(content).decode("ascii"),
+        })
+        resources.append({"resource_id": resource_id, "sha256": digest,
+                          "size_bytes": len(content), "media_type": media_type})
+        mapping[resource_id] = {"path": item["path"], "sha256": digest,
+                                "size_bytes": len(content)}
+    digest = package_digest(entries)
+    return {
+        "body": {"contract_version": "1.0", "workspace_id": workspace_id,
+                 "relationship_id": relationship_id, "attempt_id": attempt_id,
+                 "package_sha256": digest, "files": entries},
+        "resources": resources, "mapping": mapping,
+        "package_sha256": digest, "total_bytes": total,
+    }
 
 
 def read_digest(repo_id: str, paths: list[str]) -> str:

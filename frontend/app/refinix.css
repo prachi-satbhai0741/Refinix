@@ -644,6 +644,16 @@
 
 .mp-switch:disabled { cursor: not-allowed; color: var(--text-faint); }
 .mp-note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text-faint); }
+.mp-choices { display: grid; gap: 4px; }
+.mp-choices .mp-label { margin: 0 0 2px; font-weight: 600; }
+.mp-model {
+  width: 100%; padding: 6px 8px; text-align: left; overflow-wrap: anywhere;
+  border: 1px solid var(--line); border-radius: 5px;
+  background: var(--surface-sunken); color: var(--text-dim);
+  font: 12px var(--font-data); cursor: pointer;
+}
+.mp-model[data-selected="true"] { border-color: var(--signal); color: var(--text); }
+.mp-model:disabled { cursor: not-allowed; color: var(--text-faint); opacity: .7; }
 
 /* ---- Code surface ------------------------------------------------------- */
 

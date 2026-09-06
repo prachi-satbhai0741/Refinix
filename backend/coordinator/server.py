@@ -25,8 +25,8 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from backend.contracts import v1
 from backend.coordinator import (code_service, context, db, dispatch, docflow,
-                                 docgen, documents, pairing, policy, repo,
-                                 retrieval, runtime)
+                                 docgen, documents, pairing, policy, proof,
+                                 repo, retrieval, runtime)
 
 repo_errors = repo.RepositoryError
 
@@ -57,6 +57,13 @@ MEDIA = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
 # An attachment upload carries a whole file, so it needs its own bound. The
 # contract's MAX_REQUEST_BYTES still governs every contract route.
 MAX_UPLOAD_BYTES = 28 * 1024 * 1024
+
+MODEL_DEFAULTS = {
+    "chat": runtime.MODEL,
+    "code": runtime.MODEL,
+    "documents.generate": runtime.MODEL,
+    "documents.ocr": runtime.OCR_MODEL,
+}
 
 # What this build can actually do, with the reason when it cannot. Nothing here
 # is inferred from configuration; `chat` is the only entry that becomes
@@ -162,6 +169,12 @@ class Coordinator:
         # its single policy gate; no HTTP handler evaluates an access mode.
         self.code = code_service.CodeService(self)
         self.repaired = db.reconcile_on_start(self.conn, self.node_id)
+        # AF-013. An approved write that a stop interrupted is finished here,
+        # before anything else runs. Recovery compares each file against its
+        # recorded before/after digests, so a file already written is recorded
+        # rather than written twice and a file someone else changed is left
+        # alone.
+        self.resumed_writes = self.code.resume_writes()
 
     def _identity(self, key) -> str:
         row = self.conn.execute(
@@ -173,6 +186,77 @@ class Coordinator:
             self.conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)",
                               (key, workspace_id))
         return workspace_id
+
+    def model_for(self, scope: str) -> str:
+        if scope not in MODEL_DEFAULTS:
+            raise RequestError("that model scope does not exist")
+        return db.get_model_selection(self.conn, scope, MODEL_DEFAULTS[scope])
+
+    def local_model_ref(self, model: str,
+                        runtime_state: dict | None = None) -> dict | None:
+        state = runtime_state if runtime_state is not None else runtime.probe()
+        digest = (state.get("digests") or {}).get(model) or ""
+        if not state.get("reachable") or len(digest) != 64:
+            return None
+        return {"model_id": model, "manifest_sha256": digest,
+                "runtime": "ollama",
+                "runtime_version": state.get("server_version") or "unknown"}
+
+    def model_inventory(self, runtime_state: dict | None = None) -> list[dict]:
+        """Every observed installed model, plus absent configured defaults."""
+        state = runtime_state if runtime_state is not None else runtime.probe()
+        digests = state.get("digests") or {}
+        local = {model: digests.get(model) for model in (state.get("models") or [])
+                 if model}
+        remote = {}
+        try:
+            node = self.preflight()
+        except pairing.IdentityMismatch:
+            node = None
+        for item in (node or {}).get("models") or []:
+            if item.get("model_id") and len(item.get("manifest_sha256") or "") == 64:
+                remote[item["model_id"]] = item
+        selected = {scope: self.model_for(scope) for scope in MODEL_DEFAULTS}
+        names = sorted(set(local) | set(remote) | set(MODEL_DEFAULTS.values()))
+        rows = []
+        for model in names:
+            locations = (["macOS coordinator"] if model in local else []) + \
+                        (["Ubuntu worker"] if model in remote else [])
+            eligible = []
+            if model in local or model in remote:
+                eligible.extend(["chat", "code"])
+            if model in local:
+                eligible.append("documents.generate")
+                if runtime.VISION_CAPABILITY in \
+                        (runtime.model_capabilities(model) or []):
+                    eligible.append("documents.ocr")
+            rows.append({
+                "id": model, "installed": bool(locations), "locations": locations,
+                "eligible_scopes": eligible,
+                "selected_for": [scope for scope, chosen in selected.items()
+                                 if chosen == model],
+                "reasoning": db.get_reasoning(self.conn, model),
+                "reasoning_note": "Reasoning may improve difficult work but is slower.",
+                "digests": {"local": local.get(model),
+                            "worker": (remote.get(model) or {}).get("manifest_sha256")},
+            })
+        return rows
+
+    def select_model(self, scope: str, model: str) -> dict:
+        if scope not in MODEL_DEFAULTS:
+            raise RequestError("that model scope does not exist")
+        if model == "auto":
+            raise RequestError("automatic model choice is not enabled yet", 409)
+        row = next((item for item in self.model_inventory() if item["id"] == model),
+                   None)
+        if row is None or scope not in row["eligible_scopes"]:
+            if scope == "documents.ocr" and row and row["installed"]:
+                raise RequestError(
+                    "the runtime did not confirm that model accepts document images",
+                    409)
+            raise RequestError("that model is not available for this workflow", 409)
+        db.set_model_selection(self.conn, scope, model)
+        return {"scope": scope, "model": model}
 
     @db.serialized
     def request_cancel(self, job_id: str):
@@ -246,7 +330,16 @@ class Coordinator:
             # AF-006. The route is decided before the attempt is created, so
             # the reason is part of the canonical record from the first write
             # rather than being back-filled once something has already run.
-            route = self.choose_route()
+            uses_model = skill_id != docflow.SEARCH_SKILL
+            scope = "documents.generate" if skill_id in docflow.DOCUMENT_SKILLS else "chat"
+            model_id = self.model_for(scope) if uses_model else None
+            if skill_id in docflow.DOCUMENT_SKILLS:
+                model = self.local_model_ref(model_id) if uses_model else None
+                route = dispatch.Route(
+                    "local", "local coordinator: Documents runs on this computer",
+                    node_id=self.node_id, model=model)
+            else:
+                route = self.choose_route(model_id=model_id)
             attempt_id = db.create_attempt(
                 self.conn, job_id=job_id,
                 node_id=route.node_id or self.node_id,
@@ -256,11 +349,11 @@ class Coordinator:
             if route.remote:
                 db.set_attempt_relationship(self.conn, attempt_id,
                                             route.relationship_id)
-            # Both read once, here. A later change to either switch cannot
-            # reach an attempt that has already recorded what it runs with.
-            model = self.active_model()
-            reasoning = db.get_reasoning(self.conn, model)
-            db.set_attempt_reasoning(self.conn, attempt_id, model, reasoning)
+            # Read once, here. A later change to the switch cannot reach an
+            # attempt that has already recorded what it runs with.
+            reasoning = db.get_reasoning(self.conn, model_id) if uses_model else False
+            if uses_model:
+                db.set_attempt_reasoning(self.conn, attempt_id, model_id, reasoning)
             self._emit(job_id, attempt_id, {"kind": "attempt.state",
                                             "previous": None, "current": "queued"})
             db.set_attempt_selection(self.conn, attempt_id, selection.as_dict())
@@ -303,8 +396,7 @@ class Coordinator:
                 # reasoning choice are re-recorded against it, so the local
                 # attempt states what it actually ran with rather than
                 # inheriting the remote attempt's record by implication.
-                db.set_attempt_reasoning(self.conn, attempt_id, model,
-                                         reasoning)
+                db.set_attempt_reasoning(self.conn, attempt_id, model_id, reasoning)
                 db.set_attempt_selection(self.conn, attempt_id,
                                          selection.as_dict())
 
@@ -312,7 +404,8 @@ class Coordinator:
                 # A document skill replaces the ordinary chat turn: it reads
                 # this request's attachments, then answers or writes from them.
                 messages, prepared, extra = self._document_stage(
-                    job_id, chat_id, skill_id, messages)
+                    job_id, chat_id, skill_id, messages,
+                    ocr_model=self.model_for("documents.ocr"))
                 if messages is None:
                     # The skill produced its own answer without the model.
                     self._finish_document(job_id, chat_id, attempt_id, extra,
@@ -324,7 +417,7 @@ class Coordinator:
             collected, metrics = [], {}
             thinking_seen = False
             for kind, payload in runtime.stream_chat(
-                    messages, model=model, think=reasoning,
+                    messages, model=model_id, think=reasoning,
                     should_cancel=lambda: self.is_cancelled(job_id)
                     or self.stopping.is_set()):
                 if kind == "thinking":
@@ -553,13 +646,13 @@ class Coordinator:
         return message["message_id"], db.list_attachments(
             self.conn, message_id=message["message_id"])
 
-    def _document_stage(self, job_id, chat_id, skill_id, messages):
+    def _document_stage(self, job_id, chat_id, skill_id, messages, *, ocr_model):
         """Extract, then either build a prompt or answer without the model."""
         cancel = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
         message_id, attachments = self._request_sources(chat_id, job_id)
         prepared = docflow.prepare_sources(
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
-            attachments=attachments, should_cancel=cancel)
+            attachments=attachments, should_cancel=cancel, ocr_model=ocr_model)
         if not attachments:
             raise docflow.WorkflowError(
                 "no_attachments",
@@ -857,18 +950,38 @@ class Coordinator:
         except (dispatch.DispatchUnavailable, pairing.PairingError):
             return None
 
-    def choose_route(self) -> dispatch.Route:
+    def choose_route(self, required: list[str] | None = None,
+                     model_id: str | None = None,
+                     require_model: bool = True) -> dispatch.Route:
+        """Where one attempt should run, and the sentence explaining why.
+
+        `required` names the capabilities the step actually needs, so Code asks
+        for `code.generate` rather than borrowing Chat's answer. It defaults to
+        Chat's, which keeps every C06 caller unchanged.
+        """
         relationship = self.paired_worker()
         if relationship is None:
-            return dispatch.Route("local", "local coordinator: no paired worker")
+            route = dispatch.Route("local", "local coordinator: no paired worker")
+            return self._local_route(route, model_id, require_model)
         try:
             node = self.preflight(relationship)
         except pairing.IdentityMismatch as exc:
             # Not a fallback. The attempt records the refusal and stops.
             return dispatch.Route("identity-mismatch", f"refused: {exc}")
-        return dispatch.choose_route(relationship=relationship, node=node,
-                                     required=["text.generate"],
-                                     model_id=runtime.MODEL)
+        route = dispatch.choose_route(
+            relationship=relationship, node=node,
+            required=required or ["text.generate"], model_id=model_id,
+            require_model=require_model)
+        return self._local_route(route, model_id, require_model)
+
+    def _local_route(self, route: dispatch.Route, model_id: str | None,
+                     require_model: bool) -> dispatch.Route:
+        if route.remote or not require_model:
+            return route
+        model = self.local_model_ref(model_id) if model_id else None
+        reason = route.reason if model else route.reason + \
+            "; the selected model is not installed locally"
+        return dispatch.Route("local", reason, node_id=self.node_id, model=model)
 
     def pair(self, *, address: str, port: int, fingerprint: str,
              certificate_pem: str, pairing_code: str) -> dict:
@@ -974,11 +1087,14 @@ class Coordinator:
                                  (attempt_id,)).fetchone()["step_id"]
         relationship = db.get_relationship(self.conn, route.relationship_id,
                                            self.workspace_id)
+        local_model = self.local_model_ref(route.model["model_id"]) \
+            if route.model else None
         if relationship is None or relationship["state"] != "paired":
             # Revoked between choosing the route and dispatching. Fall back
             # rather than dereferencing a row that is no longer there.
             return False, self._fallback(
-                job_id, attempt_id, "the pairing was revoked before dispatch")
+                job_id, attempt_id, "the pairing was revoked before dispatch",
+                local_model)
         try:
             envelope = dispatch.build_envelope(
                 job=job, attempt_id=attempt_id, step_id=step, route=route,
@@ -1010,7 +1126,7 @@ class Coordinator:
         except (dispatch.DispatchUnavailable, pairing.PairingError) as exc:
             # Truthful fallback: the worker could not take the work, so this
             # runs locally and the record says so.
-            return False, self._fallback(job_id, attempt_id, str(exc))
+            return False, self._fallback(job_id, attempt_id, str(exc), local_model)
 
         collected = []
 
@@ -1061,7 +1177,8 @@ class Coordinator:
                    else "interrupted", "running", outcome.failure)
         return True, attempt_id
 
-    def _fallback(self, job_id, attempt_id, detail: str) -> str:
+    def _fallback(self, job_id, attempt_id, detail: str,
+                  model: dict | None) -> str:
         """Record why the worker was not used and open a fresh local attempt.
 
         A new attempt rather than a reused one: the interrupted remote attempt
@@ -1081,7 +1198,7 @@ class Coordinator:
         local = db.create_attempt(
             self.conn, job_id=job_id, node_id=self.node_id,
             route_reason="local coordinator: the paired worker was unavailable, "
-                         "so this ran on this computer")
+                         "so this ran on this computer", model=model)
         self._emit(job_id, local, {"kind": "attempt.state", "previous": None,
                                    "current": "queued"})
         self._advance_job(job_id, "running", "routing")
@@ -1178,43 +1295,8 @@ class Coordinator:
             e["data"] = json.loads(e.pop("data_json"))
         return {"job": dict(job), "attempts": attempts, "events": events}
 
-    def active_model(self, runtime_state: dict | None = None) -> str:
-        """The model a request would actually run on right now.
-
-        A stored choice holds only while the runtime still reports that model.
-        Uninstalling one must not leave every request pointing at something
-        this computer no longer has — it falls back to the build default,
-        whose own absence is already reported as a blocked capability.
-        """
-        chosen = db.get_selected_model(self.conn)
-        if not chosen or chosen == runtime.MODEL:
-            return runtime.MODEL
-        state = runtime_state if runtime_state is not None else runtime.probe()
-        return chosen if chosen in (state.get("models") or []) else runtime.MODEL
-
-    def offered_models(self, runtime_state: dict | None = None) -> list[dict]:
-        """Every model this computer can be asked to run.
-
-        Whatever the runtime reports as installed, plus this build's default
-        even when it is not installed: that absence is a fact the Control
-        Center states, not one to hide by dropping the row. Reasoning is
-        already stored per model, so each entry carries its own.
-        """
-        state = runtime_state if runtime_state is not None else runtime.probe()
-        installed = [m for m in (state.get("models") or []) if isinstance(m, str)]
-        active = self.active_model(state)
-        return [{
-            "id": model,
-            "reasoning": db.get_reasoning(self.conn, model),
-            "installed": model in installed,
-            "active": model == active,
-            "default": model == runtime.MODEL,
-            "reasoning_note": "Reasoning gives the model room to work through "
-                              "a problem before answering. It is slower and "
-                              "can use the whole reply budget.",
-        } for model in dict.fromkeys([runtime.MODEL, *installed])]
-
-    def capabilities(self, runtime_state: dict | None = None) -> list[dict]:
+    def capabilities(self, runtime_state: dict | None = None,
+                     inventory: list[dict] | None = None) -> list[dict]:
         """Observed capability state. `available` requires every observation.
 
         A document skill is available only when the parsers it needs exist on
@@ -1222,11 +1304,16 @@ class Coordinator:
         that one skill and nothing else — Chat and Code stay usable.
         """
         state = runtime_state if runtime_state is not None else runtime.probe()
-        # The model that would run, not the build default: once a computer can
-        # choose, "the model is missing" has to be about the chosen one.
-        model = self.active_model(state)
-        model_installed = model in (state.get("models") or [])
-        reading = documents.capability_summary()
+        inventory = inventory if inventory is not None else self.model_inventory(state)
+        usable = {(row["id"], scope) for row in inventory
+                  for scope in row["eligible_scopes"]}
+        chat_model = self.model_for("chat")
+        code_model = self.model_for("code")
+        document_model = self.model_for("documents.generate")
+        ocr_model = self.model_for("documents.ocr")
+        # The runtime was already observed above; reuse it rather than probing
+        # once more per capability row.
+        reading = documents.capability_summary(state, ocr_model=ocr_model)
         searchable = retrieval.fts_available(self.conn)
         rows = []
         for entry in CAPABILITIES:
@@ -1236,7 +1323,9 @@ class Coordinator:
                 row["detail"] = entry["setup"]
             elif entry.get("kind") == "document":
                 blocked = self._document_blockers(entry, reading, searchable,
-                                                  state, model_installed, model)
+                                                  state,
+                                                  (document_model, "documents.generate")
+                                                  in usable, document_model)
                 row["formats"] = reading["supported"]
                 row["unavailable_reasons"] = reading["unavailable"]
                 row["state"] = "blocked" if blocked else "available"
@@ -1245,20 +1334,21 @@ class Coordinator:
                     row["setup"] = blocked[0]
             elif entry.get("kind") == "surface":
                 # Implemented, but it needs the runtime like everything else.
-                row["state"] = "available" if state.get("reachable") and model_installed else "blocked"
+                row["state"] = ("available" if (code_model, "code") in usable
+                                else "blocked")
                 row["detail"] = (entry["detail_available"] if row["state"] == "available"
                                  else "The AI engine or the configured model is not "
                                       "ready, so Code cannot propose changes yet.")
-            elif not state.get("reachable"):
+            elif (chat_model, "chat") not in usable and not state.get("reachable"):
                 row["state"] = "blocked"
                 row["detail"] = ("The AI engine on this computer did not answer, "
                                  "so nothing can run yet.")
                 row["setup"] = "Open Settings to see what this computer needs."
-            elif not model_installed:
+            elif (chat_model, "chat") not in usable:
                 row["state"] = "blocked"
-                row["detail"] = (f"The selected model {model} is not "
-                                 "installed on this computer.")
-                row["setup"] = f"ollama pull {model}"
+                row["detail"] = (f"The selected model {chat_model} is not available "
+                                 "on the coordinator or paired worker.")
+                row["setup"] = "Choose an installed model in the model selector."
             else:
                 row["state"] = "available"
                 row["detail"] = "Runs on this computer."
@@ -1267,13 +1357,13 @@ class Coordinator:
 
     @staticmethod
     def _document_blockers(entry, reading, searchable, state, model_installed,
-                           model=runtime.MODEL) -> list[str]:
+                           model_id) -> list[str]:
         """Every reason this one skill cannot run, in the order to show them."""
         blocked = []
         if entry.get("needs_runtime") and not state.get("reachable"):
             blocked.append("The AI engine on this computer did not answer.")
         elif entry.get("needs_runtime") and not model_installed:
-            blocked.append(f"The selected model {model} is not installed "
+            blocked.append(f"The selected model {model_id} is not installed "
                            "on this computer.")
         if entry.get("needs_search") and not searchable:
             blocked.append("This computer's SQLite build has no full-text search, "
@@ -1289,6 +1379,9 @@ class Coordinator:
             counts = {row["state"]: row["n"] for row in self.conn.execute(
                 "SELECT state, COUNT(*) AS n FROM jobs GROUP BY state")}
         runtime_state = runtime.probe()
+        inventory = self.model_inventory(runtime_state)
+        chat_model = self.model_for("chat")
+        chat_row = next((row for row in inventory if row["id"] == chat_model), None)
         return {
             "product": {"name": "Refinix", "surface": "local"},
             "desktop": dict(self.desktop),
@@ -1298,17 +1391,14 @@ class Coordinator:
             "contract_status": "reviewed draft; not frozen, integration pending C05",
             "bind": f"{BIND_HOST}",
             "runtime": runtime_state,
-            "model_configured": runtime.MODEL,
-            "model_active": self.active_model(runtime_state),
-            "model_installed": self.active_model(runtime_state)
-                               in (runtime_state.get("models") or []),
-            # Every model the runtime reports, so a computer with more than
-            # one can be switched between them, each with its own reasoning
-            # choice. The bounded settings in runtime.py were measured against
-            # the default (docs/model-catalog.md); another model runs under
-            # the same bounds and has not been characterised at this size.
-            "models": self.offered_models(runtime_state),
-            "capabilities": self.capabilities(runtime_state),
+            "model_configured": chat_model,
+            "model_installed": bool(chat_row and "chat" in chat_row["eligible_scopes"]),
+            "model_selections": {scope: self.model_for(scope)
+                                 for scope in MODEL_DEFAULTS},
+            "auto_model": {"enabled": False,
+                           "detail": "Automatic model choice is planned after the internal hackathon."},
+            "models": inventory,
+            "capabilities": self.capabilities(runtime_state, inventory),
             "attachments": {
                 "max_bytes": db.MAX_ATTACHMENT_BYTES,
                 "max_files": db.MAX_ATTACHMENTS_PER_REQUEST,
@@ -1320,7 +1410,8 @@ class Coordinator:
                               "request read.",
             },
             "documents": {
-                **documents.capability_summary(),
+                **documents.capability_summary(
+                    runtime_state, ocr_model=self.model_for("documents.ocr")),
                 "search": retrieval.METHOD if retrieval.fts_available(self.conn)
                           else None,
                 "search_note": retrieval.METHOD_NOTE,
@@ -1586,6 +1677,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"jobs": c.active_jobs()})
             elif route == "/v1/jobs":
                 self._json({"jobs": c.jobs((query.get("chat_id") or [None])[0])})
+            elif route == "/v1/proof":
+                # AF-014. One card per job, aggregating one Proof record per
+                # material attempt. Every value carries the source it came
+                # from; anything not observed is reported unavailable.
+                card = proof.job_card(c, query["job_id"][0])
+                if card is None:
+                    raise RequestError("unknown job", 404)
+                self._json(card)
             elif route == "/v1/job":
                 detail = c.job_detail(query["job_id"][0])
                 self._json(detail or {"error": "not found"}, 200 if detail else 404)
@@ -1685,28 +1784,20 @@ class Handler(BaseHTTPRequestHandler):
                 # Request-scoped switch, stored per model by the coordinator so
                 # it survives a restart and a fallback port.
                 model = self._text(payload, "model", 200)
-                if model not in {m["id"] for m in c.offered_models()}:
-                    raise RequestError("that model is not on this computer", 404)
+                record = next((row for row in c.model_inventory()
+                               if row["id"] == model), None)
+                if record is None or not set(record["eligible_scopes"]) & {
+                        "chat", "code", "documents.generate"}:
+                    raise RequestError("that model is not available for generation", 404)
                 enabled = payload.get("enabled")
                 if not isinstance(enabled, bool):
                     raise RequestError("enabled must be true or false")
                 db.set_reasoning(c.conn, model, enabled)
                 self._json({"model": model, "reasoning": enabled})
             elif route == "/v1/model/select":
-                # Which installed model requests run on. Only a model the
-                # runtime actually reports is accepted: the page sends a name
-                # it read from this same list, and a name alone is not
-                # evidence the model is there.
-                model = self._text(payload, "model", 200)
-                offered = {m["id"]: m for m in c.offered_models()}
-                if model not in offered:
-                    raise RequestError("that model is not on this computer", 404)
-                if not offered[model]["installed"]:
-                    raise RequestError("that model is not installed on this "
-                                       "computer", 409)
-                db.set_selected_model(c.conn, model)
-                self._json({"model": model,
-                            "reasoning": db.get_reasoning(c.conn, model)})
+                self._json(c.select_model(
+                    self._text(payload, "scope", 64),
+                    self._text(payload, "model", 200)))
             elif route == "/v1/code/mode":
                 self._code(lambda: c.code.set_mode(
                     self._text(payload, "repo_id", 36),
@@ -1719,6 +1810,10 @@ class Handler(BaseHTTPRequestHandler):
                     self._text(payload, "request", 4000),
                     payload.get("paths") or [],
                     payload.get("approval_id") or None))
+            elif route == "/v1/code/validate":
+                self._code(lambda: c.code.validate(
+                    self._text(payload, "repo_id", 36),
+                    self._text(payload, "proposal_id", 36)))
             elif route == "/v1/code/apply":
                 self._code(lambda: c.code.apply(
                     self._text(payload, "repo_id", 36),

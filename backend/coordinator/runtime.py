@@ -9,8 +9,10 @@ Standard library only. Nothing here reaches beyond loopback.
 
 from __future__ import annotations
 
+import base64
 import json
 import http.client
+import os
 import socket
 import threading
 import urllib.error
@@ -19,6 +21,28 @@ from urllib.parse import urlsplit
 
 HOST = "http://127.0.0.1:11434"
 MODEL = "qwen3.5:4b-q4_K_M"
+
+# The vision component C08 sends rendered scan pages to. Recorded in
+# docs/model-catalog.md as an INSTALLED CANDIDATE: the tag is a third-party
+# Ollama conversion, and nothing here infers its provenance, licence, accuracy
+# or MODALITY from its name. The exact tag is configuration, never discovery —
+# a missing model fails as absent rather than being fetched.
+#
+# The override exists so a device checkpoint can point C08 at a different
+# ALREADY-INSTALLED model without a code change and without a download. It is
+# not a download manager and it cannot fetch anything: an unknown tag is
+# reported absent.
+OCR_MODEL = os.environ.get("AEGIS_OCR_MODEL", "").strip() or "MedAIBase/PaddleOCR-VL:0.9b"
+
+# What a model must declare before this build will send it a page image.
+# Ollama reports a model's modalities on /api/show; a tag whose name contains
+# "VL" or "OCR" is a name, not an observation.
+VISION_CAPABILITY = "vision"
+
+# One page's rendered image, after base64. Ollama takes the encoded string, so
+# the ceiling is applied to the raw bytes before encoding.
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_IMAGES_PER_REQUEST = 1
 
 # docs/model-catalog.md, "Bounded execution settings for the first path".
 # 8192 measured on the macOS coordinator 2026-09-04: +220 MiB resident over
@@ -153,7 +177,7 @@ def _request(path: str, payload=None, timeout=10, *, watch=None):
 def probe() -> dict:
     """Read-only health probe. Reports what was observed, never a default."""
     state = {"reachable": False, "server_version": None, "models": [],
-             "loaded": None, "endpoint": HOST, "error": None}
+             "digests": {}, "loaded": None, "endpoint": HOST, "error": None}
     try:
         with _request("/api/version", timeout=3) as resp:
             state["server_version"] = json.load(resp).get("version")
@@ -163,7 +187,12 @@ def probe() -> dict:
         return state
     try:
         with _request("/api/tags", timeout=5) as resp:
-            state["models"] = [m.get("model") for m in json.load(resp).get("models", [])]
+            listed = json.load(resp).get("models", [])
+        state["models"] = [m.get("model") for m in listed]
+        # The real manifest digest, observed here rather than looked up again,
+        # so a ModelRef carries integrity evidence instead of a placeholder.
+        state["digests"] = {m.get("model"): (m.get("digest") or "").lower()
+                            for m in listed if m.get("model")}
     except Exception as exc:
         state["error"] = f"tags unavailable: {exc}"
     try:
@@ -181,8 +210,140 @@ def probe() -> dict:
     return state
 
 
+def installed_models() -> dict:
+    """`{tag: manifest digest}` as the local runtime reports it, or `{}`.
+
+    Read-only. Listing what is installed cannot install anything, and an empty
+    result is reported as "could not observe", never as "nothing is installed".
+    """
+    try:
+        with _request("/api/tags", timeout=5) as resp:
+            listed = json.load(resp).get("models", [])
+    except Exception:                                  # noqa: BLE001
+        return {}
+    return {entry.get("model"): (entry.get("digest") or "").lower()
+            for entry in listed if entry.get("model")}
+
+
+def model_capabilities(model: str) -> list[str] | None:
+    """What the runtime says this model can do, or `None` if unobservable.
+
+    `/api/show` is a metadata read: measured at about 10 ms locally, and it
+    does not load the model. `None` means the question could not be answered
+    here, which is deliberately not the same as "it can do nothing".
+    """
+    try:
+        with _request("/api/show", {"model": model}, timeout=5) as resp:
+            listed = json.load(resp).get("capabilities")
+    except Exception:                                  # noqa: BLE001
+        return None
+    if not isinstance(listed, list):
+        return None
+    return [item for item in listed if isinstance(item, str)]
+
+
+def model_state_from(health: dict, model: str, *, requires: str | None = None,
+                     capabilities: list[str] | None = None) -> dict:
+    """Read one model's state out of an ALREADY OBSERVED probe.
+
+    Separated from `model_state` so a status page that has just probed the
+    runtime does not probe it again per model. Nothing here can cause a
+    download: it only reports what that observation contained.
+
+    `requires` names a modality the caller needs — `vision` for C08. It is
+    checked against `capabilities`, which the caller observed from
+    `/api/show`. A model that is installed but does not declare the modality
+    is its own state: it needs neither a runtime restart nor an install, so
+    folding it into `absent` or `runtime_unavailable` would send someone to
+    fix the wrong thing.
+    """
+    if not health.get("reachable"):
+        return {"state": "runtime_unavailable", "model": model, "digest": None,
+                "capabilities": None,
+                "detail": f"The local model runtime at {HOST} is not answering.",
+                "runtime_version": None}
+    installed = model in (health.get("models") or [])
+    digest = (health.get("digests") or {}).get(model) or None
+    version = health.get("server_version")
+    if not installed:
+        return {"state": "absent", "model": model, "digest": None,
+                "capabilities": None,
+                "detail": (f"{model} is not installed on this computer. Refinix "
+                           "does not download models."),
+                "runtime_version": version}
+    if requires is not None:
+        if capabilities is None:
+            return {"state": "capability_unknown", "model": model, "digest": digest,
+                    "capabilities": None,
+                    "detail": (f"The runtime did not report what {model} can do, so "
+                               f"Refinix cannot confirm it accepts {requires} input."),
+                    "runtime_version": version}
+        if requires not in capabilities:
+            return {"state": "missing_capability", "model": model, "digest": digest,
+                    "capabilities": list(capabilities),
+                    "detail": (f"{model} is installed, but the runtime reports it as "
+                               f"{', '.join(capabilities) or 'having no capabilities'} "
+                               f"— it does not accept {requires} input on this "
+                               "computer."),
+                    "runtime_version": version}
+    return {"state": "installed", "model": model, "digest": digest,
+            "capabilities": list(capabilities) if capabilities is not None else None,
+            "detail": f"{model} is installed and the runtime answered.",
+            "runtime_version": version}
+
+
+def model_state(model: str, *, requires: str | None = None) -> dict:
+    """Whether one exact tag is usable here, separating every failure mode.
+
+    "The runtime is not answering", "the runtime does not have this model" and
+    "the model is here and cannot do this" need three different fixes, so they
+    are never collapsed into one unavailable. Nothing in this function can
+    cause a download.
+    """
+    health = probe()
+    observed = None
+    if requires is not None and health.get("reachable") \
+            and model in (health.get("models") or []):
+        observed = model_capabilities(model)
+    return model_state_from(health, model, requires=requires,
+                            capabilities=observed)
+
+
+def _with_images(messages: list[dict], images: list[bytes] | None) -> list[dict]:
+    """Attach request-scoped image bytes to the final user message.
+
+    Images are base64-encoded in memory and never written to disk, never
+    referenced by path or URL, and never taken from the model: only the caller
+    that rendered the page can supply them.
+    """
+    if not images:
+        return messages
+    if len(images) > MAX_IMAGES_PER_REQUEST:
+        raise RuntimeUnavailable(
+            f"at most {MAX_IMAGES_PER_REQUEST} image(s) may be sent in one request")
+    encoded = []
+    for item in images:
+        if not isinstance(item, (bytes, bytearray)):
+            # A str here would be a path or a URL. Neither is ever fetched.
+            raise RuntimeUnavailable("images must be supplied as raw bytes")
+        if not item:
+            raise RuntimeUnavailable("an empty image cannot be sent")
+        if len(item) > MAX_IMAGE_BYTES:
+            raise RuntimeUnavailable(
+                f"an image exceeded {MAX_IMAGE_BYTES // (1024 * 1024)} MB")
+        encoded.append(base64.b64encode(bytes(item)).decode("ascii"))
+    prepared = [dict(message) for message in messages]
+    for message in reversed(prepared):
+        if message.get("role") == "user":
+            message["images"] = encoded
+            return prepared
+    raise RuntimeUnavailable("an image request needs a user message to carry it")
+
+
 def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None = None,
-                model: str | None = None, num_predict: int | None = None):
+                model: str | None = None, num_predict: int | None = None,
+                images: list[bytes] | None = None,
+                response_format: dict | None = None):
     """Yield ('delta', text), optionally ('thinking', text), then ('done', metrics).
 
     `think` is the request-scoped reasoning choice and becomes Ollama's
@@ -199,13 +360,19 @@ def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None 
     """
     reasoning = THINK if think is None else bool(think)
     payload = {
-        "model": model or MODEL, "messages": messages, "stream": True,
+        "model": model or MODEL, "messages": _with_images(messages, images),
+        "stream": True,
         "think": reasoning, "keep_alive": KEEP_ALIVE,
         # Estimates select history; the runtime must reject real overflow.
         "truncate": False, "shift": False,
         "options": {"num_ctx": NUM_CTX,
                     "num_predict": NUM_PREDICT if num_predict is None else num_predict},
     }
+    if response_format is not None:
+        # Ollama structured output. The schema constrains the decoder, so a
+        # malformed shape is far less likely — it is not a guarantee, and the
+        # caller still parses strictly and refuses anything unexpected.
+        payload["format"] = response_format
     with _CancelWatch(None, should_cancel) as watch:
         try:
             if should_cancel is not None and should_cancel():

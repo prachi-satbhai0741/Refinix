@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.coordinator import db, runtime
-from backend.coordinator.server import Coordinator
+from backend.coordinator.server import Coordinator, RequestError
 
 
 class FakeOllama(BaseHTTPRequestHandler):
@@ -302,118 +302,53 @@ class TestThinkingOnlyCompletion(CoordinatorBase):
         self.assertIn("no visible output", message)
 
 
-def fake_probe(models):
-    """A runtime that reports exactly these tags, so a developer's own Ollama
-    cannot change what these tests observe."""
-    state = {"reachable": True, "server_version": "0.0.0", "models": list(models),
-             "loaded": None, "endpoint": runtime.HOST, "error": None}
-    return patch.object(runtime, "probe", lambda: dict(state))
-
-
 class TestStatusSurface(CoordinatorBase):
-    def test_the_build_default_is_always_offered(self):
-        with fake_probe([]):
-            status = self.c.status()
-        self.assertEqual([m["id"] for m in status["models"]], [runtime.MODEL])
-        self.assertIn("reasoning", status["models"][0])
-        self.assertFalse(status["models"][0]["installed"])
+    def test_configured_models_are_visible_before_setup(self):
+        status = self.c.status()
+        self.assertEqual({m["id"] for m in status["models"]},
+                         {runtime.MODEL, runtime.OCR_MODEL})
+        self.assertEqual(status["model_selections"]["chat"], runtime.MODEL)
 
     def test_the_status_reflects_the_stored_choice(self):
         db.set_reasoning(self.c.conn, runtime.MODEL, True)
-        with fake_probe([runtime.MODEL]):
-            self.assertTrue(self.c.status()["models"][0]["reasoning"])
+        row = next(model for model in self.c.status()["models"]
+                   if model["id"] == runtime.MODEL)
+        self.assertTrue(row["reasoning"])
 
+    def test_any_observed_text_model_can_be_selected_exactly(self):
+        other = "another-model:1b"
+        state = {"reachable": True, "server_version": "test",
+                 "models": [runtime.MODEL, other],
+                 "digests": {runtime.MODEL: "a" * 64, other: "b" * 64},
+                 "loaded": None, "endpoint": runtime.HOST, "error": None}
+        with patch.object(runtime, "probe", return_value=state):
+            self.assertEqual(self.c.select_model("chat", other),
+                             {"scope": "chat", "model": other})
+            self.assertEqual(self.c.status()["model_selections"]["chat"], other)
 
-class TestModelSelection(CoordinatorBase):
-    """Choosing between the models a computer actually has."""
+    def test_only_a_confirmed_vision_model_is_selectable_for_ocr(self):
+        vision = "vision-model:1b"
+        state = {"reachable": True, "server_version": "test",
+                 "models": [runtime.MODEL, vision],
+                 "digests": {runtime.MODEL: "a" * 64, vision: "b" * 64},
+                 "loaded": None, "endpoint": runtime.HOST, "error": None}
+        capabilities = lambda model: (["completion", "vision"]
+                                      if model == vision else ["completion"])
+        with patch.object(runtime, "probe", return_value=state), \
+                patch.object(runtime, "model_capabilities", side_effect=capabilities):
+            inventory = {row["id"]: row for row in self.c.model_inventory()}
+            self.assertNotIn("documents.ocr",
+                             inventory[runtime.MODEL]["eligible_scopes"])
+            self.assertIn("documents.ocr", inventory[vision]["eligible_scopes"])
+            self.assertEqual(self.c.select_model("documents.ocr", vision),
+                             {"scope": "documents.ocr", "model": vision})
+            with self.assertRaises(RequestError):
+                self.c.select_model("documents.ocr", runtime.MODEL)
 
-    OTHER = "llava:7b"
-    THIRD = "MedAIBase/PaddleOCR-VL:0.9b"
-
-    def installed(self):
-        return fake_probe([runtime.MODEL, self.OTHER, self.THIRD])
-
-    def test_every_installed_model_is_offered_with_the_default_first(self):
-        with self.installed():
-            offered = self.c.offered_models()
-        self.assertEqual([m["id"] for m in offered],
-                         [runtime.MODEL, self.OTHER, self.THIRD])
-        self.assertTrue(all(m["installed"] for m in offered))
-        self.assertEqual([m["id"] for m in offered if m["default"]], [runtime.MODEL])
-
-    def test_the_default_is_offered_even_when_it_is_not_installed(self):
-        with fake_probe([self.OTHER]):
-            by_id = {m["id"]: m for m in self.c.offered_models()}
-        self.assertFalse(by_id[runtime.MODEL]["installed"])
-        self.assertTrue(by_id[self.OTHER]["installed"])
-
-    def test_the_default_is_active_until_something_else_is_chosen(self):
-        with self.installed():
-            self.assertEqual(self.c.active_model(), runtime.MODEL)
-            active = [m["id"] for m in self.c.offered_models() if m["active"]]
-        self.assertEqual(active, [runtime.MODEL])
-
-    def test_a_chosen_model_is_active_and_survives_a_restart(self):
-        db.set_selected_model(self.c.conn, self.OTHER)
-        with self.installed():
-            self.assertEqual(self.c.active_model(), self.OTHER)
-        path = Path(self.dir.name) / "state.sqlite3"
-        self.c.conn.close()
-        self.c = Coordinator(path)
-        with self.installed():
-            self.assertEqual(self.c.active_model(), self.OTHER)
-
-    def test_a_choice_that_is_gone_falls_back_to_the_default(self):
-        db.set_selected_model(self.c.conn, self.OTHER)
-        with fake_probe([runtime.MODEL]):
-            self.assertEqual(self.c.active_model(), runtime.MODEL)
-
-    def test_reasoning_is_remembered_per_model_not_globally(self):
-        db.set_reasoning(self.c.conn, runtime.MODEL, True)
-        db.set_reasoning(self.c.conn, self.OTHER, False)
-        with self.installed():
-            by_id = {m["id"]: m for m in self.c.offered_models()}
-        self.assertTrue(by_id[runtime.MODEL]["reasoning"])
-        self.assertFalse(by_id[self.OTHER]["reasoning"])
-
-    def test_the_request_goes_to_the_chosen_model_with_its_own_reasoning(self):
-        db.set_selected_model(self.c.conn, self.OTHER)
-        db.set_reasoning(self.c.conn, self.OTHER, True)
-        db.set_reasoning(self.c.conn, runtime.MODEL, False)
-        seen = {}
-
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None):
-            seen["model"], seen["think"] = model, think
-            yield "delta", "answer"
-            yield "done", {"done_reason": "stop"}
-
-        job = self.submit()
-        with self.installed(), patch.object(runtime, "stream_chat", stream):
-            self.c._run(job, self.chat)
-        self.assertEqual(seen["model"], self.OTHER)
-        self.assertIs(seen["think"], True)
-
-    def test_the_attempt_records_the_model_it_actually_ran(self):
-        db.set_selected_model(self.c.conn, self.OTHER)
-
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None):
-            yield "delta", "answer"
-            yield "done", {"done_reason": "stop"}
-
-        job = self.submit()
-        with self.installed(), patch.object(runtime, "stream_chat", stream):
-            self.c._run(job, self.chat)
-        recorded = json.loads(
-            self.c.job_detail(job)["attempts"][-1]["reasoning_json"])
-        self.assertEqual(recorded["model"], self.OTHER)
-
-    def test_a_model_name_must_be_real_text(self):
-        for bad in ("", "   ", None, 7, "x" * 201):
-            with self.subTest(bad=bad):
-                with self.assertRaises(ValueError):
-                    db.set_selected_model(self.c.conn, bad)
+    def test_auto_is_visible_as_a_future_choice_but_not_selectable(self):
+        with self.assertRaises(RequestError) as caught:
+            self.c.select_model("chat", "auto")
+        self.assertEqual(caught.exception.status, 409)
 
 
 if __name__ == "__main__":

@@ -82,15 +82,38 @@ class Base(unittest.TestCase):
 # Capability honesty
 # --------------------------------------------------------------------------
 
+UNAVAILABLE_RUNTIME = {"reachable": False, "server_version": None,
+                       "models": [], "digests": {}, "loaded": None,
+                       "endpoint": "http://127.0.0.1:11434", "error": "fake"}
+INSTALLED_RUNTIME = {"reachable": True, "server_version": "0.0.0-fake",
+                     "models": [runtime.OCR_MODEL],
+                     "digests": {runtime.OCR_MODEL: "b" * 64},
+                     "loaded": None, "endpoint": "http://127.0.0.1:11434",
+                     "error": None}
+RENDERER_PRESENT = {"available": True, "module": "Quartz", "detail": "fake renderer"}
+RENDERER_ABSENT = {"available": False, "module": None,
+                   "detail": "PDF rendering needs the macOS Quartz framework "
+                             "(PyObjC), which is not available in this environment."}
+
+
 class TestCapabilityProbe(unittest.TestCase):
-    def test_pdf_and_ocr_report_their_missing_prerequisite(self):
+    def test_pdf_and_ocr_name_the_prerequisite_that_is_actually_missing(self):
+        """An unavailable capability says which of the two halves is missing.
+
+        "PDF is unavailable" sends nobody anywhere. The renderer and the model
+        are separate installs, so the detail has to name the one that is absent.
+        """
         capability = documents.probe()
         for kind in ("pdf", "ocr"):
             with self.subTest(kind=kind):
                 entry = capability[kind]
                 if not entry["available"]:
-                    self.assertIn("Missing prerequisite", entry["detail"])
                     self.assertEqual(entry["formats"], [])
+                    self.assertTrue(
+                        "Quartz" in entry["detail"]
+                        or runtime.OCR_MODEL in entry["detail"]
+                        or "not answering" in entry["detail"],
+                        entry["detail"])
 
     def test_text_extraction_is_never_described_as_ocr(self):
         capability = documents.probe()
@@ -98,16 +121,42 @@ class TestCapabilityProbe(unittest.TestCase):
         self.assertNotIn("ocr", capability["word"]["detail"].lower())
 
     def test_supported_suffixes_follow_the_probe_rather_than_a_wish_list(self):
-        found = documents.supported_suffixes()
+        with patch.object(documents.pdfrender, "probe", return_value=RENDERER_ABSENT):
+            found = documents.supported_suffixes(UNAVAILABLE_RUNTIME)
         self.assertNotIn(".pdf", found)
         self.assertNotIn(".png", found)
         self.assertIn(".docx", found)
 
-    def test_an_importable_library_does_not_advertise_an_unimplemented_adapter(self):
-        with patch("importlib.util.find_spec", return_value=object()):
-            capability = documents.probe()
+    def test_a_present_renderer_alone_does_not_advertise_scan_reading(self):
+        """Both halves, or neither. A renderer with no model reads nothing."""
+        with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT):
+            capability = documents.probe(UNAVAILABLE_RUNTIME)
         self.assertFalse(capability["pdf"]["available"])
         self.assertFalse(capability["ocr"]["available"])
+        self.assertIn("not answering", capability["pdf"]["detail"])
+
+    def test_a_present_model_alone_does_not_advertise_scan_reading(self):
+        with patch.object(documents.pdfrender, "probe", return_value=RENDERER_ABSENT):
+            capability = documents.probe(INSTALLED_RUNTIME)
+        self.assertFalse(capability["pdf"]["available"])
+        self.assertFalse(capability["ocr"]["available"])
+        self.assertIn("Quartz", capability["pdf"]["detail"])
+
+    def test_both_halves_present_advertises_pdf_and_says_what_it_is_not(self):
+        with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT), \
+                patch.object(documents.ocr.runtime, "model_capabilities",
+                             return_value=["completion", "vision"]):
+            capability = documents.probe(INSTALLED_RUNTIME)
+            supported = documents.supported_suffixes(INSTALLED_RUNTIME)
+        self.assertTrue(capability["pdf"]["available"])
+        self.assertIn(".pdf", supported)
+        # The claim stays bounded: a standalone vision component, not the
+        # complete PaddleOCR layout pipeline.
+        self.assertIn("standalone vision-language component",
+                      capability["pdf"]["detail"])
+        # A loose image still has no intake path even when pixels can be read.
+        self.assertEqual(capability["ocr"]["formats"], [])
+        self.assertNotIn(".png", supported)
 
 
 # --------------------------------------------------------------------------
@@ -228,27 +277,72 @@ class TestExtraction(Base):
                               expected_sha256=record["sha256"])
         self.assertEqual(caught.exception.code, "malformed")
 
-    def test_a_pdf_is_refused_with_its_missing_prerequisite(self):
-        if documents.probe()["pdf"]["available"]:
-            self.skipTest("a PDF parser is installed on this computer")
+    def test_a_pdf_is_refused_when_its_renderer_is_missing(self):
         record = self.attach("scan.pdf", b"%PDF-1.4 synthetic\n")
-        with self.assertRaises(documents.DocumentError) as caught:
-            documents.extract(self.stored(record), source_id=record["attachment_id"],
-                              filename="scan.pdf", media_type="application/pdf",
-                              expected_sha256=record["sha256"])
+        with patch.object(documents.pdfrender, "probe", return_value=RENDERER_ABSENT), \
+                patch.object(documents.ocr.runtime, "probe",
+                             return_value=UNAVAILABLE_RUNTIME):
+            with self.assertRaises(documents.DocumentError) as caught:
+                documents.extract(self.stored(record),
+                                  source_id=record["attachment_id"],
+                                  filename="scan.pdf", media_type="application/pdf",
+                                  expected_sha256=record["sha256"])
         self.assertEqual(caught.exception.code, "no_pdf_parser")
-        self.assertIn("Missing prerequisite", str(caught.exception))
+        self.assertIn("Quartz", str(caught.exception))
+
+    def test_a_pdf_is_refused_when_the_model_cannot_read_images(self):
+        """The observed 2026-09-05 state: installed, and completion-only."""
+        record = self.attach("scan.pdf", b"%PDF-1.4 synthetic\n")
+        with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT), \
+                patch.object(documents.ocr.runtime, "probe",
+                             return_value=INSTALLED_RUNTIME), \
+                patch.object(documents.ocr.runtime, "model_capabilities",
+                             return_value=["completion"]):
+            with self.assertRaises(documents.DocumentError) as caught:
+                documents.extract(self.stored(record),
+                                  source_id=record["attachment_id"],
+                                  filename="scan.pdf", media_type="application/pdf",
+                                  expected_sha256=record["sha256"])
+        self.assertEqual(caught.exception.code, "model_cannot_read_images")
+
+    def test_a_pdf_is_refused_when_the_model_is_absent_and_nothing_is_pulled(self):
+        """A missing model is a refusal, never a download."""
+        record = self.attach("scan.pdf", b"%PDF-1.4 synthetic\n")
+        calls = []
+
+        def watch(path, payload=None, timeout=10, **kwargs):
+            calls.append(path)
+            raise AssertionError("the extractor must not call the runtime")
+
+        empty = {**INSTALLED_RUNTIME, "models": [], "digests": {}}
+        with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT), \
+                patch.object(documents.ocr.runtime, "probe", return_value=empty), \
+                patch.object(documents.ocr.runtime, "_request", watch):
+            with self.assertRaises(documents.DocumentError) as caught:
+                documents.extract(self.stored(record),
+                                  source_id=record["attachment_id"],
+                                  filename="scan.pdf", media_type="application/pdf",
+                                  expected_sha256=record["sha256"])
+        self.assertEqual(caught.exception.code, "no_ocr_model")
+        self.assertIn("does not download models", str(caught.exception))
+        self.assertEqual(calls, [])
 
     def test_an_image_is_refused_rather_than_given_invented_text(self):
-        if documents.probe()["ocr"]["available"]:
-            self.skipTest("an OCR engine is installed on this computer")
+        """Refused whether or not pixels can be read: a bare image has no page
+        structure, so nothing here can produce a citable page for it."""
         record = self.attach("scan.png", b"\x89PNG\r\n\x1a\nsynthetic")
-        with self.assertRaises(documents.DocumentError) as caught:
-            documents.extract(self.stored(record), source_id=record["attachment_id"],
-                              filename="scan.png", media_type="image/png",
-                              expected_sha256=record["sha256"])
+        with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT), \
+                patch.object(documents.ocr.runtime, "model_capabilities",
+                             return_value=["completion", "vision"]), \
+                patch.object(documents.ocr.runtime, "probe",
+                             return_value=INSTALLED_RUNTIME):
+            with self.assertRaises(documents.DocumentError) as caught:
+                documents.extract(self.stored(record),
+                                  source_id=record["attachment_id"],
+                                  filename="scan.png", media_type="image/png",
+                                  expected_sha256=record["sha256"])
         self.assertEqual(caught.exception.code, "no_ocr")
-        self.assertIn("does not guess", str(caught.exception))
+        self.assertIn("Attach the scan as a PDF", str(caught.exception))
 
     def test_non_utf8_text_is_refused_rather_than_corrupted(self):
         record = self.attach("latin.txt", "café".encode("latin-1"))
@@ -796,6 +890,11 @@ class TestGenerationWorkflow(Base):
         self.assertEqual(artifact["job_id"], job)
         self.assertTrue(artifact["validation"]["readable"])
         self.assertTrue(artifact["citations"])
+        citation_ids = [row["citation_id"] for row in artifact["citations"]]
+        self.assertTrue(all(citation_ids))
+        reread = db.artifacts_for_chat(self.c.conn, self.c.workspace_id, self.chat)[0]
+        self.assertEqual([row["citation_id"] for row in reread["citations"]],
+                         citation_ids)
 
         root = db.artifacts_root(self.state)
         path = db.artifact_path(self.c.conn, root, artifact["artifact_id"],

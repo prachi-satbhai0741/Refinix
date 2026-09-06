@@ -83,7 +83,8 @@ class Prepared:
 
 
 def prepare_sources(coordinator, *, chat_id, message_id, job_id,
-                    attachments: list[dict], should_cancel=None) -> Prepared:
+                    attachments: list[dict], should_cancel=None,
+                    ocr_model: str = runtime.OCR_MODEL) -> Prepared:
     """Read exactly the attachments that travelled with this request."""
     prepared = Prepared()
     if not attachments:
@@ -112,8 +113,13 @@ def prepare_sources(coordinator, *, chat_id, message_id, job_id,
         try:
             extraction = documents.extract(
                 path, source_id=full["attachment_id"], filename=full["filename"],
-                media_type=full["media_type"], expected_sha256=full["sha256"])
+                media_type=full["media_type"], expected_sha256=full["sha256"],
+                should_cancel=should_cancel, ocr_model=ocr_model)
         except documents.DocumentError as exc:
+            if exc.code == "cancelled":
+                # A stop is not a skipped file. Raising here keeps a cancelled
+                # run from publishing a partial "could not read" answer.
+                raise Cancelled() from exc
             prepared.skipped.append({"filename": full["filename"],
                                      "code": exc.code, "reason": str(exc)})
             continue

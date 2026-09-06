@@ -481,3 +481,12 @@ test('an unsupported platform offers no connect button', async () => {
   assert.equal(p.document.getElementById('connect-btn').disabled, true);
   assert.match(p.document.getElementById('thread').textContent, /unavailable here/);
 });
+
+test('the model selector lists inventory and keeps Auto disabled for now', () => {
+  assert.match(source, /for \(const candidate of models\)/,
+    'the selector is populated from the coordinator inventory');
+  assert.match(source, /Auto model — after internal hackathon/);
+  assert.match(source, /auto\.disabled = true/);
+  assert.match(source, /skill\?\.id === 'search-documents'\) return null/,
+    'search does not claim to select a model it never runs');
+});

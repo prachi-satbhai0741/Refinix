@@ -26,6 +26,12 @@ from backend.coordinator.server import Coordinator, Handler, RequestError
 from backend.coordinator import runtime
 
 
+READY_RUNTIME = {"reachable": True, "server_version": "test",
+                 "models": [runtime.MODEL],
+                 "digests": {runtime.MODEL: "a" * 64},
+                 "loaded": None, "endpoint": runtime.HOST, "error": None}
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
@@ -411,7 +417,8 @@ class TestCompletion(unittest.TestCase):
                     job = c.submit(chat, 'Count')
                 final = {'message': {'content': 'saved partial answer'}, 'done': True,
                          'done_reason': 'length', 'prompt_eval_count': prompt, 'eval_count': output}
-                with patch.object(runtime, '_request', return_value=BytesIO((json.dumps(final) + '\n').encode())):
+                with patch.object(runtime, 'probe', return_value=READY_RUNTIME), \
+                        patch.object(runtime, '_request', return_value=BytesIO((json.dumps(final) + '\n').encode())):
                     c._run(job, chat)
                 detail = c.job_detail(job)
                 self.assertEqual(detail['job']['state'], 'failed')
@@ -443,7 +450,8 @@ class TestCompletion(unittest.TestCase):
                 stream = BytesIO((json.dumps({'message': {'content': reply}}) + '\n' +
                     json.dumps({'done': True, 'done_reason': reason, 'eval_count': 700,
                                 'total_duration': 1000000}) + '\n').encode())
-                with patch.object(runtime, '_request', return_value=stream) as request:
+                with patch.object(runtime, 'probe', return_value=READY_RUNTIME), \
+                        patch.object(runtime, '_request', return_value=stream) as request:
                     c._run(job, chat)
                 options = request.call_args.args[1]['options']
                 self.assertIs(request.call_args.args[1]['truncate'], False)
@@ -474,7 +482,8 @@ class TestCompletion(unittest.TestCase):
                     with patch('backend.coordinator.server.threading.Thread.start'):
                         next_job = c.submit(chat, 'Continue from the last sentence.')
                     stream = BytesIO(b'{"message":{"content":"Continuation."},"done":true,"done_reason":"stop"}\n')
-                    with patch.object(runtime, '_request', return_value=stream) as request:
+                    with patch.object(runtime, 'probe', return_value=READY_RUNTIME), \
+                            patch.object(runtime, '_request', return_value=stream) as request:
                         c._run(next_job, chat)
                     self.assertIn({'role': 'assistant', 'content': reply},
                                   request.call_args.args[1]['messages'])

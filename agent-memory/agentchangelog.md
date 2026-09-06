@@ -1496,9 +1496,79 @@ work. No repository file change means no changelog entry.
 - verification: `.venv/bin/python -B -m unittest backend.coordinator.test_dispatch` passed 68 tests; `git diff --check` passed. The system Python attempt did not execute tests because it lacks Pydantic.
 - remaining: The C06 image build and all Mac/Ubuntu device gates remain unrun. No Git write, build, install, deployment or device action occurred.
 
-<a id="ac-20260905-007"></a>
-## AC-20260905-007 — Working indicator: the mark turns and the label shines while a job runs
-- prompt_id: [UP-20260905-007](userprompts.md#up-20260905-007)
+<a id="ac-20260905-011"></a>
+## AC-20260905-011 — Worker image build no longer exposes test identity values
+- prompt_id: [UP-20260905-011](userprompts.md#up-20260905-011)
+- date: 2026-09-05
+- status: implemented; Ubuntu rebuild pending
+- scope: c06, dockerfile, secrets, image-build
+- tags: c06, dockerfile, credentials, image-build, test-boundary
+- aliases: dummy token in build history, coordinator import missing, Ubuntu C06 build failure
+- paths: backend/worker-image/Dockerfile, backend/worker/test_executor.py, agent-memory/
+- summary: Removed fixed test identity values from the Docker build command and removed a redundant worker test dependency on coordinator-only source.
+- changes: The image build now invokes the offline suites without inline token or node-ID values; `test_worker_app` continues to install its own non-secret fixtures before importing the guarded app. The redundant cross-package assertion was removed from `test_executor`; the coordinator suite already exercises `internal_error` as receipt-unknown and `redis_lost` as definite.
+- verification: Source inspection confirmed runtime credentials remain `secretKeyRef` values, TLS remains in the `worker-tls` Secret, and no Dockerfile token or node-ID value remains. No tests or image build were run locally; the Ubuntu rebuild is authoritative.
+- remaining: Commit and push these two source corrections, pull them on Ubuntu, then rerun the C06 image build. All later C06 device gates remain pending.
+
+<a id="ac-20260905-012"></a>
+## AC-20260905-012 — Observed C06 image digest pinned
+- prompt_id: [UP-20260905-012](userprompts.md#up-20260905-012)
+- date: 2026-09-05
+- status: implemented; source push and deployment pending
+- scope: c06, image-digest, manifests, provenance, handoff
+- tags: c06, ubuntu, image-digest, containerd, provenance, deployment
+- aliases: daf1052b, single manifest, digest alias, pin C06 image
+- paths: backend/worker-image/provenance.json, deploy/k3s/20-worker.yaml, deploy/k3s/40-executor.yaml, deploy/k3s/test_manifests.py, docs/c06-distributed-execution-handoff.md, agent-memory/
+- summary: Pinned the Ubuntu-built C06 worker image manifest in both deployments and recorded only the artifact evidence actually observed.
+- changes: Worker and executor now pin `sha256:daf1052b...`; provenance records its observed config digest, successful offline build layer and streamed import while leaving unavailable archive fields null. The handoff now disables provenance/SBOM attestations for one Linux manifest and creates the explicit containerd digest alias used by the manifests.
+- verification: Requester output showed the single-manifest build, `sha256:daf1052b...` tag and explicit digest alias in K3s containerd. Source consistency and `git diff --check` were checked locally; no deployment or runtime test was run by Codex.
+- remaining: Push this source update, pull it on Ubuntu, then deploy only the worker API and prove loopback TLS before opening the guarded LAN forwarder. The executor remains blocked until pairing creates the relationship ID.
+
+<a id="ac-20260905-013"></a>
+## AC-20260905-013 — Non-root worker can read its mounted TLS identity
+- prompt_id: [UP-20260905-013](userprompts.md#up-20260905-013)
+- date: 2026-09-05
+- status: implemented; Ubuntu rollout retry pending
+- scope: c06, kubernetes, tls, permissions, rollout
+- tags: c06, kubernetes, tls, fsgroup, non-root, crashloopbackoff
+- aliases: uvicorn permission denied, tls key unreadable, C06 pod crash
+- paths: deploy/k3s/20-worker.yaml, deploy/k3s/test_manifests.py, agent-memory/
+- summary: Assigned the worker Pod's volumes to its existing GID so Uvicorn can read the TLS key without making it world-readable.
+- changes: Added pod-level `fsGroup: 10001`, matching the repository's Redis secret-volume pattern, and a focused assertion pairing it with secret mode `0440`.
+- verification: Requester logs proved `PermissionError` at Uvicorn `load_cert_chain`; pod events proved the pinned C06 image was present. `git diff --check` passed locally; no test or deployment was run by Codex.
+- remaining: Push and pull the two-file source fix plus ledger entries, rerun the manifest suite, and reapply only `20-worker.yaml`. Keep the executor undeployed until pairing produces its relationship ID.
+
+<a id="ac-20260905-014"></a>
+## AC-20260905-014 — Worker guard accepts packet-rule NodePort implementations
+- prompt_id: [UP-20260905-014](userprompts.md#up-20260905-014)
+- date: 2026-09-05
+- status: implemented; Ubuntu guard installation pending
+- scope: c06, k3s, nodeport, systemd, handoff
+- tags: c06, k3s, nodeport, systemd, socket-proxy, runtime-evidence
+- aliases: empty ss, packet-rule NodePort, guard precheck timeout, TLS curl root certificate
+- paths: deploy/k3s/host/aegisforge-worker-guard.service, deploy/k3s/host/test_guard.py, docs/c06-distributed-execution-handoff.md, agent-memory/
+- summary: Deleted the invalid `ss` listener wait while retaining the firewall guard as a hard dependency of the LAN socket.
+- changes: The worker guard now applies its scoped rules as soon as K3s is active. The handoff records that `ss` may be empty for a packet-rule NodePort, uses the successful TLS request as functional proof, reads the root-only certificate via root curl without exposing the token, and expects only the LAN proxy to appear as a process listener.
+- verification: Requester output showed empty `ss`, loopback-only K3s configuration, an authenticated pinned-TLS Node response, and plaintext rejection with exit 52. `git diff --check` passed locally; no systemd unit was installed or started by Codex.
+- remaining: Push and pull this correction, install the worker guard/proxy units with the observed addresses, then verify the rules, LAN listener and Mac-only reachability before pairing.
+
+<a id="ac-20260905-015"></a>
+## AC-20260905-015 — C08 Documents, C09 distributed Code and C10 evidence, source and macOS artifact
+- prompt_id: [UP-20260905-015](userprompts.md#up-20260905-015)
+- date: 2026-09-05
+- status: implemented; every C06–C10 human runtime gate still pending
+- scope: c07, c08, c09, c10, documents, code, sandbox, approvals, proof, artifacts
+- tags: c08, c09, c10, quartz, ocr, resource-package, kubernetes-job, rbac, approvals, proof-cards
+- aliases: paddleocr vl no vision, scan rendering, validation job, durable write recovery, af-008 af-014
+- paths: backend/coordinator/, backend/worker/, deploy/k3s/, frontend/app/, desktop/setup_py2app.py, docs/, tasks.md, README.md
+- summary: Implemented C08 local Documents/OCR, C09 packaged remote code generation with a restricted Kubernetes validation Job, and C10 concurrency, approval binding, durable final writes and Proof Cards.
+- changes: New `pdfrender`/`ocr` render and read scan pages through the existing Ollama adapter, which now requires an OBSERVED `vision` capability before sending an image. New worker `packages`/`codegen`/`kube`/`jobspec`/`validate` carry a bounded idempotent JSON package and run one approved command in a Job with no token, no egress and a read-only package mount. `deploy/k3s/50-validation.yaml` adds a separate jobs volume, a six-verb namespaced Role and default-deny policies. Approvals gained workflow/job/step/attempt columns; a durable `write_operations` record is created in the same transaction that claims an approval and is resumed at startup. New `proof.py` and a Control Center card show one record per attempt with a source for every value.
+- verification: Observed on the macOS coordinator 2026-09-05 — 840 Python checks pass under `.venv` (7 skipped: no PyObjC), 174 under `desktop/.venv` (4 skipped), 90 browser checks across 6 suites. Twelve mutation checks each broke a matching regression, including one that found and fixed a real defect: the claimed write record was held on the shared service object and could cross between concurrent approvals. The C07 scan fixture was read end to end by the already-installed `qwen3.5:4b-q4_K_M` (local fixture evidence only). The macOS application rebuilt, ships the new modules and Quartz, and `codesign --verify --deep --strict` reports valid.
+- remaining: The linux/amd64 worker image was NOT built — the pinned base and all wheels are absent from the Docker cache and downloading is unauthorised, so the C09 worker changes still need a build on Ubuntu. The configured `MedAIBase/PaddleOCR-VL:0.9b` reports `["completion"]` with no projector and rejects images, so scan reading fails closed pending a requester decision. No Kubernetes Job, package transport, pairing or distributed run has ever executed; C05–C10 all remain unaccepted. Next steps are in `docs/c07-c10-runtime-handoff.md`.
+
+<a id="ac-20260905-016"></a>
+## AC-20260905-016 — Working indicator: the mark turns and the label shines while a job runs
+- prompt_id: [UP-20260905-017](userprompts.md#up-20260905-017)
 - date: 2026-09-05
 - agent: Claude
 - status: implemented
@@ -1514,9 +1584,9 @@ work. No repository file change means no changelog entry.
   The four frontend suites cannot run as committed: app.js calls window.matchMedia, which none of the four fake windows provides, so all 101 tests error during setup. This is pre-existing — HEAD fails identically, 101 for 101 — and was not introduced here. Adding the stub to scratchpad copies only, the suites pass 60/60 with these changes, and five further behaviour tests written against the same harness pass: every active state turns it on and every terminal state off, Stop keeps it on until the job stops, streaming keeps it on and completion stops it, and both a failed and a successful Code proposal stop it.
 - remaining: The missing matchMedia stub in the four committed test files is left as found; fixing it is a test-harness change outside this request, and it means the repository suites are red until someone does. On Code, the indicator now sits above the box while the existing "Reading the selected files…" sentence stays inside it — both are true and neither was removed, but the pair is worth a second look. No Git writes ran.
 
-<a id="ac-20260905-008"></a>
-## AC-20260905-008 — Reply copy becomes a right-hand icon; Jump to latest becomes a round arrow
-- prompt_id: [UP-20260905-008](userprompts.md#up-20260905-008)
+<a id="ac-20260905-017"></a>
+## AC-20260905-017 — Reply copy becomes a right-hand icon; Jump to latest becomes a round arrow
+- prompt_id: [UP-20260905-018](userprompts.md#up-20260905-018)
 - date: 2026-09-05
 - agent: Claude
 - status: implemented
@@ -1526,14 +1596,14 @@ work. No repository file change means no changelog entry.
 - summary: Both controls are now icons. The reply's copy button is a 26px glyph at the right-hand end of the turn row, and Jump to latest is a round 34px down-arrow centred above the composer. Fixing the second one uncovered and repaired a positioning bug the previous change had introduced.
 - changes: app.js gained one helper, svgIcon, which builds a stroked 16x16 glyph and leaves weight, size and colour to the stylesheet. The reply button moved off the shared .code-copy class onto .turn-copy — code blocks keep their worded Copy, which names which of several blocks it belongs to and so still needs words. Losing the label meant relocating everything the label carried: the glyph swaps to a tick, the title and aria-label both change, and a failure spends --st-fault. Success deliberately does not spend green: in this palette green means enforced or a completed lifecycle step, and a clipboard write is neither, so it is the tick plus full-strength silver.
   Jump to latest lost its text for a round outlined arrow, keeping title and aria-label so it still has a name.
-  Positioning it exposed a real bug from AC-20260905-007. Its geometry was bottom:7.5rem from .main, a figure measured against one particular composer height — and the working indicator added a row to that composer, which slid the button down over the prompt box it is supposed to sit above. The same offset already failed for the prompt box growing to its 14em cap. It is now an absolutely positioned child of .composer at bottom:100%, so it tracks whatever height the composer happens to be.
+  Positioning it exposed a real bug from AC-20260905-016. Its geometry was bottom:7.5rem from .main, a figure measured against one particular composer height — and the working indicator added a row to that composer, which slid the button down over the prompt box it is supposed to sit above. The same offset already failed for the prompt box growing to its 14em cap. It is now an absolutely positioned child of .composer at bottom:100%, so it tracks whatever height the composer happens to be.
 - verification: Rendered both real pages over a scratchpad static server, dark and light, at 1440 and 375. The copy control sits flush with the reading column's right edge (760 at 1440, 359 at 375, matching the prose edge exactly) and all three states read correctly at 5x — two overlapping sheets, a tick, and the wine failure. The jump button is 34px, border-radius 50%, carries no text, and is centred on the reading column to the pixel (515 of 515; 188 at 375). Confirmed the positioning fix directly: forcing the prompt box to 332px moved the button up 215px with it and it still cleared the box, where the old fixed offset would have been buried; it also clears the working indicator and, on Code, the project row.
   The four repository suites still cannot run as committed — app.js calls window.matchMedia and none of the four fake windows provides it, unchanged from HEAD and unrelated to this work. With that stub added to scratchpad copies only, 68 of 68 pass: the 60 repository tests, the 5 working-indicator tests from the previous change, and 3 new ones here — the control renders as an icon button with an accessible name and no visible words, copying swaps both the glyph and the name and restores them, and a clipboard failure is reported rather than swallowed.
 - remaining: Two things found and not taken. The prose tokens in overrides.css are dark-first with their light values only inside @media (prefers-color-scheme: light) and no :root[data-theme="light"] block, so the Control Center's own light toggle does not reach them and the reading column keeps dark text on a light ground — the exact failure app.css's header rule warns about. That is a pre-existing defect in nine tokens, outside this request. Centring the jump button rather than leaving it in the right-hand corner follows the supplied screenshot and is a one-line revert if that was not intended. No Git writes ran.
 
-<a id="ac-20260905-009"></a>
-## AC-20260905-009 — Model selection end to end, composer hint removed, prompt box wired to grow
-- prompt_id: [UP-20260905-009](userprompts.md#up-20260905-009)
+<a id="ac-20260905-018"></a>
+## AC-20260905-018 — Model selection end to end, composer hint removed, prompt box wired to grow
+- prompt_id: [UP-20260905-019](userprompts.md#up-20260905-019)
 - date: 2026-09-05
 - agent: Claude
 - status: implemented
@@ -1548,4 +1618,18 @@ work. No repository file change means no changelog entry.
   Height: the prompt box was rows="2", so a one-line prompt reserved two. It is rows="1" now, and that exposed the real defect: wireAutogrow was only ever called for the Code box. Chat's box was never wired, and refinix.css sets resize:none with overflow-y:hidden — autogrow is what turns overflow back on — so past two lines the text went under the bottom edge, invisible and unscrollable. Measured before the fix: six typed lines, 135px of content in a 45px box, overflow hidden.
 - verification: Backend: ran the real coordinator against the real Ollama on a throwaway state file and port, never the user's own. /v1/status returns the new shape; selecting an uninstalled model is refused 404, selecting the installed one succeeds, reasoning follows, and status reflects both. 9 new tests in test_reasoning cover the offer, the default being listed when missing, the fallback when a choice disappears, per-model reasoning, the request reaching the chosen model with that model's own switch, the attempt recording it, and validation. Full backend suite 297 tests: the set of failing tests is byte-identical to HEAD's (66, chiefly the Code surface being unsupported on Windows), so nothing changed state.
   Page: drove the real index.html and code.html against the real coordinator through a proxy that injects two extra models, dark and light, 1440 and 375. Switching to another model updates the pill, moves the mark and flips the Reasoning switch to that model's own value; a not-installed model is listed, disabled, tagged and explained; the popover fits at 375. Composer measured at 96px for an empty or one-line prompt against 118px before, growing to 260px and then scrolling, with nothing hidden at any length. 74 of 74 frontend tests pass (60 repository, 14 written across these three changes), still with the matchMedia stub applied to scratchpad copies only.
-- remaining: Two things stated rather than taken. runtime.py's bounded settings — num_ctx 8192, num_predict 2048, think false — were measured against the default model in docs/model-catalog.md; another model now runs under those same bounds and has not been characterised at that size. And the light-theme defect from AC-20260905-008 is now pinned down: light driven by prefers-color-scheme is correct, but the Control Center's own data-theme="light" toggle does not reach the nine dark-first tokens in overrides.css, which is why the model pill renders as a black slab under that toggle and not under the OS preference. Neither was in this request. No Git writes ran.
+- remaining: Two things stated rather than taken. runtime.py's bounded settings — num_ctx 8192, num_predict 2048, think false — were measured against the default model in docs/model-catalog.md; another model now runs under those same bounds and has not been characterised at that size. And the light-theme defect from AC-20260905-017 is now pinned down: light driven by prefers-color-scheme is correct, but the Control Center's own data-theme="light" toggle does not reach the nine dark-first tokens in overrides.css, which is why the model pill renders as a black slab under that toggle and not under the OS preference. Neither was in this request. No Git writes ran.
+
+<a id="ac-20260906-001"></a>
+## AC-20260906-001 — C08–C10 review corrections
+- prompt_id: [UP-20260905-016](userprompts.md#up-20260905-016)
+- date: 2026-09-06
+- status: implemented; live Ubuntu and Kubernetes verification pending
+- scope: c08, c09, c10, model-selection, validation, sandbox, cleanup, proof
+- tags: model-selector, paddleocr, validation-gate, kubernetes-admission, package-retention, proof-cards
+- aliases: auto model disabled, zero tests refused, validation job containment, stable citations
+- paths: backend/contracts/, backend/coordinator/, backend/worker/, deploy/k3s/, frontend/app/, docs/c07-c10-runtime-handoff.md, tasks.md
+- summary: Closed the integrated review findings without advancing any C06–C10 human gate.
+- changes: Workflow-scoped model choices now persist and propagate exactly, Auto is visibly disabled, document search shows no false model choice, and OCR enables only a runtime-confirmed vision model. Code apply now requires a current observed sandbox pass over the full selected snapshot with at least one parsed unittest result. Validation Jobs are constrained by credential-free identity plus admission policy, temporary packages expire on terminal acknowledgement, startup and a periodic sweep, and Proof Card citation identities and approval sources are persisted.
+- verification: Observed on the macOS coordinator: 888 Python checks passed with 4 intentional skips; 91 browser checks passed; JavaScript and worker API source parsed; final `git diff --check` passed. The FastAPI worker route suite remains authoritative only inside the pinned image build.
+- remaining: Build the linux/amd64 worker image, server-dry-run and apply the admission policy, pair the devices, run one real validation Job, and choose a vision-capable OCR model or accept scan OCR as blocked. C06–C10 remain unaccepted until those device checks pass.

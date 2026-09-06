@@ -504,14 +504,58 @@ existing distributed path before C07 device setup or acceptance. Independent
 C07 preparation may overlap as described above. Infrastructure expansion remains blocked. Do not add nodes, replicas, Helm,
 Ingress, another broker, or another runtime to repair an unproven single path.
 
+### Requester placement decision, 2026-09-05
+
+**Documents runs on the macOS coordinator. Code runs on the Ubuntu worker.**
+
+| Workflow | Where it executes | What runs there |
+|---|---|---|
+| Documents (C08) | macOS coordinator, locally | PDF page rendering (Quartz), scan reading through the local Ollama vision model, SOP retrieval, cited drafting, DOCX generation, approval-gated export |
+| Code (C09) | Ubuntu worker, distributed | Code generation on the worker's Ollama model, then validation in a restricted short-lived Kubernetes Job |
+
+The Ubuntu sandbox is a **restricted Kubernetes Job, not a second model**. C10
+concurrency therefore means one local workflow and one distributed workflow
+running at the same time with completely separate state — not two Redis
+consumers and not two model Pods.
+
+### C07–C10 source and artifact preparation, 2026-09-05
+
+Source for C07 preparation through C10 was implemented in one consolidated
+cycle **ahead of the C06–C10 human acceptance gates**, as authorised schedule
+compression. This is recorded separately from acceptance on purpose:
+
+- **Implemented and covered by offline checks:** C08 Documents (rendering,
+  vision transport, honest extraction), C09 resource packages, remote code
+  generation, the restricted validation Job, C10 concurrency, approval binding,
+  durable final-write recovery and Proof Cards.
+- **NOT accepted:** C05, C06, C07, C08, C09 and C10 all remain unaccepted. No
+  runtime gate has been passed, and later code existing is not evidence for an
+  earlier gate.
+- **Runtime blocker recorded:** the configured C08 scan-reading model
+  `MedAIBase/PaddleOCR-VL:0.9b` is installed and does **not** declare the
+  `vision` capability, so scan reading currently reports itself unavailable.
+  See [`docs/c08-dependency-plan.md`](docs/c08-dependency-plan.md) §3.
+- **Artifact state:** the linux/amd64 worker image was **not** rebuilt — the
+  Docker daemon was not running and starting it is a host action outside this
+  scope. The C09 worker changes therefore still need a build before rollout.
+
+**C06 resume point is unchanged.** The current C06 image
+`sha256:daf1052b957a1da0107f835debc49e390a19bb18acb670df289cdabd53b95adf` is
+built and pinned, and the Ubuntu worker reached the loopback TLS health check.
+Setup stopped **before C06 handoff step E, the guarded LAN forwarder**.
+Pairing, relationship-ID installation, executor deployment, real distributed
+inference, cancellation, disconnect recovery and requester acceptance all
+remain pending. The consolidated next steps are in
+[`docs/c07-c10-runtime-handoff.md`](docs/c07-c10-runtime-handoff.md).
+
 ### AF-008–AF-011 — Signature workflows
 
 | ID | State | Task | Depends on | Acceptance gate |
 |---|---|---|---|---|
-| AF-008 | planned | Implement scan rendering plus local OCR/vision extraction with source hash, page mapping, and explicit uncertainty through the shared job contract | AF-003, AF-006 | The public sample scan produces structured, page-linked extraction without fabricated missing values |
-| AF-009 | planned | Add the minimum local SOP retrieval, cited drafting, Word generation, and artifact validation path | AF-008 | `inspection_report_to_approval_note` returns an openable cited `.docx` with checksum |
-| AF-010 | planned | Implement bounded repository context and patch generation inside an assigned temporary workspace | AF-003, AF-006 | `repository_request_to_validated_patch` returns an applicable patch without modifying the canonical repository |
-| AF-011 | planned | Run each approved validation command as a short-lived restricted Kubernetes Job Pod | AF-002, AF-010 | Default-deny egress, non-root execution, limits, deadline, cleanup TTL, command output, and artifact hashes are observed; no Docker socket is mounted |
+| AF-008 | source implemented; acceptance pending | Implement scan rendering plus local OCR/vision extraction with source hash, page mapping, and explicit uncertainty through the shared job contract | AF-003, AF-006 | The public sample scan produces structured, page-linked extraction without fabricated missing values |
+| AF-009 | source implemented; acceptance pending | Add the minimum local SOP retrieval, cited drafting, Word generation, and artifact validation path | AF-008 | `inspection_report_to_approval_note` returns an openable cited `.docx` with checksum |
+| AF-010 | source implemented; acceptance pending | Implement bounded repository context and patch generation inside an assigned temporary workspace | AF-003, AF-006 | `repository_request_to_validated_patch` returns an applicable patch without modifying the canonical repository |
+| AF-011 | source implemented; acceptance pending | Run each approved validation command as a short-lived restricted Kubernetes Job Pod | AF-002, AF-010 | Default-deny egress, non-root execution, limits, deadline, cleanup TTL, command output, and artifact hashes are observed; no Docker socket is mounted |
 
 C09 gate: the application produces one real Word approval note and one real
 validated code patch through the same Service, Redis, job, event, and approval
@@ -521,9 +565,9 @@ contracts.
 
 | ID | State | Task | Depends on | Acceptance gate |
 |---|---|---|---|---|
-| AF-012 | planned | Run independent Documents and Code attempts concurrently through separate Redis consumers and Pods | AF-005, AF-009, AF-011 | Both jobs progress simultaneously, retain separate attempt/artifact state, and show honest queue time |
-| AF-013 | planned | Enforce approval before canonical writes and bind it to the exact action, target, and attempt | AF-004, AF-009, AF-011 | Denial writes nothing; retry cannot reuse a stale approval; approval performs one bounded final write |
-| AF-014 | planned | Produce per-job Proof Cards from SQLite, Redis, Kubernetes, model, validation, integrity, approval, and network evidence | AF-012, AF-013 | Every displayed value has an identified source and observation window; unavailable evidence is not inferred |
+| AF-012 | source implemented; acceptance pending | Run an independent local Documents attempt and a remote Code attempt concurrently | AF-005, AF-009, AF-011 | Both jobs progress simultaneously, retain separate attempt/artifact state, and show honest queue time. **Superseded wording:** this row previously said "separate Redis consumers and Pods". The requester's accepted topology is one LOCAL workflow (Documents, on the Mac) plus one DISTRIBUTED workflow (Code, on Ubuntu), so Documents has no Redis consumer and no Pod, and claiming either would be evidence of something that does not exist. |
+| AF-013 | source implemented; acceptance pending | Enforce approval before canonical writes and bind it to the exact action, target, and attempt | AF-004, AF-009, AF-011 | Denial writes nothing; retry cannot reuse a stale approval; approval performs one bounded final write |
+| AF-014 | source implemented; acceptance pending | Produce per-job Proof Cards from SQLite, Redis, Kubernetes, model, validation, integrity, approval, and network evidence | AF-012, AF-013 | Every displayed value has an identified source and observation window; unavailable evidence is not inferred |
 | AF-015 | planned | Enforce default-deny Pod egress and host public-egress blocking while retaining authenticated Service traffic | AF-011, AF-014 | The real concurrent run completes with zero observed public outbound flow in the named interval and only documented LAN/cluster flows |
 
 C11 gate: Documents and Code complete concurrently on distributed compute,

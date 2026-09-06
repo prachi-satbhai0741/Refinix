@@ -30,13 +30,20 @@ class RuntimeUnavailable(RuntimeError):
     """The local runtime did not answer. Never dressed up as a model reply."""
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *_args, **_kwargs):
+        return None
+
+
 def _post(path: str, payload=None, timeout=30):
     data = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(
         f"{HOST}{path}", data=data,
         headers={"Content-Type": "application/json"} if data else {},
     )
-    return urllib.request.urlopen(request, timeout=timeout)
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _NoRedirect())
+    return opener.open(request, timeout=timeout)
 
 
 def probe() -> dict:
@@ -70,14 +77,15 @@ def probe() -> dict:
     return state
 
 
-def stream_chat(messages: list[dict], *, should_cancel=None, timeout: float = 600.0):
+def stream_chat(messages: list[dict], *, should_cancel=None, timeout: float = 600.0,
+                model: str | None = None):
     """Yield ('delta', text) then ('done', metrics).
 
     Truncation and context shifting are disabled, so an oversized prompt is
     rejected rather than silently trimmed.
     """
     payload = {
-        "model": MODEL, "messages": messages, "stream": True,
+        "model": model or MODEL, "messages": messages, "stream": True,
         "think": THINK, "keep_alive": KEEP_ALIVE,
         "truncate": False, "shift": False,
         "options": {"num_ctx": NUM_CTX, "num_predict": NUM_PREDICT},

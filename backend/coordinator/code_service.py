@@ -21,14 +21,26 @@ surface, put in a URL, or included in a model message.
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 import time
 
-from backend.coordinator import codeflow, db, policy, repo, runtime
+from backend.contracts import v1
+from backend.coordinator import (codeflow, db, dispatch, pairing, policy, repo,
+                                 runtime)
 
 # One proposal is one bounded local model call.
 PROPOSAL_DEADLINE_SECONDS = 240
 PROPOSAL_NUM_PREDICT = 2048
+
+# AF-011. The ONLY command a validation Job may be asked to run, from the C07
+# approved fixture. It is configuration on this side and is checked again
+# against `backend.worker.validate.ALLOWED_COMMANDS` inside the sandbox, so a
+# change here alone cannot widen what actually executes.
+VALIDATION_COMMAND = ["python3", "-m", "unittest"]
+VALIDATION_MINIMUM_TESTS = 1
+VALIDATION_DEADLINE_SECONDS = 300
+REMOTE_OUTPUT_BYTES = 1_048_576
 
 
 class CodeError(ValueError):
@@ -102,11 +114,21 @@ class CodeService:
         return root
 
     def _gate(self, repo_id: str, action: str, *, digest: str, target: str,
-              approval_id: str | None, payload: dict, proposal_id: str | None = None):
+              approval_id: str | None, payload: dict, proposal_id: str | None = None,
+              claim=None, binding: dict | None = None):
         """The one place an access mode decides anything.
 
         Returns the audit outcome to record on success. Raises `CodeError` for
         a denial and `ApprovalNeeded` when the person has to decide first.
+
+        `claim` replaces the default consume step. `apply` supplies one that
+        consumes the approval and creates the durable write record in a single
+        transaction, so there is no window in which a decision is spent and
+        nothing records what it authorised. The caller keeps the result in its
+        own local; nothing about one call's claim is stored on the service. `binding` carries the workflow,
+        job, step and attempt an approval belongs to, which is what makes an
+        approval refer to one exact attempt's output rather than to a digest
+        that some attempt somewhere produced.
         """
         record = self._repository(repo_id)
         mode = record["mode"]
@@ -126,9 +148,10 @@ class CodeService:
 
         if approval_id:
             try:
-                claimed = db.claim_approval(self.conn, approval_id, self.workspace_id,
-                                            action, digest, repo_id=repo_id,
-                                            proposal_id=proposal_id)
+                claimed = (claim(approval_id) if claim is not None else
+                           db.claim_approval(self.conn, approval_id, self.workspace_id,
+                                             action, digest, repo_id=repo_id,
+                                             proposal_id=proposal_id))
             except db.ApprovalError as exc:
                 outcome = {"expired": "expired", "denied": "denied"}.get(exc.code, "rejected_stale")
                 db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
@@ -149,7 +172,8 @@ class CodeService:
             proposal_id=proposal_id, action=action, target=target,
             action_sha256=digest,
             payload={**payload, "repo_id": repo_id, "repo_name": record["name"],
-                     "mode": mode})
+                     "mode": mode},
+            **(binding or {}))
         db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
                         action=action, outcome="awaiting_approval", mode=mode,
                         approval_id=approval["approval_id"],
@@ -284,18 +308,38 @@ class CodeService:
                          "summary": policy.ACTION_LABELS[policy.ACTION_READ].capitalize()})
             root = self._root(repo_id)
             selection = self._read_selection(root, normalised)
-            reply, reasoning = self._ask_model(
-                codeflow.build_messages(request, selection), cancel)
-            try:
-                parsed = codeflow.parse_proposal(reply, selection)
-            except codeflow.ProposalError as first:
-                # Exactly one bounded repair attempt, on the same context.
-                if first.code not in ("not_json", "not_object", "unknown_fields"):
-                    raise
-                retry, _ = self._ask_model(
-                    codeflow.repair_messages(
-                        codeflow.build_messages(request, selection), reply), cancel)
-                parsed = codeflow.parse_proposal(retry, selection)
+            # AF-006 routing, asking for the capability this step actually
+            # needs. Code generation runs on the paired worker when one is
+            # healthy and advertises `code.generate`; otherwise it runs here,
+            # and the attempt records which and why.
+            model_id = self.c.model_for("code")
+            route = self.c.choose_route(required=["code.generate"], model_id=model_id)
+            if route.remote:
+                parsed, job_id, attempt_id, model = self._propose_remote(
+                    repo_id, request, selection, route, cancel)
+                reasoning = False
+            else:
+                job_id = attempt_id = None
+                model = route.model or {"model_id": model_id}
+                reply, reasoning = self._ask_model(
+                    codeflow.build_messages(request, selection), cancel, model_id)
+                try:
+                    parsed = codeflow.parse_proposal(reply, selection)
+                except codeflow.ProposalError as first:
+                    # Exactly one bounded repair attempt, on the same context.
+                    if first.code not in ("not_json", "not_object", "unknown_fields"):
+                        raise
+                    retry, _ = self._ask_model(
+                        codeflow.repair_messages(
+                            codeflow.build_messages(request, selection), reply), cancel,
+                        model_id)
+                    parsed = codeflow.parse_proposal(retry, selection)
+        except codeflow.PackageError as exc:
+            db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
+                            action=policy.ACTION_READ, outcome="failed",
+                            approval_id=approval_id,
+                            detail={"reason": str(exc), "code": exc.code})
+            raise CodeError(exc.code, str(exc), 422) from exc
         except codeflow.ProposalError as exc:
             db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
                             action=policy.ACTION_READ, outcome="failed",
@@ -315,8 +359,10 @@ class CodeService:
         write_digest = codeflow.action_digest(repo_id, parsed["edits"])
         proposal = db.create_proposal(
             self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
-            job_id=None, attempt_id=None, request=request,
-            summary=parsed["summary"], digest=write_digest, edits=parsed["edits"])
+            job_id=job_id, attempt_id=attempt_id, request=request,
+            summary=parsed["summary"], digest=write_digest, edits=parsed["edits"],
+            selection=[{"path": item["path"], "sha256": item["sha256"]}
+                       for item in selection])
         # `authorised` is what the gate actually decided — `approved` with the
         # approval id in Ask mode, `allowed_automatically` otherwise.
         db.record_audit(
@@ -325,18 +371,250 @@ class CodeService:
             detail={"proposal_id": proposal["proposal_id"],
                     "authorised_by": policy.ACTION_READ,
                     "edits": len(parsed["edits"]),
-                    "model": self.c.active_model(),
+                    "model": (model or {}).get("model_id"),
+                    "node": "worker" if job_id else "coordinator",
                     "reasoning_enabled": reasoning, "digest": write_digest})
         return proposal
 
-    def _ask_model(self, messages, cancel: threading.Event) -> tuple[str, bool]:
+    def _propose_remote(self, repo_id: str, request: str, selection: list[dict],
+                        route, cancel: threading.Event):
+        """Generate the proposal on the paired worker.
+
+        The worker returns the model's reply and nothing more. The diff, every
+        digest re-check and the canonical write boundary all stay here, because
+        this side is the only one that knows where the project actually is —
+        the worker never receives an absolute path.
+        """
+        job_id = self._code_job(request)
+        step = self._remote_step(
+            job_id=job_id, route=route, request=request,
+            package=lambda attempt_id: codeflow.build_package(
+                selection, workspace_id=self.workspace_id,
+                relationship_id=route.relationship_id, attempt_id=attempt_id),
+            capability="code.generate", cancel=cancel)
+        # Parsed against exactly the selection that was packaged, on this side.
+        # A reply naming an unselected path, a wrong base hash or an unknown
+        # field is refused here, where the repository is.
+        parsed = codeflow.parse_proposal(step["text"], selection)
+        return parsed, job_id, step["attempt_id"], route.model
+
+    # -- AF-010/AF-011 remote code ----------------------------------------
+
+    def _code_job(self, request: str) -> str:
+        """One persisted job for a Code request, created BEFORE any dispatch."""
+        return db.create_job(
+            self.conn, workspace_id=self.workspace_id,
+            chat_id=db.code_chat(self.conn, self.workspace_id),
+            request=request, task_type="code")
+
+    def _remote_step(self, *, job_id: str, route, request: str, package: dict,
+                     capability: str, cancel: threading.Event):
+        """Upload the package, dispatch one attempt, and read it back.
+
+        The order is load-bearing. The package is uploaded first, because the
+        worker refuses a code envelope whose package is absent — so an accepted
+        receipt means the attempt can actually run. The job and the attempt are
+        already in SQLite before either call, so a failure anywhere below
+        leaves a complete local record rather than a hole.
+
+        Ambiguity is handled exactly as C06 handles it: once the submit has
+        begun, a missing answer means the worker MAY be running this attempt,
+        and there is no local fallback from that point. Falling back would run
+        the same request twice.
+        """
+        relationship = db.get_relationship(self.conn, route.relationship_id,
+                                           self.workspace_id)
+        if relationship is None or relationship["state"] != "paired":
+            raise CodeError("worker", "The pairing was revoked before dispatch.", 409)
+        attempt_id = db.create_attempt(
+            self.conn, job_id=job_id, node_id=route.node_id,
+            route_reason=route.reason, model=route.model)
+        db.set_attempt_relationship(self.conn, attempt_id, route.relationship_id)
+        job = dict(self.conn.execute("SELECT * FROM jobs WHERE job_id=?",
+                                     (job_id,)).fetchone())
+        step = self.conn.execute("SELECT step_id FROM attempts WHERE attempt_id=?",
+                                 (attempt_id,)).fetchone()["step_id"]
+        built = package(attempt_id)
+        client = self.c.worker_client(relationship)
+        try:
+            client.upload_package({**built["body"],
+                                   "workspace_id": self.workspace_id,
+                                   "relationship_id": route.relationship_id,
+                                   "attempt_id": attempt_id})
+            envelope = dispatch.build_envelope(
+                job=job, attempt_id=attempt_id, step_id=step, route=route,
+                coordinator_node_id=self.c.node_id, request_text=request,
+                task_type="code", required_capabilities=[capability],
+                context=[v1.ResourceRef(**item) for item in built["resources"]],
+                output=v1.OutputContract(
+                    kind="patch",
+                    validators=(["patch.applies"] if capability == "code.generate"
+                                else ["patch.applies", "sandbox.exit_zero"]),
+                    schema_ref=None),
+                runtime_seconds=(VALIDATION_DEADLINE_SECONDS
+                                 if capability == "code.validate"
+                                 else PROPOSAL_DEADLINE_SECONDS),
+                output_bytes=REMOTE_OUTPUT_BYTES)
+            client.submit(envelope, dispatch.idempotency_key_for(attempt_id))
+        except dispatch.ReceiptUnknown as exc:
+            db.set_attempt_state(self.conn, attempt_id, "running")
+            db.set_attempt_state(self.conn, attempt_id, "interrupted", error={
+                "code": "worker_lost",
+                "message": ("the worker did not confirm the request; it may be "
+                            f"running there, so it was not re-run here. {exc}")[:256],
+                "retryable": True})
+            raise CodeError(
+                "receipt_unknown",
+                "The worker did not confirm the request. It may be running there, "
+                "so Refinix did not run it again here.", 409) from exc
+        except pairing.IdentityMismatch as exc:
+            db.set_attempt_state(self.conn, attempt_id, "running")
+            db.set_attempt_state(self.conn, attempt_id, "failed", error={
+                "code": "permission_denied", "message": str(exc)[:256],
+                "retryable": False})
+            raise CodeError("identity", str(exc), 409) from exc
+        except (dispatch.DispatchUnavailable, pairing.PairingError) as exc:
+            db.set_attempt_state(self.conn, attempt_id, "running")
+            db.set_attempt_state(self.conn, attempt_id, "failed", error={
+                "code": "unavailable", "message": str(exc)[:256], "retryable": True})
+            raise CodeError("worker", str(exc), 503) from exc
+
+        db.set_attempt_state(self.conn, attempt_id, "running")
+        try:
+            outcome = dispatch.consume(
+                client, envelope,
+                should_cancel=lambda: cancel.is_set() or self.c.stopping.is_set())
+        except pairing.IdentityMismatch as exc:
+            # Deliberately NOT flattened into "unavailable". A changed worker
+            # identity mid-stream is the event pinning exists to surface, and
+            # it must reach the operator as itself rather than as a traceback.
+            db.set_attempt_state(self.conn, attempt_id, "failed", error={
+                "code": "permission_denied", "message": str(exc)[:256],
+                "retryable": False})
+            raise CodeError("identity", str(exc), 409) from exc
+        for event in outcome.events:
+            db.append_event(self.conn, job_id=job_id, attempt_id=attempt_id,
+                            node_id=route.node_id, data=event.data.model_dump())
+        if outcome.text:
+            db.append_output(self.conn, attempt_id, outcome.text)
+        if outcome.state != "completed":
+            db.set_attempt_state(self.conn, attempt_id, outcome.state,
+                                 error=outcome.failure)
+            raise CodeError("worker",
+                            (outcome.failure or {}).get("message",
+                                                        "the worker did not finish"),
+                            409)
+        db.set_attempt_state(self.conn, attempt_id, "validating")
+        db.set_attempt_state(self.conn, attempt_id, "completed")
+        return {"attempt_id": attempt_id, "step_id": step, "text": outcome.text,
+                "node_id": route.node_id, "package": built}
+
+    def validate(self, repo_id: str, proposal_id: str) -> dict:
+        """Run the approved command against the reviewed change, in the sandbox.
+
+        A SEPARATE attempt from generation, on purpose: it runs on a different
+        thing (a restricted Job, not a model) and produces different evidence,
+        and one Proof record must never describe two of those as one attempt.
+
+        The canonical repository is not touched. What travels is a second
+        package holding the originals, the reviewed replacements and the plan —
+        all covered by one digest the worker verifies.
+        """
+        self._require_platform(repo_id)
+        proposal = db.get_proposal(self.conn, proposal_id, self.workspace_id)
+        if proposal is None or proposal["repo_id"] != repo_id:
+            raise CodeError("unknown_proposal", "That proposal no longer exists.", 404)
+        if not proposal["edits"]:
+            raise CodeError("no_edits", "That proposal contains no file changes.")
+        route = self.c.choose_route(required=["code.validate"], require_model=False)
+        if not route.remote:
+            raise CodeError(
+                "no_sandbox",
+                "Sandbox validation runs on the paired worker, and it is not "
+                f"available: {route.reason}", 503)
+
+        root = self._root(repo_id)
+        contents = db.proposal_edit_contents(self.conn, proposal_id)
+        selected = proposal["selection"] or [
+            {"path": edit["path"], "sha256": edit["base_sha256"]}
+            for edit in contents]
+        originals = []
+        for item in selected:
+            try:
+                text, identity = repo.read_text_file(root, item["path"])
+            except repo.RepositoryError as exc:
+                raise CodeError(exc.code, str(exc)) from exc
+            if identity.sha256 != item["sha256"]:
+                raise CodeError(
+                    "stale",
+                    f"{item['path']} changed since the proposal was reviewed, so "
+                    "it was not validated.", 409)
+            originals.append({"path": item["path"], "text": text,
+                              "sha256": identity.sha256, "bytes": identity.size})
+
+        plan = {"command": list(VALIDATION_COMMAND),
+                "minimum_tests": VALIDATION_MINIMUM_TESTS,
+                "replacements": [{"path": edit["path"],
+                                  "base_sha256": edit["base_sha256"],
+                                  "after_sha256": edit["after_sha256"]}
+                                 for edit in contents],
+                "runtime_seconds": VALIDATION_DEADLINE_SECONDS}
+        selection = [
+            {"path": f"original/{item['path']}", "text": item["text"],
+             "sha256": item["sha256"], "bytes": item["bytes"]}
+            for item in originals]
+        selection += [
+            {"path": f"replacement/{edit['path']}", "text": edit["content"],
+             "sha256": edit["after_sha256"],
+             "bytes": len(edit["content"].encode("utf-8"))}
+            for edit in contents]
+        plan_text = json.dumps(plan, sort_keys=True)
+        selection.append({"path": "plan.json", "text": plan_text,
+                          "sha256": hashlib.sha256(
+                              plan_text.encode("utf-8")).hexdigest(),
+                          "bytes": len(plan_text.encode("utf-8"))})
+
+        job_id = self._code_job(f"validate {proposal_id}")
+        cancel = threading.Event()
+        try:
+            step = self._remote_step(
+                job_id=job_id, route=route, request=f"validate {proposal_id}",
+                package=lambda attempt_id: codeflow.build_package(
+                    selection, workspace_id=self.workspace_id,
+                    relationship_id=route.relationship_id, attempt_id=attempt_id),
+                capability="code.validate", cancel=cancel)
+        except codeflow.PackageError as exc:
+            raise CodeError(exc.code, str(exc), 422) from exc
+        try:
+            result = json.loads(step["text"])
+        except ValueError as exc:
+            raise CodeError("bad_result",
+                            "The sandbox returned an unreadable result.", 502) from exc
+        if not isinstance(result, dict):
+            raise CodeError("bad_result", "The sandbox returned an unreadable result.",
+                            502)
+        record = db.record_validation(
+            self.conn, workspace_id=self.workspace_id, proposal_id=proposal_id,
+            job_id=job_id, attempt_id=step["attempt_id"], node_id=step["node_id"],
+            result=result, patch_sha256=proposal["digest"],
+            detail=None if result.get("observed") else result.get("error"))
+        db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
+                        action="sandbox.validate",
+                        outcome="applied" if record["passed"] else "failed",
+                        detail={"proposal_id": proposal_id,
+                                "job_name": record["job_name"],
+                                "observed": record["observed"],
+                                "exit_status": record["exit_status"]})
+        return record
+
+    def _ask_model(self, messages, cancel: threading.Event,
+                   model_id: str) -> tuple[str, bool]:
         """One bounded local model call. Reasoning is not collected or stored."""
-        model = self.c.active_model()
-        reasoning = db.get_reasoning(self.conn, model)
+        reasoning = db.get_reasoning(self.conn, model_id)
         deadline = time.monotonic() + PROPOSAL_DEADLINE_SECONDS
         collected, metrics = [], {}
         for kind, payload in runtime.stream_chat(
-                messages, model=model, think=reasoning,
+                messages, model=model_id, think=reasoning,
                 num_predict=PROPOSAL_NUM_PREDICT,
                 should_cancel=lambda: cancel.is_set() or time.monotonic() > deadline
                 or self.c.stopping.is_set()):
@@ -355,7 +633,14 @@ class CodeService:
 
     def apply(self, repo_id: str, proposal_id: str,
               approval_id: str | None = None) -> dict:
-        """Apply a stored proposal, one exact atomic file replacement at a time."""
+        """Apply a stored proposal, one exact atomic file replacement at a time.
+
+        The approval is consumed and the durable write record is created in one
+        transaction (`db.claim_approval_for_write`), so a coordinator that stops
+        immediately afterwards restarts with a record of exactly what was
+        authorised and how far it got. `_run_operation` is then the same code
+        path for the first run and for the recovery.
+        """
         self._require_platform(repo_id)
         proposal = db.get_proposal(self.conn, proposal_id, self.workspace_id)
         if proposal is None or proposal["repo_id"] != repo_id:
@@ -364,61 +649,189 @@ class CodeService:
             raise CodeError("already_applied", "That change was already applied.", 409)
         if not proposal["edits"]:
             raise CodeError("no_edits", "That proposal contains no file changes.")
+        validation = db.latest_validation(self.conn, proposal_id, self.workspace_id)
+        if not validation or not validation["observed"] or not validation["passed"] \
+                or validation["patch_sha256"] != proposal["digest"]:
+            raise CodeError(
+                "validation_required",
+                "Run sandbox validation and get a current passing result before applying.",
+                409)
         paths = [e["path"] for e in proposal["edits"]]
+        contents = db.proposal_edit_contents(self.conn, proposal_id)
+        plan = [{"path": edit["path"], "edit_id": edit["edit_id"],
+                 "base_sha256": edit["base_sha256"],
+                 "after_sha256": edit["after_sha256"]} for edit in contents]
+
+        # The claim is captured in a LOCAL, closed over by this call's own
+        # lambda. It must never live on `self`: C10 runs two workflows at once,
+        # and a shared slot would let one thread pick up another thread's
+        # authorised write record and apply the wrong change.
+        claimed: list[dict] = []
+
+        def claim_write(given: str) -> dict:
+            record = db.claim_approval_for_write(
+                self.conn, given, self.workspace_id,
+                action=policy.ACTION_WRITE, action_sha256=proposal["digest"],
+                repo_id=repo_id, proposal_id=proposal_id, edits=plan)
+            claimed.append(record)
+            return record
+
         outcome = self._gate(
             repo_id, policy.ACTION_WRITE, digest=proposal["digest"],
             target=", ".join(paths), approval_id=approval_id,
             proposal_id=proposal_id,
+            binding={"job_id": proposal.get("job_id"),
+                     "attempt_id": proposal.get("attempt_id")},
+            claim=claim_write,
             payload={"paths": paths, "summary": proposal["summary"],
                      "proposal_id": proposal_id})
 
+        if outcome == "approved":
+            operation = claimed[0] if claimed else None
+            if not operation or "operation_id" not in operation:
+                # The claim path must always produce the record; refusing here
+                # is what keeps a spent approval from writing unrecorded.
+                raise CodeError("no_operation",
+                                "That approval could not be bound to a write record.",
+                                409)
+        else:
+            # Full access: no approval, same durable record.
+            operation = db.create_write_operation(
+                self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
+                proposal_id=proposal_id, action=policy.ACTION_WRITE,
+                action_sha256=proposal["digest"], edits=plan)
+        return self._run_operation(operation, allowed_by=outcome,
+                                   approval_id=approval_id)
+
+    def _run_operation(self, operation: dict, *, allowed_by: str,
+                       approval_id: str | None = None) -> dict:
+        """Carry out one authorised write record, from wherever it got to.
+
+        Called by `apply` and again by `resume_writes` after a restart. It
+        never consults an approval: the authority question was settled when the
+        record was created, and re-checking a consumed approval here would fail
+        exactly the recovery this record exists to make possible.
+        """
+        repo_id, proposal_id = operation["repo_id"], operation["proposal_id"]
+        operation_id = operation["operation_id"]
+        db.set_operation_state(self.conn, operation_id, "applying")
         root = self._root(repo_id)
-        contents = db.proposal_edit_contents(self.conn, proposal_id)
+        by_path = {edit["path"]: edit
+                   for edit in db.proposal_edit_contents(self.conn, proposal_id)}
         results, applied = [], 0
-        for edit in contents:
-            if edit["state"] == "applied":
-                results.append({"path": edit["path"], "state": "applied"})
+        for planned in operation["files"]:
+            path = planned["path"]
+            if planned["state"] == "applied":
+                results.append({"path": path, "state": "applied"})
                 applied += 1
                 continue
-            if hashlib.sha256(edit["content"].encode("utf-8")).hexdigest() != edit["after_sha256"]:
+            edit = by_path.get(path)
+            if edit is None:
+                detail = "The reviewed replacement is no longer stored."
+                db.set_operation_file(self.conn, operation_id, path, "failed", detail)
+                results.append({"path": path, "state": "failed", "detail": detail})
+                continue
+            if hashlib.sha256(edit["content"].encode("utf-8")).hexdigest() \
+                    != planned["after_sha256"]:
                 detail = "The stored replacement no longer matches the reviewed change."
                 db.set_edit_result(self.conn, edit["edit_id"], "failed", detail)
-                results.append({"path": edit["path"], "state": "failed",
+                db.set_operation_file(self.conn, operation_id, path, "failed", detail)
+                results.append({"path": path, "state": "failed", "detail": detail})
+                continue
+
+            # Recovery, and the reason the base and after digests are stored.
+            #
+            #   already at the AFTER hash -> a previous run wrote it; record it
+            #                                and do NOT write again;
+            #   still at the BASE hash    -> write it now;
+            #   anything else             -> a third party changed the file, so
+            #                                stop rather than overwrite content
+            #                                nobody reviewed.
+            current = self._current_digest(root, path)
+            if current == planned["after_sha256"]:
+                db.set_edit_result(self.conn, edit["edit_id"], "applied")
+                db.set_operation_file(self.conn, operation_id, path, "applied",
+                                      "already written before this run")
+                results.append({"path": path, "state": "applied"})
+                applied += 1
+                continue
+            if current is not None and current != planned["base_sha256"]:
+                detail = ("That file changed since the proposal was reviewed, so "
+                          "it was left alone.")
+                db.set_edit_result(self.conn, edit["edit_id"], "rejected_stale", detail)
+                db.set_operation_file(self.conn, operation_id, path,
+                                      "rejected_stale", detail)
+                db.record_audit(self.conn, workspace_id=self.workspace_id,
+                                repo_id=repo_id, action=policy.ACTION_WRITE,
+                                outcome="rejected_stale", approval_id=approval_id,
+                                detail={"path": path, "reason": detail})
+                results.append({"path": path, "state": "rejected_stale",
                                 "detail": detail})
                 continue
+
             try:
                 identity = repo.replace_text_file(
-                    root, edit["path"], expected_sha256=edit["base_sha256"],
+                    root, path, expected_sha256=planned["base_sha256"],
                     text=edit["content"])
             except repo.RepositoryError as exc:
                 state = "rejected_stale" if exc.code == "stale" else "failed"
                 db.set_edit_result(self.conn, edit["edit_id"], state, str(exc))
+                db.set_operation_file(self.conn, operation_id, path, state, str(exc))
                 db.record_audit(self.conn, workspace_id=self.workspace_id,
                                 repo_id=repo_id, action=policy.ACTION_WRITE,
                                 outcome=state, approval_id=approval_id,
-                                detail={"path": edit["path"], "reason": str(exc)})
-                results.append({"path": edit["path"], "state": state,
-                                "detail": str(exc)})
+                                detail={"path": path, "reason": str(exc)})
+                results.append({"path": path, "state": state, "detail": str(exc)})
                 continue
             db.set_edit_result(self.conn, edit["edit_id"], "applied")
+            db.set_operation_file(self.conn, operation_id, path, "applied")
             db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
                             action=policy.ACTION_WRITE, outcome="applied",
                             approval_id=approval_id,
-                            detail={"path": edit["path"],
-                                    "after_sha256": identity.sha256,
-                                    "allowed_by": outcome})
-            results.append({"path": edit["path"], "state": "applied"})
+                            detail={"path": path, "after_sha256": identity.sha256,
+                                    "allowed_by": allowed_by})
+            results.append({"path": path, "state": "applied"})
             applied += 1
 
-        # Per-file truth. The filesystem gives one atomic replacement per file,
-        # not one atomic batch, so a mixed result is reported as a mixed result.
-        state = ("applied" if applied == len(contents)
+        total = len(operation["files"])
+        state = ("applied" if applied == total
                  else "partially_applied" if applied else "failed")
+        db.set_operation_state(self.conn, operation_id, state)
         db.set_proposal_state(self.conn, proposal_id, state)
-        return {"proposal_id": proposal_id, "state": state, "results": results,
-                "applied": applied, "total": len(contents),
+        return {"proposal_id": proposal_id, "operation_id": operation_id,
+                "state": state, "results": results, "applied": applied,
+                "total": total,
                 "atomicity": "Each file was replaced on its own. Refinix does not "
                              "claim the whole set changed together."}
+
+    def _current_digest(self, root, relative: str) -> str | None:
+        """What is on disk now, or None if the file is unreadable."""
+        try:
+            text, _identity = repo.read_text_file(root, relative)
+        except repo.RepositoryError:
+            return None
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def resume_writes(self) -> list[dict]:
+        """Finish any authorised write that a restart interrupted.
+
+        Exactly one terminal outcome per operation: a resumed run either
+        completes it, reports it partially applied, or fails it. A file already
+        at its after-hash is recorded rather than rewritten, so a restart in
+        the middle of a multi-file change never writes anything twice.
+        """
+        resumed = []
+        for operation in db.unfinished_operations(self.conn, self.workspace_id):
+            try:
+                resumed.append(self._run_operation(operation,
+                                                   allowed_by="resumed_after_restart",
+                                                   approval_id=operation["approval_id"]))
+            except CodeError as exc:
+                db.set_operation_state(self.conn, operation["operation_id"],
+                                       "failed", str(exc))
+                resumed.append({"operation_id": operation["operation_id"],
+                                "state": "failed", "detail": str(exc)})
+        return resumed
 
     # -- decisions and audit ----------------------------------------------
 
@@ -441,6 +854,8 @@ class CodeService:
         repositories = self.repositories()
         active = repo_id or (repositories[0]["repo_id"] if repositories else None)
         proposal = db.latest_proposal(self.conn, active, self.workspace_id) if active else None
+        validation = (db.latest_validation(self.conn, proposal["proposal_id"],
+                                           self.workspace_id) if proposal else None)
         return {
             "repositories": repositories,
             "active": active,
@@ -448,6 +863,7 @@ class CodeService:
             "unavailable": policy.unavailable_actions(),
             "pending_approvals": db.pending_approvals(self.conn, self.workspace_id, active),
             "proposal": proposal,
+            "validation": validation,
             "audit": db.recent_audit(self.conn, self.workspace_id, active),
             "limits": {"max_files": repo.MAX_SELECTED_FILES,
                        "max_file_bytes": repo.MAX_FILE_BYTES,
