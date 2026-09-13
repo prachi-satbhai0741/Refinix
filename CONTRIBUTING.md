@@ -1,4 +1,4 @@
-# Contributing to AegisForge
+# Contributing to Refinix
 
 > ### ⚠️ Server-side protection is NOT active yet
 >
@@ -35,13 +35,29 @@ or merge a PR, including their own. Member → `dev` PRs run no automated CI.
 Automated checks run on the `dev` → `main` release PR and again after its commit
 lands on `main`. No approval quota or owner sign-off is required.
 
+## Repository rename status
+
+The requested GitHub name is `prachi-satbhai0741/refinix`. On 2026-09-13 the
+available authenticated account had write access but no administrator permission,
+so the remote rename remains pending. A repository administrator can open
+Settings → General → Repository name, enter `refinix`, and choose Rename.
+[GitHub requires administrator permission for this operation](https://docs.github.com/en/repositories/creating-and-managing-repositories/renaming-a-repository).
+
+After confirming the renamed repository still has id `1352342428`, update each
+existing clone's origin to `https://github.com/prachi-satbhai0741/refinix.git`.
+Existing local directory names can stay unchanged; renaming the GitHub repository
+does not require moving a working checkout or migrating `.aegisforge` user data.
+Update the clone URL below after the remote rename is verified.
+
 ## One-time setup
 
-Clone, then install the local hooks:
+The selected repository name is `refinix`. Until a repository administrator
+completes the GitHub rename, clone the existing URL into a `refinix` directory,
+then install the local hooks:
 
 ```bash
-git clone https://github.com/prachi-satbhai0741/AegisForge.git
-cd AegisForge
+git clone https://github.com/prachi-satbhai0741/AegisForge.git refinix
+cd refinix
 ./scripts/install-hooks.sh
 ```
 

@@ -2,10 +2,10 @@
 
 ## Status and evidence rule
 
-All named models in this document are research candidates. Names, licences,
-files, runtime compatibility, memory use, quality, and performance remain
-unverified until the repository records authoritative source evidence and local
-results.
+The selected Qwen3.5-4B/Ollama prototype baseline and its dated evidence are
+recorded below. Other named components remain candidates unless an exact manifest
+and qualifying result says otherwise. Production recommendations require source,
+licence, integrity, compatibility and workload evidence, not model-name claims.
 
 The actual fleet and outstanding hardware checks are in
 [devicespecifications.md](devicespecifications.md).
@@ -21,14 +21,16 @@ onboarding answer:
 - whether the model is installed, verified, measured, or unavailable;
 - how to reproduce or import the exact artifact.
 
-The catalogue is curated. It is not a general Hugging Face browser or universal
-model downloader.
+The recommendation catalogue is curated. Show more and advanced import preserve
+user choice among supported models; imports still require provenance, integrity,
+licence and runtime compatibility. User choice does not promise every model format
+or unrestricted executable model code.
 
 ## 2. Baseline and conditional packs
 
 | Pack | Requirement | Notes |
 |---|---|---|
-| Main engine | Required on every interactive installation | Chat, planning, tool use, and fallback |
+| Main engine | Required for local generation; optional for remote-only clients | Chat, planning, tool use, and fallback |
 | Documents | Required when Documents is enabled | OCR/vision model or proven equivalent |
 | Semantic knowledge | Required when semantic retrieval is enabled | Embedding model plus local index |
 | Code | Requires a coding-capable verified model when Code is enabled | May reuse the main engine if it passes the code benchmark |
@@ -67,12 +69,10 @@ is published under MIT and covers the 22 scheduled languages, including Kannada,
 Hindi, Malayalam, and Tamil;
 [IndicTrans2](https://github.com/AI4Bharat/IndicTrans2) ships a distilled 200M
 variant; [Kokoro-82M](https://github.com/PierrunoYT/Kokoro-TTS-Local) is
-Apache-2.0. Their combined footprint is roughly 1.8 GB and all three are
-reported to run on CPU, so this pack does not compete with the main engine for
-VRAM on an 8 GB device. Two cautions before any of this is called verified: the
-IndicTrans2 and Indic-TTS licences still need review, and published Indic ASR
-accuracy is far from perfect, so transcripts must enter the normal confidence
-and approval path rather than being treated as verbatim input.
+Apache-2.0. These are optional candidate packs. Exact download/resident memory, CPU support,
+language quality and bundled licences require artifact-specific qualification;
+their names or parameter counts do not establish fit. Transcripts preserve
+uncertainty instead of being treated as verbatim source evidence.
 
 This shortlist is not an installation manifest. No candidate may enter the
 onboarding picker until its exact source, licence, version, files, hashes, and
@@ -80,10 +80,10 @@ runtime path are reviewed.
 
 ## 3.1 OD-05 — the first selected model set
 
-**The first model set is one model.** The two signature workflows have not been
-implemented, so a Documents, Code, embedding or voice model would be provisioned
-before anything could consume it. Those stay unprovisioned until C07 names the
-workflow that needs them.
+**Historical first model set: one model.** Qwen3.5-4B remains the reuse baseline
+for chat, reasoning, code and supported vision/document tasks. Workflows now exist
+in source; each capability needs its own evaluation. Do not provision specialist
+models merely to give every feature a different model name.
 
 The macOS coordinator reused its copy from 2026-08-08. At the human C02
 checkpoint on 2026-09-03, the Ubuntu worker downloaded the same selected model
@@ -240,24 +240,37 @@ Reported or estimated values never appear as measured.
 
 ## 6. Onboarding selection
 
-The default picker presents Recommended, Fast, Quality, and Advanced choices.
-Recommended is computed only from recorded compatible evidence for the detected
-device. When no measured result exists, it must say recommended by current
-compatibility evidence, not best or fastest.
+Show at most six recommendations for the requested capabilities, sorted by
+**suitability score descending** (best first), with Show more below. Users may
+select another compatible model or import supported artifacts. A remote-only
+client needs no local weights; the target must have all required models/tools.
 
-Before confirmation, show:
+Use a score out of 100 as an explained fit ranking, not universal accuracy:
 
-- total download and installed size;
-- expected peak RAM and VRAM;
-- model source and licence;
-- runtime and version;
-- enabled profiles;
-- whether the result is measured on this hardware;
-- the smallest self-test that will run afterward.
+- Hard-filter unsupported architecture/runtime, unavailable required tools and
+  known insufficient memory for weights, KV cache, runtime overhead and the
+  selected context, concurrency and offload.
+- Rank remaining choices using task-specific quality evidence, measured/estimated
+  response time, memory headroom and user power preference. Quality is workload
+  dependent; hardware specifications alone cannot predict accuracy.
+- “Speed” should use time-to-first-token and tokens/second; “completion time”
+  includes load, prompt and output size. Avoid counting the same latency twice.
+- Battery/thermal estimates require reliable data; unavailable measurements remain
+  unknown. Explain the score's inputs, missing evidence and model/runtime versions.
+- Publish score weights and benchmark normalization before enabling numeric ranks.
+  Until calibrated, show compatibility tiers/estimated fit instead of invented
+  precision. Label real benchmark success rates with task set, sample size and date.
 
-The user must select a main engine. Dependencies for an enabled capability
-cannot be skipped, but the user may disable that capability or choose another
-compatible model.
+Each card shows model/version, supported capabilities, quantisation, source/licence,
+download and installed size, expected peak RAM/VRAM for the configured context,
+runtime/backend and measured versus estimated status. A 96/100 suitability score
+must never be labelled “96% accuracy”. No “100% speed” claim without a defined
+comparison. The screenshot's compact bars are a UI reference, not a benchmark.
+
+Warn visibly for slow or memory-heavy advanced choices. Known-incompatible local
+execution is blocked with a reason; downloading for a compatible remote target is
+a separate valid choice. The user controls the selection and can revisit it without
+resetting chats. Installation status, compatibility and quality are distinct states.
 
 ## 7. Provisioning
 
@@ -272,7 +285,7 @@ compatible model.
 
 ### Air-gapped setup
 
-1. An administrator obtains the approved bundle outside the environment.
+1. The user or authorised administrator obtains the approved bundle outside the environment.
 2. The bundle moves through controlled removable media or an internal server.
 3. The app reads the manifest before execution.
 4. Unexpected files, hashes, licences, or executable code are rejected.
@@ -284,8 +297,41 @@ installation during offline runtime.
 
 ## 8. Runtime strategy
 
-Use one existing local runtime wherever the target fleet permits it. Add a
-second adapter only for a measured hardware or operating-system blocker.
+**Current:** Ollama, as recorded in OD-03 below. **Preferred production candidate:**
+a pinned app-managed [llama.cpp llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server)
+for qualified GGUF models, using Metal/CUDA/Vulkan/CPU builds only where tested.
+Provide a safe CPU fallback where it actually meets the supported profile.
+
+Before replacing the default, compare exact model files and settings on supported
+OS/architectures: installation/startup, cold/warm latency, memory, cancellation,
+structured outputs, context handling, concurrent admission and document/vision
+parity. [Multimodal support](https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md)
+requires supported model architecture and any matching projector assets. Record
+build/revision, hashes and licences. Existing Ollama results are not proof that a
+separate upstream binary is qualified. Preserve rollback and avoid duplicate weight
+stores or a permanent requirement for two runtimes.
+
+For semantic RAG, qualify [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)
+with a supported local runtime and [sqlite-vec](https://github.com/asg017/sqlite-vec)
+as an embedded vector-index candidate alongside existing FTS5. These are proposals,
+not installed or approved versions. Check packaging/extension loading and retrieval
+quality on each supported platform; no external vector database is required.
+
+Keep one baseline model wherever it meets quality requirements. Specialist coding,
+OCR/vision or larger reasoning models enter the supported set only after a measured
+benefit on representative tasks. Demonstrate auto-selection with at least two
+qualified model options and task types; one model serving several profiles alone
+does not demonstrate selection between models. Voice, speech and image-generation
+engines remain optional future packs.
+
+Refinix supplies the harness. [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+is not adopted; its developer-preview plugin approach is a research option only
+for a specific proven gap. Do not add it, LangChain, another router model or a
+plugin framework merely because the application is agentic.
+
+The OD-03 record below explains the prototype choice. Its restriction to comparison
+work is superseded by the production qualification direction above; it does not
+mean a migration has happened.
 
 ### OD-03 — Ollama is the first runtime
 
@@ -337,7 +383,8 @@ require a shared boundary.
 
 ## 9. Hardware policy
 
-The current fleet has no discrete GPU above 8 GB. Begin evaluation with:
+The recorded prototype fleet has no discrete GPU above 8 GB; this is a test
+inventory constraint, not a limit on production users. Begin evaluation with:
 
 - Q4 quantisation;
 - bounded context;
@@ -348,7 +395,7 @@ The current fleet has no discrete GPU above 8 GB. Begin evaluation with:
 Advertised maximum context is not a supported context. Support comes from local
 quality, latency, and memory evidence.
 
-Tentative device assignments remain hypotheses in
+Historical device assignments remain hypotheses in
 [devicespecifications.md](devicespecifications.md). Onboarding must use detected
 and measured evidence rather than member names or hard-coded machines.
 

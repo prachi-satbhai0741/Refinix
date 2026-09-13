@@ -2,69 +2,76 @@
 
 ## Status and authority
 
-This document owns the implementation shape allowed by
-[prd.md](prd.md). It is a review draft, not verified runtime evidence.
+This document owns the architecture under [prd.md](prd.md). The production
+direction is accepted for planning; new components and migrations below are
+not implemented or qualified merely by appearing here. See the
+[current source snapshot](evaluation.md#current-status) and
+[implementation gates](../tasks.md#numbered-execution-tasks).
 
 ## 1. System shape
 
-Refinix is one local agent harness with several user-facing workflow
-surfaces. The desktop interface and headless worker use the same local service
-and contracts.
+Refinix is the harness: the existing context manager, workflow runner, policy,
+job state, routing, runtime calls, tools and validators behind one desktop UI.
+Preserve Chat with document workflows, the IDE-style Code surface, Settings and
+the right-hand job status card. A generic agent framework is not a prerequisite.
 
-    Chat ─────────┐
-    Documents ────┼──> Local harness
-    Code ─────────┘       │
-                          ├── context and memory
-    Control Center ────────├── workflow runner
-                          ├── policy and approval gate
-                          ├── router and scheduler
-                          ├── runtime and tool adapters
-                          ├── validators
-                          └── events, audit, and proof
-                                   │
-                       ┌───────────┼───────────┐
-                       │           │           │
-                   this device  paired node  private server
+    Chat / documents ──┐
+    Code ──────────────┼──> Refinix local service and workspace
+    Settings ──────────┘       │
+                               ├── context, retrieval, workflows and policy
+                               ├── model selection and device scheduling
+                               ├── runtime, tools and validators
+                               └── durable jobs, artifacts and visible events
+                                            │
+                                 this device / trusted peer / private server
 
-The interface does not contain separate Chat, OCR, and Code backends. Each
-surface submits a typed job or workflow to the same harness.
+The production desktop package includes an app-managed execution agent so each
+supported OS can both request and contribute work. This is a change from the
+current macOS bundle, which packages the coordinator but excludes the worker.
 
 ## 2. Installation and runtime responsibilities
 
-Every interactive installation:
-
-- creates a local node identity;
-- creates and owns a local workspace;
-- can run supported work locally;
-- can invite and use trusted compute;
-- can explicitly accept bounded work from a trusted workspace;
-- can stop participating without losing its local state.
-
-Coordinator, worker, and server are dynamic responsibilities:
-
-| Responsibility | Meaning |
+| Responsibility | Authority |
 |---|---|
-| Workspace coordinator | Owns canonical chats, rules, files, jobs, approvals, and artifacts for one workspace |
-| Local worker | Executes an eligible job for its own coordinator |
-| Paired worker | Accepts bounded jobs from a trusted remote coordinator |
-| Private-server worker | Runs the same worker service headlessly on organisation-managed compute |
-| Kubernetes worker host | Runs the containerised worker API, executor Pods, and ephemeral Redis coordination for a trusted workspace |
+| Workspace coordinator | Owns that workspace's chats, selected files, jobs, approvals and final writes |
+| Execution agent | Accepts permitted bounded work locally or from paired workspaces; enforces capacity and limits |
+| Organisation service | Manages authenticated users, authorised compute and explicitly managed shared corpora |
+| Optional Kubernetes backend | Operates managed services and sandbox Jobs behind the same application contract |
 
-An installation may coordinate its own workspace while acting as a worker for
-one explicitly paired remote workspace. The prototype may limit a node to one
-active remote pairing at a time. Multi-workspace concurrency is P2.
+These are runtime responsibilities, never permanent OS assignments. Every
+supported Windows, macOS and Linux installation can participate; an all-Mac or
+all-Windows peer group must not require an Ubuntu host. Only an execution target
+needs the required model and tools installed. A remote-only client can skip local
+models and must accurately show its offline-without-peers limitations.
 
-Pairing does not copy, merge, replace, or promote a local workspace. Coordinator
-transfer is a separate P2 feature because it requires explicit state migration,
-conflict handling, and rollback.
+Installers package the application, language runtime, qualified inference engine
+and required libraries for each supported OS/architecture. The model manager
+handles selected model downloads or verified offline imports. Users should not
+need terminals, package managers, Kubernetes or certificate commands. Signing,
+OS permissions, drivers and any sandbox virtualisation prerequisites require
+platform-specific qualification and guided setup; they cannot be wished away.
 
-For the alpha, one authorised Ubuntu machine — the **Ubuntu worker** in the
-first configuration — runs the single-node K3s cluster. Confirm access and
-readiness at the [human checkpoints](../tasks.md#numbered-execution-tasks).
-This device placement does not assign code ownership. Docker builds the worker
-and sandbox images; K3s runs those OCI images through its CRI-compatible
-container runtime. The team does not build a six-laptop Kubernetes cluster
-for the alpha.
+Pairing never merges workspaces. A device may coordinate its own jobs while
+serving permitted jobs from several peers, with receiver-side admission across
+all requesters. Use the existing coordinator as each workspace's scheduler;
+a new global cluster leader or leader-election system is not required. Workspace
+transfer and high-availability failover remain separate future work.
+
+### Discovery and participation
+
+Settings → Connect lists reachable Refinix devices on the local network in a
+radar-style view. This depicts discovery, not measured physical distance. Devices
+have distinct IP addresses; shared Wi-Fi does not guarantee reachability when
+client isolation or firewalls intervene. Evaluate local mDNS discovery using
+[python-zeroconf](https://github.com/python-zeroconf/python-zeroconf), with a guided
+address/pairing-code fallback. Discovery grants no trust and advertises no private
+prompts, corpus contents or credentials.
+
+Pairing requires visible confirmation, authenticated encrypted traffic, revocable
+scoped credentials and compatible protocol versions. The receiver controls sharing,
+resource limits and cancellation, and sees the requesting device and task type.
+Personal pairing does not require an organisation administrator; managed operation
+adds administrator policy without silently enrolling employee devices.
 
 ## 3. Harness components
 
@@ -100,17 +107,35 @@ the coordinator as typed input to a later step.
 
 ### 3.3 Workflow runner
 
-The prototype implements named, fixed workflows rather than a generic agent
-graph engine. A workflow owns:
+Reuse named workflows and typed steps. Each defines inputs, tools, output schema,
+validation, authority, cancellation and retry policy. Keep the original request
+and separate per-chat context throughout. Prefer running a whole task on one
+eligible device; split bounded steps only for a useful capability or policy reason.
+Models receive selected inputs and return validated outputs, not shared memory.
 
-- ordered or dependency-linked steps;
-- required capabilities;
-- input and output contracts;
-- applicable tools;
-- validation and approval checkpoints;
-- failure and retry policy.
+### Local retrieval (RAG)
 
-The first workflows are defined in [workflows.md](workflows.md).
+Keep SQLite FTS5 lexical search and qualify semantic retrieval alongside it:
+
+1. Import explicitly selected files or an authorised managed corpus.
+2. Extract text; invoke qualified OCR/vision for scans and retain page metadata.
+3. Chunk with source hashes, document versions and access scope.
+4. Create local embeddings and combine semantic results with lexical matches.
+5. Pass only relevant authorised passages within the selected model's context.
+6. Validate citation references; report missing or insufficient evidence.
+
+Qwen3-Embedding-0.6B and an embedded SQLite vector extension are candidates in
+[the catalogue](model-catalog.md#8-runtime-strategy), not installed dependencies.
+Embedding models retrieve passages; the generation model answers using them.
+New documents require indexing, not retraining the generation model. Changing
+embedding model/version requires rebuilding the affected vector index. Source
+updates, access revocation and deletion must invalidate stale retrieval results.
+Reranking is optional only after retrieval evaluation shows a need.
+
+Personal corpora stay with their workspace. An organisation may explicitly host
+its own corpus/index service; check user and document permissions before retrieval
+and again before passing context to an allowed execution device. Shared corpus
+storage does not transfer ownership of personal chats.
 
 ### 3.4 Policy and approval gate
 
@@ -125,47 +150,57 @@ contract. Worker output cannot grant itself more authority.
 
 ### 3.5 Router and scheduler
 
-The router considers:
+Select a **model/device pair**, not just a model or the fastest GPU. Current
+source selects stored workflow models and one active paired worker; fleet ranking
+and capacity reservations are new work, not existing behaviour.
 
-- user execution choice;
-- required capabilities;
-- installed and verified model manifests;
-- worker trust and application compatibility;
-- health, queue length, available memory, and loaded model;
-- measured compatibility evidence;
-- optional thermal state when reliable.
+1. Identify task requirements from the selected workflow, prompt and attachments.
+   Deterministic rules suffice for clear tasks; any later model-assisted classifier
+   produces constrained labels and cannot change permissions.
+2. Apply hard filters: user target choice, trust, data policy, protocol/runtime
+   compatibility, installed model/tool capability, health, context and memory fit.
+3. Rank eligible pairs using task-specific measured quality and estimated completion
+   time: queue + input transfer + model loading + inference/tool execution. Account
+   for power preference, memory pressure and reliable thermal information. Missing
+   measurements remain estimates; a loaded model is a preference, not an override
+   of quality or safety requirements.
+4. Reserve capacity at the receiving agent before dispatch. The receiver admits
+   work across all requesters atomically, rejects stale/over-capacity reservations
+   and expires abandoned reservations. Queue or reselect within authorised scope.
+5. Persist the chosen model, device, concise reason and attempt; update the UI and
+   notify the receiver. Release reservations on completion, cancellation or lease
+   expiry and reconcile uncertain work before retrying.
 
-Redis reports only ephemeral queue depth, leases, and worker heartbeats. The
-router never treats Redis as the authority for completed work, approvals, or
-final writes.
+For two concurrent chats on three devices, the Code job may reserve the strongest
+eligible device; the following general Chat job considers that reservation and
+can use another available model/device. Faster hardware is not always the fastest
+completion. The scheduler reacts to submitted work; it cannot predict future
+prompts or promise a globally optimal result. Deterministic tie-breaking and
+stable queues prevent repeated route switching.
 
-Prototype routing order:
-
-1. Respect an explicit compatible target.
-2. Classify the task from its selected surface and deterministic signals.
-3. Exclude untrusted, unhealthy, incompatible, or insufficient nodes.
-4. Prefer a compatible already-loaded model.
-5. Prefer the shorter queue.
-6. Prefer the best measured compatible profile.
-7. Fall back to this device or queue with a clear explanation.
-
-Routing assistance from a model may be evaluated later, but it must not replace
-the deterministic safety filters.
+Whole tasks or bounded steps move between devices. There is no model sharding,
+pooled VRAM, or duplicate full-model execution intended to accelerate one answer.
+User-pinned targets never silently change. Auto fallback stays within the granted
+data and execution policy; ambiguous tool execution must reconcile before retry.
 
 ### 3.6 Runtime adapter
 
-The adapter normalises one approved existing local runtime first. Required
-operations are:
+Ollama remains the current runtime. Qualify a pinned upstream **llama.cpp
+llama-server** as the preferred bundled engine for supported models. The local
+service owns its lifecycle and uses loopback requests; it handles the same model
+selection, streaming, cancellation, context, structured outputs and health contract.
+This choice aims to remove manual runtime setup; it does not claim superior quality
+or speed before measurement.
 
-- list installed models;
-- report runtime and model metadata;
-- load or select a model;
-- stream generation;
-- cancel generation;
-- report context limits and health.
+Use one qualified default engine per supported profile. Do not force users to
+install both engines or migrate model stores before parity and rollback are proven.
+Keep an existing adapter only for a real supported need. GGUF is a format, not a
+promise that every architecture, quantisation or vision projector works with every
+build. Future voice or image-generation packs may need different engines.
 
-Add another runtime only when actual target hardware cannot use the first. Do
-not build a universal runtime or downloader.
+Refinix already supplies the application harness. DeepSeek Harness or another
+agent framework is not adopted: qualify a specific missing capability and offline,
+permission and maintenance fit before replacing any existing path.
 
 ### 3.7 Tool runner and validators
 
@@ -178,6 +213,9 @@ workflow-specific:
 - artifacts: readable output, origin job, and checksum.
 
 ## 4. State ownership
+
+The logical ownership below is the target contract; it does not imply a completed
+data-directory or database-schema migration.
 
 ### 4.1 Coordinator state
 
@@ -204,11 +242,13 @@ A paired worker stores only:
 - temporary input and output;
 - minimum audit metadata needed for reconciliation.
 
-Remote job content follows a documented deletion policy. A worker never stores
-the coordinator's full chat history, rules, memory, repository, or knowledge
-base.
+Remote job content follows a documented deletion policy. Compute-only workers
+do not retain complete remote workspaces. An explicitly managed organisation
+corpus has separate storage and access policy.
 
 ### 4.3 Redis coordination state
+
+This section applies to the retained Kubernetes backend, not every desktop.
 
 Redis exists to coordinate disposable work between the worker API and executor
 Pods. It may hold:
@@ -255,8 +295,8 @@ Logical contents:
   source material are not copied into it automatically.
 - state.db stores canonical structured state.
 - tmp contains disposable per-job workspaces, not a durable temp.md file.
-- model-manifests records provenance and runtime references; existing runtimes
-  continue to own their model weights.
+- model-manifests records provenance and runtime references; the model manager records whether the app or an external runtime owns each
+  weight store.
 - secrets and device credentials use the operating-system credential store, not
   Markdown, logs, or ordinary configuration.
 
@@ -304,7 +344,7 @@ original user request.
 
 ### 6.3 Minimum node surface
 
-The alpha freezes one versioned JSON/HTTPS application contract:
+The existing versioned JSON/HTTPS application contract provides:
 
     GET    /v1/health
     GET    /v1/capabilities
@@ -326,86 +366,62 @@ cryptography or a custom transport.
 
 ### Standalone
 
-The coordinator routes to its own local worker. Losing every paired node reduces
-capacity but does not make the workspace unusable.
+The workspace uses its local execution agent and installed compatible models.
+No peer, server, Redis or Kubernetes is required for ordinary local inference.
+Sandboxed code execution still needs a qualified platform isolation backend.
+Losing peers preserves local state and any capabilities available locally.
 
 ### Trusted mesh
 
-The coordinator sends independent complete job steps to paired workers. It may
-run unrelated Code and Documents jobs concurrently. This is orchestration, not
-model sharding.
+Paired application agents exchange authenticated bounded jobs over the LAN.
+Windows, macOS and Linux peers use native qualified inference backends and the
+same application protocol. Each receiver enforces resources and permissions;
+the requesting workspace owns its history and final writes. This profile must
+preserve receipts, idempotency, leases, cancellation, event ordering and restart
+reconciliation when using a local queue instead of the Redis-backed executor.
 
 ### Kubernetes execution profile — alpha
 
-The first mentor-aligned profile is deliberately one cluster on one Linux host:
+**Retained prototype backend; optional managed deployment in the production
+product.** Docker builds OCI images; K3s manages the worker API/executor services,
+Service endpoints and short-lived code-validation Jobs; Redis Streams handles
+queueing, leases, receipts and progress. SQLite remains canonical workspace state.
+Kubernetes schedules Pods; Refinix decides the task's model, data policy and target.
 
-    Mac coordinator + SQLite
-              |
-        authenticated HTTPS
-              |
-    Kubernetes Service (NodePort on trusted LAN)
-              |
-       worker-api Deployment
-              |
-        Redis ClusterIP Service
-          |               |
-    executor Pods    sandbox Job Pods
+The current deployed design places services on Linux and calls host Ollama via
+a guarded bridge. Ordinary generation uses a long-running executor; it does not
+create a new model Pod per prompt. Validation Jobs use isolated temporary inputs
+and outputs. Preserve this working design and its recorded evidence while the
+portable execution profile is qualified; do not remove infrastructure simply
+because desktop users should not configure it.
 
-- A Dockerfile builds the worker image; model weights are never baked into the
-  image or committed to the repository.
-- A Kubernetes Deployment owns the long-running worker API and executor Pods.
-- A Kubernetes Service gives the changing API Pods one stable endpoint. Redis
-  has a ClusterIP Service and is never exposed to the LAN.
-- Redis Streams provide bounded at-least-once dispatch and progress events.
-  SQLite idempotency prevents duplicate canonical writes.
-- A short-lived Kubernetes Job runs each code-validation task with an explicit
-  deadline and cleanup TTL. It does not receive the Docker socket.
-- Models mount read-only from an approved host path or persistent volume. Each
-  job receives only a disposable workspace.
-- Scaling above one executor replica is a stretch only after the single-Pod
-  end-to-end path and retry semantics pass.
-
-This is not a peer-to-peer Kubernetes cluster, production high availability,
-or a new control plane for canonical application state.
+[K3s does not support native Windows nodes](https://docs.k3s.io/faq#does-k3s-support-windows).
+[Upstream Kubernetes supports Linux and supported Windows Server workers](https://kubernetes.io/docs/concepts/windows/intro/),
+with a Linux control plane. macOS and Windows desktop Linux-container setups use
+virtualisation; this does not establish native GPU access or painless installation.
+Kubernetes membership is therefore not the cross-platform peer discovery mechanism.
 
 ### Private server
 
-An organisation-managed server runs the same worker service, advertises
-capabilities, and receives bounded jobs. It does not become canonical storage
-or introduce a separate user workflow. This is P2 and does not mean public
-cloud inference.
+The same application job contract targets organisation-managed compute. A single
+server need not run Kubernetes; an existing managed cluster may use the retained
+backend. Add authenticated users, quotas, data/corpus permissions and administrative
+controls before multi-user acceptance. Organisation-hosted corpora are explicitly
+managed storage; a compute worker must not silently become a copy of every client's
+workspace. This remains private-network operation with no public inference.
 
 ## 8. Working technology direction
 
-The alpha baseline minimises prototype risk:
+[TechStack.md](../TechStack.md) distinguishes current components from candidates.
+Reuse the Python backend, current HTML/CSS/JavaScript UI and desktop shell,
+SQLite state, contracts and validators. No React rewrite, generic plugin system,
+new event platform, service mesh or external vector-database service is required.
+Platform packaging, inference parity, semantic retrieval and safe sandboxing have
+separate qualification gates.
 
-| Area | Direction | Status |
-|---|---|---|
-| Local service and worker API | Python with FastAPI for the **worker API** (C04, installed in the pinned image). The **C03 coordinator** uses the standard library — `http.server`, `sqlite3`, `urllib` — because FastAPI is not installed and adding it is a setup checkpoint, not implementation | Alpha decision; coordinator deviation recorded at C03 |
-| One-way job streaming | Server-Sent Events | Alpha decision |
-| Coordinator state | SQLite | Alpha decision |
-| Container image build | Docker from pinned base `python:3.13-slim-bookworm` | OD-08 resolved; built worker digest follows C04 |
-| Kubernetes distribution | Single-node K3s on the Ubuntu worker, pinned to `v1.36.4+k3s1` | OD-08 resolved; runtime proof required |
-| Kubernetes workloads | Deployments for services; short-lived Jobs for code validation | Alpha decision |
-| Shared ephemeral coordination | Redis Streams and expiring keys on pinned `redis:7.2.16` | OD-08 resolved; digest recorded below |
-| Runtime | Ollama for the first validation path; bundled `llama-server` retained only as a comparison | OD-03 retained after Mac warm comparison; controlled cold and Ubuntu direct-engine comparisons deferred by requester |
-| Retrieval | SQLite full-text baseline; semantic index only when proven necessary | Candidate |
-| Code isolation | Restricted Kubernetes Job Pod with default-deny egress | Platform proof required |
-| Alpha UI | Local HTML/CSS/JavaScript served by the coordinator; desktop wrapper deferred | Alpha decision |
-| Checksums | Standard SHA-256 | Settled |
-
-[TechStack.md](../TechStack.md) maps each layer to recommended languages and
-libraries. It proposes React + TypeScript + Vite for C03 in place of the recorded
-vanilla UI baseline; that revision has not been implemented. Record adoption
-alongside the C03 implementation rather than treating a recommendation as a
-completed framework migration.
-
-Do not add Helm, an operator, service mesh, Redis Cluster, another event
-platform, vector database, generic agent framework, plugin framework, or a
-second runtime adapter before a measured end-to-end path proves the need.
-
-K3s uses a CRI-compatible runtime rather than the removed Kubernetes Docker
-shim, while still running the OCI images built with Docker.
+The following pins and observations are **historical prototype records**, not
+current installer instructions or a production dependency selection. Later source
+and evidence may supersede a status recorded here.
 
 ### 8.1 OD-08 — resolved infrastructure pins
 

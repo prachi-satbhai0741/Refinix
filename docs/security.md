@@ -58,8 +58,9 @@ Normal work:
 
 - requires no public Internet route;
 - uses no cloud inference;
-- performs no silent DNS, telemetry, analytics, crash upload, update check, or
-  model download;
+- performs no public DNS, telemetry, analytics, crash upload, update check, or
+  model download; explicit local discovery may use link-local mDNS without
+  contacting a public resolver or advertising private task data;
 - keeps local model runtimes on loopback;
 - permits only required authenticated worker traffic on the trusted LAN.
 
@@ -68,6 +69,9 @@ independent observation. Application logs alone cannot prove that traffic was
 blocked.
 
 ### Kubernetes worker exposure
+
+These controls apply to the retained managed Kubernetes profile; desktop peer
+operation must not require Kubernetes or expose its administrative API.
 
 - The Kubernetes API is administered only from the Linux host and is not the
   product's worker API.
@@ -101,9 +105,11 @@ general file browsing, direct model-runtime access, or unrestricted shell use.
 
 ### 4.1 OD-06 — the prototype pairing decision
 
-**Prototype grade, recorded not verified.** No pairing route is implemented.
-`backend/contracts` reserves the paths and grants no trust through them, and
-nothing below has been exercised. F02 replaces this with finals-grade identity.
+**Historical prototype decision.** Pairing routes now exist in the coordinator
+and worker source; this record does not prove current deployment security. The
+manual fingerprint exchange below records the prototype bootstrap. Production
+requires guided identity confirmation and OS-protected credentials without
+manual certificate commands, while preserving authenticated encrypted transport.
 
 Established mechanisms only — no bespoke cryptography, no custom handshake.
 
@@ -170,22 +176,42 @@ inventing one under time pressure.
 
 ## 5. Data ownership and minimisation
 
-- Canonical chats, memory, rules, files, approvals, and artifacts remain with
-  the workspace coordinator.
-- Workers receive only referenced content required for the assigned job step.
-- The complete repository, document corpus, chat history, or memory file is not
-  transferred by default.
-- Attachments and returned artifacts carry hashes.
-- Audit logs store metadata by default, not full prompts or confidential
-  content.
-- Sensitive logging is opt-in, visibly labelled, and subject to retention.
-- Temporary task data is deleted after a documented retention period or
-  explicit cleanup.
-- Redis stores only bounded task envelopes and ephemeral coordination state,
-  with expiry and a memory limit. Persistence is disabled for the alpha, and
-  payload values are excluded from ordinary logs.
-- Pairing, disconnecting, or revoking never silently merges or deletes local
-  workspace data.
+- Canonical personal chats, memory, rules, files, approvals and artifacts remain
+  with their workspace coordinator. Pairing never merges them.
+- Compute workers receive only required bounded input and return hashed artifacts;
+  full repositories, corpora and history are not transferred by default.
+- Only selected files/folders are indexed. Hardware scanning does not authorise
+  scanning user documents. Treat documents, retrieved text and model output as
+  untrusted data that cannot grant tool permissions.
+- Organisation-hosted corpora are a separate explicit storage role. Authenticate
+  the requesting user, filter retrieval by document access before searching or
+  returning snippets, and check execution-device eligibility before context leaves
+  that service. Cache/index scope includes corpus version and access policy.
+- Corpus deletion, edits and permission revocation invalidate affected chunks,
+  vectors and caches. Backups and retained artifacts have an explicit retention
+  policy; deleting an index alone is not secure erasure of every copy.
+- A trusted compute host can access the content it executes, including through
+  privileged administration. Transport encryption does not hide prompts from
+  that host. Sensitive organisation work should use approved compute; peer
+  membership alone does not make an employee device an approved data destination.
+- Audit logs contain metadata by default, not confidential prompts. Sensitive
+  logging is explicit, visible and subject to retention. Receiver notifications
+  show requester identity and task type, not full prompt content by default.
+- Temporary inputs, output, vector caches and crash/recovery data follow documented
+  retention and cleanup after completion, cancellation, failure and revocation.
+- Redis is ephemeral coordination in the Kubernetes profile, with bounded expiry,
+  a memory limit, persistence disabled in the retained prototype profile and no
+  ordinary payload logging. It is not canonical corpus or chat storage.
+
+### Personal and organisation authority
+
+Personal installations let their owner pair, revoke, pause sharing and set resource
+limits. Managed deployments add administrator-controlled users, device eligibility,
+model policy and quotas. They do not silently grant access to personal workspaces.
+Receiver-side admission enforces policy across all requesters, and one peer cannot
+cancel, read events for, or retrieve artifacts from another peer's jobs. Revocation
+must take effect for queued work and active sessions, not just future logins.
+Employee task-assignment/project-management features are outside this product scope.
 
 ## 6. Local application data
 
@@ -231,7 +257,17 @@ Workers and code tools:
 
 A container is a candidate isolation mechanism, not proof of isolation on every
 macOS, Windows, and Linux configuration. Platform behaviour requires runtime
-verification.
+verification. The current Kubernetes validator is a bounded Python/unittest path;
+it is not arbitrary-language or standalone desktop sandbox support. A timed host
+subprocess is not a security sandbox. Keep execution unavailable when no qualified
+isolation backend exists, while preserving patch proposal and review. A remote
+sandbox does not satisfy standalone sandbox acceptance on an unsupported OS.
+
+[Windows Sandbox excludes Home editions](https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/),
+so it cannot be the universal backend for the recorded Windows fleet. Qualify
+bundled isolation or guided prerequisites against the published OS/edition matrix
+before promising zero-terminal code execution. Never weaken the limits below to
+make installation appear complete.
 
 The Kubernetes alpha applies these Pod controls unless a narrower exception is
 recorded and reviewed:
@@ -247,8 +283,9 @@ recorded and reviewed:
 - no service-account token by default;
 - a namespace-scoped service account only for the component that creates and
   inspects validation Jobs, with no Secret or cluster-wide access;
-- default-deny ingress and egress, then the minimum DNS, Redis, API, and model
-  traffic explicitly allowed.
+- default-deny ingress and egress; only infrastructure service components receive
+  narrowly required DNS, Redis, API and model access. Generated-code validation
+  Jobs do not inherit those exceptions and keep networking disabled.
 
 Finished validation Jobs use a cleanup TTL. Inputs mount read-only, output uses
 one disposable volume, and the coordinator accepts only validated artifacts

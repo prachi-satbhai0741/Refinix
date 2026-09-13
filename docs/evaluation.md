@@ -2,13 +2,58 @@
 
 ## Current status
 
-The repository has the shared contract draft with passing local schema and
-lifecycle checks, documented in [AF-001](../backend/contracts/README.md), and a
-**running local coordinator** — Chat and a minimum Control Center over SQLite
-state and one local model, with restart reconciliation and bounded context
-selection. There is still no worker, cluster, Documents or Code workflow,
-approval path, model bundle or installer. Product capabilities in this document
-remain planned until observed evidence changes their state.
+Source inspected for the 2026-09-13 documentation update includes a desktop UI,
+coordinator, worker API/executor, pairing, Code policy/proposals, document/image
+paths, artifact generators and Docker/K3s/Redis manifests. Earlier statements that
+none of these exist are obsolete. **No runtime checks were run for this update.**
+Historical recorded checks below remain scoped to their original builds/devices;
+they are not certification of the current tree or the production direction.
+
+| Current source | Production gap / evidence boundary |
+|---|---|
+| [server.py](../backend/coordinator/server.py), [dispatch.py](../backend/coordinator/dispatch.py), [db.py](../backend/coordinator/db.py) | Stored per-workflow models and one active paired-worker path, not fleet ranking or shared capacity reservations. Document paths retain local-placement assumptions |
+| [worker](../backend/worker/) and [K3s manifests](../deploy/k3s/) | Existing queued worker, receipt, lease and validation infrastructure; this does not establish portable desktop workers |
+| [desktop packaging](../desktop/setup_py2app.py) | macOS package includes coordinator, excludes worker; universal dependency-complete installers are not proven |
+| [retrieval.py](../backend/coordinator/retrieval.py) | SQLite FTS5 lexical retrieval exists; semantic embeddings/hybrid retrieval remain qualification work |
+| [ocr.py](../backend/coordinator/ocr.py), [pdfgen.py](../backend/coordinator/pdfgen.py) | OCR/image/document paths exist; macOS-specific components require cross-platform qualification |
+| [Code service](../backend/coordinator/code_service.py) | Explicit local Apply uses backups/Undo and reports no sandbox result; distributed Apply requires matching passing validation. Preserve this distinction |
+| [worker validation](../backend/worker/validate.py), [jobspec.py](../backend/worker/jobspec.py) | Restricted Kubernetes Python validation path; no evidence of arbitrary-language standalone sandbox support on all three OSes |
+
+## Production acceptance
+
+The gates below define the agreed outcome. They are **planned acceptance criteria**,
+not results, deadlines or blanket claims of production readiness. The recorded
+problem statement is in [docs/README.md](README.md): workstation/server operation,
+model auto-selection, documents/images, sandboxed code and offline evidence are
+baseline requirements; peer distribution is additional product innovation.
+
+| Area | Required evidence |
+|---|---|
+| Installation | Clean supported Windows, macOS and Linux OS/architecture profiles can install and launch without terminal assistance, external language/runtime setup or a cloud account. Record signing/permissions, download size, free space, model choice, failures, upgrade/rollback and uninstall/data preservation |
+| Local operation | With public networking blocked, supported chat/reasoning, coding proposals, OCR/image/document understanding, local retrieval and file generation work using only installed dependencies. A standalone sandbox is proven separately on each advertised platform |
+| Model selection | At least two qualified model options and two task types demonstrate automatic capability-aware choice, user override and unavailable-model handling. Record why selected, output quality and cost; one shared model alone does not prove model routing |
+| Recommendation quality | Six recommendations then Show more; compatible user alternatives and oversized warnings; scores explain benchmarks/normalisation, measured versus estimated inputs, context/memory budget and power preference. No invented percentage accuracy |
+| RAG and documents | Public/licensed or synthetic scanned reports and SOP-like fixtures exercise extraction, fields/units, citations, missing evidence and document generation. Measure retrieval recall/relevance and grounded answer quality separately; inspect generated files for readability and layout |
+| Safe Code | Reviewable patch, least-privilege approved files, isolated execution, no network/host secrets, resource bounds, validation evidence and authorised canonical writes. Denied/expired approval and stale patch cannot write |
+| Peer interoperability | Supported OSes each request and receive real work. A homogeneous peer group works without a Linux member. Guided pairing, unreachable discovery fallback, explicit trust, pause/revoke and receiver notification are observable |
+| Concurrent placement | Three devices receive two independent chat requests (Code plus Chat); the second sees current reservations. Test differing installed models, busy/low-memory nodes and simultaneous requests from different coordinators; receiver never over-admits |
+| Isolation and recovery | No cross-chat or cross-user context/artifact leakage; enforce permission scope before retrieval/dispatch. Disconnect, crash, cancellation, stale leases and retries reconcile attempts and cannot duplicate canonical writes |
+| Managed deployment | A private server executes using the common API; users/admins have distinct authority, quotas and corpus access. Organisation corpus updates/deletion/revocation invalidate indexes and caches; optional Kubernetes is not a client dependency |
+| Offline proof | Observe app, subprocesses, runtime, retrieval, discovery and worker traffic under public-network enforcement. Permit only intended authenticated LAN traffic and bounded local discovery. Repeat relevant failures/restarts; logs alone do not establish blocked egress |
+| Usability and transparency | Nontechnical operator installs, chooses a model, sends work, connects a peer, cancels and finds artifacts through UI. Status shows actual model/device/stage; receiver can see and stop remote work; absent sensors/evidence remain unavailable |
+
+Publish evidence per **OS version/edition, architecture, runtime build, model hash,
+backend and enabled capability**. Exact quality/speed thresholds and score weights
+must be fixed for each representative benchmark before results are judged. Hardware
+specifications and a small smoke prompt cannot establish broad accuracy. A confidential
+MRPL dataset becoming available is an assumption, not a prerequisite or promise.
+
+## Historical evaluation plan and measurements
+
+The numbered sections below retain prototype acceptance plans and dated measurements.
+Their old stage names, fixed device roles and deferred choices do not supersede
+production acceptance above. Retain evidence without silently marking later work
+passed or treating an old device handoff as authorisation.
 
 ## 1. Evidence labels
 

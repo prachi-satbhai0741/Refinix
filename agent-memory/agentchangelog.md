@@ -1834,3 +1834,30 @@ work. No repository file change means no changelog entry.
 - verification: Ruby parsed the workflow YAML successfully; source inspection confirmed both main triggers, read-only contents permission, non-persisted checkout credentials, hash-required dependency installation and the complete frontend test glob. `git diff --check` was silent. No test suite, installer, Git/GitHub write or external runtime command ran.
 - remaining: The configured GitHub remote still names `prachi-satbhai0741/AegisForge`, but the authenticated `gh` client received HTTP 404 when reading its Actions permissions, so Actions enablement could not be confirmed. The workflow must first reach `main`, and its first hosted run is unverified. A push-triggered failure cannot reject or undo a direct push. Server-side protection remains absent until an admin successfully applies the ruleset with `pr-flow-guard ci` required.
 - follow_up_to: [AC-20260907-002](#ac-20260907-002)
+
+<a id="ac-20260913-001"></a>
+## AC-20260913-001 — Reconcile the Refinix production direction
+- prompt_id: [UP-20260913-001](userprompts.md#up-20260913-001)
+- date: 2026-09-13
+- status: documentation updated and statically checked; requester review pending
+- tags: product-direction, offline, cross-platform, automatic-routing, installation, rag
+- aliases: production refinix, optional kubernetes, bundled llama.cpp, dynamic peer placement
+- paths: README.md, TechStack.md, tasks.md, docs/prd.md, docs/architecture.md, docs/workflows.md, docs/security.md, docs/model-catalog.md, docs/evaluation.md, docs/README.md, docs/devicespecifications.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Reconciled the core documents around offline desktop installation, dynamic trusted compute and a shared open-source/managed product core.
+- changes: Preserved current UI and prototype backend; separated runtime/RAG/sandbox candidates from source evidence; added scoring, receiver controls, corpus permissions and outcome-based gates without fixed implementer assignments or deadlines.
+- history: Retained dated prototype measurements and checkpoint records as historical context; corrected obsolete entry-point claims.
+- verification: Static source/document inspection; git diff --check passed; 621 local links/anchors across 36 tracked Markdown files passed with no broken targets; all 13 changed files are Markdown. No runtime tests, installs, model downloads, service changes or Git/GitHub writes.
+- remaining: Requester review of product wording; component qualification and platform/runtime acceptance require separately authorised implementation and observed checks.
+
+<a id="ac-20260913-002"></a>
+## AC-20260913-002 — Align repository naming with refinix
+- prompt_id: [UP-20260913-002](userprompts.md#up-20260913-002)
+- date: 2026-09-13
+- status: documentation updated; GitHub rename blocked by missing administrator access
+- tags: repository-name, refinix, documentation, github
+- aliases: rename aegisforge, refinix repository, admin rename
+- paths: README.md, CONTRIBUTING.md, AGENTS.md, docs/README.md, docs/prd.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Set the documented repository identity to refinix and prepared the administrator rename handoff without claiming the remote changed.
+- changes: Updated current headings and repository/product identity; kept the former README anchor; documented the pending remote rename and a clone destination named refinix. Existing clone URLs, local checkout, application data and historical records remain intact.
+- verification: GitHub REST returned repository id 1352342428 under the old name with push=true and admin=false; gh rename help and official GitHub instructions confirmed the administrator handoff. Static diff check passed; 623 local links/anchors across 36 tracked Markdown files passed with no broken targets.
+- remaining: A repository administrator must rename the remote; verify the same repository id and update clone origins afterward. No GitHub mutation, commit, push, local-directory move or application migration occurred.

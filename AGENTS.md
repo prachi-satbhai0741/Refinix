@@ -1,7 +1,7 @@
-# AegisForge Agent Instructions
+# Refinix Agent Instructions
 
 Repository-wide rules defining what every coding agent must and must not do in
-AegisForge.
+Refinix (repository name: refinix; formerly AegisForge).
 
 ## Authority and reporting
 

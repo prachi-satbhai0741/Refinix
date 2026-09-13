@@ -1,6 +1,76 @@
-# AegisForge Execution Roadmap
+# Refinix implementation plan
 
-Status: active execution board; tasks advance only with recorded evidence.
+Updated: 2026-09-13. The [PRD](docs/prd.md) and focused documents define the
+production direction. This plan records outcomes and dependencies, not deadlines,
+team assignments, or permission to start runtime work. The old C/E/AF checkpoint
+records below remain historical evidence and do not override these gates.
+
+## Operating contract
+
+- Continue from current source; preserve the existing UI, contracts, security
+  boundaries and functioning prototype backend. Qualify replacements before
+  retiring a path. No forced frontend or harness rewrite.
+- Authorisation and execution order are separate. Implement only the authorised
+  scope; resolve ordinary technical choices from source and authoritative docs.
+  Downloads, host changes, publication and required acceptance retain the rules
+  in [AGENTS.md](AGENTS.md). This documentation update grants none of them.
+- Before each change, state the outcome, existing path, smallest required change
+  and checks. Independent preparation can overlap; dependent acceptance gates
+  cannot be treated as passed by source review alone.
+- Identify a human/device checkpoint by actual OS, architecture, role, directory
+  and required evidence, never a permanent person or operating-system assignment.
+  Prepare exact steps, prerequisites, expected result and rollback when applicable.
+- Preserve dirty worktrees and user data. Treat historical handoffs as evidence
+  pointers, not current setup commands or authorisation.
+- Report implemented, observed, unresolved and next action separately. A feature
+  is verified only for the stated environment and procedure, with requester
+  acceptance as the final gate.
+
+## Numbered execution tasks
+
+These production gate IDs are separate from historical C/E/AF task IDs. All are
+**planned** here; existing source may satisfy a portion after focused verification.
+
+| Gate | Outcome and smallest change | Required acceptance / dependency |
+|---|---|---|
+| P01 — Baseline and support contract | Reconcile source with current workflows; select target OS versions, architectures, capabilities and representative public fixtures | Record actual local and retained worker behaviour, gaps and failure cases. Define advertised minimum support without claiming untested platforms |
+| P02 — Runtime and packaging qualification | Package existing app/service dependencies; evaluate bundled llama.cpp against current Ollama and preserve rollback | P01; clean-device launch without terminal setup, exact manifests, local model parity, cancellation, offline run, upgrade/uninstall preserving data. Record unavoidable OS prerequisites |
+| P03 — Core workflow reliability and local RAG | Reuse Chat/Code/document flows; qualify embeddings plus FTS5; qualify a second execution-model option for task routing | P01 and qualified runtime paths; grounded document/image work and real artifacts, bounded code proposals, at least two model options selected automatically for different task types, per-chat context isolation |
+| P04 — Portable execution and isolation | Make app-managed execution agent work on supported OSes; qualify standalone sandbox/toolchains | P01–P02; native inference plus bounded workspace enforcement. A remote Linux sandbox is not proof of standalone Windows/macOS sandboxing; no unsafe fallback |
+| P05 — Trusted peer experience | Graphical offline discovery, pairing, revocation, sharing controls and receiver notifications | P04 for advertised remote capabilities; explicit two-sided trust, compatible model inventory, no certificate/terminal setup, reachable-address fallback and denied unauthorised access |
+| P06 — Concurrent automatic placement | Extend single-worker selection to eligible model/device pairs with receiver reservations, fair queues and recovery | P03–P05; two independent chats over three devices, busy-target alternatives, multiple requesters, revoked trust, cancellation, disconnect/restart and duplicate-write protection |
+| P07 — Recommendations and release acceptance | Calibrate suitability ranking, six cards/Show more, safe advanced selection and clear unsupported states | P02–P06; measured/estimated labels, oversized-model warnings, clean Windows/macOS/Linux end-to-end install and offline evidence; publish only qualified capabilities |
+| P08 — Managed private deployment | Same client/worker contract with organisation users, admin policy, quotas and authorised shared corpora/templates | Qualified core paths; single-server operation, optional retained Kubernetes backend, multi-user access isolation, corpus version/deletion and sensitive-data routing tests |
+
+Core product scope includes P01–P07. P08 adds managed deployment. Optional voice,
+speech generation, image generation, high availability and employee task assignment
+must not delay or weaken core acceptance. See [PRD priorities](docs/prd.md#7-release-scope).
+A scoped prototype may demonstrate fewer supported paths, but must label them
+prototyped or unverified rather than claiming complete production support.
+
+## Acceptance evidence
+
+Use [production acceptance](docs/evaluation.md#production-acceptance) as the shared
+checklist. Store reproducible fixture definitions and commands with their observed
+results, model/runtime identities, OS/backend and limitations. Tests are proportionate
+to changes; no model downloads, live checks or Git publication are implied by a plan.
+The current document change performs static documentation verification only.
+
+## Historical prototype record
+
+Everything below records the earlier prototype plan and reported checkpoints.
+Fixed macOS/Ubuntu placement, calendar milestones, pending-state statements and
+older priorities are **historical**, not production rules or current task status.
+They remain available to trace evidence without rerunning old setup or inheriting
+old authorisation. Use current source and observed checks to determine what holds.
+
+<details>
+<summary>Earlier C/E/AF roadmap and checkpoint evidence</summary>
+
+# Historical AegisForge Execution Roadmap
+
+Historical status: the earlier execution board is retained below; use the active
+production gates above for current planning.
 
 The alpha implementation deliberately attempts every P0 outcome plus the signature
 workflow and concurrency outcomes currently labelled P1 in the PRD. This is an
@@ -48,9 +118,8 @@ module. Multilingual support, voice, scaling, and visual polish remain deferred.
 complete frozen path does not pass three consecutive rehearsals, it is not the
 candidate regardless of how many individual components work.
 
-## Operating contract
+## Prototype operating contract
 
-Claude builds; Codex reviews the current combined source and observed results.
 Anyone may implement any AF task. No agent needs a person's identity to edit
 code, and no person has exclusive ownership of a module. The board below
 identifies human actions by **device role** — `macOS coordinator`, `Ubuntu
@@ -74,8 +143,7 @@ worker` — or by **requester** for acceptance, never by team member.
   evidence can answer a technical question; it can never grant permission.**
   Never bypass an uncleared gate by advancing another chunk. A newly discovered
   human dependency splits the chunk at that point.
-- Prepare the exact action and obtain Codex's review before the human performs
-  it. Whoever operates the named device returns the evidence to the requester;
+- Prepare and review the exact action before the human performs it. Whoever operates the named device returns the evidence to the requester;
   verify the result before resuming. A message saying "done" alone does not
   prove a runtime gate.
 - Continue only within the authorised scope after the checkpoint is cleared.
@@ -224,7 +292,7 @@ distributed Documents workflow remains later work. `desktop/dist/Refinix.app`
 still contains the Execution 1 build: E2 and E3 require a rebuild before native
 acceptance.
 
-## Numbered execution tasks
+## Prototype numbered execution tasks
 
 The **thirteen numbered tasks** below define execution order. Building an image
 and reporting its digest must precede reviewing and applying the pinned cluster
@@ -668,3 +736,5 @@ and voice work is FR-019 in the finals scope.
 
 Add an excluded item only after its prerequisite task passes and the requester
 accepts the resulting risk to the frozen demo.
+
+</details>
