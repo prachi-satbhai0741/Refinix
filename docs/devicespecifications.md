@@ -1,12 +1,23 @@
 # Device Specifications — AegisForge / Refinix — Team Rokunin Sync
 
+> **Historical test inventory.** Measurements and device assignments below record
+> the prototype, not permanent production roles or current deployment status.
+> Production discovers capabilities dynamically and qualifies Windows, macOS and
+> Linux as both requester and execution target. No named device or Linux member
+> is mandatory. The recorded inventory lists four Windows devices; the latest
+> planning discussion mentions three available for testing. Confirm the actual
+> test subset before scheduling device checks rather than changing measured
+> inventory by assumption. Use [current acceptance](evaluation.md#production-acceptance)
+> and the [active plan](../tasks.md#numbered-execution-tasks).
+
+
 Hardware inventory for the six team devices, collected for **model selection and
 capability-pack assignment**. This document is the team's reference for what the
 fleet actually is; [model-catalog.md](model-catalog.md) owns model and pack
 policy.
 
 - **Collected:** 2026-09-01; Vedant's device re-measured 2026-09-02; all six devices supplied read-only inventory on 2026-09-03 (dates to be confirmed).
-- **Status:** All six people supplied inventory, though with incomplete fields. Later C02 output records versions, native inference and model integrity for the macOS coordinator and Ubuntu worker. Tool paths alone on other devices do not prove readiness; no Kubernetes runtime gate has passed.
+- **Status:** All six people supplied inventory, though with incomplete fields. Later C02 output records versions, native inference and model integrity for the macOS coordinator and Ubuntu worker. Tool paths alone on other devices do not prove readiness; this inventory does not track subsequent Kubernetes runtime acceptance.
 - **Rule:** treat every capability and model note below as a **hypothesis** until
   benchmarked on the actual device under
   [evaluation.md](evaluation.md#5-measurement-plan).

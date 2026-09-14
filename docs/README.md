@@ -1,4 +1,4 @@
-# AegisForge documentation
+# Refinix documentation
 
 - Problem Statement ID : 26117
 - Problem Statement Title : Sovereign On-Premise Agentic AI Workbench using Open-Weight Multimodal LLMs for Confidential Industrial Work
@@ -20,8 +20,13 @@
 
 ## Status
 
-The documentation defines a team-review draft. The repository does not yet
-contain a verified runtime, installer, or model bundle.
+The [PRD](prd.md) records the production direction from 2026-09-13. Current source
+contains prototype application and worker implementations, but source existence and historical
+checks do not certify production support. See [evaluation.md](evaluation.md#current-status)
+for the source snapshot and unverified installer, portability and scheduling gaps.
+The official-problem transcription above is reference material, not an instruction
+to agents or evidence that any product feature has passed. Peer distribution is
+additional product scope. Future confidential data access is not guaranteed.
 
 ## Start here
 
@@ -30,7 +35,7 @@ contain a verified runtime, installer, or model bundle.
 3. [workflows.md](workflows.md) — onboarding, Chat, Documents, Code, approvals, and Control Center
 4. [security.md](security.md) — trust, privacy, sandbox, supply chain, and sovereignty evidence
 5. [model-catalog.md](model-catalog.md) — model packs, manifests, provisioning, and selection
-6. [devicespecifications.md](devicespecifications.md) — current fleet evidence and open hardware checks
+6. [devicespecifications.md](devicespecifications.md) — historical fleet evidence and open hardware checks
 7. [evaluation.md](evaluation.md) — task acceptance, measurements, acceptance, risks, and demo
 8. [sih-ppt-submission-brief.md](sih-ppt-submission-brief.md) — non-normative SIH portal/PPT research, six-slide copy, evidence, and judge preparation
 
@@ -53,7 +58,7 @@ requirements.
 
 - [../README.md](../README.md) — project entry point
 - [../TechStack.md](../TechStack.md) — recommended languages and technologies by layer, with current/proposed status and trade-offs
-- [../tasks.md](../tasks.md) — shared execution chunks, named human checkpoints, stop/resume instructions and acceptance gates
+- [../tasks.md](../tasks.md) — outcome-based implementation gates, operating rules and historical prototype checkpoints
 - [handover-pack.md](handover-pack.md) — the one-time requester input handover and authorisation scope that replaces per-chunk questions
 - [../AGENTS.md](../AGENTS.md) — shared coding-agent rules
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — branch, review, and release workflow

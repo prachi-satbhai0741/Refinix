@@ -1402,3 +1402,30 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_authorization: Static workflow inspection only; the first GitHub-hosted run is the execution gate.
 - follow_up_to: [UP-20260901-002](#up-20260901-002)
 - linked_changes: [AC-20260907-003](agentchangelog.md#ac-20260907-003)
+
+<a id="up-20260913-001"></a>
+## UP-20260913-001 — Reconcile the Refinix production direction
+- date: 2026-09-13
+- status: authorised documentation update
+- tags: product-direction, offline, cross-platform, automatic-routing, installation, rag
+- aliases: production refinix, any device worker, no terminal setup, optional kubernetes, bundled llama.cpp
+- paths: README.md, TechStack.md, tasks.md, docs/prd.md, docs/architecture.md, docs/workflows.md, docs/security.md, docs/model-catalog.md, docs/evaluation.md, docs/README.md, docs/devicespecifications.md, agent-memory/
+- summary: Update the core product and implementation guidance from the production-planning discussion without fixed implementer roles, team assignments, or deadlines.
+- request: Preserve the current UI; document guided installation, user-controlled model recommendations, offline local/trusted-device/private-server modes, concurrent automatic placement, local RAG, and component qualification.
+- constraints: Documentation only; distinguish current source, historical prototype evidence, accepted direction, and unqualified candidates; preserve existing Kubernetes backend and security guarantees; no runtime or Git/GitHub changes.
+- acceptance: The entry points and focused documents agree on the production direction and evidence boundaries, with outcome-based implementation gates and intact local links.
+- verification_authorization: Proportionate static documentation checks only.
+- linked_changes: [AC-20260913-001](agentchangelog.md#ac-20260913-001)
+
+<a id="up-20260913-002"></a>
+## UP-20260913-002 — Rename the repository to refinix
+- date: 2026-09-13
+- status: authorised rename; GitHub administrator access unavailable
+- tags: repository-name, refinix, documentation, github
+- aliases: rename aegisforge, refinix repository
+- paths: README.md, CONTRIBUTING.md, AGENTS.md, docs/README.md, docs/prd.md, agent-memory/
+- summary: Rename the repository from AegisForge to refinix and align its documentation identity.
+- request: Use refinix as the repository name while preserving the existing application and workspace.
+- constraints: Preserve earlier uncommitted documentation; do not rename compatibility-sensitive data paths or invent a completed GitHub rename.
+- evidence: Authenticated GitHub REST metadata reports repository id 1352342428, current name AegisForge, push permission true and admin permission false.
+- linked_changes: [AC-20260913-002](agentchangelog.md#ac-20260913-002)

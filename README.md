@@ -1,6 +1,6 @@
 <div align="center">
 
-# AegisForge
+# Refinix
 
 **Refinix — a private local agent harness for confidential industrial knowledge work**
 
@@ -20,7 +20,7 @@
 ## Table of Contents
 
 - [SIH Problem Statement](#sih-problem-statement-117)
-- [What Is AegisForge?](#what-is-aegisforge)
+- [What Is Refinix?](#what-is-refinix)
 - [Why This Problem Statement](#why-this-problem-statement)
 - [Design Philosophy: Coordinator, Not a Cluster](#design-philosophy-coordinator-not-a-cluster)
 - [Product Surfaces and Setup](#product-surfaces-and-setup)
@@ -65,10 +65,14 @@ The current requirement interpretation, open design decisions, and demonstration
 
 ---
 
-## What Is AegisForge?
+<a id="what-is-aegisforge"></a>
 
-**AegisForge** is the name of this repository. **Refinix** is the current
-working name for the product and its underlying architecture.
+## What Is Refinix?
+
+**Refinix** is the product name; **refinix** is the selected repository name
+(formerly AegisForge). The GitHub rename is pending a repository administrator: the
+current remote remains `prachi-satbhai0741/AegisForge`. Existing checkout paths and
+compatibility-sensitive `.aegisforge` application data remain unchanged.
 
 Refinix is one installable application with dedicated **Chat** and **Code**
 surfaces over a shared local agent harness. **Settings**, reached from secondary
@@ -76,14 +80,24 @@ navigation, manages models, jobs, approvals, paired compute, health, and
 sovereignty evidence. Document work is a capability inside Chat rather than a
 separate top-level surface.
 
-Every installation creates a local workspace and remains useful on its own.
-Pairing is an optional, reversible relationship: the workspace coordinator may
-route bounded work to compatible trusted devices or a private server, but those
-nodes never receive canonical workspace ownership merely by joining.
+Refinix targets Windows, macOS and Linux, with three offline execution modes:
+this device, trusted local-network peers and an organisation's private server.
+A device can request and contribute work; only execution targets need the selected
+models/tools installed. Pairing never merges personal workspaces. Automatic routing
+chooses compatible model/device pairs using task needs, permissions and available
+capacity, while the user retains model and execution-target control.
 
-This is a deliberate architectural position, not an oversight — see [Design Philosophy](#design-philosophy-coordinator-not-a-cluster) below for why.
+The open-source platform and a specialised paid offering share this core. The paid
+offering adds authorised customer corpora, workflows, templates, deployment and
+support; it does not require a cloud inference service.
 
-> **Status:** A **local application runs** — Chat and graphical Settings over SQLite state and one local model, built on the [shared contracts](backend/contracts/README.md), inside a native desktop shell ([desktop/](desktop/README.md)). Files can be attached to a request and are stored and listed, but **nothing reads them**. There is **no worker, cluster, document understanding, Code workflow, access-mode enforcement, approval path, model bundle or installer** in this desktop execution; those surfaces report themselves unavailable. The macOS bundle was **built and opened on 2026-09-04**, including a standalone startup check with source access denied; the requester confirmed Chat, Stop, quitting and retained stopped history. See [backend/coordinator](backend/coordinator/README.md) and [desktop](desktop/README.md) to run it. This README and the linked PRD describe the wider intended system, its constraints, and its demonstration plan.
+> **Status, 2026-09-13:** Current source includes the desktop app, local coordinator,
+> document/image and Code paths, pairing, and a Docker/K3s/Redis worker backend.
+> Cross-platform dependency-complete installers, portable peer execution, fleet
+> scheduling and semantic RAG are production work still to qualify. The
+> [source/evidence snapshot](docs/evaluation.md#current-status) distinguishes existing
+> code, historical checks and acceptance gaps. This documentation update runs no
+> application tests and does not certify a release.
 
 ---
 
@@ -100,24 +114,37 @@ It's worth being explicit about why "just run a local LLM" doesn't satisfy the c
 
 ## Design Philosophy: Coordinator, Not a Cluster
 
-Refinix is **not** model sharding, distributed inference, or pooled VRAM across machines. Every job runs as **one complete model on one selected device** — there is no attempt to split a single model's weights or a single job's computation across multiple machines.
+Refinix distributes complete jobs or bounded workflow steps among trusted devices.
+Each model invocation runs on one selected target; there is no model sharding or
+pooled VRAM. Keep canonical workspace state and final-write authority with the
+requester's coordinator. Independent Code and Chat jobs may run concurrently on
+different targets, using receiver-side capacity reservations to avoid overloading
+a device.
 
-This matters for two reasons:
-
-1. **Reliability in the field.** Industrial deployments are often a single workstation or a small number of machines on a closed LAN, not a data-center-grade cluster. A design that depends on tightly-coupled multi-node inference is fragile in exactly the environments this system targets. Standalone (single-device) operation must always work — additional devices are a capability and concurrency upgrade, never a requirement.
-2. **Auditability.** When one job maps to one model on one device, the resulting evidence trail (which model, which device, which checksum, what output) is simple to construct and simple to verify. Distributed inference across devices would make the "proof of sovereignty" requirement significantly harder to demonstrate convincingly.
-
-Extra trusted devices, when present, allow the coordinator to run independent jobs — for example, an OCR/document job and a coding job — **concurrently**, and to route specialist work (e.g., a vision-heavy task) to whichever local device is best equipped to handle it.
+The existing Docker/K3s/Redis backend remains useful for managed services and
+isolated validation Jobs. It is an **optional server execution profile**, not a
+requirement for desktop installation or peer membership. Windows/macOS/Linux
+peers communicate through Refinix's authenticated application API; they do not
+need to become Kubernetes nodes. See [architecture](docs/architecture.md).
 
 ---
 
 ## Product Surfaces and Setup
 
-First launch detects the device and existing runtimes, requires a compatible
-main engine, lets the user enable capability packs, shows the full model
-download and licence plan, verifies manifests, and runs real local self-tests.
-It does **not** ask the user to choose a permanent coordinator, worker, or server
-role.
+The production installer packages or graphically provisions its qualified
+dependencies. First launch scans hardware and offers up to six compatible model
+recommendations, highest suitability first, plus Show more and supported user
+choices. Scores distinguish estimates from measured results; a fit score is not
+accuracy. Warn for heavy choices and refuse known-incompatible execution.
+
+Model downloads, imports and updates are explicit. Ordinary runtime, retrieval,
+discovery and LAN execution require no Internet connection or cloud account.
+The installer should not require terminal/package-manager/certificate setup;
+unavoidable OS permissions and unsupported prerequisites must be explained.
+A remote-only client can skip local models. These are target installer behaviours,
+not a claim that the existing prototype package already provides them.
+
+Preserve the existing UI:
 
 | Surface | Purpose |
 |---|---|
@@ -164,7 +191,7 @@ These constraints are treated as non-negotiable design requirements, not aspirat
 ## Repository Structure
 
 ```text
-AegisForge/
+refinix/
 ├── backend/
 │   ├── contracts/         # Shared job, attempt, event and approval contract (draft)
 │   ├── coordinator/       # The running local application: state, runtime, API, UI server
@@ -189,7 +216,8 @@ AegisForge/
 
 ## Start Here
 
-On the configured macOS coordinator, double-click `desktop/dist/Refinix.app`,
+The following is the **existing developer/prototype launch path**, not the
+production installer experience. On the configured macOS coordinator, double-click `desktop/dist/Refinix.app`,
 or run:
 
 ```bash
@@ -210,28 +238,20 @@ Details, including what the application deliberately does **not** do, are in
 
 ### What reads what, right now
 
-The application reports its own capabilities rather than promising them, and
-the state below is what it reports on the configured macOS coordinator:
+See the [current source snapshot](docs/evaluation.md#current-status) for document,
+image, Code, worker and packaging boundaries. Runtime capability reports must
+reflect installed models/tools, host compatibility and observed self-tests;
+source availability alone is not proof that a capability works on every device.
 
-| Input | State |
-|---|---|
-| `.txt`, `.md`, `.csv`, `.json`, `.docx` | Read locally with the standard library |
-| **Scanned PDF** | Pages render with the macOS Quartz framework (no install needed), but reading them needs a model that declares the `vision` capability. The configured `MedAIBase/PaddleOCR-VL:0.9b` **does not**, so scan reading currently reports itself unavailable with that reason. See [`docs/c08-dependency-plan.md`](docs/c08-dependency-plan.md). |
-| Loose image files (`.png`, `.jpg`, …) | Refused. A scan is read as PDF pages, which is where page numbers and citations come from. |
-| Code changes | Proposed as a reviewable diff. Generation runs on the paired Ubuntu worker when one is paired and healthy, and on this Mac otherwise; either way the canonical folder changes only after an approval. |
+Before implementation:
 
-**Distributed execution is not accepted yet.** C06 onward remain unverified —
-see [`docs/c07-c10-runtime-handoff.md`](docs/c07-c10-runtime-handoff.md) for the
-ordered steps and exactly what is and is not proven.
-
-Before contributing code:
-
-1. Start with the [documentation map](docs/README.md) and short
-   [PRD](docs/prd.md), then read [TechStack.md](TechStack.md) for the recommended
-   languages and technologies, their current status and trade-offs.
-2. Do not begin framework scaffolding ahead of an approved v1 baseline and
-   measured evidence from one local inference path followed by one real
-   paired-worker path.
+1. Read the [PRD](docs/prd.md) for the product contract and
+   [architecture](docs/architecture.md) for task placement and state ownership.
+2. Use [TechStack.md](TechStack.md) to distinguish existing dependencies from
+   qualification candidates, including bundled llama.cpp and local embeddings.
+3. Follow [tasks.md](tasks.md#numbered-execution-tasks) for outcome-based gates.
+   Historical C/E/AF setup records explain the prototype; they do not prescribe
+   permanent OS roles, production deadlines or a new frontend framework.
 
 ## Contributing
 
@@ -240,7 +260,7 @@ Server-side branch protection is **not yet active**, so this workflow is current
 
 ## Licence
 
-This repository is currently licensed under [Apache-2.0](LICENSE). The final product's licensing and ownership position remains an open decision tracked in the [PRD](docs/prd.md), and may change before submission.
+This repository is currently licensed under [Apache-2.0](LICENSE). The open-source core and specialised paid offering follow the [PRD](docs/prd.md); this documentation change does not relicense the repository, publish a release or grant rights to third-party corpora.
 
 ---
 

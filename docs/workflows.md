@@ -3,29 +3,36 @@
 ## Status and purpose
 
 This document owns onboarding, task surfaces, approval behaviour, and failure
-flows within the scope set by [prd.md](prd.md). These are planned contracts, not
-implemented behaviour.
+flows within [prd.md](prd.md). These are target contracts. Existing implementations
+and remaining gaps are distinguished in [evaluation.md](evaluation.md#current-status);
+this document does not certify current runtime behaviour.
 
 ## 1. Design rule
 
-Chat, Documents, and Code are opinionated entry points into one agent harness.
-They are not independent applications and do not maintain separate identity,
-memory, security, job, or routing systems.
+Preserve the current Chat surface (including document and image work), IDE-style
+Code surface, Settings and right-hand job status card. Documents is a workflow,
+not a required separate top-level screen. All use the same harness, identity,
+context, policy and job contracts.
 
 The user chooses two things independently:
 
 | Choice | Options |
 |---|---|
-| Work surface | Chat, Documents, Code |
+| Work surface | Chat (including documents/images), Code |
 | Execution target | Auto, this device, trusted devices, or a specific paired node |
 
-The Control Center manages the installation; it is not an agent profile.
+Control Center means installation and job controls exposed through Settings and
+status UI; it does not require a new main navigation surface.
 
 ## 2. First-run onboarding
 
 ### Step 1: establish the local installation
 
-The app automatically:
+The website offers OS/architecture-specific installers. Installation and setup
+package or graphically provision all qualified application dependencies, with no
+terminal, Python, container or certificate setup expected from an ordinary user.
+Explain any unavoidable OS approval or unsupported driver/sandbox prerequisite.
+Do not report an unsupported environment ready. The app automatically:
 
 - creates a local node identity;
 - creates an empty local workspace;
@@ -38,13 +45,15 @@ Server choice.
 
 ### Step 2: choose the main engine
 
-The user must choose one compatible main engine from a curated list. The
-default picker presents:
+For local execution, recommend up to six compatible models, highest suitability
+score first, followed by **Show more**. Let the user choose another supported
+model or advanced import; recommendations are not mandatory selections. A
+remote-only client can connect to authorised compute without a local model.
 
-- Recommended: best measured fit for this device;
-- Fast: lower resource use;
-- Quality: higher resource use where supported;
-- Advanced: exact approved model and runtime.
+Use the [scoring contract](model-catalog.md#6-onboarding-selection): suitability
+is out of 100, with clearly labelled estimates and measurements. Never present
+a fit score as universal accuracy or a percentage probability of correctness.
+Warn about slow or memory-heavy choices and block known incompatible execution.
 
 The picker must show:
 
@@ -91,7 +100,8 @@ paths produce the same local manifest.
 
 Onboarding completes only after:
 
-- the main engine answers a real local test prompt;
+- each configured local engine answers a real local test prompt; a remote-only
+  setup proves its authorised remote path and labels local inference unavailable;
 - runtime endpoints are confirmed loopback-only;
 - installed manifests and hashes are recorded;
 - each enabled capability runs its smallest representative test;
@@ -133,17 +143,15 @@ files, tools, or other models; the harness grants each bounded action.
 6. Citations and tool results are validated where used.
 7. The coordinator records the response and proof metadata.
 
-Chat remains usable on this device when no paired compute is available.
+Chat continues locally when a suitable local model is installed. A remote-only
+client retains history and explains that execution needs an available trusted target.
 
 ## 5. Documents workflow
 
-**Desktop Execution 3 implements a single-device subset of this**, in source and
-untested: reading is `.txt`, `.md`, `.csv`, `.json` and `.docx` with the
-standard library; PDF and OCR are reported unavailable with their missing
-prerequisite; retrieval is keyword matching over SQLite FTS5, labelled as such
-because OD-07 is unresolved; generation writes a real `.docx` validated by
-reopening it. Steps below that involve a second node, sandboxed validation or
-worker dispatch remain later work and are not implemented.
+Current source includes document parsing, FTS5 retrieval, scan/image paths and
+artifact generation. Platform-specific dependencies and model compatibility still
+need device qualification; see [the source snapshot](evaluation.md#current-status).
+Semantic retrieval and arbitrary peer placement are target additions.
 
 The first fixed document workflow is
 inspection_report_to_approval_note:
@@ -151,7 +159,8 @@ inspection_report_to_approval_note:
 1. The user selects a scan and optional local SOP corpus.
 2. The coordinator records source hashes and creates the workflow.
 3. OCR or vision extracts content with page association and uncertainty.
-4. A validator rejects fabricated values and preserves unresolved fields.
+4. Extraction checks flag unsupported or inconsistent values and preserve unresolved
+   fields; they cannot guarantee detection of every fabricated value.
 5. Local retrieval selects relevant SOP passages with page or section metadata.
 6. The main engine receives only the validated extraction and retrieved
    passages required to draft the note.
@@ -159,9 +168,10 @@ inspection_report_to_approval_note:
 8. Artifact validation records readability, citations, origin job, and checksum.
 9. The user reviews the draft before any consequential export or final write.
 
-Each step may run on a different eligible node. The coordinator passes typed,
-validated output between steps; models do not communicate directly or share
-unrestricted memory.
+Prefer co-locating the workflow on one eligible node; move bounded steps only when
+capability, performance or data policy justifies it. The coordinator passes typed,
+validated output; models do not share unrestricted memory. Corpus permissions
+apply before retrieval, and citations retain source/version/page references.
 
 ## 6. Code workflow
 
@@ -182,17 +192,18 @@ The first fixed code workflow is repository_request_to_validated_patch:
 The entire repository is not transferred for every task. Workers never write
 directly to the canonical repository.
 
+Current source also has an explicitly selected local Apply path with verified
+backups and Undo, labelled “Not sandbox tested — local device mode”. Preserve
+that distinction and its approval/backup safeguards; do not present it as sandbox
+validation or silently change its behaviour during a runtime migration. The
+validated workflow above has a separate, observed sandbox result.
+
 ## 7. Action and approval policy
 
-The prototype uses one safe default policy:
-
-Execution 2 implements the first enforced subset of this table for the Code
-surface, in `backend/coordinator/policy.py`. It offers three named modes —
-Partial access, Full access, Ask before actions — over four actions:
-`repo.list`, `repo.read`, `model.propose`, `canonical.write`. Everything else
-in the rows below, and every action in the Denied row, stays denied in all
-three modes. Sandboxed validation is not implemented and reports itself
-unavailable rather than appearing automatic.
+The following target policy must be enforced at both coordinator and execution agent.
+Current Code permissions live in `backend/coordinator/policy.py`; preserve its
+bounded access modes and canonical-write checks while expanding capabilities.
+Sandbox support must be positively qualified on each execution profile.
 
 | Action | Behaviour |
 |---|---|
@@ -210,33 +221,45 @@ Approval is enforced by the coordinator and records the action, target,
 workflow/job/attempt, decision, actor, and timestamp. A denial does not become a
 generic failure; it ends or replans the affected step clearly.
 
-Configurable Autonomous, Controlled, and Approval presets are P1 or later. They
-must remain presets over explicit action rules, never broad switches that bypass
-the policy boundary.
+Preserve existing access modes as explicit action rules. A user-granted scope can
+cover repeated routine reads and drafts without repeated prompts. Code that modifies
+canonical files still needs the applicable approval. Verification also covers
+Chat, OCR, retrieval and documents: user approval and quality testing are different
+requirements, and successful parsing does not prove factual correctness.
 
 ## 8. Connecting compute
 
-Pairing is available from Control Center at any time:
+Settings → Connect opens the local-network device view:
 
-1. One installation invites another with a short-lived code or QR value.
-2. Both sides show workspace and device identity.
-3. A user explicitly confirms the relationship.
-4. The node receives a unique revocable credential.
-5. It advertises verified hardware, runtime, model, health, and capability data.
-6. The coordinator may route bounded jobs while trust remains active.
+1. Show discoverable Refinix devices, availability and compatible capabilities.
+   A radar animation represents reachable peers, not measured physical distance.
+2. Use a guided address/pairing-code fallback when automatic discovery is blocked.
+3. Both devices show identity and explicitly confirm a scoped relationship.
+4. Issue unique revocable credentials through standard secure pairing; users do
+   not copy certificate fingerprints or run terminal commands for normal setup.
+5. The receiver enables sharing and chooses permitted workloads/resource limits.
+6. Advertise current model availability, capacity and health only to trusted peers.
+7. When a remote task starts, show “Device X is executing a Code task on your
+   device”, its resource use and a stop control. Do not expose the full prompt
+   in a notification by default.
 
-The receiving installation keeps its local workspace unchanged. Disconnecting
-stops new remote work; revocation invalidates the credential. Neither action
-deletes or merges local user data.
+Personal use requires device-owner consent, not a mandatory administrator.
+Organisation mode adds administrator policy for membership, users, quotas and
+eligible compute. Compute permission and corpus access are separate permissions.
+Pairing does not merge chats or give access to arbitrary files. Pause sharing
+stops new admissions and makes the disposition of running jobs explicit;
+revocation prevents further access and cancels/reconciles affected attempts.
+Disconnecting or revoking does not delete the local workspace.
 
-Automatic LAN discovery may help find a candidate device but never establishes
-trust or exposes a model runtime directly.
+The inference runtime remains on loopback; peers use only the authenticated
+application API. All discovery and execution work without a public Internet route.
 
 ## 9. Execution choice
 
 Every task starts with Auto by default:
 
-- Auto selects an eligible device through deterministic routing.
+- Auto selects an eligible model/device pair, considering task quality, loaded
+  models, queue, transfer/loading time, resource reservations and data policy.
 - This device prevents remote execution.
 - Trusted devices allows any compatible paired node.
 - A specific target pins the task when compatible.
@@ -252,7 +275,8 @@ The Control Center presents:
 - enabled agent profiles and self-test state;
 - active, queued, awaiting-approval, failed, and completed jobs;
 - paired devices, capabilities, heartbeat, and revocation;
-- resource usage where the operating system reports it reliably;
+- optional CPU/GPU utilisation, RAM/VRAM, battery and temperature in the lower-right
+  status area where reported reliably; missing sensors read unavailable, not zero;
 - connected-setup versus offline-runtime state;
 - trusted LAN traffic and observed or blocked public egress;
 - audit events, proof cards, retention, cleanup, and export controls.
@@ -269,9 +293,11 @@ workspace state remain usable.
 
 ### Worker disconnects
 
-The attempt becomes interrupted. The coordinator either requeues on another
-compatible node with a new attempt identifier or returns a recoverable failure.
-It never repeats a canonical final write.
+The attempt becomes interrupted. Reconcile its receipt and side effects before
+retrying; a lost response does not prove work never ran. Safely repeatable work
+may get a new attempt on a compatible authorised target. Otherwise show an
+inspectable recoverable failure. Never silently move pinned/private work or
+repeat a canonical final write.
 
 ### Approval expires or is denied
 
