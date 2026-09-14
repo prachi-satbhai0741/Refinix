@@ -1,6 +1,6 @@
 # Refinix technology stack
 
-Updated: 2026-09-13. This maps the [product direction](docs/prd.md) to existing
+Updated: 2026-09-14. This maps the [product direction](docs/prd.md) to existing
 components and qualification candidates. It does not install, migrate or certify
 anything. Reuse current source first; preserve the UI and shared harness.
 
@@ -75,6 +75,12 @@ address/code fallback and use established TLS/OS credential mechanisms.
 
 RAG is the extraction → indexing → retrieval → grounded generation pipeline;
 an embedding model is one component. No foundation-model training is required.
+Use editable instructions/curated memory before optional adapter or preference
+training; follow [adaptation gates](docs/model-catalog.md#11-personalisation-and-optional-model-adaptation).
+Use the inference engine's existing cache mechanisms under Refinix's
+[resource policy](docs/architecture.md#kv-cache-and-runtime-resource-policy),
+not a new custom allocator. PagedAttention and cache quantisation require measured
+benefit and backend qualification.
 Rebuild affected embeddings after embedding-version changes and invalidate deleted
 or unauthorised sources. Add a reranker only if evaluation shows a useful gain.
 
@@ -94,15 +100,24 @@ host-secret access, even if its supervisor needs infrastructure connectivity.
 
 Ship OS/architecture-specific packages with the application runtime, qualified
 native libraries and relevant engine. Users explicitly select models or import a
-complete verified offline bundle. Upgrades require an explicit connected action,
-integrity checks and a recovery path preserving user data. Drivers, platform
-permissions and sandbox virtualisation requirements must be surfaced honestly;
+complete verified offline bundle. Updates use explicit connected check/download
+or authenticated offline import, with a recovery path preserving user data.
+Drivers, platform permissions and sandbox virtualisation requirements must be
+surfaced honestly;
 normal end users should not debug them with terminal commands.
 
 The existing Docker/K3s backend remains useful for managed compute and sandbox
 Jobs. Native Windows/macOS peers instead participate through Refinix's application
 protocol. A server can use the same worker service without Kubernetes if its
 qualified execution/isolation profile does not need it.
+
+The [release contract](docs/releases.md) adds a qualified existing updater and
+platform installer tooling, not Kubernetes for desktop packaging. Start with
+full packages; delta updates are optional after measured need. Sparkle on macOS
+and TUF-style signed metadata are candidates, not adopted dependencies; Windows
+and Linux mechanisms must meet the same explicit-network and recovery contract.
+GitHub Releases is the initial artifact-hosting candidate, subject to package
+size, access and availability checks. Current CI does not implement this pipeline.
 
 ## 7. Devices and rollout
 

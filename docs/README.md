@@ -20,7 +20,7 @@
 
 ## Status
 
-The [PRD](prd.md) records the production direction from 2026-09-13. Current source
+The [PRD](prd.md) records the production direction, updated 2026-09-14. Current source
 contains prototype application and worker implementations, but source existence and historical
 checks do not certify production support. See [evaluation.md](evaluation.md#current-status)
 for the source snapshot and unverified installer, portability and scheduling gaps.
@@ -37,7 +37,8 @@ additional product scope. Future confidential data access is not guaranteed.
 5. [model-catalog.md](model-catalog.md) — model packs, manifests, provisioning, and selection
 6. [devicespecifications.md](devicespecifications.md) — historical fleet evidence and open hardware checks
 7. [evaluation.md](evaluation.md) — task acceptance, measurements, acceptance, risks, and demo
-8. [sih-ppt-submission-brief.md](sih-ppt-submission-brief.md) — non-normative SIH portal/PPT research, six-slide copy, evidence, and judge preparation
+8. [releases.md](releases.md) — readiness gates, version publication, explicit updates and recovery
+9. [sih-ppt-submission-brief.md](sih-ppt-submission-brief.md) — non-normative SIH portal/PPT research, six-slide copy, evidence, and judge preparation
 
 The PRD owns product scope. Each focused document owns implementation detail
 inside that scope. Record conflicts instead of duplicating or silently changing

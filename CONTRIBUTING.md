@@ -130,6 +130,11 @@ gh pr create --base main --head dev --title "Release: <what is in it>"
 the commits and leave `dev` permanently diverged from `main`. PRs into `dev`
 may be squashed.
 
+Merging source into main does not publish or install an application update.
+The planned [application release contract](docs/releases.md) requires a designated
+version, qualified platform builds, signing and update metadata. The current CI
+checks source; these documents do not add or authorise publishing automation.
+
 ## Merging
 
 Member → `dev` PRs have no automated CI gate. The `dev` → `main` release PR

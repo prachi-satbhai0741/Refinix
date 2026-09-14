@@ -19,6 +19,11 @@ they are not certification of the current tree or the production direction.
 | [Code service](../backend/coordinator/code_service.py) | Explicit local Apply uses backups/Undo and reports no sandbox result; distributed Apply requires matching passing validation. Preserve this distinction |
 | [worker validation](../backend/worker/validate.py), [jobspec.py](../backend/worker/jobspec.py) | Restricted Kubernetes Python validation path; no evidence of arbitrary-language standalone sandbox support on all three OSes |
 
+The 2026-09-14 documentation update adds release, cache and personalisation gates.
+The [current CI](../.github/workflows/ci.yml) runs Linux repository checks; it does
+not establish signed cross-platform installers or an end-user update service.
+These additions were checked as documentation only, with no runtime execution.
+
 ## Production acceptance
 
 The gates below define the agreed outcome. They are **planned acceptance criteria**,
@@ -30,6 +35,9 @@ baseline requirements; peer distribution is additional product innovation.
 | Area | Required evidence |
 |---|---|
 | Installation | Clean supported Windows, macOS and Linux OS/architecture profiles can install and launch without terminal assistance, external language/runtime setup or a cloud account. Record signing/permissions, download size, free space, model choice, failures, upgrade/rollback and uninstall/data preservation |
+| App publication and updates | On every supported platform, build real N and N+1 artifacts and prove install → use → upgrade before first publication. Verify explicit online check/download, authenticated offline import, interruption, wrong/tampered/stale packages, active jobs, migration failure/recovery and preservation of user work. Complete [release acceptance](releases.md#6-acceptance-before-first-publication); no silent network checks |
+| Context and corpus lifecycle | Instructions/curated memory persist across restart; users inspect/edit/delete them; selected context respects permissions and token budgets. Legacy data migration preserves records and handles conflicting stores. Corpus change/deletion/revocation invalidates derived retrieval/context without treating document text as policy |
+| KV cache and capacity | Compare cold/warm latency, peak memory and output quality with fixed model/runtime/context/concurrency. Exercise simultaneous admissions, low memory, cancellation, idle eviction, model/adapter changes and private-context isolation. Any cache quantisation/reuse/paging feature needs backend-specific correctness and resource evidence |
 | Local operation | With public networking blocked, supported chat/reasoning, coding proposals, OCR/image/document understanding, local retrieval and file generation work using only installed dependencies. A standalone sandbox is proven separately on each advertised platform |
 | Model selection | At least two qualified model options and two task types demonstrate automatic capability-aware choice, user override and unavailable-model handling. Record why selected, output quality and cost; one shared model alone does not prove model routing |
 | Recommendation quality | Six recommendations then Show more; compatible user alternatives and oversized warnings; scores explain benchmarks/normalisation, measured versus estimated inputs, context/memory budget and power preference. No invented percentage accuracy |
@@ -47,6 +55,12 @@ backend and enabled capability**. Exact quality/speed thresholds and score weigh
 must be fixed for each representative benchmark before results are judged. Hardware
 specifications and a small smoke prompt cannot establish broad accuracy. A confidential
 MRPL dataset becoming available is an assumption, not a prerequisite or promise.
+
+Optional model adaptation is a separate acceptance track, not a first-publication
+gate. Require opt-in/provenance, held-out base-versus-adapter comparisons, unrelated
+capability regressions, privacy tests, resource cost and disable/revert evidence
+before enabling it. Reward or training-loss improvement alone is insufficient;
+see [model adaptation](model-catalog.md#11-personalisation-and-optional-model-adaptation).
 
 ## Historical evaluation plan and measurements
 

@@ -1,9 +1,14 @@
 # Refinix implementation plan
 
-Updated: 2026-09-13. The [PRD](docs/prd.md) and focused documents define the
+Updated: 2026-09-14. The [PRD](docs/prd.md) and focused documents define the
 production direction. This plan records outcomes and dependencies, not deadlines,
 team assignments, or permission to start runtime work. The old C/E/AF checkpoint
 records below remain historical evidence and do not override these gates.
+
+The objective is a publicly installable, usable and safely updatable core. There
+is no project calendar deadline. Preserve operational timeouts, resource limits,
+credential expiry and dated evidence. Installation and sandbox feasibility should
+be investigated early; release/update acceptance is required before publication.
 
 ## Operating contract
 
@@ -34,16 +39,17 @@ These production gate IDs are separate from historical C/E/AF task IDs. All are
 | Gate | Outcome and smallest change | Required acceptance / dependency |
 |---|---|---|
 | P01 — Baseline and support contract | Reconcile source with current workflows; select target OS versions, architectures, capabilities and representative public fixtures | Record actual local and retained worker behaviour, gaps and failure cases. Define advertised minimum support without claiming untested platforms |
-| P02 — Runtime and packaging qualification | Package existing app/service dependencies; evaluate bundled llama.cpp against current Ollama and preserve rollback | P01; clean-device launch without terminal setup, exact manifests, local model parity, cancellation, offline run, upgrade/uninstall preserving data. Record unavoidable OS prerequisites |
-| P03 — Core workflow reliability and local RAG | Reuse Chat/Code/document flows; qualify embeddings plus FTS5; qualify a second execution-model option for task routing | P01 and qualified runtime paths; grounded document/image work and real artifacts, bounded code proposals, at least two model options selected automatically for different task types, per-chat context isolation |
+| P02 — Runtime and packaging qualification | Package existing app/service dependencies; evaluate bundled llama.cpp against current Ollama and preserve rollback | P01; clean-device launch without terminal setup, exact manifests, local model parity, KV/resource budgets, cancellation, offline run, early updater qualification and upgrade/uninstall preserving data. Record unavoidable OS prerequisites |
+| P03 — Core workflow reliability and local RAG | Reuse Chat/Code/document flows; qualify embeddings plus FTS5, corpus lifecycle and persistent instructions/memory; qualify a second execution-model option for task routing | P01 and qualified runtime paths; grounded document/image work and real artifacts, bounded code proposals, at least two model options selected automatically for different task types, per-chat context isolation |
 | P04 — Portable execution and isolation | Make app-managed execution agent work on supported OSes; qualify standalone sandbox/toolchains | P01–P02; native inference plus bounded workspace enforcement. A remote Linux sandbox is not proof of standalone Windows/macOS sandboxing; no unsafe fallback |
 | P05 — Trusted peer experience | Graphical offline discovery, pairing, revocation, sharing controls and receiver notifications | P04 for advertised remote capabilities; explicit two-sided trust, compatible model inventory, no certificate/terminal setup, reachable-address fallback and denied unauthorised access |
 | P06 — Concurrent automatic placement | Extend single-worker selection to eligible model/device pairs with receiver reservations, fair queues and recovery | P03–P05; two independent chats over three devices, busy-target alternatives, multiple requesters, revoked trust, cancellation, disconnect/restart and duplicate-write protection |
-| P07 — Recommendations and release acceptance | Calibrate suitability ranking, six cards/Show more, safe advanced selection and clear unsupported states | P02–P06; measured/estimated labels, oversized-model warnings, clean Windows/macOS/Linux end-to-end install and offline evidence; publish only qualified capabilities |
+| P07 — Recommendations and release acceptance | Calibrate recommendations and complete versioned builds, signing, publishing, explicit updates and release acceptance | P02–P06; six cards/Show more, measured/estimated labels and warnings; clean Windows/macOS/Linux install/use/upgrade, version N -> N+1 including offline import and failure recovery; publish only qualified capabilities |
 | P08 — Managed private deployment | Same client/worker contract with organisation users, admin policy, quotas and authorised shared corpora/templates | Qualified core paths; single-server operation, optional retained Kubernetes backend, multi-user access isolation, corpus version/deletion and sensitive-data routing tests |
 
 Core product scope includes P01–P07. P08 adds managed deployment. Optional voice,
-speech generation, image generation, high availability and employee task assignment
+speech generation, image generation, evaluated local adapter/preference training,
+high availability and employee task assignment
 must not delay or weaken core acceptance. See [PRD priorities](docs/prd.md#7-release-scope).
 A scoped prototype may demonstrate fewer supported paths, but must label them
 prototyped or unverified rather than claiming complete production support.
@@ -55,6 +61,19 @@ checklist. Store reproducible fixture definitions and commands with their observ
 results, model/runtime identities, OS/backend and limitations. Tests are proportionate
 to changes; no model downloads, live checks or Git publication are implied by a plan.
 The current document change performs static documentation verification only.
+
+## First-publication gate
+
+P07 includes the [release contract](docs/releases.md), not just UI polish. CI on
+main already exists; cross-platform package builds, signing, release metadata and
+the in-app updater are planned additions. A designated version is advertised only
+after required gates pass. Prove clean installation and a real N -> N+1 update
+before releasing N publicly. A calendar date never substitutes for acceptance.
+
+KV/attention optimisations and optional training are evaluated against a measured
+baseline. Memory/RAG provide initial personalisation; no automatic RL loop or
+speculative optimisation list blocks the core. Historical C/E/AF deadlines below
+remain archival only and grant no execution authority.
 
 ## Historical prototype record
 

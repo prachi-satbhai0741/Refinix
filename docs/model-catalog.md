@@ -393,7 +393,11 @@ inventory constraint, not a limit on production users. Begin evaluation with:
 - explicit CPU offload where tested.
 
 Advertised maximum context is not a supported context. Support comes from local
-quality, latency, and memory evidence.
+quality, latency, and memory evidence. Record context/output limits, concurrent
+slots, cache precision/reuse settings and backend with each measurement. Follow
+the [KV-cache policy](architecture.md#kv-cache-and-runtime-resource-policy): the
+engine owns allocation; Refinix admits work against a measured resource budget.
+PagedAttention is an optional engine capability, not a custom Refinix requirement.
 
 Historical device assignments remain hypotheses in
 [devicespecifications.md](devicespecifications.md). Onboarding must use detected
@@ -411,3 +415,45 @@ An entry is demo-ready only when:
 - memory, latency, and quality are recorded on the assigned device;
 - offline runtime completes without an external inference call;
 - setup instructions reproduce the result.
+
+## 11. Personalisation and optional model adaptation
+
+Personalisation does not require changing model weights. Use the following order;
+this is a planned qualification path, not an installed training service.
+
+| Method | Purpose and release boundary |
+|---|---|
+| User instructions and curated memory | Core: editable preferences and useful durable context, selected within the prompt budget |
+| Local corpus and RAG | Core: retrieve current authorised documents with citations; adding knowledge means indexing, not retraining |
+| Supervised LoRA adapters | Optional: evaluate only for a demonstrated task/style gap that instructions and retrieval cannot solve |
+| Preference optimisation, such as DPO | Optional: needs reviewed preferred/rejected examples and measured improvement; not continuous per-chat reinforcement learning |
+| Reward-based reinforcement learning | Experimental: needs a defensible reward, suitable training hardware and regression evidence; never a public-core release prerequisite |
+
+Feedback may inform an editable preference without authorising weight training.
+Collect training examples only with explicit opt-in, visible scope, review/export/
+deletion controls and separate retention. Personal, organisation and training
+stores remain distinct; pairing a worker does not authorise sharing its user's
+corpus or training on another user's requests. Remote training needs separate
+permission for the data and compute involved.
+
+Keep the base model immutable and version adapters independently. Record exact
+base/tokenizer revisions, training code/configuration, source/data rights,
+consent and dataset provenance/version, adapter hash/licence, compatible inference
+runtime, resource measurements and evaluation evidence. Store private examples
+locally, never in repository manifests or logs. An inference GGUF file is not an
+automatically supported training input; training and inference formats, adapter
+conversion and deployment compatibility need their own qualification.
+
+Before enabling an adapter, compare against the unchanged base on held-out
+representative tasks, including factual accuracy, code correctness, refusal and
+privacy leakage, resource cost and unrelated capabilities. Keep a known-good
+base fallback and user-visible disable/revert control. A higher training reward
+alone is not a quality result. Changing the adapter invalidates incompatible
+runtime caches. Deleting a source document does not remove information already
+learned into weights; document adapter retirement/retraining requirements.
+
+Use established tooling only when this optional stage is justified. Relevant
+upstream references are [LoRA in PEFT](https://huggingface.co/docs/peft/main/en/conceptual_guides/lora),
+[DPO in TRL](https://huggingface.co/docs/trl/en/dpo_trainer) and
+[GRPO in TRL](https://huggingface.co/docs/trl/en/grpo_trainer); these links do not
+select dependencies or authorise downloads/training.

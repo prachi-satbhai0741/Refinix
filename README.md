@@ -144,6 +144,13 @@ unavoidable OS permissions and unsupported prerequisites must be explained.
 A remote-only client can skip local models. These are target installer behaviours,
 not a claim that the existing prototype package already provides them.
 
+The first public release is gated by demonstrated install, offline use and
+version upgrade on supported platforms, with no calendar deadline. Settings will
+offer explicit update checks/downloads and offline update import. A change merged
+to main reaches users only through a tested, signed, published version; see the
+[release and update plan](docs/releases.md). This is planned work, not a claim
+that the current prototype has an updater.
+
 Preserve the existing UI:
 
 | Surface | Purpose |

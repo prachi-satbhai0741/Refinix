@@ -1429,3 +1429,16 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve earlier uncommitted documentation; do not rename compatibility-sensitive data paths or invent a completed GitHub rename.
 - evidence: Authenticated GitHub REST metadata reports repository id 1352342428, current name AegisForge, push permission true and admin permission false.
 - linked_changes: [AC-20260913-002](agentchangelog.md#ac-20260913-002)
+
+<a id="up-20260914-001"></a>
+## UP-20260914-001 — Document release readiness, updates and personalisation
+- date: 2026-09-14
+- status: authorised documentation execution
+- tags: releases, updater, offline, kv-cache, context, corpus, personalisation
+- aliases: no calendar deadline, update version, refinix memory, pagedattention, optional training
+- paths: README.md, CONTRIBUTING.md, TechStack.md, tasks.md, docs/prd.md, docs/architecture.md, docs/workflows.md, docs/security.md, docs/model-catalog.md, docs/evaluation.md, docs/README.md, docs/releases.md, agent-memory/
+- summary: Execute the approved documentation plan for a readiness-based installable core with safe future updates, cache policy and staged personalisation.
+- request: Make install/use/upgrade acceptance mandatory for the first public release; preserve offline operation and add context/corpus/cache requirements with optional evaluated training later.
+- constraints: Documentation and static checks only; no calendar commitments or fixed implementer identities; preserve operational timeouts, historical evidence, current code and Git/GitHub state.
+- follow_up_to: [UP-20260913-001](#up-20260913-001)
+- linked_changes: [AC-20260914-001](agentchangelog.md#ac-20260914-001)
