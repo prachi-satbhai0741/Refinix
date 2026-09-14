@@ -1861,3 +1861,17 @@ work. No repository file change means no changelog entry.
 - changes: Updated current headings and repository/product identity; kept the former README anchor; documented the pending remote rename and a clone destination named refinix. Existing clone URLs, local checkout, application data and historical records remain intact.
 - verification: GitHub REST returned repository id 1352342428 under the old name with push=true and admin=false; gh rename help and official GitHub instructions confirmed the administrator handoff. Static diff check passed; 623 local links/anchors across 36 tracked Markdown files passed with no broken targets.
 - remaining: A repository administrator must rename the remote; verify the same repository id and update clone origins afterward. No GitHub mutation, commit, push, local-directory move or application migration occurred.
+
+<a id="ac-20260914-001"></a>
+## AC-20260914-001 — Document release readiness, updates and personalisation
+- prompt_id: [UP-20260914-001](userprompts.md#up-20260914-001)
+- date: 2026-09-14
+- status: documentation updated and statically checked; requester review pending
+- tags: releases, updater, offline, kv-cache, context, corpus, personalisation
+- aliases: no calendar deadline, update version, refinix memory, optional training
+- paths: README.md, CONTRIBUTING.md, TechStack.md, tasks.md, docs/prd.md, docs/architecture.md, docs/workflows.md, docs/security.md, docs/model-catalog.md, docs/evaluation.md, docs/README.md, docs/releases.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Recorded readiness-based public installation and upgrades, engine-owned cache policy, persistent context and optional evaluated adaptation.
+- changes: Added the focused release contract; aligned core requirements, implementation gates, technology choices, workflows and security around explicit signed updates with offline import and recovery.
+- changes: Defined target Refinix data roots and safe legacy migration; separated memory, corpus and training data; kept paging and weight adaptation conditional on evidence.
+- verification: git diff --check and local Markdown link/anchor checks passed; changed/new files are Markdown only. Confirmed historical task/evaluation sections and official-problem transcription unchanged, with append-only ledger edits. New entry IDs are unique; pre-existing historical duplicate IDs were preserved.
+- remaining: Requester wording review and separately authorised implementation/platform acceptance. No runtime tests, installations, downloads, data migration, Git/GitHub writes or application release occurred.

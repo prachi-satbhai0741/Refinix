@@ -110,6 +110,33 @@ Onboarding completes only after:
 The user may revisit model and capability setup from the Control Center without
 resetting the workspace.
 
+### Updates after installation
+
+Settings provides **Check for updates → Download → Install and restart**, plus
+**Import update** for a verified offline package. Show installed/available versions,
+release notes, download size and progress, and the last successful check. Being
+offline means availability is unknown, not that this version is current. There
+are no automatic startup, background or reconnection checks.
+
+A brief connection can fetch metadata or make download progress; it need not
+finish a large package. Preserve the working installation until the complete
+package is authenticated. Explain active-job handling before restart, preserve
+user data and show a recoverable failure if installation/migration cannot finish.
+Receiving peers pause new admission and reconcile active work before updating.
+Full behaviour and publication gates belong in [releases.md](releases.md).
+
+### Personal context and knowledge
+
+Settings lets the user inspect, edit and delete durable instructions/memory and
+manage selected corpus sources, indexing status and citations. Explain whether a
+change affects preferences, retrieved knowledge or an optional trained adapter.
+Do not ingest the device's files or save raw conversations as permanent memory
+by default. A user correction does not automatically start training.
+
+The [.refinix profile and installed data layout](architecture.md#5-local-application-data)
+remain separate from replaceable application files. Context selection is bounded;
+trimming a request to fit the model does not delete the conversation history.
+
 ## 3. Agent profiles
 
 An agent profile combines:

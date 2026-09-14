@@ -4,16 +4,21 @@
 
 | Field | Value |
 |---|---|
-| Document version | 3.0 |
+| Document version | 3.1 |
 | Status | Production direction recorded; implementation and release acceptance remain separate |
 | Target | Offline desktop AI workbench; SIH26117 provides the industrial use case |
 | Repository / product | refinix / Refinix (formerly AegisForge; GitHub rename pending administrator) |
-| Last updated | 2026-09-13 |
+| Last updated | 2026-09-14 |
 
 This is the product contract. It supersedes earlier prototype-only scope,
 fixed device placement, and calendar-based priorities as production requirements.
 It does not declare existing code complete, approve a runtime migration, or
 establish a verified release. Focused documents own the details below.
+
+Public release is governed by install/use/upgrade acceptance, with no project
+calendar deadline or fixed implementer assignment. Runtime timeouts, credential
+expiry and other operational limits remain required. Historical dates record
+evidence; they are not delivery commitments.
 
 ## 1. Product definition
 
@@ -107,6 +112,18 @@ Scores are explained suitability indices out of 100, not probabilities of
 correctness. A hardware scan cannot produce an accuracy percentage. Measurement
 and ranking rules belong in [model-catalog.md](model-catalog.md#6-onboarding-selection).
 
+### Application updates
+
+The first public release includes Settings -> Updates: explicit Check for updates,
+Download update and Install and restart, plus verified offline import. Preserve
+user data, models and work in progress through qualified upgrade/recovery paths.
+Brief Internet access may discover a release but cannot guarantee a complete
+package download. Ordinary use triggers no silent update checks or downloads.
+
+A versioned change reaching main through the normal branch flow becomes available
+only after build, compatibility, signing and release gates pass. Users receive a
+published package, not a source checkout. [releases.md](releases.md) owns this contract.
+
 ## 5. Dynamic compute participation
 
 Each installation can coordinate its own jobs and, with permission, receive jobs
@@ -173,7 +190,9 @@ Priorities describe outcomes, not dates or implementation assignments.
 Guided desktop installation; offline Chat/reasoning; document and image
 understanding; OCR and cited document generation; bounded coding and sandbox
 validation; task-aware model selection; local and trusted-device execution;
-capacity-aware concurrency; permission controls; cancellation and recovery.
+capacity-aware concurrency; KV/resource budgets; persistent instructions and
+curated memory; permission controls; cancellation and recovery; signed installation
+and a proven explicit application-update path.
 Distribution is part of the core direction, not optional merely because the
 official demonstration can run on one workstation.
 
@@ -190,7 +209,9 @@ remote model. A private deployment remains offline.
 
 Speech input/output, image generation, additional media capabilities, specialised
 language packs, employee task assignment, coordinator migration, and high
-availability. A radar animation or resource overlay must not displace core
+availability. Optional evaluated adapter/preference training follows a demonstrated
+need; continuous reinforcement learning is not part of initial release acceptance.
+A radar animation or resource overlay must not displace core
 workflow reliability.
 
 ## 8. Outcome requirements
@@ -226,6 +247,11 @@ prototype-only table.
 | FR-024 | Receiving devices expose active remote work and owner controls | P0 |
 | FR-025 | Local semantic retrieval uses qualified embeddings alongside exact-term retrieval with source/access boundaries | P0 |
 | FR-026 | Published support claims name tested OS versions, architectures, runtimes and capabilities | P0 |
+| FR-027 | Runtime memory budgets account for weights, cache/state, context and concurrent jobs; cache reuse respects compatibility and privacy | P0 |
+| FR-028 | User-editable instructions and curated memory use a defined data layout and safe legacy migration, distinct from chat history and model weights | P0 |
+| FR-029 | First public release includes explicit connected updates and verified offline import with data preservation and tested recovery | P0 |
+| FR-030 | Published versions come from passing platform build/sign/compatibility gates; an ordinary main change is not automatically a user update | P0 |
+| FR-031 | Optional local model adaptation uses approved datasets, isolated versioned adapters and held-out evaluation; no silent per-conversation training | P2 |
 
 ## 9. Non-goals
 
@@ -247,7 +273,9 @@ and sequenced in [tasks.md](../tasks.md#numbered-execution-tasks). It includes:
 clean-machine setup without terminal assistance; usable offline core workflows;
 task-aware selection across at least two task types; concurrent three-device
 placement; isolated context; cancellation and recovery without duplicate writes;
-source-grounded artifacts; and scoped offline evidence.
+source-grounded artifacts; scoped offline evidence; and a demonstrated version N
+to N+1 upgrade including interruption, migration failure and recovery. See
+[release acceptance](releases.md#6-acceptance-before-first-publication).
 
 Availability of code or a successful model answer alone is not release acceptance.
 
@@ -268,6 +296,9 @@ Availability of code or a successful model answer alone is not release acceptanc
 | OD-11 | Qualify multi-worker admission, capacity reporting, fairness and recovery using the shared job contract |
 | OD-12 | Define the supported OS/architecture/backend matrix from clean-device evidence |
 | OD-13 | Qualify shared-corpus storage, identity, access control and retention for managed deployments |
+| OD-14 | Qualify per-platform installer/updater, release hosting, signing trust, version metadata and migration/rollback paths before first publication |
+| OD-15 | Qualify cache reuse, limits and optional engine optimisations for each model/backend; no custom PagedAttention implementation required |
+| OD-16 | Formalise Refinix data-root migration and instruction precedence; optional adapters require separate training/evaluation qualification |
 
 ## 12. Canonical document map
 
@@ -277,6 +308,7 @@ Availability of code or a successful model answer alone is not release acceptanc
 - [model-catalog.md](model-catalog.md) — models, scoring, provisioning and runtime qualification
 - [devicespecifications.md](devicespecifications.md) — historical device measurements
 - [evaluation.md](evaluation.md) — current evidence boundary and acceptance criteria
+- [releases.md](releases.md) — versioned distribution, explicit updates and recovery
 - [../TechStack.md](../TechStack.md) — concrete component choices and candidates
 - [../tasks.md](../tasks.md) — outcome-based implementation gates and historical prototype record
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — Git and release contribution rules
