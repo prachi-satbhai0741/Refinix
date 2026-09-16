@@ -1,5 +1,13 @@
 # C07–C10 runtime handoff — the ordered human steps
 
+The 2026-09-06 opening build observation supersedes the older closing statement
+that the image was not built. Both are retained as dated records; neither proves
+current deployment or Beta acceptance.
+
+> Historical prototype record/template. Retained for reproduction and dated evidence.
+> Current scope and order are in [tasks.md](../../tasks.md#numbered-execution-tasks);
+> refresh source/device facts and obtain applicable authorisation before using old steps.
+
 **Devices:** `macOS coordinator` (Apple silicon, zsh, repository at
 `~/Documents/GitHub/AegisForge`) and `Ubuntu worker` (x86_64, bash, whatever
 path C05 already uses).

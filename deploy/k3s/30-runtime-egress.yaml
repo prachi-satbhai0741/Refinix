@@ -1,5 +1,5 @@
 # Worker → model runtime egress. APPLY ONLY AFTER the runtime address decision
-# in docs/c05-ubuntu-deployment-handoff.md, and confirm the CIDR first.
+# in docs/worker-operations.md, and confirm the CIDR first.
 #
 # Ollama binds host loopback by default, which no Pod can reach. The reviewed
 # arrangement binds it to the CNI bridge instead of the LAN, so Pods on this

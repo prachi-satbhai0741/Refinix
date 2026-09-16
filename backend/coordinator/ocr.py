@@ -9,7 +9,7 @@ be in the answer. This is not defensive decoration: on the macOS coordinator on
 `capabilities: ["completion"]` with no projector, and an image request returned
 HTTP 500 `image input is not supported`. A build that trusted "VL" in the name
 would have advertised OCR and failed at the first scan. See
-`docs/c08-dependency-plan.md` for the recorded observation.
+`docs/model-catalog.md` section 3.2 for the recorded observation.
 
 **What is installed is a vision-language component, not a document pipeline.**
 The Ollama tag `MedAIBase/PaddleOCR-VL:0.9b` is a third-party conversion. Where

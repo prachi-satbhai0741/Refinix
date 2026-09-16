@@ -21,6 +21,17 @@
 > official template, registered team name, Team ID, deadline, submission terms,
 > and every prototype claim.
 
+### Current product claims — 2026-09-16
+
+The dated research/copy below is retained, not a release manifest. Present the
+full production architecture strongly while labelling Working now, Beta /
+experimental and Planned product capability under [PRD release bands](prd.md#release-bands).
+Use the [current source/evidence audit](evaluation.md#beta-source-audit) and
+[Beta publication gate](releases.md#beta-01-publication) before claiming a download,
+routing, sandbox, recovery or organisation capability works. Beta 0.1 precedes
+versioned improvements and finals/production maturity; no portal dates or terms
+were reverified in this documentation pass.
+
 ## 1. Communication job
 
 By the end of the six-slide deck, SIH evaluators should understand that Refinix

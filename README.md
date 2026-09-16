@@ -10,7 +10,7 @@
 ![Problem Statement](https://img.shields.io/badge/Problem%20Statement-SIH26117-0057B8?style=flat-square)
 ![Category](https://img.shields.io/badge/Category-Software-2E8B57?style=flat-square)
 ![Theme](https://img.shields.io/badge/Theme-Smart%20Automation-7B2CBF?style=flat-square)
-![Status](https://img.shields.io/badge/Status-Research%20%26%20Prototype%20Planning-F59E0B?style=flat-square)
+![Status](https://img.shields.io/badge/Status-Prototype%20%7C%20Beta%20in%20progress-F59E0B?style=flat-square)
 ![License](https://img.shields.io/badge/License-Apache--2.0-green?style=flat-square)
 
 </div>
@@ -91,13 +91,12 @@ The open-source platform and a specialised paid offering share this core. The pa
 offering adds authorised customer corpora, workflows, templates, deployment and
 support; it does not require a cloud inference service.
 
-> **Status, 2026-09-13:** Current source includes the desktop app, local coordinator,
-> document/image and Code paths, pairing, and a Docker/K3s/Redis worker backend.
-> Cross-platform dependency-complete installers, portable peer execution, fleet
-> scheduling and semantic RAG are production work still to qualify. The
-> [source/evidence snapshot](docs/evaluation.md#current-status) distinguishes existing
-> code, historical checks and acceptance gaps. This documentation update runs no
-> application tests and does not certify a release.
+> **Status, 2026-09-16:** The current app/worker source and recent reliability
+> repairs are recorded in the [source audit](docs/evaluation.md#beta-source-audit).
+> The production architecture is retained. [Band A, P01–P14](tasks.md#numbered-execution-tasks)
+> leads to **Refinix Beta 0.1 / SIH Reviewer Preview**, followed by versioned
+> improvements and finals/production qualification. No public Beta support profile
+> is accepted yet; a working checkout or old Mac bundle is not a release.
 
 ---
 
@@ -144,12 +143,13 @@ unavoidable OS permissions and unsupported prerequisites must be explained.
 A remote-only client can skip local models. These are target installer behaviours,
 not a claim that the existing prototype package already provides them.
 
-The first public release is gated by demonstrated install, offline use and
-version upgrade on supported platforms, with no calendar deadline. Settings will
-offer explicit update checks/downloads and offline update import. A change merged
-to main reaches users only through a tested, signed, published version; see the
-[release and update plan](docs/releases.md). This is planned work, not a claim
-that the current prototype has an updater.
+The first Beta is gated by a complete reviewer journey on a narrow qualified
+matrix, including real paired execution, routing and validated Code on an eligible
+sandbox. Settings → Models remains available after onboarding for supported
+provisioning, selection and safe removal. See the [model lifecycle](docs/model-catalog.md#persistent-model-management).
+The [release contract](docs/releases.md#beta-01-publication) allows authenticated
+manual package replacement/recovery for 0.1; in-app updates and broader platform
+matrices follow. A main change reaches users only as an accepted, versioned release.
 
 Preserve the existing UI:
 
@@ -177,8 +177,10 @@ For every completed job, the proposed **Sovereign Proof Card** is intended to bu
 
 The goal of the Proof Card is to make the project's central sovereignty claim
 **inspectable during a live demonstration**, rather than something judges are
-asked to take on faith. This is proposed, not implemented or verified; its
-current contract is in [evaluation.md](docs/evaluation.md#7-sovereign-proof-card).
+asked to take on faith. The current [builder](backend/coordinator/proof.py) and UI
+exist; network evidence is still unavailable. Source existence does not verify
+egress enforcement. The [evidence contract](docs/evaluation.md#7-sovereign-proof-card)
+and [Beta acceptance](docs/evaluation.md#beta-acceptance) govern claims.
 
 ---
 

@@ -148,7 +148,7 @@ are pure notification noise. Ask for a review when you want one.
 Work on `dev` until it is genuinely ready, then take it to `main` in one PR.
 Anyone can open and merge that release PR.
 
-For the alpha build, follow the [execution review and named human
+For each release band, follow the [execution review and device-based human
 checkpoints](tasks.md#numbered-execution-tasks) before promotion.
 These are work-acceptance gates; they do not add a GitHub approval quota or
 change the workflow triggers. Git publication remains a human action unless

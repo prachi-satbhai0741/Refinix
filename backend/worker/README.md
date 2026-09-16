@@ -2,7 +2,8 @@
 
 Executes one bounded job step for a coordinator. It owns **no canonical state**:
 the coordinator persists the job, this service runs an attempt and reports
-events. Losing every worker record loses nothing the coordinator needs.
+events. Canonical state stays on the coordinator, but worker receipts/leases
+must be retained or reconciled to resolve uncertain work safely.
 
 ## The frozen `/v1` surface
 
@@ -16,36 +17,29 @@ Implemented exactly as reserved in [the contract](../contracts/README.md):
 | `GET /v1/jobs/{job_id}?attempt_id=` | The current worker `Attempt` |
 | `GET /v1/jobs/{job_id}/events?attempt_id=` | SSE for that attempt |
 | `DELETE /v1/jobs/{job_id}?attempt_id=` | `202`, records cancellation and stops execution |
-| `POST /v1/pairing/confirm` | **`501`** — reserved pending OD-06 |
-| `DELETE /v1/pairing/{relationship_id}` | **`501`** — reserved pending OD-06 |
+| `POST /v1/pairing/confirm` | Redeems a one-time code for a scoped relationship credential |
+| `DELETE /v1/pairing/{relationship_id}` | Revokes the authenticated relationship and fences its work |
 
 The `attempt_id` query is required on poll, stream and cancel so a delayed
 request cannot target a newer retry.
 
 ## The job routes are fail-closed
 
-`POST /v1/jobs`, poll, events and cancel all return **`503 unavailable`** with a
-typed reason. Two prerequisites do not exist:
-
-- **OD-06 pairing** — nothing can confirm a relationship is genuine, so a
-  claimed `relationship_id` under a shared bearer token proves nothing.
-- **AF-005 durable receipt** — the contract requires a job to be persisted and
-  enqueued *before* acknowledging. An in-memory dictionary is not that, and
-  returning `202` for it would be a claim the worker cannot honour.
-
-The execution path is implemented and covered by offline checks so C05/C06 can
-enable it. Nothing in the application populates the relationship registry — no
-route, no environment variable — so there is no deployable bypass. Health and
-capabilities stay available for preflight and advertise **no capability** while
-the worker cannot accept work.
+The API accepts supported bounded work only with valid relationship authority and
+available configured receipt/package/runtime prerequisites. Redis dispatch commits
+the durable receipt before acknowledgement; the separate executor claims leases,
+emits events and reconciles cancellation/restart. Missing prerequisites still fail
+closed. The [source audit](../../docs/evaluation.md#beta-source-audit) records the
+remaining receiver-wide admission and portable packaging gaps; current deployment
+is not inferred from source or an older image.
 
 ## Honesty rules this service follows
 
 - **It will not start without a credential.** `AEGIS_WORKER_TOKEN` is required,
   so the worker cannot accidentally run open on a LAN. Comparison is
   constant-time.
-- **Pairing is not implemented.** Both pairing routes return `501` rather than
-  quietly granting trust. How a credential is issued is OD-06 work.
+- **Pairing is scoped and revocable.** The prototype uses a one-time code over
+  pinned TLS; ordinary-user graphical setup remains [P09](../../tasks.md#numbered-execution-tasks).
 - **A model is advertised only with a real manifest digest.** If the runtime
   does not report one, the model is not advertised — no placeholder digest.
 - **Health is observed, never assumed.** Without an observation the `Node`
@@ -72,11 +66,12 @@ the worker cannot accept work.
 PYTHONPATH=. ./.venv/bin/python -m unittest backend.worker.test_worker_runtime
 ```
 
-Ten offline checks: bounded settings, the limit classifier (including that a
-capped reply after a large prompt is an **output** stop, not a context one),
-failure handling, cancellation and honest probing. FastAPI lives only inside the
-pinned image, so the API surface is checked at **build time** with
-`--network=none` and by the Ubuntu build handoff.
+The runtime suite covers bounded settings, failure/cancellation and probing.
+`test_worker_app.py`, `test_executor.py`, `test_packages.py` and
+`test_validation.py` cover the API/dispatch and validation paths using synthetic
+inputs and test doubles. The pinned image build and source CI include worker
+checks; their existence is not an observed current build/deployment pass. See
+[evaluation](../../docs/evaluation.md#current-status) for recorded results and gaps.
 
 Build assets and the image itself are in
 [`backend/worker-image`](../worker-image/README.md).

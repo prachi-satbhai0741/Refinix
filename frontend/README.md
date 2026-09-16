@@ -16,7 +16,7 @@ These surfaces consume one local harness API and event stream. They do not own
 separate model, memory, permission, routing, or audit systems.
 
 First-run onboarding creates a local workspace automatically, detects hardware,
-requires a main engine, resolves dependencies for enabled capabilities, shows
+requires a main engine for local inference, resolves dependencies for enabled capabilities, shows
 source/licence/size information, and runs real self-tests. It never asks for a
 permanent coordinator, worker, or server role.
 
@@ -28,30 +28,23 @@ The UI must distinguish connected setup from offline runtime and must follow the
 [Control Center evidence semantics](../docs/security.md#12-control-center-evidence-semantics).
 It cannot hard-code secure, blocked, healthy, or zero-traffic states.
 
-## Status: no scaffolding yet
+## Current runtime and design boundary
 
-`frontend/app/` is the **application-owned** C03 UI: plain HTML, CSS and
-JavaScript served by the coordinator, with no package.json, build step or
-dependency set. Its stylesheet is derived from the design tokens but loads **no
-external font**, so the running application makes no network request outside
-loopback.
+`frontend/app/` is the running application UI: local HTML/CSS/JavaScript served
+by the coordinator, with Chat/document skills, IDE-style Code, Settings and job
+status. Existing Node suites cover simulated DOM behaviour; they are not an
+operator walkthrough. No React/TypeScript/Vite conversion is planned.
 
-The two tracks no longer disagree on type metrics. `--font-ui` was
-`IBM Plex Sans Condensed`, which the application could never load and always
-replaced with a non-condensed system face — so the design rendered narrower than
-the product by design. It is now `IBM Plex Sans`, the same family in its normal
-cut: the design track loads it from Google Fonts, the application falls through
-to `system-ui`, and the two now differ by a typeface rather than by a width.
-Clipped labels or unusable controls remain functional defects.
+`frontend/design/` is the separate visual/site reference and is not served by the
+application. Its sample onboarding, pairing and recommendations are not runtime
+implementation. Keep its media and brand assets as design inputs, not evidence.
 
-`frontend/design/` remains the design track's own reference area and is not
-served, linked or redirected into by the application.
+The app uses local assets/system fonts; any external fonts in the reference site
+are outside the runtime. Scoped egress proof still requires independent observation.
 
-The recorded alpha baseline uses local HTML, CSS, and JavaScript served by the
-coordinator. [TechStack.md](../TechStack.md#3-frontend-and-product-surfaces)
-proposes React + TypeScript + Vite for C03, with built assets still served
-locally; this is a recommendation, not an implemented framework change.
-
-Chat and Control Center form the first usable slice; Documents and Code reuse the same job form,
-event stream, artifact links, and truthful unavailable states. Packaging remains
-deferred until the complete demonstration path works.
+The Beta UI work reuses these surfaces. Persistent **Settings → Models** follows
+[the catalogue lifecycle](../docs/model-catalog.md#persistent-model-management);
+guided pairing and truthful model/device routing follow [workflows](../docs/workflows.md).
+Do not expose inactive controls as working. The [task graph](../tasks.md#numbered-execution-tasks)
+puts clean packaging on the Beta path rather than deferring it until all production
+features exist. Website/PPT claims follow [release bands](../docs/prd.md#release-bands).

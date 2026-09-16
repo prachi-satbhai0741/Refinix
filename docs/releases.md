@@ -1,15 +1,16 @@
 # Releases, installation and application updates
 
-Status: agreed product contract, recorded 2026-09-14; implementation and platform
-qualification remain planned. [prd.md](prd.md) owns scope; [security.md](security.md)
+Status: release bands revised 2026-09-16; production architecture preserved.
+Beta publication and platform qualification remain unaccepted. [prd.md](prd.md) owns scope; [security.md](security.md)
 owns security boundaries. No build, signing, hosting or release action is authorised
 merely by this document.
 
 ## 1. Release readiness
 
 Release when the supported product passes acceptance, not on a calendar deadline.
-The first public core includes both clean installation and an update path proven
-between two test versions. A downloadable source archive or a working development
+Beta 0.1 qualifies a narrow install/use/manual-replacement path. In-app updates
+and broader upgrade matrices follow in Bands B and C; they remain production
+requirements, not prerequisites to the first Beta download. A downloadable source archive or a working development
 checkout is not an end-user installer. Publish the tested OS version/edition,
 architecture, GPU/CPU backend and capability matrix; do not promise every existing
 computer, driver or Linux distribution is compatible.
@@ -24,6 +25,65 @@ Current source boundary: [.github/workflows/ci.yml](../.github/workflows/ci.yml)
 checks main pull requests and pushes on a Linux runner. It does not implement the
 multi-platform build/sign/publish/update pipeline below. Existing macOS packaging
 is a prototype path, not evidence of signed public installers for all platforms.
+
+### Release maturity
+
+| Milestone | Required distribution scope |
+|---|---|
+| Beta 0.1 / SIH Reviewer Preview | Complete Band A on published profiles, authenticated immutable packages and tested manual replacement/recovery; no unfinished updater |
+| Beta 0.2 / 0.3 | Accepted incremental Band B improvements; each changed/new profile repeats affected install/workflow/security checks; P19 qualifies in-app updates before exposing them |
+| Finals candidate | A rehearsed version with a frozen, evidence-backed claim set; broader capabilities only when accepted |
+| Production-qualified release | Full advertised OS/backend, upgrade/recovery, interoperability and managed-deployment matrices, as applicable |
+
+Use a clearly labelled **Beta/preview channel** initially. Add a stable channel
+only when its production gates pass; never label the reviewer preview stable.
+Display versions such as Beta 0.1 consistently, with one authoritative package
+version and explicit pre-release status. The prototype's existing `0.1.0` value
+is not itself a published Beta. Production scope and task mapping are in
+[PRD release bands](prd.md#release-bands) and [tasks](../tasks.md#numbered-execution-tasks).
+
+<a id="beta-01-publication"></a>
+### Beta 0.1 publication acceptance
+
+The earliest Download Refinix Beta button is **P14**, after every Band A gate.
+No profile is accepted as of this review. Before enabling the button:
+
+1. Select and publish an exact OS/edition/architecture/backend/capability matrix,
+   minimum measured resources, model/download sizes, prerequisites and limitations.
+   At least one desktop supports useful standalone work; show which Code validation
+   route needs an eligible peer. A managed sandbox may be administrator-prepared,
+   but ordinary reviewers connect graphically and need no Kubernetes/queue/TLS setup.
+2. Build an immutable package from the designated commit/version. Verify final
+   shipped source/resources, dependency and model manifests, notices, integrity,
+   publisher authentication and platform signing/notarisation where required.
+   An ad-hoc prototype signature is insufficient public distribution evidence.
+3. A nondeveloper completes website → download → install → hardware detection →
+   model choice/download or supported offline import → self-test → real work.
+   Exercise later Settings → Models management and the entire
+   [Beta acceptance matrix](evaluation.md#beta-acceptance) on the shipped bytes.
+4. Test first launch/relaunch, denied OS permissions, missing runtime/model,
+   insufficient disk, cancellation, unsupported capabilities and uninstall/data
+   preservation. Package/runtime provisioning is complete before offline tests.
+5. Document and rehearse authenticated **manual full-package replacement** using
+   two labelled test builds on the chosen profile: stop/drain work, snapshot affected
+   state, replace the app, reopen offline and verify chats, model references,
+   credentials and artifacts. Prove recovery after a failed replacement without
+   opening an incompatible newer schema or losing newer user work. No automatic
+   updater or schema migration is required for 0.1; if a migration ships, its
+   failure/recovery checks are mandatory. The complete future matrix is deferred,
+   not basic data safety. Users can remain on a working offline version.
+6. Release notes explain Beta limitations, supported models and execution targets,
+   recovery/removal instructions and a support route that requires no automatic
+   telemetry. Provide a local synthetic try-it workflow and expected outputs.
+7. Requester accepts the evidence and authorises publication. Upload verified
+   assets before publishing the website link; verify the link actually downloads
+   the matching package without an account. Record version, hash, profile and
+   review date with the evidence. A source archive does not satisfy this gate.
+
+The website/PPT can describe sovereign local AI, trusted heterogeneous compute,
+model/device routing, sandboxing, recovery and organisation deployment. Every
+functional claim uses Working now / Beta-experimental / Planned labels under
+[PRD scope](prd.md#release-bands); no unsupported Download option is enabled.
 
 ## 2. From source change to published version
 
@@ -41,9 +101,9 @@ is a prototype path, not evidence of signed public installers for all platforms.
                                |
                   publish versioned release assets
                                |
-                    publish update metadata last
+                    publish update metadata last (when qualified)
                                |
-              website download / in-app Check for updates
+              website download / qualified in-app Check for updates
 
 - Preserve [CONTRIBUTING.md](../CONTRIBUTING.md)'s branch flow. A change reaching
   main triggers CI; it does not itself update user installations.
@@ -56,8 +116,8 @@ is a prototype path, not evidence of signed public installers for all platforms.
   database-schema and model-artifact versions; matching app versions alone is not
   a compatibility check.
 - Extend CI with builds/checks for each supported OS/architecture. Publish the
-  stable feed only after all required artifacts and gates for that release pass.
-  A failed or incomplete build leaves the previous stable version advertised.
+  chosen release channel only after all required artifacts and gates for that
+  version pass. A failed build leaves the previous accepted version advertised.
 - Sign only trusted release inputs in restricted build jobs, then verify the final
   distributed bytes. Signing keys must not reach untrusted pull-request jobs,
   source archives, binaries or logs. Preserve package manifests and notices.
@@ -69,14 +129,19 @@ is a prototype path, not evidence of signed public installers for all platforms.
 - Publish assets before updating the release feed, so the app never advertises a
   missing installer. Release notes describe behaviour, compatibility, migration,
   additional capability requirements and known limitations.
-- Start with one stable user channel. Development artifacts must not appear as
-  normal updates. A preview channel and staged rollouts can follow a measured need.
+- Start with the Beta/preview channel described above. Development artifacts
+  never appear as accepted Beta updates; stable and staged rollout policies follow
+  their qualification. Publish update metadata only when that updater path exists.
 
 GitHub supports tagged releases containing notes and binary assets; an Actions
 artifact used during a build is not automatically an end-user release.
 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 
 ## 3. User update workflow
+
+**Band B / P19 target.** Beta 0.1 uses the qualified manual path above unless
+this updater has separately passed acceptance. Do not render nonfunctional
+Check/Download/Install controls or claim “up to date” without evidence.
 
 Settings -> Updates shows the installed version, last check and Check for updates.
 
@@ -162,9 +227,17 @@ preserve/export recoverable newer data as appropriate. Recovery is a controlled,
 known-good operation, distinct from accepting an arbitrary old update from a server.
 Snapshots and downloaded packages have visible retention/storage policies.
 
-## 6. Acceptance before first publication
+<a id="6-acceptance-before-first-publication"></a>
+## 6. Update and production release acceptance
 
-Use two built versions, N and N+1, on every supported installation profile. Record
+The old “before first publication” anchor is retained for incoming links; it no
+longer requires the full matrix before Beta 0.1. Use the Beta gate above first.
+
+<a id="update-acceptance"></a>
+### In-app update acceptance — Band B
+
+Before exposing an updater, use two built versions, N and N+1, on every profile
+for which that updater is offered. Record
 source commits, package hashes, signing identity/trust result, OS/architecture,
 fixture state and actual observations. Required cases:
 
@@ -185,4 +258,15 @@ fixture state and actual observations. Required cases:
 
 Passing ordinary unit tests alone does not establish installer or updater acceptance.
 Release manifests, evidence and end-user files must agree. The website publishes
-only the qualified support matrix and actually available stable artifacts.
+only qualified profiles and actually available artifacts with their release channel.
+
+<a id="production-release-acceptance"></a>
+### Full production release acceptance — Band C
+
+Repeat the updater cases across every advertised OS/edition/backend and supported
+source-version/schema transition, including mixed-version peers and managed worker
+upgrades. Exercise publisher-key rotation/recovery and unsupported upgrade refusal;
+preserve recoverable newer work on rollback. Record the supported transition matrix
+rather than promising arbitrary old-version rollback. Complete
+[production acceptance](evaluation.md#production-acceptance) before stable claims.
+This is P23/P26 maturity, not an additional Beta 0.1 prerequisite.

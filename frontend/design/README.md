@@ -9,6 +9,16 @@ build chain and no desktop wrapper.
 sample markup. They do not connect to the coordinator, do not consume the event
 stream, and nothing shown here is a measurement.
 
+## Release claim boundary
+
+These are visual references, including website and onboarding concepts, not the
+shipped app or measured capabilities. Persistent Settings → Models uses the
+[same lifecycle after onboarding](../../docs/model-catalog.md#persistent-model-management).
+Website/download and PPT labels follow [PRD release bands](../../docs/prd.md#release-bands);
+only [P14 publication acceptance](../../docs/releases.md#beta-01-publication) enables
+a real Beta download. Keep the architecture vision visible and its evidence status
+explicit. Existing dated visual decisions below remain reference history.
+
 ## Direction
 
 Two treatments, chosen 2026-09-03 after a three-way comparison.

@@ -1928,3 +1928,32 @@ work. No repository file change means no changelog entry.
 - changes: Moved source validation before route selection and reused the job request text; narrowed the English transcription heuristic; transferred newer draft skills only when the composer transitions to its created chat and refreshed the chip.
 - verification: New backend and new-chat skill regressions failed before fixes and passed afterward. Ran 115 coordinator reliability/document/attachment tests and all 139 frontend tests successfully; git diff --check passed.
 - remaining: The intent detector is a conservative English heuristic. Packaged-app and real-model quality checks remain unverified; no GUI, live inference, downloads, personal state or Git writes were used.
+
+<a id="ac-20260916-002"></a>
+## AC-20260916-002 — Reconcile the source-grounded Beta frontier
+- prompt_id: [UP-20260916-001](userprompts.md#up-20260916-001)
+- date: 2026-09-16
+- status: documentation integrated and statically checked; requester review pending
+- tags: beta, task-graph, model-lifecycle, source-audit, documentation-cleanup
+- aliases: P14 Beta frontier, SIH Reviewer Preview, persistent Settings Models
+- paths: tasks.md, docs/, README.md, TechStack.md, CONTRIBUTING.md, backend/README.md, backend/contracts/README.md, backend/coordinator/README.md, backend/worker/README.md, backend/worker-image/README.md, frontend/README.md, frontend/design/README.md, agent-memory/
+- summary: Preserved the production architecture and replaced the first-publication sequence with a dependency-based Beta frontier grounded in current source and recorded evidence.
+- changes: P01–P14 Beta blockers, P15–P20 versioned improvements and P21–P26 finals/production maturity; mapped old gates, defined persistent model lifecycle and narrow authenticated Beta installation/recovery.
+- changes: Recorded current implementation gaps and recent reliability repairs; corrected stale component status, marked old handoffs historical and retained referenced reproduction/fixture/design assets after cleanup review.
+- verification: Inspected current source/test bodies, CI/build definitions, docs and retained evidence. All 745 local links/anchors across 37 tracked Markdown files passed; 26 ordered tasks, band classifications, backward dependencies, preserved historical task/evaluation sections and Markdown-only scope passed. git diff --check passed. No application tests or live acceptance ran.
+- remaining: Requester review of revised plan and separate device/runtime/package/publication gates. No runtime code, tests, installs, downloads, services, user state or Git/GitHub writes changed.
+
+<a id="ac-20260916-003"></a>
+## AC-20260916-003 — Consolidate execution context and retire prototype briefs
+- prompt_id: [UP-20260916-002](userprompts.md#up-20260916-002)
+- date: 2026-09-17
+- status: consolidated and checked offline; requester review pending
+- tags: documentation, execution-guide, archive, worker-operations, cleanup
+- aliases: retired C handoffs, lightweight task board, deferred public presentation
+- paths: AGENTS.md, tasks.md, docs/README.md, docs/archive/, docs/worker-operations.md, docs/workflows.md, docs/evaluation.md, docs/model-catalog.md, backend/coordinator/, backend/worker-image/README.md, backend/worker/pairing_cli.py, deploy/k3s/, scripts/image-digests.py, agent-memory/
+- summary: Replaced duplicated active handoffs with canonical execution guidance while preserving reproduction history and safety coverage.
+- changes: Deleted two superseded briefs after retaining their requirements; archived seven handoffs/plans and the historical task board; reduced active tasks.md from 830 to 224 lines and added source, check and checkpoint guidance.
+- changes: Consolidated managed-worker operations, repaired active references and made missing safety documents fail their existing tests; flagged conflicting historical build/schema claims and deferred public presentation work.
+- verification: Eight focused documentation safety tests passed. Checked local Markdown links/anchors, archive wording, historical task preservation, all 26 task classifications/dependencies and unchanged runtime structure; git diff --check passed.
+- verification: Snapshot hashes confirm this cleanup preserved root README, frontend/design, SIH presentation brief and C07 fixtures, including prior edits; historical ledgers remain append-only.
+- remaining: Requester review and current device/runtime/package acceptance. No model calls, installs, services, deployment, Git/GitHub writes or production qualification; only runtime help/comment references changed.

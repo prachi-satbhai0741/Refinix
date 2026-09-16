@@ -35,7 +35,7 @@ Context selection uses an estimate; Ollama receives `truncate: false` and
 an actionable notice. If generation fills the context, the saved partial reply
 is marked incomplete with a context-limit reason, separate from the reply limit.
 Verified on the installed Mac model and Ollama 0.32.14; see the
-[repair evidence and handoff](../../docs/c03-repair-handoff.md).
+[repair evidence and handoff](../../docs/archive/c03-repair-handoff.md).
 
 ## Why the standard library
 
@@ -104,7 +104,8 @@ The offline-runtime invariant and `docs/security.md` §12 shape the surfaces:
   listing and reading included — rather than falling back to a weaker check.
   Chat is unaffected.
 - Document reading, search and generation are skills inside Chat. A skill
-  reads **only the attachments sent with its own request**; plain Chat uses the
+  reads only newly attached or explicitly reused same-chat sources bound to its
+  request, revalidating reuse; plain Chat uses the
   same local reader when files are attached. Text, Office documents, PDF pages,
   spreadsheets and supported images are read only when their local parser or
   OCR capability is observed; a missing capability is reported rather than
@@ -130,9 +131,11 @@ The offline-runtime invariant and `docs/security.md` §12 shape the surfaces:
   reason and no blank assistant message is saved.
 - A file attached to a request is stored under `~/.aegisforge/attachments/` and
   listed beside the request. A document skill or ordinary Chat reads only the
-  files bound to that request; their contents never enter another request.
-- Workers, cluster, approvals, Proof Cards and egress evidence render
-  **unavailable**, each naming the chunk that produces its evidence.
+  files bound to that request; a later reread requires explicit same-chat source
+  selection and revalidation rather than silently inheriting every old attachment.
+- Worker, approval, artifact and Proof Card paths exist and render stored
+  observations. Missing network/Pod evidence remains **unavailable**; source
+  presence and configured policies are not live enforcement proof.
 - A missing measurement renders hatched as unavailable — never as a default,
   never as healthy.
 - An empty model response is a **failure**, not a successful blank reply.
@@ -178,8 +181,10 @@ happened.
 
 ## What this does not do
 
-No worker, no pairing, no cluster, no document understanding, no sandboxed
-execution, no Proof Cards, and no egress evidence. Code edits the contents of
+The coordinator integrates pairing, worker dispatch, document workflows, bounded
+Code validation and Proof Cards. Remaining gaps and dated results belong in the
+[current audit](../../docs/evaluation.md#beta-source-audit). Network evidence is
+unavailable until observed; local Apply is not sandbox validation. Code edits the contents of
 existing text files only; it cannot create, delete or rename a file, run a
 project command, use Git, install anything or enable a network. A structurally
 valid proposal proves the workflow ran — it is not evidence that the change is

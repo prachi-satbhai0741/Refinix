@@ -8,6 +8,15 @@ not implemented or qualified merely by appearing here. See the
 [current source snapshot](evaluation.md#current-status) and
 [implementation gates](../tasks.md#numbered-execution-tasks).
 
+### Release sequencing, unchanged architecture
+
+[PRD release bands](prd.md#release-bands) and [task dependencies](../tasks.md#numbered-execution-tasks)
+set delivery order without replacing this architecture. Band A integrates a narrow
+qualified desktop/peer/sandbox matrix through the existing harness; capability-aware
+participation does not require every OS to supply every capability. Broader same-OS
+peer, scheduler, RAG, updater and managed-deployment qualification follows in Bands
+B/C. The full Windows/macOS/Linux destination below remains intact.
+
 ## 1. System shape
 
 Refinix is the harness: the existing context manager, workflow runner, policy,
@@ -50,6 +59,12 @@ handles selected model downloads or verified offline imports. Users should not
 need terminals, package managers, Kubernetes or certificate commands. Signing,
 OS permissions, drivers and any sandbox virtualisation prerequisites require
 platform-specific qualification and guided setup; they cannot be wished away.
+
+The model catalogue persists beyond onboarding. One shared model-manager path
+backs first run and Settings → Models; manifests reference approved weights and
+profile eligibility, while jobs retain immutable chosen model identities. Follow
+[the catalogue lifecycle](model-catalog.md#persistent-model-management), including
+safe active-job/removal handling; no separate onboarding-only catalogue.
 
 Pairing never merges workspaces. A device may coordinate its own jobs while
 serving permitted jobs from several peers, with receiver-side admission across
@@ -196,6 +211,13 @@ Whole tasks or bounded steps move between devices. There is no model sharding,
 pooled VRAM, or duplicate full-model execution intended to accelerate one answer.
 User-pinned targets never silently change. Auto fallback stays within the granted
 data and execution policy; ambiguous tool execution must reconcile before retry.
+
+For Beta P10, implement these same boundaries with deterministic capability rules,
+fresh actual load/queue observations and conservative receiver-wide admission.
+A bounded queue or one reserved slot may suffice if measured and disclosed. Do
+not confuse the existing per-relationship active-count check with atomic global
+admission. Smarter completion estimates, fairness and the three-device scenario
+are P15; safe capacity limits and receipt reconciliation cannot be deferred.
 
 ### 3.6 Runtime adapter
 

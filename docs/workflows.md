@@ -107,10 +107,32 @@ Onboarding completes only after:
 - each enabled capability runs its smallest representative test;
 - failures are reported as unavailable or unverified rather than hidden.
 
-The user may revisit model and capability setup from the Control Center without
-resetting the workspace.
+The user returns to **Settings → Models** without resetting the workspace.
+First-run setup is only the initial configuration.
+
+<a id="models-after-onboarding"></a>
+### Models after onboarding
+
+Settings → Models remains available throughout the installation's lifetime.
+Show Installed and Supported/available choices with capabilities, manifest details
+and measured/estimated/unverified status. Reuse the same picker and provisioning
+flow as onboarding. A user may explicitly choose another compatible model,
+download or import it later, cancel provisioning, verify/self-test it and enable
+it for eligible profiles. Recommendations refresh when hardware or capabilities
+change. Before disable/removal, explain affected capabilities and jobs and obtain
+the required confirmation. Existing chats and unaffected models remain usable.
+
+The [catalogue lifecycle](model-catalog.md#persistent-model-management) defines
+these operations and safeguards once. This is Band A behaviour for the supported
+Beta set; the current composer model selector is only its implementation starting
+point. Do not imply that first-run choices are permanent or that arbitrary runtime
+models have been qualified.
 
 ### Updates after installation
+
+The following in-app updater is Band B behaviour; Beta 0.1 may use the
+[qualified manual replacement path](releases.md#beta-01-publication). Only expose
+functional, accepted controls.
 
 Settings provides **Check for updates → Download → Install and restart**, plus
 **Import update** for a verified offline package. Show installed/available versions,
@@ -172,6 +194,36 @@ files, tools, or other models; the harness grants each bounded action.
 
 Chat continues locally when a suitable local model is installed. A remote-only
 client retains history and explains that execution needs an available trusted target.
+
+<a id="chat-continuity-and-rendering"></a>
+### Chat continuity and rendering
+
+Preserve the implemented behaviour from the retired C03 brief in P06/P12 changes:
+
+- Saved history stays complete; each bounded request records selected/omitted
+  messages, budget/counting method and actual runtime metrics where available.
+  Show omissions and incomplete replies honestly; retain partial output for an
+  explicit continuation, never silently replay it with different context.
+- Rename, pin and literal Unicode search preserve chat identity/history. Drafts
+  remain isolated per conversation, survive restart/errors and clear only for
+  the accepted submission version. Confirm deletion, block unfinished work in
+  both UI/backend, and prevent delayed drafts/events from recreating deleted chats.
+- Explicit Markdown/text export includes the complete selected saved conversation,
+  excludes drafts/other chats and preserves readable Unicode and code. New Chat
+  does not delete existing work; ordinary deletion is not secure disk erasure.
+- Render common Markdown with inert raw HTML, safe explicit links and literal
+  copy actions; no automatic remote images/fonts/previews. Preserve ordered-list
+  numbering, readable tables/code and the distinction between a link and a
+  validated citation. Keep synthetic UI fixtures outside normal navigation.
+- Preserve drafts/reading position while streaming, duplicate-send and IME guards,
+  keyboard/focus operation, accessible navigation/details on narrow screens,
+  light/dark contrast, reduced motion and 200% zoom. Important errors/status
+  cannot disappear behind a cosmetic layout change.
+
+Use the current `frontend/app/` implementation and its fixtures/tests, not old
+pixel prescriptions. [P06/P12 acceptance](evaluation.md#beta-acceptance) includes
+a real operator check; a simulated DOM check does not establish accessibility or
+real-model correctness.
 
 ## 5. Documents workflow
 
@@ -283,6 +335,12 @@ application API. All discovery and execution work without a public Internet rout
 
 ## 9. Execution choice
 
+This is target behaviour to implement for supported Beta workflows in P10.
+Current source disables Auto; local Documents placement remains valid if shown
+explicitly. Unsupported local sandboxing shows “Requires a supported execution
+peer”; local proposal/Apply retains its existing non-sandbox label. See the
+[source audit](evaluation.md#beta-source-audit) for gaps.
+
 Every task starts with Auto by default:
 
 - Auto selects an eligible model/device pair, considering task quality, loaded
@@ -298,7 +356,7 @@ offers a compatible alternative. It does not silently send the task elsewhere.
 
 The Control Center presents:
 
-- local hardware, runtime, model, and storage status;
+- persistent Settings → Models management through the [catalogue lifecycle](model-catalog.md#persistent-model-management), plus local hardware, runtime and storage status;
 - enabled agent profiles and self-test state;
 - active, queued, awaiting-approval, failed, and completed jobs;
 - paired devices, capabilities, heartbeat, and revocation;

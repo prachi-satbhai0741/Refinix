@@ -103,7 +103,7 @@ def _docker_archive(tar: tarfile.TarFile, archive: str) -> int:
           "does not contain. Export explicitly with "
           "`docker buildx build --builder <docker-container-builder> "
           "--output type=oci,dest=worker.oci.tar ...`. See the pinned builder "
-          "setup in docs/c04-ubuntu-build-handoff.md. Enabling BuildKit alone "
+          "setup in docs/worker-operations.md. Enabling BuildKit alone "
           "does not select the archive format; do not change Docker's image "
           "store or push to a registry to work around this error.", file=sys.stderr)
     return 2

@@ -1508,3 +1508,30 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: UP-20260915-004
 - linked_changes: AC-20260916-001
 - constraints: No Git writes, live models, GUI, downloads or personal state.
+
+<a id="up-20260916-001"></a>
+## UP-20260916-001 — Sequence a source-grounded SIH Beta inside the production plan
+- date: 2026-09-16
+- status: authorised documentation restructure and repository cleanup review
+- tags: beta, release-frontier, model-lifecycle, source-audit, canonical-docs
+- aliases: SIH Reviewer Preview, Band A, Band B, Band C, Settings Models
+- paths: tasks.md, docs/, README.md, TechStack.md, backend/, frontend/README.md, agent-memory/
+- summary: Reinspect implementation and evidence, preserve the production architecture, and define the earliest coherent downloadable Beta in canonical documents.
+- request: Separate Beta blockers, versioned enhancements and finals/production maturity; make post-onboarding model management explicit; reconcile stale claims and remove only demonstrably obsolete material.
+- constraints: Preserve working code, tests, fixtures, security boundaries, historical measurements and user data; no runtime execution, installs, downloads, host changes or Git/GitHub writes authorised by this planning task.
+- supersedes: First-publication sequencing in [UP-20260914-001](#up-20260914-001); retains its production architecture and update destination.
+- linked_changes: [AC-20260916-002](agentchangelog.md#ac-20260916-002)
+
+<a id="up-20260916-002"></a>
+## UP-20260916-002 — Consolidate historical handoffs and make execution self-contained
+- date: 2026-09-16
+- status: authorised documentation cleanup and affected reference/check maintenance
+- tags: documentation-cleanup, archive, execution-context, beta, runbook
+- aliases: lightweight professional repository, agent execution guide, retired C03 C04 handoffs
+- paths: AGENTS.md, tasks.md, docs/, backend/, deploy/k3s/, scripts/image-digests.py, agent-memory/
+- summary: Consolidate obsolete handoffs, retain unique evidence and safety checks, and make canonical documentation support the active execution plan.
+- request: Follow the reviewed delete/consolidate/archive recommendation and give future agents sufficient source, acceptance and checkpoint context.
+- constraints: Defer root README, website and SIH presentation content work; preserve existing edits, runtime behaviour, fixtures, provenance, historical measurements and Git state.
+- verification_scope: Proportionate existing-dependency offline checks for relocated documentation and affected tests; no live devices, downloads, deployment or publication.
+- follow_up_to: [UP-20260916-001](#up-20260916-001)
+- linked_changes: [AC-20260916-003](agentchangelog.md#ac-20260916-003)
