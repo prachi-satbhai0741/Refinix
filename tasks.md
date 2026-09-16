@@ -33,12 +33,13 @@ be investigated early; release/update acceptance is required before publication.
 
 ## Numbered execution tasks
 
-These production gate IDs are separate from historical C/E/AF task IDs. All are
-**planned** here; existing source may satisfy a portion after focused verification.
+These production gate IDs are separate from historical C/E/AF task IDs. P01 is
+**in progress**; P02–P08 remain **planned**. Existing source may satisfy a portion
+after focused verification; local checks do not close device acceptance gates.
 
 | Gate | Outcome and smallest change | Required acceptance / dependency |
 |---|---|---|
-| P01 — Baseline and support contract | Reconcile source with current workflows; select target OS versions, architectures, capabilities and representative public fixtures | Record actual local and retained worker behaviour, gaps and failure cases. Define advertised minimum support without claiming untested platforms |
+| P01 — Baseline and support contract — in progress | [Source/offline baseline, qualification profiles and synthetic fixtures recorded](docs/evaluation.md#p01-baseline); no runtime implementation changed | Current local/retained-worker behaviour and failure evidence, platform readiness and requester acceptance pending. No advertised minimum support is qualified yet |
 | P02 — Runtime and packaging qualification | Package existing app/service dependencies; evaluate bundled llama.cpp against current Ollama and preserve rollback | P01; clean-device launch without terminal setup, exact manifests, local model parity, KV/resource budgets, cancellation, offline run, early updater qualification and upgrade/uninstall preserving data. Record unavoidable OS prerequisites |
 | P03 — Core workflow reliability and local RAG | Reuse Chat/Code/document flows; qualify embeddings plus FTS5, corpus lifecycle and persistent instructions/memory; qualify a second execution-model option for task routing | P01 and qualified runtime paths; grounded document/image work and real artifacts, bounded code proposals, at least two model options selected automatically for different task types, per-chat context isolation |
 | P04 — Portable execution and isolation | Make app-managed execution agent work on supported OSes; qualify standalone sandbox/toolchains | P01–P02; native inference plus bounded workspace enforcement. A remote Linux sandbox is not proof of standalone Windows/macOS sandboxing; no unsafe fallback |

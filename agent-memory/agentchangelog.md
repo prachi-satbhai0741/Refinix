@@ -1875,3 +1875,56 @@ work. No repository file change means no changelog entry.
 - changes: Defined target Refinix data roots and safe legacy migration; separated memory, corpus and training data; kept paging and weight adaptation conditional on evidence.
 - verification: git diff --check and local Markdown link/anchor checks passed; changed/new files are Markdown only. Confirmed historical task/evaluation sections and official-problem transcription unchanged, with append-only ledger edits. New entry IDs are unique; pre-existing historical duplicate IDs were preserved.
 - remaining: Requester wording review and separately authorised implementation/platform acceptance. No runtime tests, installations, downloads, data migration, Git/GitHub writes or application release occurred.
+
+<a id="ac-20260915-001"></a>
+## AC-20260915-001 — Record the P01 source and offline baseline
+- prompt_id: [UP-20260915-001](userprompts.md#up-20260915-001)
+- date: 2026-09-15
+- status: P01 source/offline baseline verified; device and requester acceptance pending
+- tags: p01, support-matrix, source-baseline, fixtures, offline-checks
+- aliases: first production gate, four windows devices, current workflow gaps
+- paths: docs/evaluation.md, docs/devicespecifications.md, tasks.md, agent-memory/
+- summary: Recorded the current production qualification profiles, source gaps, reusable synthetic fixtures, local regression evidence and next isolated runtime checkpoint without changing product code.
+- changes: Marked P01 in progress, corrected the available Windows-device count to four, kept advertised support unqualified, and separated existing safeguards from P02-P07 runtime gaps.
+- verification: 614 coordinator checks passed with 14 skips after loopback allowance; 338 contract/worker-support/deployment/script checks, 32 fixture checks, 51 desktop checks, nine native renderer/PDF checks and 129 frontend checks passed. Existing bundle contents verified; 28 shipped modules and primary UI files matched current source. `git diff --check` and 297 changed-document links/anchors passed.
+- remaining: Run the isolated macOS real-workflow checkpoint, obtain current Windows/Ubuntu checkout and runtime evidence, verify retained-worker behaviour and obtain requester acceptance before closing P01. Worker API checks remain unrun because FastAPI/HTTPX are absent; no install, live inference, worker contact, deployment, app rebuild or Git/GitHub write ran.
+
+<a id="ac-20260915-002"></a>
+## AC-20260915-002 — Correct the P01 checkpoint state isolation
+- prompt_id: [UP-20260915-002](userprompts.md#up-20260915-002)
+- date: 2026-09-15
+- status: review correction verified; P01 device acceptance remains pending
+- tags: p01, checkpoint, state-isolation, documentation
+- aliases: sibling project and state, state_root review fix
+- paths: docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Moved the documented test database into a sibling state directory so Code can accept the disposable project.
+- changes: Added state-directory creation, corrected the launch/restart path and explained the containment boundary; preserved the prior baseline diff and safety implementation.
+- verification: An isolated standard-library check called the existing canonical_root function: the corrected sibling layout was accepted, the old nested layout raised state_root, and selecting the parent raised contains_state. Documentation path assertions and git diff --check passed.
+- remaining: Real application/model/device checks and requester acceptance; no app launch, model call, install, runtime code change or Git/GitHub write.
+
+<a id="ac-20260915-004"></a>
+## AC-20260915-004 — Implement bounded reliability handoff
+- prompt_id: [UP-20260915-004](userprompts.md#up-20260915-004)
+- date: 2026-09-15
+- status: implemented and checked with synthetic offline tests; requester acceptance pending
+- tags: reliability, artifacts, skills, markdown, source-reuse, ocr, code
+- aliases: one artifact card, one-shot skill, explicit source reuse, structured diagnostics
+- paths: backend/coordinator/code_service.py, backend/coordinator/codeflow.py, backend/coordinator/db.py, backend/coordinator/docflow.py, backend/coordinator/ocr.py, backend/coordinator/server.py, backend/coordinator/test_code_access.py, backend/coordinator/test_ocr.py, backend/coordinator/test_reliability.py, frontend/app/app.js, frontend/app/markdown.js, frontend/app/test-composer.cjs, frontend/app/test-rendering.cjs
+- summary: Fixed six bounded reliability defects while preserving permissions, model limits, previous-answer conversion and existing UI structure.
+- changes: Generated artifacts now belong to one assistant turn; skills are one submission; ordered lists preserve starts and structure; earlier files require explicit same-chat reuse with revalidation and visible provenance.
+- changes: OCR records typed transcription/unreadable/refusal outcomes and literal uncertainty; Code requests use the existing structured decoder and retain bounded failure diagnostics without weakening semantic path validation.
+- verification: 279 focused coordinator tests and 137 complete frontend tests passed; the final 88 Code/reliability tests passed after the last diagnostic change. Python compile, node syntax and git diff --check passed.
+- remaining: Real-model OCR and Code quality, packaged-app parity, historical presentation failure and generated-document depth remain unverified. The reasoning transport suite could not bind its synthetic loopback server in this sandbox.
+
+<a id="ac-20260916-001"></a>
+## AC-20260916-001 — Fix three reliability review findings
+- prompt_id: [UP-20260915-005](userprompts.md#up-20260915-005)
+- date: 2026-09-16
+- status: implemented and checked offline; requester acceptance pending
+- tags: reliability, source-selection, skills, review
+- aliases: remote OCR guard, new chat skill race, OCR discussion
+- paths: backend/coordinator/server.py, backend/coordinator/docflow.py, backend/coordinator/test_reliability.py, frontend/app/app.js, frontend/app/test-composer.cjs, agent-memory/userprompts.md
+- summary: Source-less transcription stops before routing, OCR discussion remains ordinary Chat, and newer skill selections survive first-chat acceptance.
+- changes: Moved source validation before route selection and reused the job request text; narrowed the English transcription heuristic; transferred newer draft skills only when the composer transitions to its created chat and refreshed the chip.
+- verification: New backend and new-chat skill regressions failed before fixes and passed afterward. Ran 115 coordinator reliability/document/attachment tests and all 139 frontend tests successfully; git diff --check passed.
+- remaining: The intent detector is a conservative English heuristic. Packaged-app and real-model quality checks remain unverified; no GUI, live inference, downloads, personal state or Git writes were used.

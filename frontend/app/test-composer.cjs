@@ -553,11 +553,64 @@ test('the document choices start on Word and the general workflow', () => {
 
 test('the document choices travel with the request, not just the page', () => {
   assert.match(source,
-    /output_format: skill\?\.id === 'write-document' \? outputFormat : undefined/,
+    /output_format: skill\?\.id === 'write-document' \? sentFormat : undefined/,
     'the chosen format is submitted with the request');
   assert.match(source,
-    /doc_workflow: skill\?\.id === 'write-document' \? docWorkflow : undefined/,
+    /doc_workflow: skill\?\.id === 'write-document' \? sentWorkflow : undefined/,
     'the chosen workflow is submitted with the request');
   assert.match(source, /appendDocumentChoices\(box\)/,
     'the choices are offered where the model is chosen');
+});
+
+for (const scenario of ['accepted', 'rejected', 'changed', 'switched', 'new', 'new-changed', 'new-switched']) {
+  test(`one-shot skill: ${scenario}`, async () => {
+    const p = page();
+    const isNew = scenario.startsWith('new');
+    p.run(`chatId = ${isNew ? 'null' : "'chat-1'"};
+      capabilities = [{id:'write-document',kind:'document',name:'Write'},
+                      {id:'read-document',kind:'document',name:'Read'}];
+      renderModelPill = () => {};
+      saveDraftSoon = async () => {}; openChat = async () => {};
+      loadChats = async () => {}; refreshContext = () => {};
+      chooseSkill('write-document');`);
+    const sending = p.run("send('request')");
+    await tick();
+    if (isNew) { p.requests.shift().reply({chat_id:'chat-new'}); await tick(); }
+    const request = p.requests.shift();
+    assert.equal(request.body.skill_id, 'write-document');
+    if (scenario.endsWith('changed')) p.run("chooseSkill('read-document')");
+    if (scenario.endsWith('switched')) p.run("chatId = 'chat-2'; chooseSkill('read-document')");
+    if (scenario === 'rejected') {
+      request.fail('rejected'); await assert.rejects(sending);
+      assert.equal(p.run('selectedSkill().id'), 'write-document');
+    } else {
+      request.reply({job_id:'job-1'}); await sending;
+      assert.equal(p.run('selectedSkill()?.id || null'),
+        scenario.endsWith('changed') || scenario.endsWith('switched') ? 'read-document' : null);
+      if (scenario === 'switched') assert.equal(p.run("skillByChat.get('chat-1') || null"), null);
+      if (isNew) assert.equal(p.run('skillByChat.get(NEW_CHAT_DRAFT) || null'), null);
+      if (scenario === 'new-changed') {
+        assert.equal(p.document.getElementById('skill-chip').hidden, false);
+        const next = p.run("send('next request')");
+        await tick();
+        const followup = p.requests.shift();
+        assert.equal(followup.body.skill_id, 'read-document');
+        followup.reply({job_id:'job-2'}); await next;
+      }
+      if (scenario === 'new-switched') assert.equal(p.run('chatId'), 'chat-2');
+    }
+  });
+}
+
+test('an earlier source is sent explicitly and remains scoped to its chat', async () => {
+  const p = page();
+  p.run(`chatId='chat-1'; renderStaged=()=>{}; saveDraftSoon=async()=>{};
+    openChat=async()=>{}; loadChats=async()=>{}; refreshContext=()=>{};
+    chooseReuse({attachment_id:'11111111-1111-1111-1111-111111111111', filename:'scan.png'});`);
+  const sending = p.run("send('Complete the OCR')");
+  await tick();
+  assert.deepEqual(p.requests[0].body.reuse_source_ids,
+                   ['11111111-1111-1111-1111-111111111111']);
+  p.requests.shift().reply({job_id:'job-1'}); await sending;
+  assert.equal(p.run("(reusedByChat.get('chat-1') || []).length"), 0);
 });

@@ -1442,3 +1442,69 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Documentation and static checks only; no calendar commitments or fixed implementer identities; preserve operational timeouts, historical evidence, current code and Git/GitHub state.
 - follow_up_to: [UP-20260913-001](#up-20260913-001)
 - linked_changes: [AC-20260914-001](agentchangelog.md#ac-20260914-001)
+
+<a id="up-20260915-001"></a>
+## UP-20260915-001 — Establish the P01 production baseline and support contract
+- date: 2026-09-15
+- status: authorised P01 execution; device acceptance pending
+- tags: p01, production-baseline, support-matrix, fixtures, offline-checks
+- aliases: first production task, baseline and support contract, proceed production plan
+- paths: docs/evaluation.md, docs/devicespecifications.md, tasks.md, agent-memory/
+- summary: Establish the current source and offline-check baseline, candidate platform profiles and representative synthetic fixtures before runtime or packaging qualification.
+- request: Proceed with P01 after identifying it as the first production gate.
+- constraints: Preserve the current UI, harness, user data and Git state; no installers, downloads, live inference, service changes, worker contact, deployment or publication.
+- verification_authorization: Proportionate existing-dependency offline checks with isolated test data; packaged-app, real-model, current worker and clean-device acceptance remain human checkpoints.
+- acceptance: Record observed checks, gaps and failure cases separately from historical evidence; advertise no untested platform or capability and obtain current device/profile evidence before closing P01.
+- follow_up_to: [UP-20260914-001](#up-20260914-001)
+- device_confirmation: Requester confirmed all four inventoried Windows devices are available; three was a typo. Historical specifications are retained, not treated as fresh runtime evidence.
+- linked_changes: [AC-20260915-001](agentchangelog.md#ac-20260915-001)
+
+<a id="up-20260915-002"></a>
+## UP-20260915-002 — Fix the P01 checkpoint folder layout
+- date: 2026-09-15
+- status: authorised review correction
+- tags: p01, checkpoint, state-isolation, documentation
+- aliases: execute review fix, sibling state directory, explain first task
+- paths: docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Correct the reviewed Code checkpoint instructions and explain P01 in plain language.
+- request: Execute the review correction without weakening repository containment or treating P01 as complete.
+- verification_authorization: Proportionate isolated offline verification of the corrected paths; no live workflow, installation or Git write.
+- follow_up_to: [UP-20260915-001](#up-20260915-001)
+- linked_changes: [AC-20260915-002](agentchangelog.md#ac-20260915-002)
+
+<a id="up-20260915-003"></a>
+## UP-20260915-003 — Check Refinix local runtime on the Mac
+- date: 2026-09-15
+- status: authorised Refinix-only runtime checks
+- tags: p01, local-runtime, chat, documents, code, isolated-state
+- aliases: refinix check only, real model checkpoint, return findings
+- paths: docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Check local Refinix workflows using existing models and isolated synthetic test data, then report observed findings.
+- request: Execute the authorised Mac checkpoint for Refinix only; no unrelated application or system work.
+- constraints: Preserve personal state and existing changes; no installs, downloads, remote worker contact, product fixes or Git writes.
+- follow_up_to: [UP-20260915-002](#up-20260915-002)
+
+<a id="up-20260915-004"></a>
+## UP-20260915-004 — Implement bounded reliability handoff
+- date: 2026-09-15
+- status: authorised implementation and focused offline checks
+- tags: reliability, artifacts, skills, markdown, source-reuse, ocr, code
+- aliases: astra handoff, one-shot skills, structured output diagnostics
+- paths: frontend/app/, backend/coordinator/, agent-memory/
+- summary: Inspect and implement the supplied six reliability fixes without changing architecture or unrelated work.
+- request: Fix duplicate artifacts, skill retention, list numbering, explicit scoped source reuse, OCR outcomes and Code schema/diagnostics; report actual checks and uncertainty.
+- constraints: Preserve dirty changes, full-answer conversion, permissions, limits and model defaults; no Git writes, installs, downloads, personal state or live inference.
+- verification_authorization: Relevant existing-dependency offline tests and syntax checks with synthetic disposable data.
+
+<a id="up-20260915-005"></a>
+## UP-20260915-005 — Fix reliability review findings
+- date: 2026-09-15
+- status: authorised implementation and proportionate offline checks
+- tags: reliability, source-selection, skills, review
+- aliases: remote OCR guard, new chat skill race, OCR discussion
+- paths: backend/coordinator/server.py, backend/coordinator/docflow.py, backend/coordinator/test_reliability.py, frontend/app/app.js, frontend/app/test-composer.cjs, agent-memory/
+- summary: Fix the three reviewed reliability gaps using existing code and synthetic checks.
+- request: Execute the review fixes; preserve existing changes and product scope.
+- follow_up_to: UP-20260915-004
+- linked_changes: AC-20260916-001
+- constraints: No Git writes, live models, GUI, downloads or personal state.
