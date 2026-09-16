@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         if not path.exists():
             sys.stderr.write(
                 f"no certificate at {path}. Generate the worker's self-signed "
-                "certificate first; see docs/c06-distributed-execution-handoff.md.\n")
+                "certificate first; see docs/worker-operations.md.\n")
             return 2
         print(pairing_module.fingerprint(_der_from_file(path)))
         return 0

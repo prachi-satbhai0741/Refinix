@@ -1,5 +1,13 @@
 # C08 dependencies — what Documents needs, and what is actually installed
 
+The old text-only OCR reply schema and model defaults below are historical.
+Current typed transcription/unreadable/refusal handling and model-selection gaps
+are recorded in [evaluation](../evaluation.md#beta-source-audit).
+
+> Historical prototype record/template. Retained for reproduction and dated evidence.
+> Current scope and order are in [tasks.md](../../tasks.md#numbered-execution-tasks);
+> refresh source/device facts and obtain applicable authorisation before using old steps.
+
 **Status: implemented against components that were already present. Nothing
 was downloaded, installed, pulled or removed by this change.**
 
@@ -43,7 +51,7 @@ encodes it — both are part of the operating system.
 | Source | already present in the locked desktop environment; nothing was fetched |
 | Downloads required | **none** |
 | Runs offline | yes — an operating-system framework, no network path |
-| Implemented in | [`backend/coordinator/pdfrender.py`](../backend/coordinator/pdfrender.py) |
+| Implemented in | [`backend/coordinator/pdfrender.py`](../../backend/coordinator/pdfrender.py) |
 
 **Observed behaviour**, from `backend.coordinator.test_ocr.TestRealRenderer`
 run under `desktop/.venv` on 2026-09-05: `fixtures/c07/documents/inspection-report-scan.pdf`
@@ -133,7 +141,7 @@ The rest of C08 is implemented and was exercised end to end. Using the
 * `confidence` stayed `None` on every page.
 
 That is recorded as **local fixture evidence** in
-[`docs/evaluation.md`](evaluation.md#1-evidence-labels) terms: it shows this
+[`docs/evaluation.md`](../evaluation.md#1-evidence-labels) terms: it shows this
 machine's renderer, transport and parser recover known facts from pixels. It is
 **not** an OCR quality benchmark, it is not evidence about any other scan, and
 it is not a decision to change the configured model.

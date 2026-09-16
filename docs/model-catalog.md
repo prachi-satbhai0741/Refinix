@@ -13,7 +13,7 @@ The actual fleet and outstanding hardware checks are in
 ## 1. Catalogue purpose
 
 The catalogue converts raw model choices into approved capabilities. It lets
-onboarding answer:
+onboarding and persistent Settings → Models answer:
 
 - which main engine fits this device;
 - whether an installed model can serve more than one agent profile;
@@ -25,6 +25,33 @@ The recommendation catalogue is curated. Show more and advanced import preserve
 user choice among supported models; imports still require provenance, integrity,
 licence and runtime compatibility. User choice does not promise every model format
 or unrestricted executable model code.
+
+<a id="persistent-model-management"></a>
+### Persistent model management
+
+This is the catalogue lifecycle authority for FR-015. **Settings → Models is
+always reachable after onboarding**; it manages local models independently of
+chat history and application updates. The same lifecycle serves first-run setup
+and later changes, rather than two separate installers/catalogues.
+
+| Operation | Required behaviour |
+|---|---|
+| Browse | Distinguish installed models from supported not-installed entries; show capabilities/profiles, exact source, licence, version/revision, quantisation, download/installed size, runtime and expected hardware requirements from the approved manifest |
+| Understand evidence | Distinguish measured, estimated, documentation-only and unverified compatibility/performance; installed does not imply supported or self-tested. Unqualified research candidates are not supported download offers |
+| Choose or revisit | Select another compatible model for eligible profiles; refresh recommendations when hardware, runtime or enabled capabilities change, on explicit inspection/self-test without silent public checks |
+| Download later | User explicitly starts an approved compatible download; show source, size, progress and cancellation. Stage partial files outside active model entries; failure/cancel leaves existing capabilities usable |
+| Import offline | Apply the approved bundle path below, including manifest, provenance/licence, compatibility and integrity; arbitrary files or runtime inventory names never auto-enter the trusted catalogue |
+| Verify and self-test | Verify exact files after download/import, then run the capability-specific local test; only successful eligible profiles become ready. Keep failure details and incomplete/unverified states visible |
+| Enable or disable | Change profile eligibility explicitly; prevent new placement on disabled models and explain affected queued/active jobs. Never silently change the model of an in-flight attempt |
+| Remove safely | Preview affected capabilities/defaults, model references and jobs; drain or explicitly cancel affected work before removal. Require confirmation; preserve shared files referenced by other models and do not delete externally owned runtime stores without a supported explicit removal operation |
+| Recover | Interrupted provisioning/removal cannot leave false Ready status or corrupt another model. Preserve catalogue/history; clear stale selections and offer compatible alternatives without overriding user choice |
+
+Band A / P04–P05 implements this for a small approved set, including at least two
+appropriate task/model combinations. A small supported set is sufficient; there
+is no requirement to invent six qualified choices. Additional models and calibrated
+scores are P17. [Workflows](workflows.md#models-after-onboarding) owns interaction;
+[evaluation](evaluation.md#beta-acceptance) owns evidence. The current inventory and
+per-scope selector do **not** yet implement this lifecycle.
 
 ## 2. Baseline and conditional packs
 
@@ -144,7 +171,7 @@ observed reason it cannot currently be used, are both written down.
 **Consequence.** C08 asks the runtime what a model can do before sending it a
 page, and requires `vision` in the answer. This model does not declare it, so
 scan reading reports itself unavailable with the reason, and no page image is
-ever sent. See [`docs/c08-dependency-plan.md`](c08-dependency-plan.md) §3 for
+ever sent. See the [archived C08 observation](archive/c08-dependency-plan.md) §3 for
 the three observations and the decision this leaves to the human gate.
 
 **A name is not a capability.** The tag contains "VL" and "PaddleOCR"; the
@@ -239,6 +266,9 @@ Hardware presentation uses:
 Reported or estimated values never appear as measured.
 
 ## 6. Onboarding selection
+
+Apply the same selection rules during onboarding and every later Settings → Models
+visit. Compatibility tiers suffice for Beta until numerical scores are calibrated.
 
 Show at most six recommendations for the requested capabilities, sorted by
 **suitability score descending** (best first), with Show more below. Users may

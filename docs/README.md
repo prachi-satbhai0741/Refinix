@@ -20,7 +20,7 @@
 
 ## Status
 
-The [PRD](prd.md) records the production direction, updated 2026-09-14. Current source
+The [PRD](prd.md) records the production direction, re-sequenced for Beta on 2026-09-16. Current source
 contains prototype application and worker implementations, but source existence and historical
 checks do not certify production support. See [evaluation.md](evaluation.md#current-status)
 for the source snapshot and unverified installer, portability and scheduling gaps.
@@ -44,6 +44,35 @@ The PRD owns product scope. Each focused document owns implementation detail
 inside that scope. Record conflicts instead of duplicating or silently changing
 requirements.
 
+## Release and historical material
+
+The [source audit](evaluation.md#beta-source-audit) distinguishes implemented
+paths and recorded checks from release acceptance. [tasks.md](../tasks.md#numbered-execution-tasks)
+is the only active task graph: Band A → Beta 0.1 at P14; Band B → versioned
+Beta improvements; Band C → finals and full production qualification.
+
+Use [the agent execution guide](../tasks.md#agent-execution-guide) for task selection,
+source/tests and checkpoint preparation. [Worker operations](worker-operations.md)
+is the active managed-backend runbook. Archived material is optional retrieval
+for a specific measurement or reproduction question, never a second backlog.
+
+| Retired document | Canonical replacement / retained record |
+|---|---|
+| `c03-context-ui-build-brief.md` — removed | [Chat continuity/rendering](workflows.md#chat-continuity-and-rendering), current source/tests and P06/P12 acceptance |
+| `c04-execution-brief.md` — removed | [Worker operations](worker-operations.md), current security/architecture and P07–P12 |
+| `c03-repair-handoff.md` | [Archived repair evidence](archive/c03-repair-handoff.md) |
+| `c04-ubuntu-build-handoff.md` | [Archived OCI build reproduction](archive/c04-ubuntu-build-handoff.md); active guidance in worker operations |
+| `c05-ubuntu-deployment-handoff.md` | [Archived host deployment/rollback](archive/c05-ubuntu-deployment-handoff.md); refresh all device facts |
+| `c06-distributed-execution-handoff.md` | [Archived trust/dispatch reproduction](archive/c06-distributed-execution-handoff.md); active safeguards in worker operations |
+| `c07-c10-runtime-handoff.md` | [Archived integration evidence](archive/c07-c10-runtime-handoff.md); current acceptance in evaluation |
+| `c08-dependency-plan.md` | [Archived OCR observations](archive/c08-dependency-plan.md); qualification authority in model catalogue |
+| `handover-pack.md` | [Archived input template](archive/handover-pack.md); current checkpoint fields in tasks |
+| C/E/AF/F board formerly in `tasks.md` | [Prototype task record](archive/prototype-task-record.md); only P01–P26 is active |
+
+[Cleanup disposition](evaluation.md#repository-cleanup-disposition) records the
+preservation checks. Archive links are maintained; dated shell snippets remain
+historical, not copy-paste setup for today's host.
+
 ## Documentation rules
 
 - Keep the PRD short; detailed contracts belong in their focused document.
@@ -59,8 +88,8 @@ requirements.
 
 - [../README.md](../README.md) — project entry point
 - [../TechStack.md](../TechStack.md) — recommended languages and technologies by layer, with current/proposed status and trade-offs
-- [../tasks.md](../tasks.md) — outcome-based implementation gates, operating rules and historical prototype checkpoints
-- [handover-pack.md](handover-pack.md) — the one-time requester input handover and authorisation scope that replaces per-chunk questions
+- [../tasks.md](../tasks.md) — active P01–P26 gates, execution guide and checkpoint rules
+- [worker-operations.md](worker-operations.md) — managed-worker operational context and safety checks
 - [../AGENTS.md](../AGENTS.md) — shared coding-agent rules
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — branch, review, and release workflow
 - [../LICENSE](../LICENSE) — current repository licence

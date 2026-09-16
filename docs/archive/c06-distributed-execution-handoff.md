@@ -1,5 +1,9 @@
 # C06 — distributed execution handoff
 
+> Historical prototype record/template. Retained for reproduction and dated evidence.
+> Current scope and order are in [tasks.md](../../tasks.md#numbered-execution-tasks);
+> refresh source/device facts and obtain applicable authorisation before using old steps.
+
 **Devices:** `macOS coordinator` (Apple silicon, zsh) and `Ubuntu worker`
 (x86_64, bash). Repository directory: `~/Documents/GitHub/AegisForge` on the
 Mac; whatever path the Ubuntu worker already uses for C05.

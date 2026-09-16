@@ -1,5 +1,9 @@
 # C05 — Ubuntu cluster deployment handoff
 
+> Historical prototype record/template. Retained for reproduction and dated evidence.
+> Current scope and order are in [tasks.md](../../tasks.md#numbered-execution-tasks);
+> refresh source/device facts and obtain applicable authorisation before using old steps.
+
 **Device role:** Ubuntu worker. **OS:** Ubuntu 24.04.4 LTS, x86_64.
 **Shell:** bash. **Directory:** `/home/prachi/SIH/AegisForge`.
 

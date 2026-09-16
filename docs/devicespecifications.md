@@ -4,10 +4,11 @@
 > the prototype, not permanent production roles or current deployment status.
 > Production discovers capabilities dynamically and qualifies Windows, macOS and
 > Linux as both requester and execution target. No named device or Linux member
-> is mandatory. The recorded inventory lists four Windows devices; the latest
-> planning discussion mentions three available for testing. Confirm the actual
-> test subset before scheduling device checks rather than changing measured
-> inventory by assumption. Use [current acceptance](evaluation.md#production-acceptance)
+> is mandatory. The requester confirmed on 2026-09-15 that all four inventoried
+> Windows devices are available; the earlier mention of three was a typo.
+> Availability does not refresh their OS/runtime measurements. Use the
+> [P01 qualification profiles](evaluation.md#initial-qualification-profiles),
+> [current acceptance](evaluation.md#production-acceptance)
 > and the [active plan](../tasks.md#numbered-execution-tasks).
 
 

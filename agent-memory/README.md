@@ -91,6 +91,13 @@ Verified 2026-08-31 on branch `aditya`. **Re-check before relying on any line.**
 - **PRD is a draft.** `docs/prd.md` is not a v1 baseline; see
   [`docs/README.md`](../docs/README.md) for the documents deferred until it is.
 
+## Retired planning paths
+
+C03–C10 handoffs and the old task board were consolidated on 2026-09-16.
+Use the [document relocation map](../docs/README.md#release-and-historical-material)
+when an old ledger entry names one. Historical ledger paths are not rewritten;
+[current tasks](../tasks.md#agent-execution-guide) own execution order and context.
+
 ## Archiving
 
 Do not archive early. When either ledger passes **5,000 lines or 500 KiB**,

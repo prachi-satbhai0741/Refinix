@@ -910,7 +910,7 @@ class TestAmbiguityNeverRunsLocally(unittest.TestCase):
 
 
 class TestImageBuildRunsTheExecutorSuite(unittest.TestCase):
-    """The handoff promises both suites run in the image build."""
+    """The operational runbook and image build retain the required suites."""
 
     def dockerfile(self) -> str:
         return (pathlib.Path(server.__file__).parents[2]
@@ -928,12 +928,12 @@ class TestImageBuildRunsTheExecutorSuite(unittest.TestCase):
             if "python -m unittest" in line:
                 self.assertIn("--network=none", self.dockerfile())
 
-    def test_the_handoff_and_the_dockerfile_name_the_same_suites(self):
-        handoff = (pathlib.Path(server.__file__).parents[2]
-                   / "docs/c06-distributed-execution-handoff.md").read_text()
+    def test_the_runbook_and_the_dockerfile_name_the_same_suites(self):
+        runbook = (pathlib.Path(server.__file__).parents[2]
+                   / "docs/worker-operations.md").read_text()
         for suite in ("backend.worker.test_worker_app",
                       "backend.worker.test_executor"):
-            self.assertIn(suite, handoff)
+            self.assertIn(suite, runbook)
             self.assertIn(suite, self.dockerfile())
 
 

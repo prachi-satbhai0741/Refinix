@@ -1,5 +1,9 @@
 # C04 — Ubuntu worker image build handoff
 
+> Historical prototype record/template. Retained for reproduction and dated evidence.
+> Current scope and order are in [tasks.md](../../tasks.md#numbered-execution-tasks);
+> refresh source/device facts and obtain applicable authorisation before using old steps.
+
 **Device role:** Ubuntu worker. **OS:** Ubuntu 24.04.4 LTS, x86_64.
 **Shell:** bash. **Directory:** `/home/prachi/SIH/AegisForge`.
 
@@ -10,7 +14,7 @@ Run this **only after** the fixes are merged into `dev` and you have pulled it.
 
 ## What was prepared
 
-The worker API is implemented in [`backend/worker`](../backend/worker/README.md)
+The worker API is implemented in [`backend/worker`](../../backend/worker/README.md)
 against the `/v1` routes the contract reserves. A `linux/amd64` build was run on
 the macOS coordinator **under emulation** to verify the Dockerfile before this
 handoff — you are not the first to run it.
@@ -42,7 +46,7 @@ A deployment reference pins the **manifest digest**. These are distinct objects
 | archive checksum | integrity of the transferred `.tar` file |
 
 Do not infer the manifest digest from `docker image inspect .Id`. Read the
-explicit OCI artifact with [`scripts/image-digests.py`](../scripts/image-digests.py),
+explicit OCI artifact with [`scripts/image-digests.py`](../../scripts/image-digests.py),
 which uses the standard library and changes nothing.
 
 It supports the **OCI layout** (`index.json`). A classic
@@ -98,7 +102,7 @@ The builder image is **BuildKit v0.33.0, linux/amd64, Apache-2.0** from the
 Its manifest bytes were SHA-256 verified; compressed layers total **112,271,581
 bytes**. The existing pinned Python base is **44,358,563 bytes** compressed and
 the thirteen pinned wheels total **3,250,094 bytes**. Full sources, licences and
-integrity records are in [`provenance.json`](../backend/worker-image/provenance.json)
+integrity records are in [`provenance.json`](../../backend/worker-image/provenance.json)
 and `requirements.lock`. Reserve **2 GiB** for builder/image unpacking, cache and
 the output archive; this is an allowance, not a measured final disk footprint.
 Buildx starts its privileged build container at build time, with 2 GiB memory

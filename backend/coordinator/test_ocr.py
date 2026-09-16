@@ -160,7 +160,7 @@ def fake_chat(replies, *, record=None, cancel_after=None):
         if cancel_after is not None and len(record or []) > cancel_after:
             yield "cancelled", {}
             return
-        reply = sent.pop(0) if sent else '{"text": ""}'
+        reply = sent.pop(0) if sent else '{"status":"transcription","text": ""}'
         yield "delta", reply
         yield "done", {"done_reason": "stop"}
 
@@ -399,7 +399,7 @@ class TestReadPage(unittest.TestCase):
     def test_the_request_carries_image_bytes_and_the_strict_schema(self):
         record = []
         text = ocr.read_page(b"png-bytes", media_type="image/png",
-                             chat=fake_chat(['{"text": "READING"}'], record=record))
+                             chat=fake_chat(['{"status":"transcription","text": "READING"}'], record=record))
         self.assertEqual(text, "READING")
         self.assertEqual(record[0]["images"], [b"png-bytes"])
         self.assertEqual(record[0]["format"], ocr.PAGE_SCHEMA)
@@ -408,7 +408,7 @@ class TestReadPage(unittest.TestCase):
     def test_the_model_is_never_told_which_page_this_is(self):
         record = []
         ocr.read_page(b"png", media_type="image/png",
-                      chat=fake_chat(['{"text": "x"}'], record=record))
+                      chat=fake_chat(['{"status":"transcription","text": "x"}'], record=record))
         prompt = json.dumps(record[0]["messages"]).lower()
         # The prompt may forbid the model from adding one; it must never state
         # which page this is, because then a wrong reading could renumber it.
@@ -419,7 +419,7 @@ class TestReadPage(unittest.TestCase):
         record = []
         text = ocr.read_page(
             b"png", media_type="image/png",
-            chat=fake_chat(["not json at all", '{"text": "recovered"}'],
+            chat=fake_chat(["not json at all", '{"status":"transcription","text": "recovered"}'],
                            record=record))
         self.assertEqual(text, "recovered")
         self.assertEqual(len(record), 2)
@@ -434,17 +434,17 @@ class TestReadPage(unittest.TestCase):
 
     def test_extra_fields_are_refused_so_the_model_cannot_supply_confidence(self):
         with self.assertRaises(ocr.OcrError) as caught:
-            ocr.parse_page_reply('{"text": "x", "confidence": 0.97}')
+            ocr.parse_page_reply('{"status":"transcription","text": "x", "confidence": 0.97}')
         self.assertEqual(caught.exception.code, "unknown_fields")
 
     def test_a_model_supplied_page_number_is_refused(self):
         with self.assertRaises(ocr.OcrError) as caught:
-            ocr.parse_page_reply('{"text": "x", "page": 4}')
+            ocr.parse_page_reply('{"status":"transcription","text": "x", "page": 4}')
         self.assertEqual(caught.exception.code, "unknown_fields")
 
     def test_an_incomplete_reply_is_a_failure_not_a_short_page(self):
         def truncated(messages, **_kwargs):
-            yield "delta", '{"text": "half a p'
+            yield "delta", '{"status":"transcription","text": "half a p'
             yield "done", {"done_reason": "length"}
 
         with self.assertRaises(ocr.OcrError) as caught:
@@ -478,8 +478,8 @@ class TestExtractPdf(unittest.TestCase):
         with self.ready():
             result = ocr.extract_pdf(
                 b"%PDF", filename="scan.pdf", render=render_ok,
-                chat=fake_chat(['{"text": "one"}', '{"text": "two"}',
-                                '{"text": "three"}']))
+                chat=fake_chat(['{"status":"transcription","text": "one"}', '{"status":"transcription","text": "two"}',
+                                '{"status":"transcription","text": "three"}']))
         self.assertEqual([page["number"] for page in result["pages"]], [1, 2, 3])
         self.assertEqual([page["text"] for page in result["pages"]],
                          ["one", "two", "three"])
@@ -489,7 +489,7 @@ class TestExtractPdf(unittest.TestCase):
         with self.ready():
             result = ocr.extract_pdf(
                 b"%PDF", filename="scan.pdf", render=render_ok,
-                chat=fake_chat(['{"text": "a"}'] * 3))
+                chat=fake_chat(['{"status":"transcription","text": "a"}'] * 3))
         self.assertEqual([page["confidence"] for page in result["pages"]],
                          [None, None, None])
         self.assertTrue(any("Confidence is unavailable" in note
@@ -499,7 +499,7 @@ class TestExtractPdf(unittest.TestCase):
         with self.ready():
             result = ocr.extract_pdf(
                 b"%PDF", filename="scan.pdf", render=render_ok,
-                chat=fake_chat(['{"text": "a"}'] * 3))
+                chat=fake_chat(['{"status":"transcription","text": "a"}'] * 3))
         self.assertIn(runtime.OCR_MODEL, result["method"])
         self.assertEqual(result["model"]["model_id"], runtime.OCR_MODEL)
         self.assertEqual(result["model"]["manifest_sha256"], "d" * 64)
@@ -521,9 +521,9 @@ class TestExtractPdf(unittest.TestCase):
         with self.ready():
             result = ocr.extract_pdf(
                 b"%PDF", filename="scan.pdf", render=render_ok,
-                chat=fake_chat(['{"text": "a"}', '{"text": "   "}',
-                                '{"text": "c"}']))
-        self.assertEqual(result["pages"][1]["text"], "   ")
+                chat=fake_chat(['{"status":"transcription","text": "a"}', '{"status":"transcription","text": "   "}',
+                                '{"status":"transcription","text": "c"}']))
+        self.assertEqual(result["pages"][1]["text"], "[unreadable]")
         self.assertTrue(any("Page 2 produced no readable text" in note
                             for note in result["uncertain"]))
 
@@ -531,7 +531,7 @@ class TestExtractPdf(unittest.TestCase):
         with self.ready():
             result = ocr.extract_pdf(
                 b"%PDF", filename="scan.pdf", render=render_ok,
-                chat=fake_chat(['{"text": ""}'] * 3))
+                chat=fake_chat(['{"status":"transcription","text": ""}'] * 3))
         self.assertTrue(any("Nothing has been guessed" in note
                             for note in result["uncertain"]))
 
@@ -546,7 +546,7 @@ class TestExtractPdf(unittest.TestCase):
         with self.ready():
             result = ocr.extract_pdf(
                 b"%PDF", filename="scan.pdf", render=render_ok,
-                chat=fake_chat([json.dumps({"text": injected})] * 3))
+                chat=fake_chat([json.dumps({"status": "transcription", "text": injected})] * 3))
         self.assertEqual(result["pages"][0]["text"], injected)
         self.assertEqual(set(result["pages"][0]),
                          {"number", "text", "confidence", "note"})

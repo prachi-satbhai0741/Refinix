@@ -349,7 +349,7 @@ class TestWorkerGuard(GuardCase):
 
 
 class TestNodePortIsNotWidened(unittest.TestCase):
-    """The handoff must never tell an operator to open the NodePort to the LAN.
+    """Current and archived runbooks must not expose the NodePort to the LAN.
 
     An earlier draft did exactly that — it set `nodeport-addresses` to the
     whole subnet and then tried to restrict 30443 with INPUT rules, which
@@ -359,13 +359,12 @@ class TestNodePortIsNotWidened(unittest.TestCase):
 
     def documents(self):
         root = HERE.parents[2]
-        return [root / "docs/c06-distributed-execution-handoff.md",
-                root / "docs/c05-ubuntu-deployment-handoff.md"]
+        return [root / "docs/worker-operations.md",
+                root / "docs/archive/c06-distributed-execution-handoff.md",
+                root / "docs/archive/c05-ubuntu-deployment-handoff.md"]
 
     def test_nodeport_addresses_is_never_widened_to_a_subnet(self):
         for path in self.documents():
-            if not path.exists():
-                continue
             for line in path.read_text().splitlines():
                 if "nodeport-addresses" not in line:
                     continue
@@ -376,26 +375,22 @@ class TestNodePortIsNotWidened(unittest.TestCase):
                         "is what exposes it to one address")
 
     def test_the_handoff_never_claims_input_protects_the_nodeport(self):
-        path = self.documents()[0]
-        if not path.exists():
-            self.skipTest("the C06 handoff has not been written")
-        text = path.read_text()
-        for line in text.splitlines():
-            lowered = line.lower()
-            if "iptables" in lowered and "30443" in line and "proxy" not in lowered:
-                with self.subTest(line=line.strip()[:80]):
-                    self.assertNotIn("dport 30443", line,
-                                     "an INPUT rule on the NodePort does not "
-                                     "filter DNATed traffic")
+        for path in self.documents():
+            for line in path.read_text().splitlines():
+                lowered = line.lower()
+                if "iptables" in lowered and "30443" in line and "proxy" not in lowered:
+                    with self.subTest(document=path.name, line=line.strip()[:80]):
+                        self.assertNotIn("dport 30443", line,
+                                         "an INPUT rule on the NodePort does not "
+                                         "filter DNATed traffic")
 
     def test_the_handoff_uses_the_forwarder_and_the_guard(self):
-        path = self.documents()[0]
-        if not path.exists():
-            self.skipTest("the C06 handoff has not been written")
-        text = path.read_text()
-        self.assertIn("aegisforge-worker-proxy", text)
-        self.assertIn("apply worker", text)
-        self.assertIn("AEGIS_MAC_ADDRESS", text)
+        for path in self.documents()[:2]:  # Current runbook and archived C06.
+            with self.subTest(document=path.name):
+                text = path.read_text()
+                self.assertIn("aegisforge-worker-proxy", text)
+                self.assertIn("apply worker", text)
+                self.assertIn("AEGIS_MAC_ADDRESS", text)
 
     def test_the_guard_script_states_why_input_cannot_cover_nodeport(self):
         header = GUARD.read_text()[:4000]

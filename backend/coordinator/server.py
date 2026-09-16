@@ -280,7 +280,7 @@ class Coordinator:
     @db.serialized
     def submit(self, chat_id: str, text: str, draft_id: str | None = None,
                skill_id: str | None = None, output_format: str | None = None,
-               doc_workflow: str | None = None) -> str:
+               doc_workflow: str | None = None, reuse_source_ids=None) -> str:
         """Persist the job before any work starts, so a crash leaves a record."""
         if not self.conn.execute("SELECT 1 FROM chats WHERE chat_id=? AND workspace_id=?",
                                  (chat_id, self.workspace_id)).fetchone():
@@ -307,10 +307,20 @@ class Coordinator:
             raise RequestError("that document workflow does not exist", 400)
         if output_format == docflow.FORMAT_PDF and not pdfgen.available():
             raise RequestError(pdfgen.probe()["detail"], 409)
+        reuse_source_ids = [] if reuse_source_ids is None else reuse_source_ids
+        if (not isinstance(reuse_source_ids, list) or len(reuse_source_ids) > docflow.MAX_SOURCES
+                or any(not isinstance(i, str) or len(i) != 36 for i in reuse_source_ids)
+                or len(set(reuse_source_ids)) != len(reuse_source_ids)):
+            raise RequestError("invalid earlier source selection")
+        for source_id in reuse_source_ids:
+            self._reused_source(chat_id, source_id)
+        if reuse_source_ids and len(reuse_source_ids) + len(db.list_attachments(
+                self.conn, chat_id=draft_id or chat_id)) > docflow.MAX_SOURCES:
+            raise RequestError(f"Select at most {docflow.MAX_SOURCES} sources per request")
         job_id = db.create_job(self.conn, workspace_id=self.workspace_id,
                                chat_id=chat_id, request=text, skill_id=skill_id,
                                output_format=output_format,
-                               doc_workflow=doc_workflow)
+                               doc_workflow=doc_workflow, reuse_source_ids=reuse_source_ids)
         message_id = db.add_message(self.conn, chat_id, "user", text, job_id=job_id)
         # The selection travels with the request it was made for. The local
         # run reads only files bound to this exact message.
@@ -352,6 +362,13 @@ class Coordinator:
             # read. Asked here rather than after the route so the worker is
             # not preflighted, dispatched to, or fallen back from.
             _message_id, request_files = self._request_sources(chat_id, job_id)
+            request_text = self.conn.execute(
+                "SELECT original_request FROM jobs WHERE job_id=?",
+                (job_id,)).fetchone()["original_request"]
+            if (skill_id not in docflow.DOCUMENT_SKILLS and not request_files
+                    and docflow.requests_transcription(request_text)):
+                raise docflow.WorkflowError("source_selection_required",
+                    "Choose the earlier source with + → Reuse, or attach it again. No file was reread; earlier answer text is not the original source.")
             if skill_id in docflow.DOCUMENT_SKILLS:
                 model = self.local_model_ref(model_id) if uses_model else None
                 route = dispatch.Route(
@@ -410,9 +427,6 @@ class Coordinator:
                 # skills stay local: their workflows are C08/C09 and the worker
                 # advertises neither capability, so dispatching them would be a
                 # promise this build cannot keep.
-                request_text = self.conn.execute(
-                    "SELECT original_request FROM jobs WHERE job_id=?",
-                    (job_id,)).fetchone()["original_request"]
                 handled, attempt_id = self._run_remote(
                     job_id, chat_id, attempt_id, route, text=request_text)
                 if handled:
@@ -593,6 +607,8 @@ class Coordinator:
                 "retryable": True})
         except docflow.WorkflowError as exc:
             # A refusal the person can act on, not an internal error.
+            if exc.code in ("source_selection_required", "source_unavailable"):
+                db.add_message(self.conn, chat_id, "assistant", str(exc), job_id=job_id)
             self._stop(job_id, attempt_id, "failed", None, {
                 "code": "validation_failed", "message": str(exc)[:256],
                 "retryable": True})
@@ -678,20 +694,34 @@ class Coordinator:
 
     # ---- documents ------------------------------------------------------
 
-    def _request_sources(self, chat_id: str, job_id: str):
-        """The attachments that travelled with this one request, and only those.
+    def _reused_source(self, chat_id: str, source_id: str):
+        record = db.attachment_record(self.conn, source_id, self.workspace_id)
+        if (record is None or record["chat_id"] != chat_id or record["state"] != "sent"
+                or not self.conn.execute(
+                    "SELECT 1 FROM messages WHERE message_id=? AND chat_id=? AND role='user'",
+                    (record["message_id"], chat_id)).fetchone()):
+            raise RequestError("That earlier source is unavailable in this conversation. Choose a source with + or re-attach it.", 409)
+        return {**{k: record[k] for k in record if k != "stored_name"}, "reused": True}
 
-        Ordinary Chat and every document skill read exactly the files bound
-        to their own message — not the conversation's earlier files, and never
-        anything else on the computer.
-        """
+    def _request_sources(self, chat_id: str, job_id: str):
+        """This request's uploads plus explicitly selected same-chat sources."""
+        job = self.conn.execute(
+            "SELECT reuse_sources_json FROM jobs WHERE job_id=? AND chat_id=? AND workspace_id=?",
+            (job_id, chat_id, self.workspace_id)).fetchone()
+        if job is None:
+            raise docflow.WorkflowError("unknown_source_request", "This source request is unavailable.")
         message = self.conn.execute(
-            "SELECT message_id FROM messages WHERE job_id=? AND role='user'"
-            " ORDER BY created_at, rowid LIMIT 1", (job_id,)).fetchone()
+            "SELECT message_id FROM messages WHERE job_id=? AND chat_id=? AND role='user'"
+            " ORDER BY created_at, rowid LIMIT 1", (job_id, chat_id)).fetchone()
         if message is None:
             return None, []
-        return message["message_id"], db.list_attachments(
-            self.conn, message_id=message["message_id"])
+        sources = db.list_attachments(self.conn, message_id=message["message_id"])
+        try:
+            sources.extend(self._reused_source(chat_id, source_id)
+                           for source_id in json.loads(job["reuse_sources_json"] or "[]"))
+        except RequestError as exc:
+            raise docflow.WorkflowError("source_unavailable", str(exc)) from exc
+        return message["message_id"], sources
 
     def _chat_attachments(self, job_id, chat_id, messages, selected_ids):
         """Read the files sent with an ordinary Chat request, if any.
@@ -709,6 +739,9 @@ class Coordinator:
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
             attachments=attachments, should_cancel=cancel,
             ocr_model=self.model_for("documents.ocr"))
+        if any(a.get("reused") for a in attachments) and prepared.skipped:
+            reasons = "; ".join(f"{s['filename']}: {s['reason']}" for s in prepared.skipped)
+            raise docflow.WorkflowError("source_unavailable", reasons)
         if not prepared.usable:
             # An ordinary question is still worth answering. The reply says
             # which file could not be read and why, so nobody is left thinking
@@ -1483,8 +1516,14 @@ class Coordinator:
                 artifacts.setdefault(artifact["job_id"], []).append(artifact)
             for row in rows:
                 row["attachments"] = by_message.get(row["message_id"], [])
+                if row["role"] == "user" and row["job_id"]:
+                    try:
+                        _, row["attachments"] = self._request_sources(chat_id, row["job_id"])
+                    except docflow.WorkflowError:
+                        pass  # unavailable references cannot become readable attachments
                 row["skill_id"] = skills.get(row["job_id"])
-                row["artifacts"] = artifacts.get(row["job_id"], [])
+                row["artifacts"] = (artifacts.pop(row["job_id"], [])
+                                    if row["role"] == "assistant" else [])
         return rows
 
     @db.serialized
@@ -1992,7 +2031,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise RequestError("invalid document workflow")
                 job_id = c.submit(chat_id, text, draft_id=draft_id,
                                   skill_id=skill_id, output_format=output_format,
-                                  doc_workflow=doc_workflow)
+                                  doc_workflow=doc_workflow,
+                                  reuse_source_ids=payload.get("reuse_source_ids"))
                 # Clear only the version that was sent; newer typing survives.
                 db.clear_draft_if_matches(c.conn, draft_id, draft_text)
                 self._json({"job_id": job_id}, 202)

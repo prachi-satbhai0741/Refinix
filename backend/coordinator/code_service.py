@@ -507,20 +507,9 @@ class CodeService:
                     db.set_job_state(self.conn, job_id, following)
                 db.set_attempt_state(self.conn, attempt_id, "running")
                 model = route.model or {"model_id": model_id}
-                try:
-                    reply, reasoning = self._ask_model(
-                        codeflow.build_messages(request, selection), cancel, model_id)
-                except Exception as exc:
-                    # Every way an attempt stops without output owes a typed
-                    # reason, so the conversation records why rather than
-                    # leaving a turn that simply stops.
-                    db.set_attempt_state(
-                        self.conn, attempt_id, "failed",
-                        error={"code": "internal_error",
-                               "message": str(exc)[:256] or "the model did not answer",
-                               "retryable": True})
-                    db.set_job_state(self.conn, job_id, "failed")
-                    raise
+                reply, reasoning = self._ask_model(
+                    codeflow.build_messages(request, selection), cancel, model_id,
+                    attempt_id=attempt_id)
                 try:
                     parsed = codeflow.parse_proposal(reply, selection)
                 except codeflow.ProposalError as first:
@@ -530,7 +519,7 @@ class CodeService:
                     retry, _ = self._ask_model(
                         codeflow.repair_messages(
                             codeflow.build_messages(request, selection), reply), cancel,
-                        model_id)
+                        model_id, attempt_id=attempt_id, stage="repair_generation")
                     parsed = codeflow.parse_proposal(retry, selection)
         except codeflow.PackageError as exc:
             self._fail_code_job(job_id, attempt_id, exc.code, str(exc))
@@ -933,8 +922,11 @@ class CodeService:
                  "retryable": True}
         if attempt_id:
             row = self.conn.execute(
-                "SELECT state FROM attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+                "SELECT state, metrics_json FROM attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
             if row and row["state"] not in v1.TERMINAL_ATTEMPT_STATES:
+                metrics = json.loads(row["metrics_json"]) if row["metrics_json"] else {}
+                metrics.setdefault("failure_stage", "repair_validation" if metrics.get("stage") == "repair_generation" else "validation")
+                db.set_attempt_metrics(self.conn, attempt_id, metrics)
                 db.set_attempt_state(self.conn, attempt_id, attempt_state, error=error)
         if job_id:
             row = self.conn.execute(
@@ -943,25 +935,44 @@ class CodeService:
                 db.set_job_state(self.conn, job_id, job_state)
 
     def _ask_model(self, messages, cancel: threading.Event,
-                   model_id: str) -> tuple[str, bool]:
-        """One bounded local model call. Reasoning is not collected or stored."""
+                   model_id: str, *, attempt_id: str | None = None,
+                   stage: str = "generation") -> tuple[str, bool]:
+        """One bounded local model call with its setting and diagnostics recorded."""
         reasoning = db.get_reasoning(self.conn, model_id)
+        if attempt_id:
+            db.set_attempt_reasoning(self.conn, attempt_id, model_id, reasoning)
         deadline = time.monotonic() + PROPOSAL_DEADLINE_SECONDS
         collected, metrics = [], {}
-        for kind, payload in runtime.stream_chat(
-                messages, model=model_id, think=reasoning,
-                num_predict=PROPOSAL_NUM_PREDICT,
-                should_cancel=lambda: cancel.is_set() or time.monotonic() > deadline
-                or self.c.stopping.is_set()):
-            if kind == "delta":
-                collected.append(payload)
-            elif kind == "cancelled":
-                raise CodeError("cancelled", "That request was stopped.", 409)
-            elif kind == "done":
-                metrics = payload
-        if metrics.get("done_reason") != "stop":
-            raise runtime.RuntimeUnavailable(
-                "the runtime did not finish the code proposal cleanly")
+        completed = False
+        try:
+            for kind, payload in runtime.stream_chat(
+                    messages, model=model_id, think=reasoning,
+                    response_format=codeflow.PROPOSAL_SCHEMA,
+                    num_predict=PROPOSAL_NUM_PREDICT,
+                    should_cancel=lambda: cancel.is_set() or time.monotonic() > deadline
+                    or self.c.stopping.is_set()):
+                if kind == "delta":
+                    collected.append(payload)
+                elif kind == "cancelled":
+                    if not cancel.is_set() and time.monotonic() > deadline:
+                        raise runtime.RuntimeUnavailable("code proposal generation timed out")
+                    raise CodeError("cancelled", "That request was stopped.", 409)
+                elif kind == "done":
+                    metrics = {key: value for key, value in payload.items() if key in (
+                        "done_reason", "limit_reason", "context_window",
+                        "output_token_limit", "eval_count", "prompt_tokens",
+                        "prompt_eval_ms", "eval_ms", "load_ms", "total_ms",
+                        "tokens_per_s")}
+            if metrics.get("done_reason") != "stop":
+                raise runtime.RuntimeUnavailable(
+                    "the runtime did not finish the code proposal cleanly")
+            completed = True
+        finally:
+            if attempt_id:
+                metrics["stage"] = stage
+                if not completed:
+                    metrics["failure_stage"] = stage
+                db.set_attempt_metrics(self.conn, attempt_id, metrics)
         return "".join(collected), reasoning
 
     # -- apply ------------------------------------------------------------

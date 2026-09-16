@@ -2,31 +2,291 @@
 
 ## Current status
 
-Source inspected for the 2026-09-13 documentation update includes a desktop UI,
-coordinator, worker API/executor, pairing, Code policy/proposals, document/image
-paths, artifact generators and Docker/K3s/Redis manifests. Earlier statements that
-none of these exist are obsolete. **No runtime checks were run for this update.**
-Historical recorded checks below remain scoped to their original builds/devices;
-they are not certification of the current tree or the production direction.
+Source and test bodies re-inspected on **2026-09-16**, at
+`942b87deaf9fbb5d070e069ebbe0bb1f74322604` (clean `aditya` before this documentation
+change). This supersedes the 2026-09-15 snapshot for **source status**; it is not a
+new runtime, package, model, worker or egress verification. No application tests,
+models, services, installers or live devices ran in this documentation task.
 
-| Current source | Production gap / evidence boundary |
+The existing app is substantially implemented/prototyped. The public Beta is
+**not release-ready**: no accepted clean-install profile, supported model lifecycle,
+portable peer experience or automatic model/device scheduler is established. The
+[task graph](../tasks.md#numbered-execution-tasks) reuses current work, then closes
+these gaps before the P14 frontier.
+
+<a id="beta-source-audit"></a>
+### Implementation and evidence audit
+
+“Source present” below means the path and relevant test bodies were inspected.
+Test existence and recorded past results are separate from fresh runtime proof.
+
+| Capability | Current source and inspected check | Evidence boundary / remaining work |
+|---|---|---|
+| Desktop and surfaces | `desktop/lifecycle.py`, `shell.py`, `setup_py2app.py`; `frontend/app/` Chat, Code, Settings; `desktop/test_packaging.py` | Existing Mac bundle path packages coordinator/contracts/frontend but excludes worker and inference engine; P02/P03/P13 must qualify complete installer/runtime. Windows/Linux shell branches are not install support |
+| Local Chat/context | `server.py` → `context.py` → `runtime.py`; `test_context.py`, `test_reasoning.py`, `test_conversations.py` | Bounded selected history, per-model reasoning, cancellation and persisted attempts exist. Current real quality, failures and final-package parity remain P06/P12/P13 |
+| Remote Chat | `server._run_remote` → `dispatch.build_envelope` → `worker/executor._generate`; `test_dispatch.py`, worker `test_executor.py` | Remote Chat currently sends the original request without selected history; worker generation builds a one-message prompt and uses reasoning-off runtime default. UI reasoning/context records do not establish remote parity. P11 must transport bounded context and either honour reasoning or expose it unavailable |
+| Model choice/lifecycle | `server.model_inventory`, `select_model`, `db.py`, frontend `appendModelChoices`; `test_execution4c.py` | Persistent per-workflow selection exists for observed models/defaults. Auto is disabled; inventory does not implement curated download/import/cancel/removal/self-tests or full manifests. Installed models are broadly offered for Chat/Code without workload qualification; hard-coded Mac/Ubuntu location labels remain. P04/P05/P10 |
+| Scheduling/admission | `dispatch.choose_route`, `db.active_relationship`; `worker/app.py` submit and `_node`; `test_dispatch.py`, `test_worker_app.py` | One active paired-worker route; queue depth descriptive, available memory unknown. Receiver checks `active_attempts(relationship_id)` against MAX_ACTIVE before enqueue; durable receipt/enqueue exists, but this is not atomic device-wide capacity reservation. P10 minimum safe placement; P15 fairness and fleet intelligence |
+| Documents and source reuse | `server._request_sources`, `_document_stage`, `docflow.py`, `documents.py`, `retrieval.py`; `test_reliability.py`, `test_documents.py`, `test_execution4a.py` | Local attached-file reading, explicit same-chat reuse/revalidation, FTS5 passages and citation checks, Word/PDF/XLSX writers exist. Documents remain local; native PDF/image rendering uses Quartz/AppKit. Real scan→SOP→artifact quality/layout is P06; hybrid retrieval P16 |
+| Recent OCR repairs | `ocr.parse_page_reply`/`read_page`, `docflow.requests_transcription`; `test_ocr.py`, `test_reliability.py` | Old `{text}`-only claim is obsolete: schema now has transcription/unreadable/refusal outcomes, refusal raises an error, and unreadable text remains literal. Source-less transcription stops before routing; the intent heuristic is conservative English. This is implemented guard logic, not broad OCR quality evidence |
+| Recent UI/artifact repairs | `server.chat_messages`, `docflow.py`, `frontend/app/app.js`, `markdown.js`; `test-composer.cjs`, `test-rendering.cjs` | Assistant-only artifact ownership, one-submission skills, ordered-list structure and explicit source reuse exist; latest first-chat skill race correction is in source. Package parity and real document depth remain unverified |
+| Code proposals and writes | `code_service.py` → `codeflow.py`/`repo.py`/`policy.py`; `test_code_access.py`, `test_remote_code.py`, `test_reliability.py` | Structured proposal schema and bounded completion/failure metrics now exist; the old generic-diagnostics gap is obsolete. Local Apply/Undo uses approvals/backups and says not sandbox tested; remote Apply requires matching passing validation. Descriptor-relative access is required even for reads, a platform gap for P18 |
+| Worker transport/recovery | `worker/app.py`, `pairing.py`, `dispatch.py`, `executor.py`, `packages.py`; worker API/executor/package tests | Pairing/revocation, Redis-backed receipts/leases/replay/cancellation and bounded Code packages exist; component READMEs claiming absent/501-only routes were stale. Deployment/current target acceptance remains open; portable packaged receiver is P08 |
+| Sandbox | `worker/validate.py`, `jobspec.py`, `kube.py`, `deploy/k3s/50-validation.yaml`; `test_validation.py`, `test_manifests.py` | Restricted Python/unittest validation Job exists; limits and policies in source do not prove runtime enforcement. No universal native desktop sandbox. Qualify an actual eligible profile in P07 and its integrated use in P11 |
+| Trust, status and Proof Cards | Coordinator/worker `pairing.py`, `proof.py`, frontend Settings/status; `test_c10.py`, `test-proof-card.cjs` | Pinning/revocation and per-attempt Proof Cards exist; coordinator secrets use macOS Keychain, discovery/guided portable trust missing. `_empty_network()` returns unavailable evidence: no live zero-egress collector is proven. P09/P12 must close these gaps |
+| Build/release pipeline | `.github/workflows/ci.yml`, desktop package/tests, worker Dockerfile/locks | Source CI definitions run repository checks on Linux; no inspected hosted result proves this commit passed. No cross-platform signing/publishing/updater pipeline. Prototype version 0.1.0 is not public Beta acceptance |
+
+Paths without a prefix in coordinator rows are under
+[backend/coordinator](../backend/coordinator); worker rows under
+[backend/worker](../backend/worker). The [frontend](../frontend/app) and
+[desktop](../desktop) checks are source-level reproducible assets.
+
+### Recorded checks, not rerun here
+
+The 2026-09-15 P01 counts below remain dated observations of the older baseline.
+Later [reliability work](../agent-memory/agentchangelog.md#ac-20260915-004) records
+279 focused coordinator and 137 frontend checks, followed by 88 Code/reliability
+checks; [review repairs](../agent-memory/agentchangelog.md#ac-20260916-001) record
+115 coordinator and 139 frontend checks. Their relevant source/test bodies were
+inspected here, but these counts are retained reports, not independently rerun
+results. They cannot prove real-model quality, worker deployment, current package
+parity, graphical installation or public egress enforcement. In particular, the
+older 28-module package/source parity result predates these repairs.
+
+### Contradictions and disposition
+
+| Finding | Resolution / remaining gap |
 |---|---|
-| [server.py](../backend/coordinator/server.py), [dispatch.py](../backend/coordinator/dispatch.py), [db.py](../backend/coordinator/db.py) | Stored per-workflow models and one active paired-worker path, not fleet ranking or shared capacity reservations. Document paths retain local-placement assumptions |
-| [worker](../backend/worker/) and [K3s manifests](../deploy/k3s/) | Existing queued worker, receipt, lease and validation infrastructure; this does not establish portable desktop workers |
-| [desktop packaging](../desktop/setup_py2app.py) | macOS package includes coordinator, excludes worker; universal dependency-complete installers are not proven |
-| [retrieval.py](../backend/coordinator/retrieval.py) | SQLite FTS5 lexical retrieval exists; semantic embeddings/hybrid retrieval remain qualification work |
-| [ocr.py](../backend/coordinator/ocr.py), [pdfgen.py](../backend/coordinator/pdfgen.py) | OCR/image/document paths exist; macOS-specific components require cross-platform qualification |
-| [Code service](../backend/coordinator/code_service.py) | Explicit local Apply uses backups/Undo and reports no sandbox result; distributed Apply requires matching passing validation. Preserve this distinction |
-| [worker validation](../backend/worker/validate.py), [jobspec.py](../backend/worker/jobspec.py) | Restricted Kubernetes Python validation path; no evidence of arbitrary-language standalone sandbox support on all three OSes |
+| Full N→N+1 updater and all three OSes required before any public release | Superseded by accepted [release bands](prd.md#release-bands): narrow authenticated Beta package and manual replacement/recovery first; P19/P23 own updater maturity |
+| P01 waited on every candidate device before P02 | P01 now accepts a narrow Beta matrix; additional OS readiness belongs to P18/P22. No untested device is silently marked supported |
+| Old P02/P07 both owned packaging/update acceptance; C/E/AF/F boards competed with production sequencing | [Task mapping](../tasks.md#previous-production-gate-mapping) assigns feasibility, implementation, integration and release acceptance once; historical boards remain evidence only |
+| Backend/worker/contracts/frontend READMEs said consumers, pairing, workflows or UI were absent, and recommended a React migration | Corrected entry points to current source and canonical authorities; no runtime rewrite. Older handoffs retain their dated reproduction content under an explicit historical banner |
+| First-run recommendations implied complete model management | FR-015 and [one catalogue lifecycle](model-catalog.md#persistent-model-management) explicitly cover later operations; current inventory/selector are only a partial base |
+| Auto says “after internal hackathon”, model locations imply fixed OS roles | Product requirement is now Beta routing and dynamic device labels; source copy/behaviour remains a P05/P10 implementation gap. Documentation does not silently enable Auto |
+| Old OCR refusal and missing Code metrics listed as unfixed | Corrected to inspected typed outcomes and structured diagnostics; remaining work is real quality/coverage and package parity |
+| Proof Card described as wholly unimplemented | Builder/UI/tests exist; runtime network fields are unavailable. P12 adds scoped observed evidence, not a fabricated green state |
+| A remote sandbox or native inference peer implied all-platform sandbox readiness | Per-capability support; no host-execution fallback. P07 qualifies one real profile, P18/P22 broaden it |
 
-The 2026-09-14 documentation update adds release, cache and personalisation gates.
-The [current CI](../.github/workflows/ci.yml) runs Linux repository checks; it does
-not establish signed cross-platform installers or an end-user update service.
-These additions were checked as documentation only, with no runtime execution.
+### Repository cleanup disposition
+
+Updated 2026-09-16 after requester-authorised consolidation. The active execution
+plan is now P01–P26 only. [Agent execution context](../tasks.md#agent-execution-guide)
+links source, tests, authorities and checkpoint fields; [worker operations](worker-operations.md)
+consolidates the retained managed-backend build, network, trust and recovery path.
+
+- Removed the superseded C03 implementation and C04 delegation briefs. Durable
+  Chat continuity/rendering requirements live in [workflows](workflows.md#chat-continuity-and-rendering);
+  worker requirements live in architecture/security and the operational runbook.
+  No new acceptance claim is inferred from deleting an old instruction.
+- Moved six evidence/reproduction handoffs, the old input template and the retired
+  C/E/AF/F task board to `docs/archive/`. [The index](README.md#release-and-historical-material)
+  maps old paths to replacements. Archived observations/commands retain historical
+  wording; repaired links and retirement notes explain the context. Old image/
+  model/pending statements are not a current operational contract.
+- Updated CLI help, manifest comments and documentation tests to canonical paths.
+  Network-safety checks still inspect the retained historical procedures as well
+  as the active runbook; missing required documents must fail rather than skip.
+- Preserved all fixtures, hashes, lockfiles, measured pins and reproduction tools.
+  Empty `__init__.py` files serve imports/test discovery. The legacy C08 path in
+  `fixtures/c07/documents/expected.json` is historical fixture metadata; its bytes
+  and provenance remain unchanged rather than rehashing a fixture for cleanup.
+- The root README, website/design content and SIH presentation were deferred and
+  kept byte-identical to the start of this cleanup. Prior-turn changes remain.
+  Ignored outputs/private state were not cleaned. No runtime capability was removed.
+
+The archive is for a specific reproduction question, not normal task startup.
+Git history retains the deleted briefs; the request/change ledgers retain their
+original dated paths. Do not recreate missing old filenames as placeholder docs.
+
+<a id="p01-baseline"></a>
+## P01 — baseline and support contract
+
+Status: **in progress**. The dated baseline below is retained; the 2026-09-16
+source audit above supersedes its implementation-gap statements. Current P01
+closes on an accepted narrow Beta support boundary, not all future platforms.
+Historical baseline source commit:
+`3bcf479043fc56ca980a8313869c93ebb023ab4c`, clean `aditya` before this documentation
+change. No workflow, dependency, runtime or packaging implementation was changed.
+
+### Initial qualification profiles
+
+Qualify the exact available profiles first. These are candidate targets, not
+advertised minimum requirements. No older macOS version, other Windows edition,
+Intel Mac, ARM Windows/Linux or additional Linux distribution is promised by this
+contract. Published capability support stays unverified until its relevant
+[production gates](../tasks.md#numbered-execution-tasks) pass.
+
+| Candidate profile | Execution backends to qualify | Current evidence boundary |
+|---|---|---|
+| macOS 26.6.2, arm64 | Local CPU/Metal; requester and app-managed execution target | OS/architecture observed on 2026-09-15; existing macOS source/package checks below. Real workflows and portable worker still need acceptance |
+| Windows 11 Home Single Language, build 26200, x86_64 | CPU-only and available NVIDIA profiles; requester and execution target | Four devices confirmed available by requester on 2026-09-15. OS/build/hardware are the [historical inventory](devicespecifications.md#summary-table), not refreshed readiness evidence |
+| Ubuntu 24.04.4 LTS, x86_64 | CPU/NVIDIA; requester, portable execution target and retained managed worker | Historical inventory only; current worker source, runtime and end-to-end execution have not been re-observed |
+
+The public minimum support matrix is currently **unqualified**, including the
+minimum RAM/storage and supported toolchains for each enabled capability. The
+macOS bundle's `LSMinimumSystemVersion: 12.0` is packaging metadata, not proof of
+macOS 12 compatibility. A Windows Home profile cannot be qualified solely with
+Windows Sandbox. Homogeneous Windows and macOS peer groups must be checked later
+without a Linux dependency. Remote-only requester support is distinct from local
+inference and safe code execution.
+
+<a id="workflow-baseline-and-gaps"></a>
+### Workflow baseline and gaps — historical 2026-09-15
+
+The old P03/P04/P06 references in this dated table use the [previous gate mapping](../tasks.md#previous-production-gate-mapping). See the current audit for OCR/Code repairs.
+
+| Shared path | Source observation / existing safeguard | Unresolved production acceptance |
+|---|---|---|
+| Chat: `server.py` → `context.py` → `runtime.py`; remote `dispatch.py` → worker `executor.py` | Local selected history is bounded and retained; cancellation and restart lifecycles have offline checks. Remote Chat envelopes currently omit selected history, and the executor builds only the original user request; worker reasoning is fixed off | Local/remote follow-up and reasoning parity, real output quality, failure telemetry and context isolation on actual devices; P03/P06 |
+| Models and placement: `server.py`, `dispatch.py`, `frontend/app/app.js` | Per-workflow model choices exist; Auto is disabled. One active paired worker is chosen by health/capability/model compatibility; queue depth is descriptive | Qualified second model, task-aware choice, receiver reservations, fair admission and multi-device recovery; P03/P06 |
+| Documents: `docflow.py` → `documents.py`/`ocr.py` → `retrieval.py` → artifact writers | Attached-file Chat and Documents are forced local. FTS5 retrieval checks selected-source citations. OCR parses a strict `{text}` object but accepts a structurally valid refusal as text. PDF rendering/writing uses Quartz/AppKit | Real scan/image readings, missing-value/refusal handling, semantic retrieval and corpus lifecycle; cross-platform document/PDF paths; P03 |
+| Code: `code_service.py` → `codeflow.py`/`repo.py`/`policy.py`; worker validation | Local Apply requires explicit target/access, verified backups and Undo, and reports **not sandbox tested**. Distributed Apply requires matching passing validation. The local proposal call reports non-clean completion generically without retaining its metrics | Real model proposal reliability, useful diagnostics and qualified standalone sandbox/toolchains. Preserve local versus distributed evidence distinction; P03/P04 |
+| Trust: `pairing.py` and Settings | Pinned identity mismatch refuses fallback; revocation is explicit. Coordinator credentials use macOS Keychain and fail closed elsewhere | Portable OS credential storage, graphical discovery/pairing and receiver controls; P05 |
+| Desktop/release: `desktop/lifecycle.py`, `shell.py`, `setup_py2app.py` | Existing app manages loopback coordinator/Ollama lifecycle. macOS bundle includes coordinator/contracts, excludes worker and inference engine. Windows/Linux shell branches exist | Dependency-complete installers, app-managed execution agent, signing, clean-device use and N → N+1 recovery; P02/P04/P07 |
+
+Source observations identify work to qualify; they are not real-model failure
+measurements. No live inference, worker contact, installation, app rebuild,
+deployment or network-enforcement experiment ran for P01.
+
+### Observed local checks — 2026-09-15
+
+Host: macOS 26.6.2, arm64. Repository `.venv`: CPython 3.14.6 and Pydantic,
+without FastAPI/HTTPX/Redis/PyObjC/pywebview. Existing `desktop/.venv`: CPython
+3.12.13 with Pydantic/PyObjC/pywebview, without FastAPI/HTTPX/Redis. Node 26.7.0.
+This differs from CI's Python 3.13 / Node 24; no hosted CI result is inferred.
+
+| Check | Observed result |
+|---|---|
+| Coordinator discovery under repository `.venv` | 614 tests, OK, 14 skipped. The first restricted run had 11 loopback-bind permission errors; rerun with sandbox allowance passed. Native PDF/renderer and real-model acceptance are not established by the skipped paths |
+| Contracts, worker runtime/executor/packages/validation, deployment fixtures and scripts | 338 tests, OK; model/Redis/Kubernetes/host changes are replaced with isolated fixtures/mocks |
+| `fixtures.c07.test_fixtures` | 32 tests, OK; hashes, synthetic provenance, raster-only scan and before/after repair on a disposable copy verified; canonical code fixture remains broken |
+| Desktop lifecycle/packaging/review checks under `desktop/.venv` | 51 tests, OK after sandbox allowance for the temporary loopback fixture |
+| Native `TestRealRenderer` and `TestPdfWriting` under `desktop/.venv` | 9 tests, OK; actual Quartz renders the synthetic scan and writes/reopens synthetic PDFs. No vision-model call or visual layout acceptance included |
+| All six frontend Node suites | 129 tests, passed, zero failures/skips; simulated DOM/VM checks, not an operator walkthrough |
+| Existing `desktop/dist/Refinix.app` contents | Existing verifier passed across loose packages and Python ZIP; 28 shipped application modules matched current source after normalising bytecode filenames; primary Chat/Code/Settings HTML and `app.js` matched. Version 0.1.0. Entry scripts are not shipped as importable modules and were not included in that parity count |
+| Worker API suite | Not run: neither existing Mac environment contains FastAPI/HTTPX. Full worker/CI acceptance remains open; no dependency installed to manufacture a passing result |
+
+The passing coordinator run emitted a ResourceWarning for an isolated HTTPError
+fixture; the native PDF run also logged a CoreGraphics diagnostic. No failing
+assertion remained. These results do not prove broad
+security, zero egress, performance, model accuracy or clean-machine installation.
+
+Reproduce the existing checks from the repository root, using the same existing
+environments. Temporary loopback sockets must be permitted for coordinator and
+desktop fixtures. Do not run real-model OCR acceptance by assuming that a whole
+native coordinator discovery is offline.
+
+```zsh
+./.venv/bin/python -B -m unittest discover -s backend/coordinator -p 'test_*.py' -q
+./.venv/bin/python -B -m unittest backend.contracts.test_contracts backend.worker.test_worker_runtime backend.worker.test_executor backend.worker.test_packages backend.worker.test_validation deploy.k3s.test_manifests deploy.k3s.host.test_guard deploy.k3s.checks.test_inference_check scripts.test_od03_parser scripts.test_refinix_launcher -q
+./.venv/bin/python -B -m unittest fixtures.c07.test_fixtures -q
+desktop/.venv/bin/python -B -m unittest desktop.test_lifecycle desktop.test_packaging desktop.test_review_fixes -q
+desktop/.venv/bin/python -B -m unittest backend.coordinator.test_ocr.TestRealRenderer backend.coordinator.test_execution4a.TestPdfWriting -q
+node --test frontend/app/test-*.cjs
+desktop/.venv/bin/python -B -c 'from pathlib import Path; from desktop.test_packaging import setup_module_namespace; setup_module_namespace()["verify_application_contents"](Path("desktop/dist/Refinix.app")); print("bundle contents: PASS")'
+```
+
+### Representative fixtures and fixed baseline criteria
+
+Reuse [c07-v1 provenance](../fixtures/c07/provenance.json) and the existing
+[document expectations](../fixtures/c07/documents/expected.json) and
+[code expectations](../fixtures/c07/code/expected.json). All content is synthetic
+under the repository licence. No private corpus or new download is needed.
+
+- Chat: request the exact sentinel `P01_OK`, ask a follow-up about that request,
+  cancel another attempt, then quit/reopen. Record actual reply/stop reason,
+  selected context, terminal state and retained history; failure stays a failure.
+- Documents: use the three-page raster scan plus SOP-MECH-014. Recover expected
+  readings on their source pages, preserve missing suction pressure, distinguish
+  the 7.9 reading from the 7.1 alarm limit, and produce a readable cited Word/PDF
+  artifact. Check field/citation correctness and file layout separately. Passing
+  this clean synthetic scan is a floor, not broad OCR accuracy.
+- Code: copy `fixtures/c07/code/pumpcheck` outside the repository. Only
+  `pumpcheck/limits.py` may change, replacing `>=` with `>`; tests/constants must
+  stay unchanged. The six-test fixture must have two failures before repair and
+  zero afterwards, and Undo must restore exact bytes. Local proof must continue
+  to say not sandbox tested; distributed sandbox acceptance is separate.
+
+Additional image formats, multilingual/degraded scans, large corpora, languages,
+memory limits and concurrent workloads need their own fixed representative
+thresholds before P03/P04/P06 results are judged.
+
+### Next human checkpoint — current runtime evidence
+
+**macOS requester, macOS 26.6.2 / arm64 / zsh**, directory
+`/Users/adityatadge/Documents/GitHub/AegisForge`. Quit any running Refinix first.
+Use existing dependencies only and an isolated test database/code copy:
+
+```zsh
+cd /Users/adityatadge/Documents/GitHub/AegisForge
+P01_WORKSPACE=$(mktemp -d /private/tmp/refinix-p01.XXXXXX)
+mkdir "$P01_WORKSPACE/state"
+cp -R fixtures/c07/code/pumpcheck "$P01_WORKSPACE/pumpcheck"
+printf '%s\n' "$P01_WORKSPACE"
+desktop/.venv/bin/python -B -m desktop --state "$P01_WORKSPACE/state/coordinator.sqlite3"
+```
+
+Keep `state` and `pumpcheck` as sibling directories: Code refuses any project
+inside Refinix's state directory, or any project containing that directory.
+
+Record Settings' actual engine/model/capability state first. If a prerequisite is
+missing, return that failure; do not install/download or change the host. Exercise
+the criteria above through Chat/Documents/Code, connecting only the disposable
+`pumpcheck` copy and explicitly selecting **This device** for Code. Reopen using
+only the last command in the same terminal, retaining the database under `state/`.
+Return non-secret replies/errors, model/runtime identities, attempt/validation
+states and synthetic artifact results. Do not return credentials, certificates,
+private database contents or unrelated files.
+
+Rollback: Quit/Command-Q cancels active test work and stops the app-owned local
+service and any engine it started; a pre-existing engine is preserved. Canonical
+workspace data is outside the test state. Retain the printed test directory for
+review rather than deleting evidence during the checkpoint.
+
+**Windows requester/execution candidates and Ubuntu requester/worker candidate:**
+before giving setup or reconnection commands, obtain each actual checkout
+directory, current OS/architecture, source commit/status and existing runtime
+version/capabilities. The historical inventory does not supply current checkout
+paths or worker state. No old TLS/IP/Kubernetes setup is implicitly resumed.
+
+For the revised plan, P01 needs current baseline observations/gaps and requester
+acceptance of the selected Beta profiles and fixture thresholds. Missing runtime
+acceptance is then assigned explicitly to P03–P13, not represented as passed.
+Other Windows/Ubuntu candidate readiness can follow in P18/P22; if a retained
+worker is selected for Beta, its actual sandbox and integrated execution remain
+P07/P11 blockers. This historical checkpoint does not authorise running it now.
+
+<a id="beta-acceptance"></a>
+## Beta 0.1 acceptance
+
+These are **required future observations**, not results of this documentation
+review. Test the real packaged candidate on the exact proposed support matrix.
+Use [C07 fixtures](../fixtures/c07/provenance.json), the baseline criteria above
+and proportionate existing checks. Freeze quality/latency/resource pass criteria
+for each supported profile in P01/P04 before judging its results.
+
+| Area / task | Required evidence before P14 |
+|---|---|
+| Install and lifecycle — P02/P03/P13 | Nondeveloper installs authenticated package without Python/model-server/queue/certificate commands; hardware detection, dependencies, permission failures, clean launch/relaunch and safe manual replacement/recovery. Record package/source parity and minimum measured resources |
+| Persistent models — P04/P05 | After onboarding, browse installed/supported uninstalled entries and provenance/evidence; choose/download a second compatible model, cancel an incomplete download, import offline, reject corrupted/unsupported input, verify/self-test, enable/disable, preview removal consequences and remove safely. Reopen with choices/chats preserved; no silent public calls |
+| Local identity — P06 | With peers absent and public egress blocked, real multi-turn Chat and selected scan/SOP produce a readable cited Word artifact; local Code produces the reviewable bounded patch with existing Apply/Undo safeguards and an honest no-sandbox label. Preserve units, missing readings, selected-source boundaries and history |
+| Task/model routing — P04/P10 | At least two distinct qualified models over two appropriate task types; Auto chooses according to capabilities/evidence and actual availability/load. Record identity and reason, exercise override and incompatible/unavailable models. A duplicated label for the same weights or manual selection alone does not pass |
+| Trusted execution — P08/P09/P11 | At least two real devices/instances using installed packages, graphical discovery and manual-address fallback, explicit two-sided pairing, authorised bounded remote inference, selected Chat context, receiver controls and revocation. Record actual OS/backend roles rather than hard-coded Mac/Ubuntu names |
+| Capacity — P10 | A second overlapping request observes a busy/reserved receiver and queues or uses an eligible alternative; simultaneous requests cannot exceed the receiver-wide declared limit. Unknown/stale capacity is not free capacity. Advanced three-device fairness remains P15 |
+| Validated Code — P07/P11 | Copy the synthetic code fixture; record before failures and successful repaired result, actual restricted command/stdout/stderr/exit/hash, network/host-file/resource enforcement and matching validation attempt before approved canonical write. Undo restores bytes. At least one sandbox profile passes; native unsupported ones remain unavailable |
+| Failures/status — P12 | Cancel and restart; interrupt a paired target; deny an approval; submit invalid files/stale patches; remove/disable a required model safely; exhaust supported capacity. Jobs remain inspectable and no duplicate final write, cross-chat leak or developer database repair occurs. Show model/device/job/validation state accurately |
+| Offline proof — P12 | Named enforcement and independent observation window over app/runtime/subprocess and LAN paths, including failure/restart. Retain safe metadata with build, model, device/interface/time and job references. Proof Cards distinguish blocked, observed-zero and unavailable; configuration/unit tests alone do not pass |
+| Reviewer/publication — P14 | Operator follows the linked try-it guide, finds the artifact/diff/evidence and understands missing capabilities. Website/PPT Working now/Beta/Planned claims match the immutable artifact. Requester accepts result; publisher separately verifies actual download integrity/access |
+
+No clean profile is accepted yet. A failed exposed workflow blocks that profile's
+release until repaired or explicitly removed from the advertised profile without
+losing the minimum Beta identity. Reviewers must see any required sandbox-peer
+prerequisite before download. A smaller matrix is allowed; silently weaker safety
+or substituted mock/model evidence is not.
 
 ## Production acceptance
 
-The gates below define the agreed outcome. They are **planned acceptance criteria**,
+The gates below define the full production outcome retained for Bands B/C. They are **planned acceptance criteria**,
 not results, deadlines or blanket claims of production readiness. The recorded
 problem statement is in [docs/README.md](README.md): workstation/server operation,
 model auto-selection, documents/images, sandboxed code and offline evidence are
@@ -35,7 +295,7 @@ baseline requirements; peer distribution is additional product innovation.
 | Area | Required evidence |
 |---|---|
 | Installation | Clean supported Windows, macOS and Linux OS/architecture profiles can install and launch without terminal assistance, external language/runtime setup or a cloud account. Record signing/permissions, download size, free space, model choice, failures, upgrade/rollback and uninstall/data preservation |
-| App publication and updates | On every supported platform, build real N and N+1 artifacts and prove install → use → upgrade before first publication. Verify explicit online check/download, authenticated offline import, interruption, wrong/tampered/stale packages, active jobs, migration failure/recovery and preservation of user work. Complete [release acceptance](releases.md#6-acceptance-before-first-publication); no silent network checks |
+| App publication and updates | On every production-supported platform, build real N and N+1 artifacts and prove install → use → upgrade before claiming production qualification. Verify explicit online check/download, authenticated offline import, interruption, wrong/tampered/stale packages, active jobs, migration failure/recovery and preservation of user work. Complete [production release acceptance](releases.md#production-release-acceptance); no silent network checks |
 | Context and corpus lifecycle | Instructions/curated memory persist across restart; users inspect/edit/delete them; selected context respects permissions and token budgets. Legacy data migration preserves records and handles conflicting stores. Corpus change/deletion/revocation invalidates derived retrieval/context without treating document text as policy |
 | KV cache and capacity | Compare cold/warm latency, peak memory and output quality with fixed model/runtime/context/concurrency. Exercise simultaneous admissions, low memory, cancellation, idle eviction, model/adapter changes and private-context isolation. Any cache quantisation/reuse/paging feature needs backend-specific correctness and resource evidence |
 | Local operation | With public networking blocked, supported chat/reasoning, coding proposals, OCR/image/document understanding, local retrieval and file generation work using only installed dependencies. A standalone sandbox is proven separately on each advertised platform |
@@ -100,7 +360,7 @@ environment still apply; rerun affected checks after changes and the required
 end-to-end path at task acceptance gates. Add broader checks only for a concrete remaining
 risk. After each build/review cycle, explain what was built, what was observed,
 what remains unverified and the next named action using the
-[team report](../tasks.md#verification-and-team-explanation).
+[team report](archive/prototype-task-record.md#verification-and-team-explanation).
 
 ### C05: Contracts and local execution
 
@@ -585,7 +845,7 @@ HTTP 200 with the correct filename and no unsent draft content.
 
 This evidence applies to the macOS coordinator. It does not accept C03 on behalf
 of the requester, qualify Ubuntu, or advance C04. See the
-[repair handoff](c03-repair-handoff.md) for exact verification and Git paths.
+[repair handoff](archive/c03-repair-handoff.md) for exact verification and Git paths.
 
 ## 6. Demonstration
 
@@ -723,7 +983,7 @@ oversight. Status values follow the evidence labels in section 1.
 
 Each of these is named in the problem statement and intentionally excluded from
 the alpha under
-[deliberately excluded](../tasks.md#outside-the-alpha-scope).
+[deliberately excluded](archive/prototype-task-record.md#outside-the-alpha-scope).
 None is claimed as working.
 
 | Problem-statement line | Decision |

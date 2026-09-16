@@ -169,6 +169,7 @@ function buildList(items, start) {
   const depth = items[start].depth;
   const ordered = items[start].ordered;
   const list = document.createElement(ordered ? 'ol' : 'ul');
+  if (ordered) list.setAttribute('start', items[start].number);
   let i = start;
   while (i < items.length && items[i].depth >= depth) {
     if (items[i].depth > depth) {
@@ -177,8 +178,14 @@ function buildList(items, start) {
       i = next;
       continue;
     }
+    if (items[i].ordered !== ordered) break;
     const li = document.createElement('li');
     appendInline(li, items[i].text);
+    for (const text of items[i].continuations) {
+      const p = document.createElement('p');
+      appendInline(p, text);
+      li.append(p);
+    }
     list.append(li);
     i += 1;
   }
@@ -264,18 +271,49 @@ export function renderMarkdown(target, source) {
       while (i < lines.length) {
         const m = lines[i].match(/^(\s*)([*+-]|\d+[.)])\s+(.*)$/);
         if (!m) {
-          if (lines[i].trim() === '') { i += 1; break; }
+          const last = items.at(-1);
+          if (last && lines[i].trim() && lines[i].match(/^\s*/)[0].length > last.indent) {
+            const body = [];
+            while (i < lines.length && lines[i].trim()
+                   && !/^(\s*)([*+-]|\d+[.)])\s+/.test(lines[i])
+                   && lines[i].match(/^\s*/)[0].length > last.indent) {
+              body.push(lines[i++].trim());
+            }
+            last.continuations.push(body.join(' '));
+            continue;
+          }
+          if (!lines[i].trim() && last) {
+            let next = i + 1;
+            while (next < lines.length && !lines[next].trim()) next += 1;
+            const following = (lines[next] || '').match(/^(\s*)([*+-]|\d+[.)])\s+(.*)$/);
+            // A fresh 1 after a blank line deliberately starts another list.
+            if (following && !(parseInt(following[2], 10) === 1 && following[1].length <= last.indent)) {
+              i = next;
+              continue;
+            }
+            if (!following && lines[next]?.match(/^\s*/)[0].length > last.indent) {
+              i = next;
+              continue;
+            }
+          }
           break;
         }
         items.push({
           depth: Math.floor(m[1].length / 2),
+          indent: m[1].length,
           ordered: /\d/.test(m[2]),
+          number: parseInt(m[2], 10),
           text: m[3],
+          continuations: [],
         });
         i += 1;
       }
-      const [list] = buildList(items, 0);
-      target.append(list);
+      let start = 0;
+      while (start < items.length) {
+        const [list, next] = buildList(items, start);
+        target.append(list);
+        start = next;
+      }
       continue;
     }
 
