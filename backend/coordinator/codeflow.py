@@ -36,6 +36,20 @@ MAX_RESPONSE_CHARS = 120_000
 # quietly hiding bytes; the selected input is already bounded well below it.
 MAX_DIFF_CHARS = 2_000_000
 
+# Decoder constraints help syntax; parse_proposal remains the permission gate.
+PROPOSAL_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["summary", "edits"],
+    "properties": {
+        "summary": {"type": "string"},
+        "edits": {"type": "array", "maxItems": MAX_EDITS, "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["path", "base_sha256", "content"],
+            "properties": {key: {"type": "string"} for key in
+                           ("path", "base_sha256", "content")}}},
+    },
+}
+
 SYSTEM_INSTRUCTION = """You are a code editing assistant running entirely on this computer.
 
 You have no tools, no shell, no network and no permissions. You cannot read

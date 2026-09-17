@@ -215,7 +215,9 @@ function turn(role, text, attachments, plain, host, skill, artifacts) {
     // What actually happened to these files, per request. Ordinary Chat now
     // reads the files sent with that one request, and nothing else.
     const capability = skill && capabilities.find((c) => c.id === skill);
-    note.textContent = capability
+    note.textContent = attachments.some(record => record.reused)
+      ? 'Reused by explicit selection from this conversation for this request.'
+      : capability
       ? `Read by ${capability.name} for this request.`
       : (attachments.length === 1
         ? 'Read for this request, on this computer. Earlier files are not '
@@ -224,7 +226,7 @@ function turn(role, text, attachments, plain, host, skill, artifacts) {
           + 'read again.');
     article.append(note);
   }
-  if (artifacts && artifacts.length) {
+  if (role === 'assistant' && artifacts && artifacts.length) {
     const list = document.createElement('ul');
     list.className = 'turn-attachments';
     list.setAttribute('aria-label', 'Documents Refinix produced');
@@ -605,7 +607,10 @@ let capabilities = [];
 /* Skill selection is composer state for this session, kept per conversation so
  * switching back restores what was chosen. It is never sent as prompt text. */
 const skillByChat = new Map();
+const skillRevisionByChat = new Map();
 let staged = [];                 // files selected but not yet sent
+let availableSources = [];
+const reusedByChat = new Map(), reuseRevisionByChat = new Map();
 let plusMenu = null;
 
 function currentSlot() {
@@ -640,6 +645,7 @@ async function loadCapabilities() {
 }
 
 function chooseSkill(id) {
+  skillRevisionByChat.set(currentSlot(), (skillRevisionByChat.get(currentSlot()) || 0) + 1);
   const skill = capabilities.find((c) => c.id === id) || null;
   if (!skill || skill.kind === 'default') skillByChat.delete(currentSlot());
   else skillByChat.set(currentSlot(), skill);
@@ -1095,8 +1101,27 @@ async function exportArtifact(artifact) {
 function renderStaged() {
   const host = $('attachments');
   if (!host) return;
-  host.replaceChildren(...staged.map((a) => attachmentRow(a, removeStaged)));
-  host.hidden = staged.length === 0;
+  const reused = reusedByChat.get(currentSlot()) || [];
+  host.replaceChildren(
+    ...staged.map((a) => attachmentRow(a, removeStaged)),
+    ...reused.map((a) => attachmentRow({...a, filename: `Reuse: ${a.filename}`}, removeReused)));
+  host.hidden = staged.length + reused.length === 0;
+}
+
+function chooseReuse(record) {
+  const slot = currentSlot(), chosen = reusedByChat.get(slot) || [];
+  if (!chosen.some(a => a.attachment_id === record.attachment_id))
+    reusedByChat.set(slot, [...chosen, record]);
+  reuseRevisionByChat.set(slot, (reuseRevisionByChat.get(slot) || 0) + 1);
+  renderStaged();
+}
+
+function removeReused(record) {
+  const slot = currentSlot();
+  reusedByChat.set(slot, (reusedByChat.get(slot) || [])
+    .filter(a => a.attachment_id !== record.attachment_id));
+  reuseRevisionByChat.set(slot, (reuseRevisionByChat.get(slot) || 0) + 1);
+  renderStaged();
 }
 
 async function removeStaged(record) {
@@ -1213,6 +1238,14 @@ function openPlusMenu() {
   menu.append(files);
   entry('Add files…', 'Images, PDFs and documents from this computer',
         'paperclip', pickFiles);
+  if (chatId && availableSources.length) {
+    const chosen = reusedByChat.get(currentSlot()) || [];
+    for (const source of availableSources) {
+      if (!chosen.some(a => a.attachment_id === source.attachment_id))
+        entry(`Reuse ${source.filename}`, 'Earlier source in this conversation',
+              'paperclip', () => chooseReuse(source));
+    }
+  }
 
   const skillLabel = document.createElement('p');
   skillLabel.className = 'menu-label';
@@ -1562,6 +1595,7 @@ async function openChat(id) {
   if (switched) {
     saveDraftSoon(true);                  // capture and flush the old chat first
     chatId = id;
+    availableSources = [];
     publishSlot();
     loadDraft(id);
     loadStaged();
@@ -1577,6 +1611,10 @@ async function openChat(id) {
     return;
   }
   if (!current()) return;
+
+  availableSources = [...new Map(messages.flatMap(message =>
+    message.role === 'user' ? (message.attachments || []) : [])
+    .map(source => [source.attachment_id, source])).values()];
 
   let replacement;
   try {
@@ -1647,6 +1685,12 @@ async function openChat(id) {
 
 async function send(text, { draftText = null } = {}) {
   const sourceId = chatId, version = draftVersion;
+  const sourceSlot = currentSlot();
+  const skill = selectedSkill();
+  const skillRevision = skillRevisionByChat.get(sourceSlot) || 0;
+  const sentFormat = outputFormat, sentWorkflow = docWorkflow;
+  const reused = [...(reusedByChat.get(sourceSlot) || [])];
+  const reuseRevision = reuseRevisionByChat.get(sourceSlot) || 0;
   await saveDraftSoon(true);             // no delayed old save may follow acceptance
   let targetId = sourceId;
   if (!targetId) {
@@ -1656,7 +1700,6 @@ async function send(text, { draftText = null } = {}) {
     });
     targetId = chat_id;
   }
-  const skill = selectedSkill();
   const { job_id } = await api('/v1/messages', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: targetId, text,
@@ -1665,12 +1708,26 @@ async function send(text, { draftText = null } = {}) {
       // It is not left as state only this page knows about. The document
       // choices travel the same way, and only when they apply.
       skill_id: skill ? skill.id : undefined,
-      output_format: skill?.id === 'write-document' ? outputFormat : undefined,
-      doc_workflow: skill?.id === 'write-document' ? docWorkflow : undefined }),
+      output_format: skill?.id === 'write-document' ? sentFormat : undefined,
+      doc_workflow: skill?.id === 'write-document' ? sentWorkflow : undefined,
+      reuse_source_ids: reused.map(source => source.attachment_id) }),
   });
+  if ((skillRevisionByChat.get(sourceSlot) || 0) === skillRevision) {
+    skillByChat.delete(sourceSlot);
+    if (currentSlot() === sourceSlot) { renderSkill(); renderModelPill(); }
+  }
+  if ((reuseRevisionByChat.get(sourceSlot) || 0) === reuseRevision)
+    reusedByChat.delete(sourceSlot);
   if (chatId !== sourceId || (sourceId === null && draftVersion !== version)) {
     loadChats();
     return;
+  }
+  // A newer skill choice belongs to the chat this draft is becoming.
+  if (sourceId === null) {
+    const nextSkill = skillByChat.get(sourceSlot);
+    if (nextSkill) skillByChat.set(targetId, nextSkill);
+    skillByChat.delete(sourceSlot);
+    skillRevisionByChat.set(targetId, skillRevisionByChat.get(sourceSlot) || 0);
   }
   if (draftText !== null && draftVersion === version && $('input').value === draftText) {
     $('input').value = '';
@@ -1683,12 +1740,10 @@ async function send(text, { draftText = null } = {}) {
   const sentFiles = staged.length;
   staged = [];
   renderStaged();
-  if (skill && targetId !== (sourceId || NEW_DRAFT_SLOT)) {
-    skillByChat.delete(NEW_DRAFT_SLOT);
-    skillByChat.set(targetId, skill);
-  }
   chatId = targetId;
   publishSlot();
+  renderSkill();
+  renderModelPill();
   // Read persisted messages/output after acceptance; generation may already
   // have emitted events before the POST response reached this browser.
   await openChat(chatId);
@@ -1708,6 +1763,7 @@ function newChat() {
   chatId = null; activeJob = null;
   streamBox = null; jobState = null; lastSequence = 0;
   pendingEvents = new Map();
+  availableSources = [];
   publishSlot();
   setActive(null);
   setJobChip(null);

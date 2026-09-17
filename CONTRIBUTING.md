@@ -130,6 +130,11 @@ gh pr create --base main --head dev --title "Release: <what is in it>"
 the commits and leave `dev` permanently diverged from `main`. PRs into `dev`
 may be squashed.
 
+Merging source into main does not publish or install an application update.
+The planned [application release contract](docs/releases.md) requires a designated
+version, qualified platform builds, signing and update metadata. The current CI
+checks source; these documents do not add or authorise publishing automation.
+
 ## Merging
 
 Member → `dev` PRs have no automated CI gate. The `dev` → `main` release PR
@@ -143,7 +148,7 @@ are pure notification noise. Ask for a review when you want one.
 Work on `dev` until it is genuinely ready, then take it to `main` in one PR.
 Anyone can open and merge that release PR.
 
-For the alpha build, follow the [execution review and named human
+For each release band, follow the [execution review and device-based human
 checkpoints](tasks.md#numbered-execution-tasks) before promotion.
 These are work-acceptance gates; they do not add a GitHub approval quota or
 change the workflow triggers. Git publication remains a human action unless

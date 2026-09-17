@@ -1,5 +1,9 @@
 # Handover pack
 
+> Historical prototype record/template. Retained for reproduction and dated evidence.
+> Current scope and order are in [tasks.md](../../tasks.md#numbered-execution-tasks);
+> refresh source/device facts and obtain applicable authorisation before using old steps.
+
 One input handover instead of a question at every chunk.
 
 The requester supplies the inputs and the authorisation scope below **once**.
@@ -17,7 +21,7 @@ sentence the requester writes in Part 2.
 > clearer checkpoints — not a promised number of stops. Some chunks need
 > several device actions or repair cycles, and that cannot be known in advance.
 > The rule this implements is in the
-> [operating contract](../tasks.md#operating-contract).
+> [operating contract](../../tasks.md#operating-contract).
 
 ---
 
@@ -32,7 +36,7 @@ API keys, private or confidential documents, real customer or plant data, or
 personal identifiers.
 
 The fixture rule is
-[security.md §11](security.md#11-repository-content): **use synthetic or
+[security.md §11](../security.md#11-repository-content): **use synthetic or
 explicitly approved non-sensitive fixtures.** A document does not have to be
 publicly redistributable — it has to be synthetic, or non-sensitive and
 explicitly approved. Separately, C07 requires **source hashes and provenance**
@@ -61,21 +65,21 @@ Every row below is recorded with evidence. Re-supplying them wastes the sitting.
 
 | Already decided | Value | Recorded in |
 |---|---|---|
-| Six device inventories | Collected for all six machines | [devicespecifications.md](devicespecifications.md) |
-| First configuration | macOS coordinator + Ubuntu worker; other machines off the critical path unless a measured need creates a device setup checkpoint | [devicespecifications.md](devicespecifications.md#first-configuration--the-only-two-devices-on-the-critical-path) |
-| Runtime (OD-03) | Ollama; `llama-server` is a comparison only, not a second adapter | [model-catalog.md](model-catalog.md#od-03--ollama-is-the-first-runtime) |
-| Model set (OD-05) | One model — `qwen3.5:4b-q4_K_M`, Apache-2.0, integrity verified | [model-catalog.md](model-catalog.md#31-od-05--the-first-selected-model-set) |
-| Pairing policy (OD-06) | Fingerprint-pinned TLS + single-use code; recorded, unimplemented | [security.md](security.md#41-od-06--the-prototype-pairing-decision) |
-| Infrastructure pins (OD-08) | K3s `v1.36.4+k3s1`, `redis:7.2.16`, `python:3.13-slim-bookworm` | [architecture.md](architecture.md#81-od-08--resolved-infrastructure-pins) |
-| Worker ports | `8443`, NodePort `30443` | [`backend/contracts/v1.py`](../backend/contracts/v1.py) |
-| UI direction | Local HTML/CSS/JS; `frontend/design/` is the visual reference; no React conversion | [frontend/README.md](../frontend/README.md) |
-| Job/event/approval schema | Reviewed contract draft; **not frozen** — integration pending C05 | [contracts README](../backend/contracts/README.md) |
+| Six device inventories | Collected for all six machines | [devicespecifications.md](../devicespecifications.md) |
+| First configuration | macOS coordinator + Ubuntu worker; other machines off the critical path unless a measured need creates a device setup checkpoint | [devicespecifications.md](../devicespecifications.md#first-configuration--the-only-two-devices-on-the-critical-path) |
+| Runtime (OD-03) | Ollama; `llama-server` is a comparison only, not a second adapter | [model-catalog.md](../model-catalog.md#od-03--ollama-is-the-first-runtime) |
+| Model set (OD-05) | One model — `qwen3.5:4b-q4_K_M`, Apache-2.0, integrity verified | [model-catalog.md](../model-catalog.md#31-od-05--the-first-selected-model-set) |
+| Pairing policy (OD-06) | Fingerprint-pinned TLS + single-use code; recorded, unimplemented | [security.md](../security.md#41-od-06--the-prototype-pairing-decision) |
+| Infrastructure pins (OD-08) | K3s `v1.36.4+k3s1`, `redis:7.2.16`, `python:3.13-slim-bookworm` | [architecture.md](../architecture.md#81-od-08--resolved-infrastructure-pins) |
+| Worker ports | `8443`, NodePort `30443` | [`backend/contracts/v1.py`](../../backend/contracts/v1.py) |
+| UI direction | Local HTML/CSS/JS; `frontend/design/` is the visual reference; no React conversion | [frontend/README.md](../../frontend/README.md) |
+| Job/event/approval schema | Reviewed contract draft; **not frozen** — integration pending C05 | [contracts README](../../backend/contracts/README.md) |
 
 **Also not for the sitting** — these are recorded as later decisions and
 answering them now would be guesswork that creates rework: installer
 technology, specialist model selection, semantic-retrieval defaults, and
 anything depending on an extraction path C07 has not designed yet.
-See [open decisions](prd.md#11-open-decisions).
+See [open decisions](../prd.md#11-open-decisions).
 
 ---
 
@@ -181,8 +185,8 @@ Naming a folder now does not pre-approve future writes; approval stays per-actio
 |---|---|---|---|
 | Which LAN may be used, and who can authorise temporary network controls | C11 | Network owner | Controls are applied by the device operators, not by agents |
 | A separate device and operator to observe the offline window | C11 | One teammate | Agents design the observation method. A second laptop on the same Wi-Fi does not by itself guarantee visibility. |
-| Official SIH26117 documents | C13, but the sooner the better | One teammate | Exact wording, submission deadline, required deliverables, judging criteria, submission/IP terms. Send sources or links, not a summary — this closes [OD-01](prd.md#11-open-decisions) and may change scope, so early is safer. |
-| Distribution and website direction | C13 | Requester, with the design track | Product name (final or provisional), repository visibility, ownership/licensing direction, and what the public site is for — showcase, demo request, or downloadable release. Approved contact details and copy. Relates to [OD-02](prd.md#11-open-decisions). |
+| Official SIH26117 documents | C13, but the sooner the better | One teammate | Exact wording, submission deadline, required deliverables, judging criteria, submission/IP terms. Send sources or links, not a summary — this closes [OD-01](../prd.md#11-open-decisions) and may change scope, so early is safer. |
+| Distribution and website direction | C13 | Requester, with the design track | Product name (final or provisional), repository visibility, ownership/licensing direction, and what the public site is for — showcase, demo request, or downloadable release. Approved contact details and copy. Relates to [OD-02](../prd.md#11-open-decisions). |
 
 ---
 
@@ -212,12 +216,12 @@ identity and retained history; this correction does not rerun or replace it.
 
 The requester will accept the repaired Mac app after running it. Only C04
 build-input preparation is authorised before that acceptance: see
-[the prepared image inputs](../backend/worker-image/README.md). Worker/API
+[the prepared image inputs](../../backend/worker-image/README.md). Worker/API
 implementation and image building follow acceptance; no worker image, OCR,
 pairing or cluster result is claimed from these inputs.
 
 **Internal demonstration: 8–9 September 2026.** The dated sequence and explicit
-slip risks are in [tasks.md](../tasks.md#sequence-toward-the-internal-demonstration).
+slip risks are in [tasks.md](prototype-task-record.md#sequence-toward-the-internal-demonstration).
 Evidence gates remain mandatory; a shorter verified demonstration must be
 labelled incomplete if the full candidate does not fit.
 

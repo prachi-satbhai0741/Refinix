@@ -322,3 +322,39 @@ test('the repair sends no write to the message store', async () => {
   const writes = p.requests.filter((r) => r.options && r.options.method === 'POST');
   assert.equal(writes.length, 0);
 });
+
+test('artifact cards ignore user rows while preserving uploaded attachments', () => {
+  const p = page();
+  p.run(`turn('user', 'upload', [{filename:'scan.txt',byte_size:10}], false,
+              $('thread'), null, [{filename:'generated.docx',byte_size:10,validation:{paragraphs:1}}]);`);
+  const nodes = p.document.created;
+  assert.equal(nodes.filter(n => n.className === 'artifact').length, 0);
+  assert.equal(nodes.filter(n => n.className === 'attachment').length, 1);
+});
+
+test('markdown preserves starts, continuation paragraphs, nesting, mixed lists and restarts', () => {
+  const document = makeDocument();
+  const scope = vm.createContext({ document, navigator:{}, URL, setTimeout(){} });
+  // These two properties are native DOM features used by the renderer.
+  const create = document.createElement;
+  document.createElement = tag => {
+    const el = create(tag);
+    Object.defineProperty(el, 'lastElementChild', {get(){ return this.children.at(-1); }});
+    el.attributes = {};
+    el.setAttribute = (k,v) => { el.attributes[k] = String(v); };
+    return el;
+  };
+  vm.runInContext(readFileSync(`${__dirname}/markdown.js`, 'utf8').replace('export function', 'function'), scope);
+  const root = document.createElement('div'); scope.root = root;
+  scope.input = '3. third\n\n   continued paragraph\n\n4. fourth\n  - nested\n  7. nested ordered\n\n1. deliberate restart\n- mixed\n\n<script>inert</script>';
+  vm.runInContext('renderMarkdown(root, input)', scope);
+  const all = el => [el, ...el.children.filter(c => typeof c !== 'string').flatMap(all)];
+  const nodes = all(root);
+  assert.equal(nodes.filter(n => n.tag === 'ol')[0].attributes.start, '3');
+  assert.ok(nodes.some(n => n.tag === 'ol' && n.attributes.start === '7'));
+  assert.ok(nodes.some(n => n.tag === 'p' && n.children.includes('continued paragraph')));
+  assert.equal(nodes.filter(n => n.tag === 'script').length, 0);
+  assert.ok(nodes.some(n => n.children.includes('<script>inert</script>')));
+  assert.equal(root.children.filter(n => n.tag === 'ol').length, 2);
+  assert.equal(root.children.at(-2).tag, 'ul');
+});

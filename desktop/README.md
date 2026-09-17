@@ -13,7 +13,7 @@ SQLite state, the same `/v1` routes, the same frontend, the same event stream.
 | [`setup_py2app.py`](setup_py2app.py) | the macOS bundle build |
 | [`requirements-macos.lock`](requirements-macos.lock) | exact macOS packages, sources, licences, sizes and SHA-256 hashes |
 | [`setup-macos.command`](setup-macos.command) | one-time macOS install, build and open command |
-| [`icons/`](icons/) | platform icons derived from the brand masters |
+| [`icons/`](icons) | platform icons derived from the brand masters |
 
 ## Running it
 

@@ -8,6 +8,15 @@ not implemented or qualified merely by appearing here. See the
 [current source snapshot](evaluation.md#current-status) and
 [implementation gates](../tasks.md#numbered-execution-tasks).
 
+### Release sequencing, unchanged architecture
+
+[PRD release bands](prd.md#release-bands) and [task dependencies](../tasks.md#numbered-execution-tasks)
+set delivery order without replacing this architecture. Band A integrates a narrow
+qualified desktop/peer/sandbox matrix through the existing harness; capability-aware
+participation does not require every OS to supply every capability. Broader same-OS
+peer, scheduler, RAG, updater and managed-deployment qualification follows in Bands
+B/C. The full Windows/macOS/Linux destination below remains intact.
+
 ## 1. System shape
 
 Refinix is the harness: the existing context manager, workflow runner, policy,
@@ -50,6 +59,12 @@ handles selected model downloads or verified offline imports. Users should not
 need terminals, package managers, Kubernetes or certificate commands. Signing,
 OS permissions, drivers and any sandbox virtualisation prerequisites require
 platform-specific qualification and guided setup; they cannot be wished away.
+
+The model catalogue persists beyond onboarding. One shared model-manager path
+backs first run and Settings → Models; manifests reference approved weights and
+profile eligibility, while jobs retain immutable chosen model identities. Follow
+[the catalogue lifecycle](model-catalog.md#persistent-model-management), including
+safe active-job/removal handling; no separate onboarding-only catalogue.
 
 Pairing never merges workspaces. A device may coordinate its own jobs while
 serving permitted jobs from several peers, with receiver-side admission across
@@ -137,6 +152,20 @@ its own corpus/index service; check user and document permissions before retriev
 and again before passing context to an allowed execution device. Shared corpus
 storage does not transfer ownership of personal chats.
 
+### Corpus and personalisation boundaries
+
+Keep three stores logically distinct: user preferences/instructions; authorised
+reference documents with derived retrieval indexes; and explicitly approved
+training examples. Indexing a document does not authorise training on it. Extraction,
+embedding, source and access-policy versions govern index/cache validity. A source
+update invalidates affected derived entries; retain or rebuild only authorised data.
+
+The context manager selects relevant instructions, memory and retrieved passages
+within the selected model's budget. Neither a file on disk nor a retained KV cache
+teaches the model permanent knowledge. Models cannot rewrite their own authority.
+Start with memory and RAG; [optional model adaptation](model-catalog.md#11-personalisation-and-optional-model-adaptation)
+is separate from ordinary conversation execution.
+
 ### 3.4 Policy and approval gate
 
 Every action is classified by the coordinator as:
@@ -183,6 +212,13 @@ pooled VRAM, or duplicate full-model execution intended to accelerate one answer
 User-pinned targets never silently change. Auto fallback stays within the granted
 data and execution policy; ambiguous tool execution must reconcile before retry.
 
+For Beta P10, implement these same boundaries with deterministic capability rules,
+fresh actual load/queue observations and conservative receiver-wide admission.
+A bounded queue or one reserved slot may suffice if measured and disclosed. Do
+not confuse the existing per-relationship active-count check with atomic global
+admission. Smarter completion estimates, fairness and the three-device scenario
+are P15; safe capacity limits and receipt reconciliation cannot be deferred.
+
 ### 3.6 Runtime adapter
 
 Ollama remains the current runtime. Qualify a pinned upstream **llama.cpp
@@ -201,6 +237,35 @@ build. Future voice or image-generation packs may need different engines.
 Refinix already supplies the application harness. DeepSeek Harness or another
 agent framework is not adopted: qualify a specific missing capability and offline,
 permission and maintenance fit before replacing any existing path.
+
+### KV cache and runtime resource policy
+
+The inference engine owns KV-cache allocation and other model-specific inference
+state; Refinix owns budgets, admission, lifecycle and evidence. Do not implement a
+custom cache allocator, PagedAttention kernel or cross-device KV migration.
+
+- Budget weights, context-dependent cache/state, runtime buffers and safety
+  headroom together. Use backend/model measurements rather than one universal
+  per-token formula. Receiver admission accounts for concurrent reservations.
+- Bound input/output context and concurrency. Select relevant history/RAG rather
+  than silently deleting stored history to fit memory. Preserve truncation or
+  summary provenance; a loaded model is not the same as a retained conversation.
+- Reuse compatible prefixes only where the engine supports it and the model,
+  adapter, token prefix, configuration and privacy scope match. Default to isolated
+  user/workspace cache scopes; no private cross-user reuse or prompt-bearing debug
+  endpoints. An instruction/adapter change must not reuse incompatible state.
+- Define idle eviction, cancellation cleanup, model unload and memory-pressure
+  handling. Reconcile live attempts before releasing their capacity. Cache persistence
+  to disk is disabled by default; supported opt-in persistence needs access control
+  and retention. Do not claim secure erasure merely because a slot was released.
+- Test native prefix reuse, cache quantisation, batching and attention optimisations
+  individually for supported builds. Enable only after correctness, peak memory,
+  latency and concurrency evidence. PagedAttention is an engine-level option,
+  potentially useful for server workloads, not a mandatory app dependency.
+
+[llama.cpp server controls](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
+and [vLLM PagedAttention](https://docs.vllm.ai/en/latest/design/paged_attention/)
+are upstream references, not evidence of enabled settings in this prototype.
 
 ### 3.7 Tool runner and validators
 
@@ -265,43 +330,66 @@ decides whether to create a new attempt and requeue it.
 
 ## 5. Local application data
 
-The application uses one logical data root resolved through platform-native
-locations:
+Target layout, not an executed migration: one logical Refinix data root outside
+the replaceable app package, resolved through platform-native locations.
 
-| Platform | Default |
+| Platform/profile | Target location |
 |---|---|
-| macOS | Library/Application Support/AegisForge inside the user's home |
-| Linux | XDG data and config directories |
-| Windows | LocalAppData/AegisForge |
+| macOS installed app | `~/Library/Application Support/Refinix/` |
+| Linux installed app | `$XDG_DATA_HOME/refinix/`, default `~/.local/share/refinix/` |
+| Windows installed app | `%LOCALAPPDATA%/Refinix/` |
+| Explicit portable profile | User-selected `.refinix/` directory |
 
-A portable developer profile may use a user-selected hidden .aegisforge
-directory. The application must not assume that Unix dot directories are hidden
-or correctly permissioned on every platform.
-
-Logical contents:
+A leading dot is not a cross-platform security or hidden-file guarantee. Use
+owner-only permissions where supported and the OS credential store for secrets.
+The logical root contains:
 
     config.toml
-    rules.md
+    AGENTS.md
     memory.md
     state.db
     audit/events.jsonl
     artifacts/
     jobs/
     model-manifests/
+    corpus/
     tmp/
 
-- rules.md is a user-editable policy and instruction surface.
-- memory.md contains curated durable summaries only; raw chats and confidential
-  source material are not copied into it automatically.
-- state.db stores canonical structured state.
-- tmp contains disposable per-job workspaces, not a durable temp.md file.
-- model-manifests records provenance and runtime references; the model manager records whether the app or an external runtime owns each
-  weight store.
-- secrets and device credentials use the operating-system credential store, not
-  Markdown, logs, or ordinary configuration.
+AGENTS.md holds explicit user instructions; memory.md contains curated preferences
+and summaries. Structured chats, job/approval state, audit metadata and source/index
+references remain in the database. The context manager deliberately selects relevant
+content, rather than appending every file to every request. Corpus files are only
+explicitly imported/authorised sources. Model manifests reference app- or runtime-owned
+weights without duplicating external stores. Temporary job/cache data is not durable
+memory; any training dataset/adapter has separate explicit scope and retention.
 
-The data root and temporary workspaces must be owner-only where the platform
-supports permissions. Backup, export, and deletion behaviour must be explicit.
+User instructions and remembered preferences cannot override enforced security or
+organisation policy. For conflicting preferences, the current explicit user request
+takes precedence within permitted scope, followed by explicit instructions and then
+curated memory. Retrieved documents and model outputs are untrusted task data, not
+new instructions. Proposing a memory change does not authorise a silent policy edit;
+provide inspect/edit/delete controls and record provenance.
+
+### Legacy data migration
+
+The current `.aegisforge` state and previously documented AegisForge platform roots
+are compatibility-sensitive. Detect them explicitly; do not rename paths merely
+because the repository is renamed. A versioned migration must stop competing writes,
+check destination conflicts/free space, take a consistent snapshot, preserve models,
+credentials and content, and verify the new store before selecting it. If both roots
+exist, ask the owner to select a source rather than merging chats or overwriting data.
+Map legacy rules.md to AGENTS.md only when present and after conflict-safe verification.
+Keep the old store until the new version passes its startup/data checks; provide an
+explicit later cleanup action. Do not run old and new writable stores concurrently.
+
+### Application lifecycle and updates
+
+The app package and durable data have separate ownership. Updates use a staged,
+authenticated package and a qualified installer/updater, drain active work and perform
+versioned migration/recovery. The app never updates itself by pulling source from
+main. Installed peers exchange protocol/capability information before accepting work
+across versions. [releases.md](releases.md) owns publication, connected checks, offline
+import and rollback; packaging/updater frameworks remain qualification choices.
 
 ## 6. Job and workflow contracts
 

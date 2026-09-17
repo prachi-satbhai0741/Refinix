@@ -1861,3 +1861,99 @@ work. No repository file change means no changelog entry.
 - changes: Updated current headings and repository/product identity; kept the former README anchor; documented the pending remote rename and a clone destination named refinix. Existing clone URLs, local checkout, application data and historical records remain intact.
 - verification: GitHub REST returned repository id 1352342428 under the old name with push=true and admin=false; gh rename help and official GitHub instructions confirmed the administrator handoff. Static diff check passed; 623 local links/anchors across 36 tracked Markdown files passed with no broken targets.
 - remaining: A repository administrator must rename the remote; verify the same repository id and update clone origins afterward. No GitHub mutation, commit, push, local-directory move or application migration occurred.
+
+<a id="ac-20260914-001"></a>
+## AC-20260914-001 — Document release readiness, updates and personalisation
+- prompt_id: [UP-20260914-001](userprompts.md#up-20260914-001)
+- date: 2026-09-14
+- status: documentation updated and statically checked; requester review pending
+- tags: releases, updater, offline, kv-cache, context, corpus, personalisation
+- aliases: no calendar deadline, update version, refinix memory, optional training
+- paths: README.md, CONTRIBUTING.md, TechStack.md, tasks.md, docs/prd.md, docs/architecture.md, docs/workflows.md, docs/security.md, docs/model-catalog.md, docs/evaluation.md, docs/README.md, docs/releases.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Recorded readiness-based public installation and upgrades, engine-owned cache policy, persistent context and optional evaluated adaptation.
+- changes: Added the focused release contract; aligned core requirements, implementation gates, technology choices, workflows and security around explicit signed updates with offline import and recovery.
+- changes: Defined target Refinix data roots and safe legacy migration; separated memory, corpus and training data; kept paging and weight adaptation conditional on evidence.
+- verification: git diff --check and local Markdown link/anchor checks passed; changed/new files are Markdown only. Confirmed historical task/evaluation sections and official-problem transcription unchanged, with append-only ledger edits. New entry IDs are unique; pre-existing historical duplicate IDs were preserved.
+- remaining: Requester wording review and separately authorised implementation/platform acceptance. No runtime tests, installations, downloads, data migration, Git/GitHub writes or application release occurred.
+
+<a id="ac-20260915-001"></a>
+## AC-20260915-001 — Record the P01 source and offline baseline
+- prompt_id: [UP-20260915-001](userprompts.md#up-20260915-001)
+- date: 2026-09-15
+- status: P01 source/offline baseline verified; device and requester acceptance pending
+- tags: p01, support-matrix, source-baseline, fixtures, offline-checks
+- aliases: first production gate, four windows devices, current workflow gaps
+- paths: docs/evaluation.md, docs/devicespecifications.md, tasks.md, agent-memory/
+- summary: Recorded the current production qualification profiles, source gaps, reusable synthetic fixtures, local regression evidence and next isolated runtime checkpoint without changing product code.
+- changes: Marked P01 in progress, corrected the available Windows-device count to four, kept advertised support unqualified, and separated existing safeguards from P02-P07 runtime gaps.
+- verification: 614 coordinator checks passed with 14 skips after loopback allowance; 338 contract/worker-support/deployment/script checks, 32 fixture checks, 51 desktop checks, nine native renderer/PDF checks and 129 frontend checks passed. Existing bundle contents verified; 28 shipped modules and primary UI files matched current source. `git diff --check` and 297 changed-document links/anchors passed.
+- remaining: Run the isolated macOS real-workflow checkpoint, obtain current Windows/Ubuntu checkout and runtime evidence, verify retained-worker behaviour and obtain requester acceptance before closing P01. Worker API checks remain unrun because FastAPI/HTTPX are absent; no install, live inference, worker contact, deployment, app rebuild or Git/GitHub write ran.
+
+<a id="ac-20260915-002"></a>
+## AC-20260915-002 — Correct the P01 checkpoint state isolation
+- prompt_id: [UP-20260915-002](userprompts.md#up-20260915-002)
+- date: 2026-09-15
+- status: review correction verified; P01 device acceptance remains pending
+- tags: p01, checkpoint, state-isolation, documentation
+- aliases: sibling project and state, state_root review fix
+- paths: docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Moved the documented test database into a sibling state directory so Code can accept the disposable project.
+- changes: Added state-directory creation, corrected the launch/restart path and explained the containment boundary; preserved the prior baseline diff and safety implementation.
+- verification: An isolated standard-library check called the existing canonical_root function: the corrected sibling layout was accepted, the old nested layout raised state_root, and selecting the parent raised contains_state. Documentation path assertions and git diff --check passed.
+- remaining: Real application/model/device checks and requester acceptance; no app launch, model call, install, runtime code change or Git/GitHub write.
+
+<a id="ac-20260915-004"></a>
+## AC-20260915-004 — Implement bounded reliability handoff
+- prompt_id: [UP-20260915-004](userprompts.md#up-20260915-004)
+- date: 2026-09-15
+- status: implemented and checked with synthetic offline tests; requester acceptance pending
+- tags: reliability, artifacts, skills, markdown, source-reuse, ocr, code
+- aliases: one artifact card, one-shot skill, explicit source reuse, structured diagnostics
+- paths: backend/coordinator/code_service.py, backend/coordinator/codeflow.py, backend/coordinator/db.py, backend/coordinator/docflow.py, backend/coordinator/ocr.py, backend/coordinator/server.py, backend/coordinator/test_code_access.py, backend/coordinator/test_ocr.py, backend/coordinator/test_reliability.py, frontend/app/app.js, frontend/app/markdown.js, frontend/app/test-composer.cjs, frontend/app/test-rendering.cjs
+- summary: Fixed six bounded reliability defects while preserving permissions, model limits, previous-answer conversion and existing UI structure.
+- changes: Generated artifacts now belong to one assistant turn; skills are one submission; ordered lists preserve starts and structure; earlier files require explicit same-chat reuse with revalidation and visible provenance.
+- changes: OCR records typed transcription/unreadable/refusal outcomes and literal uncertainty; Code requests use the existing structured decoder and retain bounded failure diagnostics without weakening semantic path validation.
+- verification: 279 focused coordinator tests and 137 complete frontend tests passed; the final 88 Code/reliability tests passed after the last diagnostic change. Python compile, node syntax and git diff --check passed.
+- remaining: Real-model OCR and Code quality, packaged-app parity, historical presentation failure and generated-document depth remain unverified. The reasoning transport suite could not bind its synthetic loopback server in this sandbox.
+
+<a id="ac-20260916-001"></a>
+## AC-20260916-001 — Fix three reliability review findings
+- prompt_id: [UP-20260915-005](userprompts.md#up-20260915-005)
+- date: 2026-09-16
+- status: implemented and checked offline; requester acceptance pending
+- tags: reliability, source-selection, skills, review
+- aliases: remote OCR guard, new chat skill race, OCR discussion
+- paths: backend/coordinator/server.py, backend/coordinator/docflow.py, backend/coordinator/test_reliability.py, frontend/app/app.js, frontend/app/test-composer.cjs, agent-memory/userprompts.md
+- summary: Source-less transcription stops before routing, OCR discussion remains ordinary Chat, and newer skill selections survive first-chat acceptance.
+- changes: Moved source validation before route selection and reused the job request text; narrowed the English transcription heuristic; transferred newer draft skills only when the composer transitions to its created chat and refreshed the chip.
+- verification: New backend and new-chat skill regressions failed before fixes and passed afterward. Ran 115 coordinator reliability/document/attachment tests and all 139 frontend tests successfully; git diff --check passed.
+- remaining: The intent detector is a conservative English heuristic. Packaged-app and real-model quality checks remain unverified; no GUI, live inference, downloads, personal state or Git writes were used.
+
+<a id="ac-20260916-002"></a>
+## AC-20260916-002 — Reconcile the source-grounded Beta frontier
+- prompt_id: [UP-20260916-001](userprompts.md#up-20260916-001)
+- date: 2026-09-16
+- status: documentation integrated and statically checked; requester review pending
+- tags: beta, task-graph, model-lifecycle, source-audit, documentation-cleanup
+- aliases: P14 Beta frontier, SIH Reviewer Preview, persistent Settings Models
+- paths: tasks.md, docs/, README.md, TechStack.md, CONTRIBUTING.md, backend/README.md, backend/contracts/README.md, backend/coordinator/README.md, backend/worker/README.md, backend/worker-image/README.md, frontend/README.md, frontend/design/README.md, agent-memory/
+- summary: Preserved the production architecture and replaced the first-publication sequence with a dependency-based Beta frontier grounded in current source and recorded evidence.
+- changes: P01–P14 Beta blockers, P15–P20 versioned improvements and P21–P26 finals/production maturity; mapped old gates, defined persistent model lifecycle and narrow authenticated Beta installation/recovery.
+- changes: Recorded current implementation gaps and recent reliability repairs; corrected stale component status, marked old handoffs historical and retained referenced reproduction/fixture/design assets after cleanup review.
+- verification: Inspected current source/test bodies, CI/build definitions, docs and retained evidence. All 745 local links/anchors across 37 tracked Markdown files passed; 26 ordered tasks, band classifications, backward dependencies, preserved historical task/evaluation sections and Markdown-only scope passed. git diff --check passed. No application tests or live acceptance ran.
+- remaining: Requester review of revised plan and separate device/runtime/package/publication gates. No runtime code, tests, installs, downloads, services, user state or Git/GitHub writes changed.
+
+<a id="ac-20260916-003"></a>
+## AC-20260916-003 — Consolidate execution context and retire prototype briefs
+- prompt_id: [UP-20260916-002](userprompts.md#up-20260916-002)
+- date: 2026-09-17
+- status: consolidated and checked offline; requester review pending
+- tags: documentation, execution-guide, archive, worker-operations, cleanup
+- aliases: retired C handoffs, lightweight task board, deferred public presentation
+- paths: AGENTS.md, tasks.md, docs/README.md, docs/archive/, docs/worker-operations.md, docs/workflows.md, docs/evaluation.md, docs/model-catalog.md, backend/coordinator/, backend/worker-image/README.md, backend/worker/pairing_cli.py, deploy/k3s/, scripts/image-digests.py, agent-memory/
+- summary: Replaced duplicated active handoffs with canonical execution guidance while preserving reproduction history and safety coverage.
+- changes: Deleted two superseded briefs after retaining their requirements; archived seven handoffs/plans and the historical task board; reduced active tasks.md from 830 to 224 lines and added source, check and checkpoint guidance.
+- changes: Consolidated managed-worker operations, repaired active references and made missing safety documents fail their existing tests; flagged conflicting historical build/schema claims and deferred public presentation work.
+- verification: Eight focused documentation safety tests passed. Checked local Markdown links/anchors, archive wording, historical task preservation, all 26 task classifications/dependencies and unchanged runtime structure; git diff --check passed.
+- verification: Snapshot hashes confirm this cleanup preserved root README, frontend/design, SIH presentation brief and C07 fixtures, including prior edits; historical ledgers remain append-only.
+- remaining: Requester review and current device/runtime/package acceptance. No model calls, installs, services, deployment, Git/GitHub writes or production qualification; only runtime help/comment references changed.

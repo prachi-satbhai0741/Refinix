@@ -1429,3 +1429,109 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve earlier uncommitted documentation; do not rename compatibility-sensitive data paths or invent a completed GitHub rename.
 - evidence: Authenticated GitHub REST metadata reports repository id 1352342428, current name AegisForge, push permission true and admin permission false.
 - linked_changes: [AC-20260913-002](agentchangelog.md#ac-20260913-002)
+
+<a id="up-20260914-001"></a>
+## UP-20260914-001 — Document release readiness, updates and personalisation
+- date: 2026-09-14
+- status: authorised documentation execution
+- tags: releases, updater, offline, kv-cache, context, corpus, personalisation
+- aliases: no calendar deadline, update version, refinix memory, pagedattention, optional training
+- paths: README.md, CONTRIBUTING.md, TechStack.md, tasks.md, docs/prd.md, docs/architecture.md, docs/workflows.md, docs/security.md, docs/model-catalog.md, docs/evaluation.md, docs/README.md, docs/releases.md, agent-memory/
+- summary: Execute the approved documentation plan for a readiness-based installable core with safe future updates, cache policy and staged personalisation.
+- request: Make install/use/upgrade acceptance mandatory for the first public release; preserve offline operation and add context/corpus/cache requirements with optional evaluated training later.
+- constraints: Documentation and static checks only; no calendar commitments or fixed implementer identities; preserve operational timeouts, historical evidence, current code and Git/GitHub state.
+- follow_up_to: [UP-20260913-001](#up-20260913-001)
+- linked_changes: [AC-20260914-001](agentchangelog.md#ac-20260914-001)
+
+<a id="up-20260915-001"></a>
+## UP-20260915-001 — Establish the P01 production baseline and support contract
+- date: 2026-09-15
+- status: authorised P01 execution; device acceptance pending
+- tags: p01, production-baseline, support-matrix, fixtures, offline-checks
+- aliases: first production task, baseline and support contract, proceed production plan
+- paths: docs/evaluation.md, docs/devicespecifications.md, tasks.md, agent-memory/
+- summary: Establish the current source and offline-check baseline, candidate platform profiles and representative synthetic fixtures before runtime or packaging qualification.
+- request: Proceed with P01 after identifying it as the first production gate.
+- constraints: Preserve the current UI, harness, user data and Git state; no installers, downloads, live inference, service changes, worker contact, deployment or publication.
+- verification_authorization: Proportionate existing-dependency offline checks with isolated test data; packaged-app, real-model, current worker and clean-device acceptance remain human checkpoints.
+- acceptance: Record observed checks, gaps and failure cases separately from historical evidence; advertise no untested platform or capability and obtain current device/profile evidence before closing P01.
+- follow_up_to: [UP-20260914-001](#up-20260914-001)
+- device_confirmation: Requester confirmed all four inventoried Windows devices are available; three was a typo. Historical specifications are retained, not treated as fresh runtime evidence.
+- linked_changes: [AC-20260915-001](agentchangelog.md#ac-20260915-001)
+
+<a id="up-20260915-002"></a>
+## UP-20260915-002 — Fix the P01 checkpoint folder layout
+- date: 2026-09-15
+- status: authorised review correction
+- tags: p01, checkpoint, state-isolation, documentation
+- aliases: execute review fix, sibling state directory, explain first task
+- paths: docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Correct the reviewed Code checkpoint instructions and explain P01 in plain language.
+- request: Execute the review correction without weakening repository containment or treating P01 as complete.
+- verification_authorization: Proportionate isolated offline verification of the corrected paths; no live workflow, installation or Git write.
+- follow_up_to: [UP-20260915-001](#up-20260915-001)
+- linked_changes: [AC-20260915-002](agentchangelog.md#ac-20260915-002)
+
+<a id="up-20260915-003"></a>
+## UP-20260915-003 — Check Refinix local runtime on the Mac
+- date: 2026-09-15
+- status: authorised Refinix-only runtime checks
+- tags: p01, local-runtime, chat, documents, code, isolated-state
+- aliases: refinix check only, real model checkpoint, return findings
+- paths: docs/evaluation.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Check local Refinix workflows using existing models and isolated synthetic test data, then report observed findings.
+- request: Execute the authorised Mac checkpoint for Refinix only; no unrelated application or system work.
+- constraints: Preserve personal state and existing changes; no installs, downloads, remote worker contact, product fixes or Git writes.
+- follow_up_to: [UP-20260915-002](#up-20260915-002)
+
+<a id="up-20260915-004"></a>
+## UP-20260915-004 — Implement bounded reliability handoff
+- date: 2026-09-15
+- status: authorised implementation and focused offline checks
+- tags: reliability, artifacts, skills, markdown, source-reuse, ocr, code
+- aliases: astra handoff, one-shot skills, structured output diagnostics
+- paths: frontend/app/, backend/coordinator/, agent-memory/
+- summary: Inspect and implement the supplied six reliability fixes without changing architecture or unrelated work.
+- request: Fix duplicate artifacts, skill retention, list numbering, explicit scoped source reuse, OCR outcomes and Code schema/diagnostics; report actual checks and uncertainty.
+- constraints: Preserve dirty changes, full-answer conversion, permissions, limits and model defaults; no Git writes, installs, downloads, personal state or live inference.
+- verification_authorization: Relevant existing-dependency offline tests and syntax checks with synthetic disposable data.
+
+<a id="up-20260915-005"></a>
+## UP-20260915-005 — Fix reliability review findings
+- date: 2026-09-15
+- status: authorised implementation and proportionate offline checks
+- tags: reliability, source-selection, skills, review
+- aliases: remote OCR guard, new chat skill race, OCR discussion
+- paths: backend/coordinator/server.py, backend/coordinator/docflow.py, backend/coordinator/test_reliability.py, frontend/app/app.js, frontend/app/test-composer.cjs, agent-memory/
+- summary: Fix the three reviewed reliability gaps using existing code and synthetic checks.
+- request: Execute the review fixes; preserve existing changes and product scope.
+- follow_up_to: UP-20260915-004
+- linked_changes: AC-20260916-001
+- constraints: No Git writes, live models, GUI, downloads or personal state.
+
+<a id="up-20260916-001"></a>
+## UP-20260916-001 — Sequence a source-grounded SIH Beta inside the production plan
+- date: 2026-09-16
+- status: authorised documentation restructure and repository cleanup review
+- tags: beta, release-frontier, model-lifecycle, source-audit, canonical-docs
+- aliases: SIH Reviewer Preview, Band A, Band B, Band C, Settings Models
+- paths: tasks.md, docs/, README.md, TechStack.md, backend/, frontend/README.md, agent-memory/
+- summary: Reinspect implementation and evidence, preserve the production architecture, and define the earliest coherent downloadable Beta in canonical documents.
+- request: Separate Beta blockers, versioned enhancements and finals/production maturity; make post-onboarding model management explicit; reconcile stale claims and remove only demonstrably obsolete material.
+- constraints: Preserve working code, tests, fixtures, security boundaries, historical measurements and user data; no runtime execution, installs, downloads, host changes or Git/GitHub writes authorised by this planning task.
+- supersedes: First-publication sequencing in [UP-20260914-001](#up-20260914-001); retains its production architecture and update destination.
+- linked_changes: [AC-20260916-002](agentchangelog.md#ac-20260916-002)
+
+<a id="up-20260916-002"></a>
+## UP-20260916-002 — Consolidate historical handoffs and make execution self-contained
+- date: 2026-09-16
+- status: authorised documentation cleanup and affected reference/check maintenance
+- tags: documentation-cleanup, archive, execution-context, beta, runbook
+- aliases: lightweight professional repository, agent execution guide, retired C03 C04 handoffs
+- paths: AGENTS.md, tasks.md, docs/, backend/, deploy/k3s/, scripts/image-digests.py, agent-memory/
+- summary: Consolidate obsolete handoffs, retain unique evidence and safety checks, and make canonical documentation support the active execution plan.
+- request: Follow the reviewed delete/consolidate/archive recommendation and give future agents sufficient source, acceptance and checkpoint context.
+- constraints: Defer root README, website and SIH presentation content work; preserve existing edits, runtime behaviour, fixtures, provenance, historical measurements and Git state.
+- verification_scope: Proportionate existing-dependency offline checks for relocated documentation and affected tests; no live devices, downloads, deployment or publication.
+- follow_up_to: [UP-20260916-001](#up-20260916-001)
+- linked_changes: [AC-20260916-003](agentchangelog.md#ac-20260916-003)

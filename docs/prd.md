@@ -4,16 +4,24 @@
 
 | Field | Value |
 |---|---|
-| Document version | 3.0 |
+| Document version | 3.2 |
 | Status | Production direction recorded; implementation and release acceptance remain separate |
 | Target | Offline desktop AI workbench; SIH26117 provides the industrial use case |
 | Repository / product | refinix / Refinix (formerly AegisForge; GitHub rename pending administrator) |
-| Last updated | 2026-09-13 |
+| Last updated | 2026-09-16 |
 
 This is the product contract. It supersedes earlier prototype-only scope,
 fixed device placement, and calendar-based priorities as production requirements.
 It does not declare existing code complete, approve a runtime migration, or
 establish a verified release. Focused documents own the details below.
+
+The production architecture remains the master plan; the first coherent release
+frontier is Refinix Beta 0.1 / SIH Reviewer Preview. Release-specific acceptance
+in [releases.md](releases.md) replaces the earlier requirement to complete the
+full production update/platform matrix before any public download. There is no
+project calendar deadline or fixed implementer assignment. Runtime timeouts, credential
+expiry and other operational limits remain required. Historical dates record
+evidence; they are not delivery commitments.
 
 ## 1. Product definition
 
@@ -107,6 +115,30 @@ Scores are explained suitability indices out of 100, not probabilities of
 correctness. A hardware scan cannot produce an accuracy percentage. Measurement
 and ranking rules belong in [model-catalog.md](model-catalog.md#6-onboarding-selection).
 
+### Models after onboarding
+
+**FR-015 includes persistent Settings → Models.** First-run setup is only the
+initial configuration; installation must not freeze the model set. Users can
+revisit installed and supported uninstalled models, change compatible choices,
+provision later and safely disable/remove models without resetting the workspace.
+[Model lifecycle](model-catalog.md#persistent-model-management) owns metadata,
+provisioning, integrity, self-tests and removal; [workflows](workflows.md#models-after-onboarding)
+owns the interaction. This is a Beta blocker, not an optional onboarding polish.
+
+### Application updates
+
+The full product includes Settings → Updates: explicit Check for updates,
+Download update and Install and restart, plus verified offline import. Beta 0.1
+may use the authenticated manual replacement/recovery path defined in
+[releases.md](releases.md#beta-01-publication); the in-app updater follows in
+Band B. Preserve user data, models and work in progress on every offered path.
+Brief Internet access may discover a release but cannot guarantee a complete
+package download. Ordinary use triggers no silent update checks or downloads.
+
+A versioned change reaching main through the normal branch flow becomes available
+only after build, compatibility, signing and release gates pass. Users receive a
+published package, not a source checkout. [releases.md](releases.md) owns this contract.
+
 ## 5. Dynamic compute participation
 
 Each installation can coordinate its own jobs and, with permission, receive jobs
@@ -165,7 +197,33 @@ No unrestricted model-to-model memory or live inference migration is required.
 
 ## 7. Release scope
 
-Priorities describe outcomes, not dates or implementation assignments.
+Priorities describe the production destination, not a claim that every P0 is a
+Beta 0.1 blocker. [tasks.md](../tasks.md#numbered-execution-tasks) assigns each
+outcome to an executable band and owns the explicit release frontier.
+
+### Release bands
+
+| Band | Release scope |
+|---|---|
+| A — Beta Release Critical Path | Installable app on at least one qualified desktop profile; useful standalone Chat/Documents/Code through current Settings/Control Center; real inference; at least two qualified task/model combinations with automatic routing; persistent model management; discovery/pairing and real paired execution; capability/load-aware scheduling with safe admission; grounded document artifact; reviewable patch with real validation on at least one qualified sandbox profile; truthful status, ordinary failure handling and scoped offline evidence |
+| B — Post-Beta improvements | Beta 0.2/0.3: fleet fairness/smarter placement, better recovery/performance/proof, additional models, hybrid retrieval and curated memory, more platform/sandbox profiles, calibrated recommendations and in-app updates |
+| C — Finals/product maturity | Managed organisation deployment, broader OS/backend and sandbox qualification, complete update/rollback matrices, deeper trust/resource evaluation, additional capability packs and conditional adaptation research; finals candidate before full production qualification where its claim set is narrower |
+
+Capability support is per profile. A Windows inference-only peer may be supported
+without local sandbox execution; Code validation can use a qualified Linux or
+other eligible execution target. Such a route must work through the product and
+be disclosed before installation, not require reviewer certificate/Kubernetes
+setup. No native sandbox support is inferred from a remote run. At least one
+Beta desktop remains useful without any peer; the complete Beta demonstrates
+paired execution and validated Code as well. Documents may remain local and use
+FTS5 when that path passes grounded-artifact acceptance. No unsafe fallback.
+
+The website and PPT may show the full architecture and potential, but distinguish
+**Working now** (named build/profile evidence), **Beta / experimental** (bounded,
+tested scope and limitations) and **Planned product capability**. Planned or
+unqualified controls cannot appear functional in the downloadable app. Production
+scope is preserved; broader support is earned incrementally, not promised by the
+first installer.
 
 <a id="71-alpha-p0"></a>
 ### 7.1 Core: P0
@@ -173,7 +231,9 @@ Priorities describe outcomes, not dates or implementation assignments.
 Guided desktop installation; offline Chat/reasoning; document and image
 understanding; OCR and cited document generation; bounded coding and sandbox
 validation; task-aware model selection; local and trusted-device execution;
-capacity-aware concurrency; permission controls; cancellation and recovery.
+capacity-aware concurrency; KV/resource budgets; persistent instructions and
+curated memory; permission controls; cancellation and recovery; signed installation
+and a proven explicit application-update path.
 Distribution is part of the core direction, not optional merely because the
 official demonstration can run on one workstation.
 
@@ -190,7 +250,9 @@ remote model. A private deployment remains offline.
 
 Speech input/output, image generation, additional media capabilities, specialised
 language packs, employee task assignment, coordinator migration, and high
-availability. A radar animation or resource overlay must not displace core
+availability. Optional evaluated adapter/preference training follows a demonstrated
+need; continuous reinforcement learning is not part of initial release acceptance.
+A radar animation or resource overlay must not displace core
 workflow reliability.
 
 ## 8. Outcome requirements
@@ -214,7 +276,7 @@ prototype-only table.
 | FR-012 | Code supports reviewable proposals and validated sandbox execution before approved canonical writes | P0 |
 | FR-013 | Concurrent independent jobs are placed using current capacity across multiple trusted devices | P0 |
 | FR-014 | Interrupted attempts and retries cannot cause duplicate canonical writes | P0 |
-| FR-015 | Models support explicit connected installation and verified offline import | P0 |
+| FR-015 | Persistent Settings → Models supports the curated catalogue lifecycle after onboarding, including explicit downloads, verified offline import and safe removal | P0 |
 | FR-016 | A private server participates through the common worker interface | P1 |
 | FR-017 | Organisation compute and corpus permissions are separate and enforced | P1 |
 | FR-018 | Canonical workspace transfer is a separate explicit migration feature | P2 |
@@ -226,6 +288,11 @@ prototype-only table.
 | FR-024 | Receiving devices expose active remote work and owner controls | P0 |
 | FR-025 | Local semantic retrieval uses qualified embeddings alongside exact-term retrieval with source/access boundaries | P0 |
 | FR-026 | Published support claims name tested OS versions, architectures, runtimes and capabilities | P0 |
+| FR-027 | Runtime memory budgets account for weights, cache/state, context and concurrent jobs; cache reuse respects compatibility and privacy | P0 |
+| FR-028 | User-editable instructions and curated memory use a defined data layout and safe legacy migration, distinct from chat history and model weights | P0 |
+| FR-029 | Updates preserve data with authenticated packages and tested recovery; Beta 0.1 may use qualified manual replacement, followed by explicit connected/offline in-app updates in Band B and full matrices in Band C | P0 |
+| FR-030 | Published versions come from passing platform build/sign/compatibility gates; an ordinary main change is not automatically a user update | P0 |
+| FR-031 | Optional local model adaptation uses approved datasets, isolated versioned adapters and held-out evaluation; no silent per-conversation training | P2 |
 
 ## 9. Non-goals
 
@@ -242,12 +309,14 @@ to deliver the three execution modes.
 
 ## 10. Success measures
 
-Acceptance is defined in [evaluation.md](evaluation.md#production-acceptance)
-and sequenced in [tasks.md](../tasks.md#numbered-execution-tasks). It includes:
-clean-machine setup without terminal assistance; usable offline core workflows;
-task-aware selection across at least two task types; concurrent three-device
-placement; isolated context; cancellation and recovery without duplicate writes;
-source-grounded artifacts; and scoped offline evidence.
+[Beta acceptance](evaluation.md#beta-acceptance) defines the first release;
+[production acceptance](evaluation.md#production-acceptance) retains the broader
+contract. The [task graph](../tasks.md#numbered-execution-tasks) sequences them.
+A reviewer must be able to install the advertised package, choose and later manage
+models, complete real local workflows, connect a trusted target, see actual
+model/device placement and obtain grounded documents and a sandbox-validated patch
+on eligible profiles. Record failures, data preservation and scoped offline proof.
+Broader concurrency, platform and upgrade matrices belong to their later gates.
 
 Availability of code or a successful model answer alone is not release acceptance.
 
@@ -268,6 +337,9 @@ Availability of code or a successful model answer alone is not release acceptanc
 | OD-11 | Qualify multi-worker admission, capacity reporting, fairness and recovery using the shared job contract |
 | OD-12 | Define the supported OS/architecture/backend matrix from clean-device evidence |
 | OD-13 | Qualify shared-corpus storage, identity, access control and retention for managed deployments |
+| OD-14 | Qualify Beta installer, hosting, signing trust, metadata and manual replacement/recovery before first publication; in-app updater and complete platform/rollback matrices follow the release bands |
+| OD-15 | Qualify cache reuse, limits and optional engine optimisations for each model/backend; no custom PagedAttention implementation required |
+| OD-16 | Formalise Refinix data-root migration and instruction precedence; optional adapters require separate training/evaluation qualification |
 
 ## 12. Canonical document map
 
@@ -277,6 +349,7 @@ Availability of code or a successful model answer alone is not release acceptanc
 - [model-catalog.md](model-catalog.md) — models, scoring, provisioning and runtime qualification
 - [devicespecifications.md](devicespecifications.md) — historical device measurements
 - [evaluation.md](evaluation.md) — current evidence boundary and acceptance criteria
+- [releases.md](releases.md) — versioned distribution, explicit updates and recovery
 - [../TechStack.md](../TechStack.md) — concrete component choices and candidates
 - [../tasks.md](../tasks.md) — outcome-based implementation gates and historical prototype record
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — Git and release contribution rules

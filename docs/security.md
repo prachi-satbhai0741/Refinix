@@ -6,6 +6,13 @@ This document owns security implementation boundaries under
 [prd.md](prd.md). Planned controls are not verified controls. A static review
 cannot prove isolation, secure storage, zero egress, or resistance to attack.
 
+The [release bands](prd.md#release-bands) narrow the profiles offered in Beta;
+they do not relax authentication, model provenance, approval, sandbox, data-loss
+or offline-runtime boundaries. A capability is advertised only on its qualified
+execution profile. Beta manual package replacement follows
+[release acceptance](releases.md#beta-01-publication); unused future updater
+mechanisms need not ship, but every offered installation/recovery path is checked.
+
 ## 1. Security objectives
 
 Refinix must:
@@ -216,15 +223,31 @@ Employee task-assignment/project-management features are outside this product sc
 ## 6. Local application data
 
 - Application-data directories are owner-only where supported.
-- Secrets, tokens, private keys, and device credentials never enter rules.md,
-  memory.md, state exports, or ordinary logs.
-- rules.md contains user-editable instructions and policy, not secrets.
+- Secrets, tokens, private keys, and device credentials never enter AGENTS.md,
+  memory.md, ordinary state exports, or logs; use protected credential storage.
+- The target profile's AGENTS.md contains user-editable instructions, not secrets
+  or authority to override enforced security/organisation policy. Legacy rules.md
+  is mapped only through the documented migration. Retrieved files with either
+  name are untrusted content, not automatically adopted instructions.
 - memory.md contains curated durable summaries only and must not automatically
   absorb raw confidential conversations or documents.
 - Structured state belongs in the local database, not Markdown files.
 - Temporary work belongs in per-job directories with cleanup after success,
   cancellation, or failure.
-- Backup and export require an explicit destination and approval.
+- User exports/backups require an explicit destination and approval. An accepted
+  application update authorises its disclosed local migration snapshot under the
+  same owner protections; it does not authorise an external upload.
+- Follow the [data migration contract](architecture.md#legacy-data-migration);
+  never silently merge old/new stores, overwrite user instructions or remove
+  the only recoverable copy during a rename/update.
+- KV caches can contain private context. Isolate reuse by user/workspace, model,
+  adapter and compatible prefix/configuration; permission changes invalidate
+  affected reuse. Disk persistence is disabled by default. Cleanup must cover
+  crash/restart and job retention, without claiming guaranteed physical erasure.
+- Training needs separate opt-in and authorised data/compute scope. Adapters may
+  memorise private examples; protect their storage/distribution accordingly.
+  Deleting corpus records or training examples is not proof of model unlearning.
+  Follow [optional adaptation gates](model-catalog.md#11-personalisation-and-optional-model-adaptation).
 
 ## 7. Action authority
 
@@ -318,13 +341,27 @@ accepted in the reproducible demo path.
 
 ## 10. Application and release supply chain
 
-- Every published installer has a version and SHA-256 checksum.
-- Production installers should be signed for each supported platform.
-- Unsigned prototypes are labelled honestly with manual verification steps.
-- Signing credentials remain outside source control and build artifacts.
+- Follow [releases.md](releases.md) for the planned publish/check/download/install
+  contract. A commit on main or a successful CI run is not a published update.
+- Published artifacts are immutable, versioned, hashed and authenticated by a
+  qualified signing/update mechanism. A checksum alone proves no publisher identity.
+- Authenticate metadata and packages against the installed trust root; enforce
+  platform/version compatibility and reject unauthorised downgrade/replay. Key
+  rotation, compromised-key recovery and stale metadata need documented behaviour.
+- Qualify platform signing/notarisation and updater packaging on each supported
+  OS/edition. Ad-hoc/unsigned prototypes are labelled and are not release proof.
+- Signing credentials remain outside source control/build artifacts and are
+  available only to authorised release jobs, never untrusted pull-request code.
+- Staging, interruption, low disk space, active jobs, migrations and recovery must
+  preserve the working installation/data or provide a verified recovery path.
+  Never execute an unverified download or silently discard newer user work.
+- Checking/downloading is explicitly connected; offline package import applies
+  the same trust checks. No startup/background checks, telemetry or automatic
+  model download is introduced. Update failure cannot disable offline operation
+  of an otherwise working installed version.
 - Release binaries and model weights are not committed to this repository.
-- The public site never contains secrets, private data, chats, or telemetry.
-- Offline runtime never depends on the public site remaining available.
+  The public site contains no secrets, private data, chats or telemetry; offline
+  runtime never depends on that site remaining available.
 
 ## 11. Repository content
 

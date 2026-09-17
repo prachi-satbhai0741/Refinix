@@ -10,7 +10,7 @@
 # The image digest below is the C04 build, which does NOT contain the executor.
 # It is a placeholder pinned to the last verified digest so this manifest never
 # floats; the Ubuntu worker replaces it with the digest of the C06 build at the
-# human checkpoint. See docs/c06-distributed-execution-handoff.md step E.
+# human checkpoint. See docs/worker-operations.md network and pairing safeguards.
 apiVersion: v1
 kind: ConfigMap
 metadata:

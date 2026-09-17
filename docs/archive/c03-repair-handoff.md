@@ -1,5 +1,9 @@
 # C03 review repair handoff — 2026-09-04
 
+> Historical prototype record/template. Retained for reproduction and dated evidence.
+> Current scope and order are in [tasks.md](../../tasks.md#numbered-execution-tasks);
+> refresh source/device facts and obtain applicable authorisation before using old steps.
+
 Built: draft responses are guarded by chat and edit version, draft writes are
 ordered and captured before navigation, accepted sends clear only their own
 draft, and failed deletion preserves the UI. The database rejects unfinished
@@ -15,7 +19,7 @@ at 8,042 prompt + 150 output = 8,192 tokens. The browser confirmed draft
 switch/reload recovery, active-delete blocking, Cancel focus, cancelled and
 confirmed deletion. Fresh HTTP exports returned the correct Marathi filenames
 for Markdown and text. All write checks used synthetic temporary databases.
-See [recorded runtime evidence](evaluation.md#53-c03-review-repairs--macos-coordinator-2026-09-04).
+See [recorded runtime evidence](../evaluation.md#53-c03-review-repairs--macos-coordinator-2026-09-04).
 
 Review follow-up: a length-stopped reply at 6,144 prompt + 2,048 output tokens
 now records **context and output limits reached**. Counts alone do not establish
@@ -28,7 +32,7 @@ for this classifier-only follow-up.
 
 **Accepted by the requester on 2026-09-04.** C04 implementation is now assigned
 to Claude, with Codex orchestrating and reviewing. Follow the
-[C04 execution and connection brief](c04-execution-brief.md). Ubuntu's actual
+[C04 execution and connection brief](../worker-operations.md). Ubuntu's actual
 image build, deployment and distributed acceptance remain separate gates.
 The Mac commands below are retained for reference; acceptance need not be repeated.
 

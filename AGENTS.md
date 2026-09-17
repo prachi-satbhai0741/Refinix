@@ -61,6 +61,11 @@ VERIFY — RUN THESE YOURSELF
 
 1. Run `git status --short --branch`. Preserve unrelated changes.
 2. Read only the relevant PRD and contributing sections.
+   Use the [agent execution guide](tasks.md#agent-execution-guide) to select the
+   active P-task, source/tests and required evidence. Archived C/E/AF handoffs
+   are reproduction history, not another executable backlog. Keep scope in the
+   PRD, sequencing/status in tasks and results in the focused evidence authority;
+   do not create a new per-agent planning or handoff file.
 3. Search the ledgers with 2–5 task terms, likely paths, or a specific ID. Never
    search the bare `UP-`/`AC-` prefix; it matches every entry.
 

@@ -1,9 +1,10 @@
 # AF-001 contract draft — 1.0
 
-Status: **in progress; local contract checks passed, not frozen**. The Python
-records, protocol constants, synthetic examples, and runnable checks exist. Coordinator,
-worker, UI, and manifest consumers do not exist yet. Passing the contract check
-alone does not satisfy the AF-001 integration gate or the C05 integration gate.
+Status: shared records/constants, examples, exporter and coordinator/worker/UI
+consumers exist. [Current integration and evidence](../../docs/evaluation.md#beta-source-audit)
+are distinct from historical AF-001/C05 checkpoints. Protocol compatibility changes
+must preserve or explicitly version real consumers; contract tests alone do not
+qualify a deployed or published profile.
 
 This implements the shared boundary in
 [architecture §6](../../docs/architecture.md#6-job-and-workflow-contracts).

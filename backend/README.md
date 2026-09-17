@@ -34,34 +34,16 @@ services are authenticated and encrypted, worker writes remain inside assigned
 temporary workspaces, and code execution is network-disabled and resource
 bounded by default.
 
-## Status: contract draft plus a running coordinator
+## Current implementation boundary
 
-The [shared contracts](contracts/README.md) contain versioned Python records,
-protocol constants, synthetic examples, a schema exporter and runnable checks.
-Their **eight** contract checks pass; the contract is **not frozen** — its
-consumer-integration gate is C05.
+The shared contracts, coordinator, worker API/executor, pairing/revocation,
+Code policy/proposals/validation, document workflows, FTS5 and proof builder exist.
+Docker/K3s/Redis implement the retained managed execution profile. These are
+source observations, not fresh deployment results; see the
+[current audit](../docs/evaluation.md#beta-source-audit) for paths, tests and gaps.
 
-The [coordinator](coordinator/README.md) now exists and runs: SQLite state, an
-Ollama runtime adapter, a loopback API and the served interface, with **73**
-offline checks passing in total. It is a real contract consumer — every job,
-attempt and event is validated through `contracts.v1` before it is written.
-
-**Still absent:** the worker service, workflow runner, policy gate, router,
-Redis coordination and the Kubernetes profile. Each of those surfaces reports
-itself unavailable in the interface rather than implying it works.
-
-[Architecture technology direction](../docs/architecture.md#8-working-technology-direction)
-settles Server-Sent Events, coordinator SQLite, Docker-built images, single-node
-K3s, and Redis 7.2.x for the alpha. FastAPI remains the direction for the
-**worker API** at C04, where a pinned install is part of the image build; the
-C03 coordinator uses the Python standard library because adding a dependency is
-a setup checkpoint rather than implementation. That deviation is recorded in
-architecture.md. Code must implement the shared `/v1` contract and one real
-model path before a second runtime, framework, or database appears.
-
-Initial source is split only by the real process boundaries: shared contracts,
-coordinator, worker API/executor, runtime adapter, and runnable checks. Do not
-create a generic plugin framework or one package per future capability.
-
-Scaffolding begins with AF-001 and must stop at the first real Service-to-Pod
-model response before any optional package or abstraction is added.
+The [task graph](../tasks.md#numbered-execution-tasks) qualifies these paths for
+Beta before adding wider production support. Portable packaged receivers,
+receiver-wide admission, automatic model/device placement and full model lifecycle
+remain implementation work. Reuse the current process boundaries and contract;
+no generic plugin framework, new database or alternate harness is required.

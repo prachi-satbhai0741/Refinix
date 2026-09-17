@@ -465,6 +465,8 @@ def connect(path: Path) -> sqlite3.Connection:
         # the job predates the choice, and those jobs all ran the fixed
         # workflow, so that is what a reopened conversation reports.
         conn.execute("ALTER TABLE jobs ADD COLUMN doc_workflow TEXT")
+    if "reuse_sources_json" not in job_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN reuse_sources_json TEXT")
     if "relationship_id" not in existing:
         # Which paired relationship an attempt ran through. NULL means local,
         # which is what every attempt before C06 actually was.
@@ -2268,7 +2270,7 @@ def set_artifact_state(conn, artifact_id: str, workspace_id: str, state: str) ->
 
 @serialized
 def create_job(conn, *, workspace_id, chat_id, request, task_type="chat",
-               skill_id=None, output_format=None, doc_workflow=None) -> str:
+               skill_id=None, output_format=None, doc_workflow=None, reuse_source_ids=None) -> str:
     """One job row. The document choices travel with the request that made
     them, so a reopened conversation reports what actually ran rather than
     whatever the composer happens to be showing now."""
@@ -2281,10 +2283,10 @@ def create_job(conn, *, workspace_id, chat_id, request, task_type="chat",
         conn.execute(
             "INSERT INTO jobs(job_id, workspace_id, workflow_id, chat_id, state,"
             " active_attempt_id, original_request, task_type, created_at, updated_at,"
-            " skill_id, output_format, doc_workflow) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " skill_id, output_format, doc_workflow, reuse_sources_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (job_id, workspace_id, row["workflow_id"], chat_id, "created", None,
              request, task_type, stamp, stamp, skill_id, output_format,
-             doc_workflow),
+             doc_workflow, json.dumps(reuse_source_ids or [])),
         )
     return job_id
 
@@ -2384,6 +2386,14 @@ def set_attempt_selection(conn, attempt_id: str, selection: dict) -> None:
     with LOCK, conn:
         conn.execute("UPDATE attempts SET selection_json=? WHERE attempt_id=?",
                      (json.dumps(selection), attempt_id))
+
+
+@serialized
+def set_attempt_metrics(conn, attempt_id: str, metrics: dict) -> None:
+    """Retain diagnostics even when generation never reaches validation."""
+    with conn:
+        conn.execute("UPDATE attempts SET metrics_json=? WHERE attempt_id=?",
+                     (json.dumps(metrics), attempt_id))
 
 
 @serialized

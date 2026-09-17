@@ -1,8 +1,14 @@
 # Refinix technology stack
 
-Updated: 2026-09-13. This maps the [product direction](docs/prd.md) to existing
+Updated: 2026-09-16. This maps the [product direction](docs/prd.md) to existing
 components and qualification candidates. It does not install, migrate or certify
 anything. Reuse current source first; preserve the UI and shared harness.
+
+[Release bands](docs/prd.md#release-bands) change execution order, not this stack.
+Band A qualifies one coherent desktop/peer/sandbox set first; Bands B/C expand
+platforms, scheduling, retrieval and updates. [tasks.md](tasks.md#numbered-execution-tasks)
+owns dependencies. Use current source/evidence rather than treating every candidate
+below as a required Beta dependency.
 
 ## 1. Language choices
 
@@ -16,15 +22,15 @@ Go or Rust merely to change deployment shape.
 
 | Layer | Current source | Production direction / qualification |
 |---|---|---|
-| UI | [frontend/app/](frontend/app/) is the runtime UI; frontend/design is a reference | Preserve Chat/document workflows, IDE-style Code, Settings and status card |
-| Desktop | [desktop/](desktop/) uses pywebview; macOS py2app packaging exists | Qualify platform installers, signing, native libraries, upgrades and rollback; no wrapper replacement selected |
-| Local service | [backend/coordinator/](backend/coordinator/) uses Python standard-library HTTP, SQLite and shared contracts | Extend existing service and durable job/context ownership; no framework migration required |
+| UI | [frontend/app/](frontend/app) is the runtime UI; frontend/design is a reference | Preserve Chat/document workflows, IDE-style Code, Settings and status card |
+| Desktop | [desktop/](desktop) uses pywebview; macOS py2app packaging exists | Qualify platform installers, signing, native libraries, upgrades and rollback; no wrapper replacement selected |
+| Local service | [backend/coordinator/](backend/coordinator) uses Python standard-library HTTP, SQLite and shared contracts | Extend existing service and durable job/context ownership; no framework migration required |
 | Worker API | [backend/worker/app.py](backend/worker/app.py) and shared Pydantic contracts; FastAPI worker | Reuse authenticated job protocol for an app-managed peer execution agent |
 | Model execution | Ollama adapter, selected Qwen3.5-4B prototype model | Preferred bundled llama.cpp candidate, pending exact-build/model and installer parity |
 | Placement | Workflow model preferences and a single active paired-worker selection | Rank eligible model/device pairs and enforce receiving capacity across concurrent requesters |
 | Local search | [retrieval.py](backend/coordinator/retrieval.py), SQLite FTS5 | Add qualified local embeddings and embedded vector search alongside lexical retrieval |
 | Document tools | Existing parsers, scan/image paths, DOCX/PDF/XLSX generation | Reuse; qualify macOS-specific Quartz/AppKit replacements for other platforms |
-| Distributed backend | [deploy/k3s/](deploy/k3s/), Redis Streams, API/executor services and validation Jobs | Retain as optional managed backend; not a desktop prerequisite |
+| Distributed backend | [deploy/k3s/](deploy/k3s), Redis Streams, API/executor services and validation Jobs | Retain as optional managed backend; not a desktop prerequisite |
 | Code sandbox | Restricted Kubernetes validation Jobs; bounded Python unittest commands | Qualify standalone isolation and toolchains per OS/edition; never substitute unrestricted host execution |
 
 These entries are source observations, not a claim that all paths pass runtime
@@ -33,7 +39,8 @@ acceptance. See [evaluation.md](docs/evaluation.md#current-status).
 ## 3. Frontend and product surfaces
 
 Extend current components rather than rebuilding the interface. Add onboarding,
-six scored recommendations plus Show more, a Connect device view and receiver
+persistent Settings → Models using the [catalogue lifecycle](docs/model-catalog.md#persistent-model-management),
+up to six recommendations plus Show more, a Connect device view and receiver
 notifications through existing Settings/status flows. Keep routing automatic and
 show a concise model/device/reason; detailed diagnostic evidence is secondary.
 Use reliable OS telemetry where available, with unavailable states for missing
@@ -75,6 +82,12 @@ address/code fallback and use established TLS/OS credential mechanisms.
 
 RAG is the extraction → indexing → retrieval → grounded generation pipeline;
 an embedding model is one component. No foundation-model training is required.
+Use editable instructions/curated memory before optional adapter or preference
+training; follow [adaptation gates](docs/model-catalog.md#11-personalisation-and-optional-model-adaptation).
+Use the inference engine's existing cache mechanisms under Refinix's
+[resource policy](docs/architecture.md#kv-cache-and-runtime-resource-policy),
+not a new custom allocator. PagedAttention and cache quantisation require measured
+benefit and backend qualification.
 Rebuild affected embeddings after embedding-version changes and invalidate deleted
 or unauthorised sources. Add a reranker only if evaluation shows a useful gain.
 
@@ -94,9 +107,10 @@ host-secret access, even if its supervisor needs infrastructure connectivity.
 
 Ship OS/architecture-specific packages with the application runtime, qualified
 native libraries and relevant engine. Users explicitly select models or import a
-complete verified offline bundle. Upgrades require an explicit connected action,
-integrity checks and a recovery path preserving user data. Drivers, platform
-permissions and sandbox virtualisation requirements must be surfaced honestly;
+complete verified offline bundle. Updates use explicit connected check/download
+or authenticated offline import, with a recovery path preserving user data.
+Drivers, platform permissions and sandbox virtualisation requirements must be
+surfaced honestly;
 normal end users should not debug them with terminal commands.
 
 The existing Docker/K3s backend remains useful for managed compute and sandbox
@@ -104,13 +118,22 @@ Jobs. Native Windows/macOS peers instead participate through Refinix's applicati
 protocol. A server can use the same worker service without Kubernetes if its
 qualified execution/isolation profile does not need it.
 
+The [release contract](docs/releases.md) qualifies platform installer tooling for
+Beta, then an existing updater in Band B; Kubernetes is not desktop packaging. Start with
+full packages; delta updates are optional after measured need. Sparkle on macOS
+and TUF-style signed metadata are candidates, not adopted dependencies; Windows
+and Linux mechanisms must meet the same explicit-network and recovery contract.
+GitHub Releases is the initial artifact-hosting candidate, subject to package
+size, access and availability checks. Current CI does not implement this pipeline.
+
 ## 7. Devices and rollout
 
 [devicespecifications.md](docs/devicespecifications.md) records historical test
 hardware, not permanent production roles. Publish a tested OS/version/architecture,
-CPU/GPU backend and capability matrix. Windows, macOS and Linux must each be
+CPU/GPU backend and capability matrix. For full production, Windows, macOS and Linux must each be
 qualified as requester and execution target, with a same-OS peer configuration
-showing there is no hidden Linux dependency. The recorded Windows inventory
+showing there is no hidden Linux inference dependency. Beta qualifies only its
+published matrix; sandbox/toolchain availability is separate from inference. The recorded Windows inventory
 includes Home editions, so Windows Sandbox alone cannot cover the supported fleet.
 
 Follow [outcome-based gates](tasks.md#numbered-execution-tasks). No dates, named

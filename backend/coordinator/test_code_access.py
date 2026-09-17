@@ -24,7 +24,7 @@ from backend.coordinator.server import Coordinator
 def stub_stream(reply: str, *, thinking: str = "", done_reason: str = "stop"):
     """A runtime stand-in that returns one scripted reply."""
     def stream(messages, *, should_cancel=None, think=None, model=None,
-               num_predict=None):
+               num_predict=None, response_format=None):
         stream.messages = messages
         stream.think = think
         if thinking:
@@ -1018,7 +1018,7 @@ class TestSurfaceBoundaries(RepoBase):
         seen = {}
 
         def fake(messages, *, should_cancel=None, think=None, model=None,
-                 num_predict=None):
+                 num_predict=None, response_format=None):
             seen["messages"] = messages
             yield "delta", "an answer"
             yield "done", {"done_reason": "stop"}
