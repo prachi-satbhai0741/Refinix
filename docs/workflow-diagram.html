@@ -4,9 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Refinix — Workflow Diagram (SIH26117)</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 /* Refinix workflow diagram — slide asset for the SIH26117 idea deck.
  * Palette and colour discipline taken from frontend/design/tokens.css:
@@ -26,8 +23,8 @@
   --observed:#3E4959;
   --caution:#7A4C04;  --caution-soft:#F4E9D5;
   --fault:#96322A;    --fault-soft:#F4DEDA;
-  --font-ui:'IBM Plex Sans Condensed',ui-sans-serif,system-ui,'Segoe UI',sans-serif;
-  --font-data:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+  --font-ui:ui-sans-serif,system-ui,'Segoe UI',sans-serif;
+  --font-data:ui-monospace,Consolas,monospace;
   --r:5px;
 }
 
@@ -294,11 +291,11 @@ body{
         <span>Team Rokunin Sync</span><i></i><span>Repo AegisForge</span>
       </div>
       <h1>Refinix <em>— end-to-end workflow</em></h1>
-      <p class="sub">Confidential input becomes a validated, human-approved deliverable using only approved local models — with per-job evidence of where the work ran.</p>
+      <p class="sub">Target workflow — not a completed-run record. Capabilities require acceptance on each published OS profile.</p>
     </div>
     <div class="egress">
       <div class="t"><svg><use href="#i-cloudoff"/></svg> Public cloud AI</div>
-      <div class="d">No external inference call at runtime. Egress is blocked, and the block is <b>observed and recorded</b> per job.</div>
+      <div class="d">Required: no external inference. <b>Live egress evidence is unavailable</b> until P12 observation is recorded.</div>
       <svg class="drop" width="26" height="24" viewBox="0 0 26 24" fill="none" stroke="currentColor" stroke-width="1.6">
         <path d="M13 0v9" stroke-dasharray="3 3"/>
         <path d="M8.4 12.4 17.6 21.6M17.6 12.4 8.4 21.6" stroke-linecap="round" stroke-width="2"/>
@@ -308,7 +305,7 @@ body{
 
   <!-- ======================= trust boundary ======================= -->
   <section class="boundary">
-    <div class="tag"><b>On-premise trust boundary</b> · offline runtime · loopback-bound services · <em>egress denied</em></div>
+    <div class="tag"><b>On-premise trust boundary</b> · offline runtime · loopback-bound services · <em>egress denial required</em></div>
     <div class="tag-r">One job = one complete model = one device</div>
 
     <div class="cols">
@@ -325,7 +322,7 @@ body{
           <path d="M850 262h30"/>
           <path d="M1194 262h30"/>
         </g>
-        <g fill="#1A5E97" font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing=".08em" text-anchor="middle">
+        <g fill="#1A5E97" font-family="monospace" font-size="8.5" letter-spacing=".08em" text-anchor="middle">
           <text x="222" y="252">SELECT</text>
           <text x="506" y="252">SUBMIT</text>
           <text x="866" y="252">ROUTE</text>
@@ -448,7 +445,7 @@ body{
             <li><span class="dot a"></span>Model &amp; manifest checksum</li>
             <li><span class="dot e"></span>SHA-256 of every input and artifact</li>
             <li><span class="dot e"></span>Validation result + approval record</li>
-            <li><span class="dot o"></span>Observed zero-egress window for this job</li>
+            <li><span class="dot o"></span>Network evidence unavailable — P12 pending</li>
           </ul>
         </div>
       </div>
