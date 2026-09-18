@@ -211,6 +211,34 @@ Additional image formats, multilingual/degraded scans, large corpora, languages,
 memory limits and concurrent workloads need their own fixed representative
 thresholds before P03/P04/P06 results are judged.
 
+<a id="p01-proposed-contract"></a>
+### Proposed Beta support contract — draft, 2026-09-18
+
+**Proposal for requester decision; not accepted.** It selects the narrowest
+matrix that the [Band A scope](prd.md#release-bands) allows and that current
+source can plausibly reach. Every row remains unqualified until its gate passes.
+
+| Role | Proposed Beta profile | Reason / gating task |
+|---|---|---|
+| Requester desktop with standalone Chat/Documents/Code | macOS 26.6.2, arm64 | Only existing app bundle; document rendering uses Quartz/AppKit and credentials use Keychain. P02/P03/P13 |
+| Paired inference peer | Second macOS arm64 installation of the same package | Reuses the one qualified package; avoids a Windows/Linux credential and document port inside Band A. P08/P09 |
+| Code sandbox | Retained Ubuntu 24.04.4 LTS x86_64 validator (`deploy/k3s/50-validation.yaml`), administrator-prepared, reached graphically | Only existing restricted validation path. P07/P11 |
+| Windows 11 x86_64 | Not in the Beta matrix; contributor development and unit checks only | Coordinator PDF/OCR rendering, credential storage and packaging are macOS-only in source (`pdfrender.py`, `pairing.py`, `setup_py2app.py`). P18/P22 |
+
+**Decisions the requester must make:**
+
+1. Accept or change the three rows above. If a second Mac is unavailable, the
+   alternative peer is a Windows inference-only receiver, which moves portable
+   credential storage from P18 into P09.
+2. Accept the fixed Chat/Documents/Code criteria in the [section above](#representative-fixtures-and-fixed-baseline-criteria)
+   as the pass/fail floor for P03/P04/P06 on this matrix.
+3. Minimum RAM/storage stay unstated until P03/P04 measure them; no number is
+   advertised from hardware inventory alone.
+
+P01 closes when the [macOS runtime checkpoint](#next-human-checkpoint--current-runtime-evidence)
+results are recorded here, each observed gap names its P03–P13 owner, and the
+requester accepts this contract.
+
 ### Next human checkpoint — current runtime evidence
 
 **macOS requester, macOS 26.6.2 / arm64 / zsh**, directory

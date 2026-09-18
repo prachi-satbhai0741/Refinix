@@ -1535,3 +1535,16 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_scope: Proportionate existing-dependency offline checks for relocated documentation and affected tests; no live devices, downloads, deployment or publication.
 - follow_up_to: [UP-20260916-001](#up-20260916-001)
 - linked_changes: [AC-20260916-003](agentchangelog.md#ac-20260916-003)
+
+<a id="up-20260918-001"></a>
+## UP-20260918-001 — Draft the P01 Beta support contract for requester acceptance
+- date: 2026-09-18
+- status: authorised documentation draft; parallel P11/P10 coding discussed but not yet started
+- tags: p01, beta, support-matrix, baseline, windows
+- aliases: P01 proposed matrix, Beta support contract draft, Windows contributor
+- paths: docs/evaluation.md, agent-memory/
+- summary: Draft the narrow P01 Beta support matrix and acceptance thresholds while the macOS runtime checkpoint is run separately by its device holder.
+- request: Start P01 completion from a Windows 11 contributor device; the macOS arm64 device remains with a teammate for the runtime checkpoint.
+- constraints: Proposal only; no requester acceptance, runtime checks, installs, downloads or Git writes.
+- follow_up_to: [UP-20260916-002](#up-20260916-002)
+- linked_changes: [AC-20260918-001](agentchangelog.md#ac-20260918-001)
