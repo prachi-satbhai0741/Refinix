@@ -1,177 +1,381 @@
 # Refinix Agent Instructions
 
-Repository-wide rules defining what every coding agent must and must not do in
-Refinix (repository name: refinix; formerly AegisForge).
+Repository-wide rules for agents working on Refinix.
 
-## Authority and reporting
+Refinix is an offline-first desktop AI workbench for Windows, macOS and Linux. The
+repository contains a substantial macOS-first prototype plus distributed-worker,
+Kubernetes/Redis, document, Code and proof/evidence work. Current product truth is
+consolidated in [`docs/PROJECT.md`](docs/PROJECT.md). Historical prototype documents
+remain useful evidence, but they are not competing product authorities.
 
-Order when context conflicts:
+## 1. Authority and conflict handling
 
-1. The current user request — defines the task and the permissions.
-2. This file.
-3. [`docs/prd.md`](docs/prd.md) — product scope *(review draft, not a v1 baseline)*.
-4. The focused document linked by the PRD for architecture, workflow, security,
-   models, hardware, or evaluation detail.
-5. [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch and merge flow.
-6. Current source, tests, and observed command output.
-7. [`agent-memory/`](agent-memory/README.md) — historical index only.
+When context conflicts, use this order:
 
-Report unresolved conflicts; never invent product behavior. Agents advise: raise
-an ordinary concern once, then drop it and proceed. Security, privacy,
-destructive-operation, and data-loss risks stay blockers until resolved.
+1. The **current user request** — task intent and current-message permissions.
+2. This file — repository-wide agent behaviour and safety rules.
+3. [`docs/PROJECT.md`](docs/PROJECT.md) — current product, architecture and workflow contract.
+4. Focused authorities when the work enters their domain:
+   - [`docs/security.md`](docs/security.md) — security, trust, sandbox, supply chain and sovereignty evidence;
+   - [`docs/model-catalog.md`](docs/model-catalog.md) — model provenance, provisioning, selection and qualification;
+   - [`docs/releases.md`](docs/releases.md) — packaging, publication, GitHub release assets, updates and recovery.
+5. [`tasks.md`](tasks.md) — active implementation phase, sequencing and acceptance outcomes.
+6. [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch and merge workflow.
+7. Current source, tests and actually observed command/runtime output — implementation facts.
+8. Evidence/reference/history such as `docs/evaluation.md`, device inventory, worker runbooks,
+   the retired PRD/architecture/workflow/TechStack snapshots, archives and `agent-memory/`.
 
-**Never claim a check passed, or work is complete, unless you ran it and saw it
-pass.** Another agent's summary is not evidence. Requester verification is the
-final completion gate.
+Do not invent product behaviour to resolve a conflict. If a lower-authority document disagrees
+with a higher-authority one, follow the higher authority and report the contradiction when it
+matters to the task.
 
-## Git
+A requirement appearing in documentation does **not** prove that it is implemented, tested,
+deployed, secure or release-accepted. Keep these states distinct:
 
-Agents may run only these read-only commands:
+`planned -> implemented/source-present -> tested -> device-observed -> release-accepted`.
+
+Never claim a check passed unless the agent actually ran it under current permission and saw it
+pass. Another agent's summary is context, not fresh evidence.
+
+## 2. Protected documentation — permission required
+
+Agents must **not edit core project documentation without explicit user permission in the current
+message**. Discovering that a requirement is outdated, awkward, contradictory or technically
+inferior is not permission to rewrite it.
+
+Protected documentation includes:
+
+- `AGENTS.md`
+- `README.md`
+- `tasks.md`
+- `TechStack.md`
+- `CONTRIBUTING.md`
+- top-level product/reference documents under `docs/`, including:
+  - `docs/README.md`
+  - `docs/PROJECT.md`
+  - `docs/prd.md`
+  - `docs/architecture.md`
+  - `docs/workflows.md`
+  - `docs/security.md`
+  - `docs/model-catalog.md`
+  - `docs/releases.md`
+  - `docs/evaluation.md`
+  - `docs/devicespecifications.md`
+  - `docs/worker-operations.md`
+  - presentation/research documents when present.
+
+The normal ledger files are exempt from this approval requirement:
+
+- `agent-memory/userprompts.md`
+- `agent-memory/agentchangelog.md`
+
+Those two may be appended according to their own rules when repository-affecting work is
+performed. Historical/archive material should not be rewritten unless the user explicitly asks
+for historical cleanup or correction.
+
+If a protected document needs to change:
+
+1. explain the concrete inconsistency or new requirement;
+2. state the proposed change;
+3. give the agent's recommendation and why;
+4. state the trade-off or compatibility effect;
+5. state which files would change;
+6. wait for user permission before editing them.
+
+A broad request such as "implement this feature" is **not** automatic permission to update core
+docs. A request such as "update PROJECT.md and tasks.md to reflect this decision" is permission
+for those named files and that stated scope.
+
+Source-code comments, docstrings and ordinary implementation-adjacent text are not automatically
+protected documentation, but they must not silently redefine product requirements.
+
+## 3. User interaction model
+
+The user is learning parts of local/distributed systems while building the product. Agents should
+supply engineering judgment rather than forcing the user to make blind technical choices, while
+also never guessing facts that only the user or a physical device can provide.
+
+Use **user** in active instructions, reports and handoffs. Do not use personal names. Refer to
+machines by role, OS/profile or hardware model when needed. Use **agent** or **agents** rather than
+specific agent-product names.
+
+### 3.1 Read first; do not re-ask documented facts
+
+Before asking a question:
+
+- read the current user request;
+- read `docs/PROJECT.md` and the active phase in `tasks.md`;
+- inspect the relevant source and only the focused authority needed for the task;
+- consult evidence/history only when a missing fact or regression requires it.
+
+Do not ask the user to repeat a decision that is already clearly current in the authoritative
+docs. Do not read the entire archive or both ledgers by default.
+
+### 3.2 Ask for human-only facts instead of guessing or over-probing
+
+Ask the user when a required fact is external to the repository or can be answered more simply
+and reliably by the user, for example:
+
+- which physical device is available;
+- current OS edition/build or hardware detail when freshness matters;
+- whether a manual launch/install succeeded;
+- what a UI shows on another machine;
+- whether the user is willing to install or change a host dependency;
+- credentials, private values or physical/network constraints.
+
+Do not run a chain of commands merely to discover a simple fact the user can provide directly,
+especially on a device the agent cannot access. Conversely, do not re-ask a current documented
+fact unless the task requires fresh acceptance evidence.
+
+### 3.3 Batch pre-execution questions
+
+For a substantial task, inspect first and ask one compact batch of genuine human prerequisites
+before implementation when possible. Do not drip-feed routine questions one at a time.
+
+A pre-execution question is justified when the answer materially changes the implementation or
+when the agent lacks required permission/input. Routine code-structure choices are agent-owned.
+
+### 3.4 Decision questions must include a recommendation
+
+When asking the user to choose between meaningful alternatives, use this structure:
 
 ```text
-git status    git diff    git log    git show    git check-ignore
-git branch --list    git branch --show-current    git rev-parse    git ls-files
+Question: <the decision the user owns>
+Recommendation: <the path the agent recommends>
+Reason: <why it best fits current requirements/evidence>
+Trade-off: <what is gained/lost or what risk remains>
+Intended path: <what the agent will do if the recommendation is accepted>
 ```
 
-**Never run Git or GitHub writes** without explicit authorization in the current
-message: `add` (including `git add -A` and `git add .`), `commit`, `push`,
-`pull`, `fetch`, `merge`, `rebase`, `reset`, `restore`, `stash`, `clean`,
-`checkout`, `switch`, `tag`, `git mv`, `git rm`, branch or ref mutation, or any
-GitHub write — opening, editing, closing, or merging pull requests, or changing
-settings, collaborators, rulesets, or Actions. - unless user explicitly asks for git run
+Do not present several technical options and make the user choose without explaining which one the
+agent recommends.
 
-"Finish", "complete", and "execute" are not authorization; neither is an earlier
-message in the session.
+For a pure factual/manual observation question with no genuine choice, do not manufacture a fake
+recommendation. Ask the fact concisely, say why it is needed, and state what the agent will do with
+the answer.
 
-Never push directly to `dev` or `main`; follow member branch → `dev` → `main`.
-Preserve unrelated and user-owned changes in a dirty tree — never reconstruct a
-file from `HEAD` or discard a modification you did not make.
+### 3.5 Interrupt during execution only for a real human checkpoint
 
-Hand off under these headings, giving the repository directory, `git status -sb`,
-**exact `git add` paths** — never `-A` — and a commit message matching the final
-diff. If the branch is uncertain, include `git branch --show-current` rather than
-guessing.
+Continue autonomously inside the authorised implementation scope. Interrupt only when progress
+requires one of the following:
+
+- a product/scope decision not already settled;
+- a proposed change to protected documentation;
+- a security, privacy or architecture boundary change;
+- a destructive or irreversible operation;
+- a Git/GitHub write not explicitly authorised in the current message;
+- an installer, migration, deployment, model download or live-environment action not authorised;
+- credentials/private input;
+- a physical-device/manual observation;
+- two materially different viable paths whose product/maintenance trade-off requires user choice.
+
+Do not ask permission for ordinary code organisation, helper placement, naming, reasonable
+refactoring inside scope, fixing obvious defects, or adding focused tests/fixtures once the
+relevant checks are authorised.
+
+### 3.6 Manual verification can occur before, during or after implementation
+
+Human work should happen at the point where it is cheapest and most informative:
+
+- **before** execution for missing facts/permissions;
+- **during** execution for a real architectural/product fork or device observation that blocks
+  further work;
+- **after** execution for cross-device installation/runtime verification that cannot be performed
+  from the current environment.
+
+Finish everything that does not depend on that checkpoint before asking the user to do manual
+work.
+
+When a manual check is required, prefer the simplest useful instruction. Start with a UI result or
+single fact when that is enough; do not default to a large diagnostic command set.
+
+After the user answers, resume from the checkpoint. Do not unnecessarily re-plan the whole task or
+re-ask previously settled questions.
+
+## 4. Git and GitHub
+
+Agents may run only these Git commands without additional Git authorization:
+
+```text
+git status
+git diff
+git log
+git show
+git check-ignore
+git branch --list
+git branch --show-current
+git rev-parse
+git ls-files
+```
+
+Never run Git or GitHub writes without explicit authorization in the **current user message**.
+This includes, but is not limited to:
+
+```text
+git add
+git commit
+git push
+git pull
+git fetch
+git merge
+git rebase
+git reset
+git restore
+git stash
+git clean
+git checkout
+git switch
+git tag
+git mv
+git rm
+```
+
+It also includes opening/editing/closing/merging pull requests, changing GitHub settings,
+collaborators, rulesets, releases or Actions state.
+
+"Finish", "complete", "execute", or permission granted in an earlier message is not Git/GitHub
+write authorization.
+
+Never push directly to `dev` or `main`. The repository flow remains:
+
+`member branch -> dev -> main`.
+
+Preserve unrelated and user-owned dirty-tree changes. Never reconstruct a dirty file from `HEAD`,
+reset it, or discard modifications the agent did not create.
+
+When handing Git work back to the user, provide exact paths rather than `git add -A` or `git add .`.
+If the branch is uncertain, instruct the user to check it rather than guessing.
+
+Use these handoff headings when Git/user execution is required:
 
 ```text
 GIT / GITHUB — RUN THESE YOURSELF
 VERIFY — RUN THESE YOURSELF
 ```
 
-## Before repository work
+## 5. Before repository implementation
 
-1. Run `git status --short --branch`. Preserve unrelated changes.
-2. Read only the relevant PRD and contributing sections.
-   Use the [agent execution guide](tasks.md#agent-execution-guide) to select the
-   active P-task, source/tests and required evidence. Archived C/E/AF handoffs
-   are reproduction history, not another executable backlog. Keep scope in the
-   PRD, sequencing/status in tasks and results in the focused evidence authority;
-   do not create a new per-agent planning or handoff file.
-3. Search the ledgers with 2–5 task terms, likely paths, or a specific ID. Never
-   search the bare `UP-`/`AC-` prefix; it matches every entry.
+For an authorised implementation request:
 
-   ```bash
-   rg -n -i -C 6 'term-a|term-b|likely/path' agent-memory/userprompts.md agent-memory/agentchangelog.md
-   ```
+1. Run/read `git status --short --branch` if repository access is available; preserve unrelated
+   changes.
+2. Read this file, `docs/PROJECT.md`, and the active phase/work package in `tasks.md`.
+3. Read only the focused specialist authority needed by the task (`security`, `model-catalog`,
+   `releases`).
+4. Inspect the real UI/API -> coordinator -> runtime/worker -> storage/validator path and relevant
+   callers/tests.
+5. Search evidence/history only if needed to recover a prior implementation decision, measured
+   value or regression context. Search by specific terms/paths/IDs, not entire ledgers.
+6. Separate:
+   - facts already established;
+   - assumptions needing validation;
+   - human-only facts/permissions;
+   - agent-owned implementation choices.
+7. Ask one compact prerequisite batch if necessary, including recommendations for decisions.
+8. Execute the largest **coherent safe scope** authorised by the user rather than fragmenting it
+   into artificial microtasks.
 
-4. Read the matching entry and a little context — not whole files.
-5. Inspect the real callers, routes, tests, or documents the task touches.
+Do not create a new per-session planning/handoff document unless the user explicitly asks for one.
 
-## Agent memory
+## 6. Implementation behaviour
 
-[`agent-memory/README.md`](agent-memory/README.md) covers retrieval, the two
-ledgers, and archiving. Writing rules:
+- Prefer the **smallest coherent safe change**, not the smallest possible diff. A coherent change
+  may span several files/components when they are required to deliver one outcome safely.
+- Do not create a new task merely because implementation touches another file or subcomponent.
+- Under time pressure, reduce ceremony and increase coherent execution batch size; do not multiply
+  tiny tasks.
+- Preserve the current UI/harness and working paths unless the product contract requires change.
+- Fix root causes after checking affected callers; avoid unrelated refactors and speculative
+  abstractions.
+- Reuse suitable local/offline open-source libraries and existing code before writing commodity
+  functionality from scratch, when the licence and network behaviour permit it.
+- Record/verify authoritative source, exact version/revision, licence and material local changes
+  before adopting third-party code, models, runtimes or installers.
+- Reject unlicensed, incompatible, cloud-dependent or silently networked dependencies.
+- Do not weaken security/sandbox boundaries to make a feature appear portable or complete.
+- Do not convert an unsupported capability into unrestricted host execution as a fallback.
+- Preserve user data and compatibility-sensitive application state during migrations/refactors.
 
-- Log repository-affecting requests in `agent-memory/userprompts.md` as
-  `UP-YYYYMMDD-NNN`, appended before or alongside the first change. Skip
-  greetings, status questions, and unrelated conversation.
-- After changes are made and verified, append `AC-YYYYMMDD-NNN` to
-  `agent-memory/agentchangelog.md` linking exactly one primary `prompt_id`. No
-  repository file changed means no changelog entry.
-- Date entries the day they are actually written. Every entry needs a stable ID,
-  ISO date, lowercase `tags`, search `aliases`, repo-relative `paths`, a
-  one-sentence `summary`, and short bullets. Prompts stay under ~25 lines,
-  changelog entries under ~20.
-- Record only what changed and what verification was observed — no diffs, long
-  logs, hidden reasoning, future plans, or feature tours.
-- On material scope change open a new ID and link `supersedes` or `follow_up_to`.
-  Never silently rewrite a past entry, renumber IDs, or break cross-links.
-- Never store secrets, credentials, private documents, real confidential data,
-  or chain-of-thought. Keep entries in the same change as the work they describe.
+### Checks and environment actions
 
-## Implementation
+Without current permission, do **not** run:
 
-- Make the smallest safe diff. Prefer deletion, reuse, and existing dependencies;
-  avoid unrelated refactors and speculative abstractions.
-- Build prototypes by adapting suitable local/offline open-source libraries and
-  codebases before writing commodity functionality from scratch. Reuse only
-  when the licence permits it; record the source, pinned version or commit,
-  licence, and material local changes, and reject unlicensed, incompatible,
-  cloud-dependent, or silently networked code.
-- Fix root causes in the shared path after checking all callers. Never change
-  behavior silently.
-- Do not run tests, installers, migrations, deployments, model downloads, or
-  live-environment commands without permission — give the exact command instead.
-- Add the smallest runnable check for non-trivial logic and run proportionate
-  validation before reporting.
+- test suites or test commands;
+- installers;
+- migrations;
+- deployments;
+- model downloads;
+- live model/runtime calls;
+- live remote-device/worker checks;
+- host/service/network changes.
 
-## Human checkpoints
+The agent may inspect source and use non-mutating repository/system reads allowed by the current
+task. If verification is not authorised, provide the exact focused verification commands for the
+user instead of claiming success.
 
-- Agents should follow the authorised chunk and device-based human checkpoints
-  in [tasks.md](tasks.md#numbered-execution-tasks). Anyone may implement any
-  module; a device named for a setup action is not an exclusive code owner.
-- Build, review and fix within the authorised scope without repeated permission
-  requests for ordinary coding. Resolve routine implementation questions from
-  repository evidence, the established requirements and authoritative upstream
-  documentation rather than relaying them as checkpoints; the scope also covers
-  review fixes and proportionate offline checks on existing dependencies and
-  isolated test data. Stop at a required human action or missing permission —
-  repository evidence answers technical questions but never grants permission —
-  and do not skip to another chunk or perform that action by assumption.
-- Before stopping, prepare a reviewable handoff identifying the **device role**
-  — for example `macOS coordinator` or `Ubuntu worker` — rather than a team
-  member, with its OS, architecture, shell, actual directory, exact commands or
-  UI steps, expected results and evidence to return. Downloads need approved
-  sources, versions, licences, integrity and storage requirements; host changes
-  need applicable rollback instructions.
-- If required values or artifacts do not exist yet, request the concrete
-  decision or prerequisite first. Do not provide speculative setup commands.
-- Resume only after that device reports back and the relevant result is verified
-  with permitted checks. A review pass or an install report alone does not prove
-  the runtime acceptance gate or authorise a later chunk.
-- Keep checks proportional to the changed behavior and required gates. After
-  each build and review cycle, explain **Built**, **Verified**, and **Next / Human
-  action** in plain language with an example, limitations and the actual device
-  names.
+When the user authorises a defined family of checks (for example "run the relevant offline tests"),
+that permission covers proportionate checks within that stated scope without repeated prompts.
+It does not silently extend to downloads, live models, remote devices or host changes.
 
-## AegisForge invariants
+## 7. Agent memory
 
-From [`docs/prd.md`](docs/prd.md) and
-[`docs/security.md`](docs/security.md); do not weaken without an approved
-decision.
+`agent-memory/` is historical/search memory, not the current product contract.
 
-- Runtime operation must not require Internet access: no cloud inference,
-  telemetry, analytics, or silent network calls in the offline runtime. Local
-  runtimes bind to loopback; workers expose the minimum authenticated LAN
-  surface.
-- Workers write only inside assigned temporary workspaces, rejecting path
-  traversal and symlink escape. Sandboxed execution has networking disabled by
-  default with bounded CPU, memory, runtime, process, and filesystem access.
-- Never commit model weights, installers or release binaries, signing keys or
-  tokens, private documents, real confidential scans, local chat databases, or
-  environment files with secrets
-  ([repository content](docs/security.md#11-repository-content)).
-- Record model source, licence, file hash, runtime, and version. Treat model
-  names, licences, compatibility, and benchmarks as unverified until evidence is
-  recorded in the [model catalogue](docs/model-catalog.md) and
-  [evaluation evidence](docs/evaluation.md#1-evidence-labels).
-- Do not claim a benchmark that is not reproducible from repository
-  instructions. Label features planned, prototyped, verified, deferred, or
-  rejected.
+Writing rules:
 
-## Completion report
+- Log a repository-affecting user request in `agent-memory/userprompts.md` when appropriate.
+- After actual repository changes, append the corresponding factual result to
+  `agent-memory/agentchangelog.md`.
+- Keep entries compact and searchable; do not paste diffs, long logs or hidden reasoning.
+- Record only what was requested, changed, verified and left unresolved.
+- Never silently rewrite or renumber historical entries.
+- Never store secrets, credentials, private documents, confidential payloads or chain-of-thought.
+- No repository change means no change-ledger entry.
 
-Lead with the outcome, then what changed or why nothing did. State changed paths,
-the verification actually run, and any remaining blocker or unverified external
-gate. Distinguish implementation from verification. Do not claim deployment,
-model quality, security, zero-egress, or hardware compatibility from static code
-alone.
+Do not read either ledger end-to-end during normal startup. Search them only when history is needed.
+
+## 8. Non-negotiable Refinix invariants
+
+The current detailed contract is in `docs/PROJECT.md`; `docs/security.md` owns enforcement detail.
+Do not weaken these without an explicit user-approved product decision:
+
+- Normal Refinix work must not require public Internet or cloud inference.
+- No silent telemetry, analytics, crash upload, update check or runtime dependency/model download.
+- Local model runtimes bind to loopback; peers use only the minimum authenticated encrypted LAN
+  application surface.
+- Every workspace coordinator owns its canonical chats, approvals, jobs, artifacts and final writes.
+  Pairing does not merge workspaces.
+- Workers receive bounded inputs and use assigned temporary workspaces; they do not gain arbitrary
+  host/file access.
+- Generated/untrusted code has networking disabled in qualified sandbox execution and receives
+  bounded CPU, memory, process, time, filesystem and output resources.
+- Models/tools cannot expand their own authority. Canonical modifications and other consequential
+  actions follow explicit approval policy.
+- Distribution moves complete jobs or bounded validated steps. Refinix does not pool VRAM, shard a
+  model across ordinary peer laptops or merge model context windows.
+- Windows, macOS and Linux are required desktop OS families for the Beta direction, on exact
+  qualified profiles rather than every possible version/hardware combination.
+- Kubernetes/K3s and Redis remain valid managed/sandbox infrastructure but are not mandatory
+  desktop-peer prerequisites.
+- Model/dependency/installer provenance includes source, licence, version/revision, integrity and
+  compatibility evidence.
+- Planned/source-present/tested/device-observed/release-accepted claims remain distinct.
+- A commit reaching `main` is not a user update. Published packages must pass the release gates.
+
+Never commit model weights, generated installers/release binaries, signing keys, credentials,
+private documents, real confidential scans, user chat databases, private indexes or secret-bearing
+environment files.
+
+## 9. Completion report
+
+Lead with the outcome, then separate:
+
+- **Changed** — what was implemented and the exact paths;
+- **Verified** — only checks actually run and observed under current permission;
+- **Unverified / limitations** — anything still needing device, model, package, security or release
+  evidence;
+- **User action** — only genuine manual checkpoints, with the simplest useful steps;
+- **Next** — the next coherent eligible action, not a newly invented microtask tree.
+
+If the work reaches a user decision, include the recommendation, reason, trade-off and intended
+path. If protected documentation should change, request permission before editing it.
