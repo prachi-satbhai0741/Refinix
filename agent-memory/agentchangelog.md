@@ -1957,3 +1957,16 @@ work. No repository file change means no changelog entry.
 - verification: Eight focused documentation safety tests passed. Checked local Markdown links/anchors, archive wording, historical task preservation, all 26 task classifications/dependencies and unchanged runtime structure; git diff --check passed.
 - verification: Snapshot hashes confirm this cleanup preserved root README, frontend/design, SIH presentation brief and C07 fixtures, including prior edits; historical ledgers remain append-only.
 - remaining: Requester review and current device/runtime/package acceptance. No model calls, installs, services, deployment, Git/GitHub writes or production qualification; only runtime help/comment references changed.
+
+<a id="ac-20260918-001"></a>
+## AC-20260918-001 — Draft the P01 Beta support contract
+- prompt_id: [UP-20260918-001](userprompts.md#up-20260918-001)
+- date: 2026-09-18
+- status: draft written; requester decision and macOS runtime checkpoint pending
+- tags: p01, beta, support-matrix, documentation
+- aliases: P01 proposed matrix, Beta support contract draft
+- paths: docs/evaluation.md, agent-memory/
+- summary: Added a proposed narrow Beta support matrix and the requester decisions that close P01.
+- changes: Proposed macOS arm64 requester and peer, retained Ubuntu validator as sandbox, and Windows 11 outside the Beta matrix, citing the macOS-only source paths.
+- verification: Local anchors checked by inspection; git diff --check passed. No application tests, runtime checks, installs or Git writes.
+- remaining: Requester acceptance of the contract; macOS runtime checkpoint results and gap-to-task assignment.
