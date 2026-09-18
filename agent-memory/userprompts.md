@@ -1548,3 +1548,28 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Proposal only; no requester acceptance, runtime checks, installs, downloads or Git writes.
 - follow_up_to: [UP-20260916-002](#up-20260916-002)
 - linked_changes: [AC-20260918-001](agentchangelog.md#ac-20260918-001)
+
+<a id="up-20260918-002"></a>
+## UP-20260918-002 — Require all three desktop OSes in Beta and record manual findings
+- date: 2026-09-18
+- status: authorised canonical documentation correction
+- tags: beta, portability, p01, documents, code, manual-evidence
+- aliases: not macOS only, M5 Tahoe 26.7, unsupported approval note
+- paths: TechStack.md, tasks.md, docs/prd.md, docs/architecture.md, docs/workflows.md, docs/releases.md, docs/evaluation.md, docs/devicespecifications.md, agent-memory/
+- summary: Make Windows, macOS and Linux first-Beta requirements and record the supplied Mac walkthrough failures without changing runtime code.
+- request: Update the docs immediately, include document and Code issues, and keep execution focused on portability of the existing app.
+- constraints: Preserve working behaviour; no runtime execution, installs, downloads, Git writes or public-presentation rewrite.
+- supersedes: Mac-only Beta proposal in [UP-20260918-001](#up-20260918-001) and OS deferral in [UP-20260916-001](#up-20260916-001).
+- linked_changes: [AC-20260918-002](agentchangelog.md#ac-20260918-002)
+
+<a id="up-20260919-001"></a>
+## UP-20260919-001 — Reconcile seven residual documentation conflicts
+- date: 2026-09-19
+- status: authorised focused documentation and diagram correction
+- tags: beta, portability, evidence, model-ranking, diagram, documentation
+- aliases: seven residual findings, retired AF mappings, OD-08 chronology
+- paths: docs/evaluation.md, docs/devicespecifications.md, docs/releases.md, docs/model-catalog.md, docs/workflows.md, docs/architecture.md, docs/workflow-diagram.html, agent-memory/
+- summary: Close the remaining OS scope, recovery, ranking, historical coverage and diagram claim/network conflicts.
+- constraints: Preserve prior dirty edits, historical evidence and runtime behaviour; no installs, live tests, model calls or Git writes.
+- follow_up_to: [UP-20260918-002](#up-20260918-002)
+- linked_changes: [AC-20260919-001](agentchangelog.md#ac-20260919-001)

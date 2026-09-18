@@ -1,5 +1,15 @@
 # Device Specifications — AegisForge / Refinix — Team Rokunin Sync
 
+## Latest requester report — 2026-09-18
+
+Mac test device: **macOS Tahoe 26.7, Apple M5, 16 GB unified memory**.
+This is requester-reported current information, not a fresh system probe. It
+supersedes older Mac inventory for the current walkthrough without rewriting
+historical measurements. See [P01 results](evaluation.md#p01-manual-20260918).
+Windows and Linux remain first-Beta desktop requirements; refresh their exact
+profiles during P01. Historical device roles below are not product restrictions.
+
+
 > **Historical test inventory.** Measurements and device assignments below record
 > the prototype, not permanent production roles or current deployment status.
 > Production discovers capabilities dynamically and qualifies Windows, macOS and
@@ -25,23 +35,26 @@ policy.
 
 ---
 
-## First configuration — the only two devices on the critical path
+<a id="first-configuration--the-only-two-devices-on-the-critical-path"></a>
+## Historical prototype first configuration
 
 Execution identifies human actions by **device role**, never by team member.
-The first configuration uses two of the six inventoried machines:
+The historical prototype first configuration used two of the six inventoried
+machines. This is reproduction history, not the Beta support matrix:
 
 | Device role | Machine in this inventory | Role |
 |---|---|---|
 | **macOS coordinator** | MacBook Air `Mac17,3`, macOS 26.6.2 (25G83), arm64 | Primary workspace and UI, canonical state, approvals, local main-engine inference |
 | **Ubuntu worker** | HP Victus, Ubuntu 24.04.4 LTS, x86_64 | Candidate single-node K3s host, worker image build, Redis, sandboxed code execution |
 
-The four Windows machines remain **off the critical path**. Add an execution
-device only for a measured need with a new device-based setup checkpoint;
-Windows execution support remains unverified. OCR belongs to C08 on the
-Mac/Ubuntu configuration, not to a separate required device. Any Windows
-machine may still build any module. The retained
-[qualification script](../scripts/qualify-ocr-worker.ps1) is deferred; it is
-not a C07 prerequisite. See [tasks.md](../tasks.md#numbered-execution-tasks).
+**Retired rule:** the prototype kept the four Windows machines off its critical
+path. That exclusion does not apply to Beta 0.1: Windows, macOS and Linux are
+required by the [PRD](prd.md#release-bands). Current Windows runtime support is
+still unverified, not out of scope. The prototype's C08 OCR placement and C07
+prerequisite decisions are historical; the retained
+[qualification script](../scripts/qualify-ocr-worker.ps1) is reproduction tooling,
+not the active plan. Use [P01–P26](../tasks.md#numbered-execution-tasks) for current
+work and prepare a device checkpoint before host changes.
 
 > **Reading VRAM correctly.** `systeminfo`, `Get-ComputerInfo`, and
 > `Win32_VideoController.AdapterRAM` report GPU memory through a 32-bit field
@@ -251,7 +264,7 @@ adapters for at least the Mac and Vedant.
 Nothing in this table is part of the first configuration. It records which
 machine *might* suit a future pack once one is measured; it assigns no work, no
 download and no checkpoint. Read it after
-[First configuration](#first-configuration--the-only-two-devices-on-the-critical-path).
+[Historical prototype first configuration](#historical-prototype-first-configuration).
 
 | Capability pack ([model-catalog.md](model-catalog.md#2-baseline-and-conditional-packs)) | Best-fit device | Why |
 |---|---|---|

@@ -4,11 +4,11 @@
 
 | Field | Value |
 |---|---|
-| Document version | 3.2 |
+| Document version | 3.3 |
 | Status | Production direction recorded; implementation and release acceptance remain separate |
 | Target | Offline desktop AI workbench; SIH26117 provides the industrial use case |
 | Repository / product | refinix / Refinix (formerly AegisForge; GitHub rename pending administrator) |
-| Last updated | 2026-09-16 |
+| Last updated | 2026-09-18 |
 
 This is the product contract. It supersedes earlier prototype-only scope,
 fixed device placement, and calendar-based priorities as production requirements.
@@ -205,16 +205,25 @@ outcome to an executable band and owns the explicit release frontier.
 
 | Band | Release scope |
 |---|---|
-| A — Beta Release Critical Path | Installable app on at least one qualified desktop profile; useful standalone Chat/Documents/Code through current Settings/Control Center; real inference; at least two qualified task/model combinations with automatic routing; persistent model management; discovery/pairing and real paired execution; capability/load-aware scheduling with safe admission; grounded document artifact; reviewable patch with real validation on at least one qualified sandbox profile; truthful status, ordinary failure handling and scoped offline evidence |
+| A — Beta Release Critical Path | Installable app on at least one qualified desktop profile for each of Windows, macOS and Linux; useful standalone Chat/Documents/Code through current Settings/Control Center; real inference; at least two qualified task/model combinations with automatic routing; persistent model management; discovery/pairing and real paired execution; capability/load-aware scheduling with safe admission; grounded document artifact; reviewable patch with real validation on at least one qualified sandbox profile; truthful status, ordinary failure handling and scoped offline evidence |
 | B — Post-Beta improvements | Beta 0.2/0.3: fleet fairness/smarter placement, better recovery/performance/proof, additional models, hybrid retrieval and curated memory, more platform/sandbox profiles, calibrated recommendations and in-app updates |
 | C — Finals/product maturity | Managed organisation deployment, broader OS/backend and sandbox qualification, complete update/rollback matrices, deeper trust/resource evaluation, additional capability packs and conditional adaptation research; finals candidate before full production qualification where its claim set is narrower |
+
+**Requester correction — 2026-09-18:** Windows, macOS and Linux desktop
+compatibility is required for Beta 0.1, not deferred to P18. Preserve the existing
+app experience while making installation, local Chat/Documents/Code, model
+management and trusted-peer participation portable. The Mac demo is baseline
+evidence, not a restriction on product scope. P01 selects exact OS versions,
+editions and architectures within all three families; it cannot drop a family.
+P18/P22 expand those profiles and their qualification. No promise covers every
+OS release, Linux distribution or hardware configuration.
 
 Capability support is per profile. A Windows inference-only peer may be supported
 without local sandbox execution; Code validation can use a qualified Linux or
 other eligible execution target. Such a route must work through the product and
 be disclosed before installation, not require reviewer certificate/Kubernetes
-setup. No native sandbox support is inferred from a remote run. At least one
-Beta desktop remains useful without any peer; the complete Beta demonstrates
+setup. No native sandbox support is inferred from a remote run. Each selected
+Beta desktop OS profile remains useful without any peer; the complete Beta demonstrates
 paired execution and validated Code as well. Documents may remain local and use
 FTS5 when that path passes grounded-artifact acceptance. No unsafe fallback.
 

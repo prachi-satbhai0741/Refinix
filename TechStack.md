@@ -1,12 +1,12 @@
 # Refinix technology stack
 
-Updated: 2026-09-16. This maps the [product direction](docs/prd.md) to existing
+Updated: 2026-09-18. This maps the [product direction](docs/prd.md) to existing
 components and qualification candidates. It does not install, migrate or certify
 anything. Reuse current source first; preserve the UI and shared harness.
 
 [Release bands](docs/prd.md#release-bands) change execution order, not this stack.
-Band A qualifies one coherent desktop/peer/sandbox set first; Bands B/C expand
-platforms, scheduling, retrieval and updates. [tasks.md](tasks.md#numbered-execution-tasks)
+Band A qualifies a coherent desktop/peer/sandbox set covering Windows, macOS and Linux first; Bands B/C expand
+OS/hardware profiles, scheduling, retrieval and updates. [tasks.md](tasks.md#numbered-execution-tasks)
 owns dependencies. Use current source/evidence rather than treating every candidate
 below as a required Beta dependency.
 

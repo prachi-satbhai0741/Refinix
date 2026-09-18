@@ -1970,3 +1970,32 @@ work. No repository file change means no changelog entry.
 - changes: Proposed macOS arm64 requester and peer, retained Ubuntu validator as sandbox, and Windows 11 outside the Beta matrix, citing the macOS-only source paths.
 - verification: Local anchors checked by inspection; git diff --check passed. No application tests, runtime checks, installs or Git writes.
 - remaining: Requester acceptance of the contract; macOS runtime checkpoint results and gap-to-task assignment.
+
+<a id="ac-20260918-002"></a>
+## AC-20260918-002 — Restore all-OS Beta scope and record the manual baseline
+- prompt_id: [UP-20260918-002](userprompts.md#up-20260918-002)
+- date: 2026-09-18
+- status: documentation corrected; runtime acceptance remains pending
+- tags: beta, portability, p01, documents, code, evidence
+- aliases: three OS Beta, Tahoe M5 walkthrough, P06 workflow gaps
+- paths: TechStack.md, tasks.md, docs/prd.md, docs/architecture.md, docs/workflows.md, docs/releases.md, docs/evaluation.md, docs/devicespecifications.md, agent-memory/
+- summary: Required Windows, macOS and Linux desktop profiles before Beta publication and assigned the reported document/Code failures to P06.
+- changes: Removed the unaccepted Mac-only matrix; made initial tasks portable and reserved P18/P22 for expanded coverage; preserved security, sandbox and updater boundaries.
+- changes: Recorded requester-reported Tahoe 26.7/M5/16 GB, Chat/Stop/persistence results, screenshot/DOCX failures and unverified Code approval/selection reports, without claiming fresh runtime passes.
+- verification: Reviewed the documentation diff and task ownership; 832 local Markdown links/anchors across 37 files, 26 ordered task rows, Markdown-only scope and git diff --check passed. No runtime code, fixtures, archives or public presentation content changed.
+- remaining: Exact Windows/Linux target profiles, acceptance thresholds, portability implementation and device qualification. No tests, app/model runs, installs, deployment or Git writes.
+
+<a id="ac-20260919-001"></a>
+## AC-20260919-001 — Close seven residual scope and evidence conflicts
+- prompt_id: [UP-20260919-001](userprompts.md#up-20260919-001)
+- date: 2026-09-19
+- status: documentation and diagram corrected; runtime acceptance unchanged
+- tags: beta, portability, evidence, model-ranking, diagram, documentation
+- aliases: seven residual findings, retired AF mappings, OD-08 chronology
+- paths: docs/evaluation.md, docs/devicespecifications.md, docs/releases.md, docs/model-catalog.md, docs/workflows.md, docs/architecture.md, docs/workflow-diagram.html, agent-memory/
+- summary: Removed remaining ambiguity about three-OS Beta scope, per-profile recovery, recommendation scores, active task ownership and network evidence.
+- changes: Retired the historical Windows exclusion while preserving its inbound anchor; narrowed matrices only within each OS family; required replacement/recovery for every published profile.
+- changes: Separated Beta compatibility/fit from P17 scores; rewrote coverage with P-task owners and implementation/runtime/release states; reconciled OD-08 dates without changing digests.
+- changes: Diagram now labels target behaviour and unavailable network evidence; removed external fonts and uses system fonts. Prior dirty changes preserved.
+- verification: Static checks confirmed no old conflict phrases, AF-numbered coverage mappings or diagram external resources/network calls; recorded digests and ledger prefixes preserved; git diff --check passed.
+- remaining: Diagram visual layout and live network behaviour were not tested; documentation does not establish runtime or release acceptance. No app tests, installs, model calls or Git writes.

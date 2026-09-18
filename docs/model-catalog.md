@@ -268,14 +268,23 @@ Reported or estimated values never appear as measured.
 ## 6. Onboarding selection
 
 Apply the same selection rules during onboarding and every later Settings → Models
-visit. Compatibility tiers suffice for Beta until numerical scores are calibrated.
+visit. **Beta / P05 uses compatibility and evidence-labelled fit; P17 owns
+calibrated numerical scores.** Compatibility is an execution constraint, not a
+quality claim. Show Compatible / Unsupported (or Unverified when unknown), plus
+Good fit / Marginal / Unknown where evidence supports that judgement. Label fit
+and performance evidence measured, estimated or unavailable.
 
-Show at most six recommendations for the requested capabilities, sorted by
-**suitability score descending** (best first), with Show more below. Users may
+Show at most six recommendations for the requested capabilities, with supported,
+evidence-backed good fits first and Show more below. Beta requires no numeric
+score or artificial ordering where evidence cannot distinguish candidates. Users may
 select another compatible model or import supported artifacts. A remote-only
 client needs no local weights; the target must have all required models/tools.
 
-Use a score out of 100 as an explained fit ranking, not universal accuracy:
+For all releases, block known-incompatible local execution and explain missing
+runtime/tools or insufficient memory for weights, KV cache and runtime overhead.
+
+**P17 only, after calibration:** a score out of 100 may rank explained fit; it
+is not universal accuracy. The following requirements gate enabling that score:
 
 - Hard-filter unsupported architecture/runtime, unavailable required tools and
   known insufficient memory for weights, KV cache, runtime overhead and the
@@ -293,7 +302,7 @@ Use a score out of 100 as an explained fit ranking, not universal accuracy:
 
 Each card shows model/version, supported capabilities, quantisation, source/licence,
 download and installed size, expected peak RAM/VRAM for the configured context,
-runtime/backend and measured versus estimated status. A 96/100 suitability score
+runtime/backend and measured versus estimated status. In P17, a 96/100 suitability score
 must never be labelled “96% accuracy”. No “100% speed” claim without a defined
 comparison. The screenshot's compact bars are a UI reference, not a benchmark.
 

@@ -12,10 +12,14 @@ not implemented or qualified merely by appearing here. See the
 
 [PRD release bands](prd.md#release-bands) and [task dependencies](../tasks.md#numbered-execution-tasks)
 set delivery order without replacing this architecture. Band A integrates a narrow
-qualified desktop/peer/sandbox matrix through the existing harness; capability-aware
-participation does not require every OS to supply every capability. Broader same-OS
-peer, scheduler, RAG, updater and managed-deployment qualification follows in Bands
-B/C. The full Windows/macOS/Linux destination below remains intact.
+qualified desktop/peer/sandbox matrix covering Windows, macOS and Linux through the existing harness; capability-aware
+participation does not require every OS to supply every capability. Basic desktop and peer portability belongs to Band A; broader hardware/backend,
+scheduler, RAG, updater and managed-deployment qualification follows in Bands B/C.
+P02/P06 must address Quartz/AppKit document dependencies; P09 must provide secure
+OS-appropriate credential storage; P06 must preserve bounded Code reads/writes on
+Windows without bypassing containment. P03/P08/P13 own portable runtime, receiver
+and packaging. Preserve working native implementations where useful; no forced
+rewrite. Embeddings improve retrieval and do not replace PDF rendering or writing.
 
 ## 1. System shape
 
@@ -513,10 +517,13 @@ and evidence may supersede a status recorded here.
 
 ### 8.1 OD-08 — resolved infrastructure pins
 
-Retrieved from upstream on **2026-09-03** for the **Ubuntu worker**
-(`linux/amd64`). Every digest below was read from the upstream registry or
-release API, not copied from a summary. Nothing here has been pulled, deployed,
-or run: these are *pins to use*, not observed runtime evidence.
+Upstream infrastructure pins were collected on **2026-09-03** for the
+**Ubuntu worker** (`linux/amd64`); that collection did not pull, deploy or run
+them. The worker-image row was added after the **2026-09-04 build** and records
+its observed manifest/config digests and in-image checks. These are distinct
+dated observations: a built image does not establish deployed runtime or sandbox
+acceptance. This table is historical; use current manifests and recorded evidence
+for a new device checkpoint, not these pins as an upgrade instruction.
 
 | Component | Pin | Digest | Licence | Provenance |
 |---|---|---|---|---|
@@ -549,9 +556,12 @@ fresh ownership check. C05 must recheck availability and verify actual Service
 ports and forwarding rules with Redis unreachable from the LAN. The absence
 of a listener proves neither a future bind nor deployment enforcement.
 
-**Not resolved here:** the sandbox image and the built worker digest. Cluster
-provisioning and deployment remain C05 work; C04 produces the worker image.
-This section pins inputs only.
+**Resolved in this historical record:** the C04 worker-image digest, from the
+2026-09-04 build above. **Not established by this table:** sandbox-image
+qualification, deployment enforcement or integrated runtime acceptance. C04/C05
+are historical task IDs; current qualification belongs to P02/P07/P11/P12 under
+[tasks.md](../tasks.md#numbered-execution-tasks). Later build/deployment records
+may supersede this image without converting historical evidence into a current pass.
 
 ## 9. Implementation references
 

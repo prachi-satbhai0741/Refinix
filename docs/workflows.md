@@ -7,6 +7,10 @@ flows within [prd.md](prd.md). These are target contracts. Existing implementati
 and remaining gaps are distinguished in [evaluation.md](evaluation.md#current-status);
 this document does not certify current runtime behaviour.
 
+The [Beta OS contract](prd.md#release-bands) applies to these flows on Windows,
+macOS and Linux. The existing Mac interface is the starting point, not the only
+supported delivery target.
+
 ## 1. Design rule
 
 Preserve the current Chat surface (including document and image work), IDE-style
@@ -45,14 +49,15 @@ Server choice.
 
 ### Step 2: choose the main engine
 
-For local execution, recommend up to six compatible models, highest suitability
-score first, followed by **Show more**. Let the user choose another supported
+For local execution, recommend up to six compatible models using evidence-labelled
+fit, with supported good fits first, followed by **Show more**. Let the user choose another supported
 model or advanced import; recommendations are not mandatory selections. A
 remote-only client can connect to authorised compute without a local model.
 
-Use the [scoring contract](model-catalog.md#6-onboarding-selection): suitability
-is out of 100, with clearly labelled estimates and measurements. Never present
-a fit score as universal accuracy or a percentage probability of correctness.
+Use the [selection contract](model-catalog.md#6-onboarding-selection): Beta shows
+compatibility and measured/estimated/unknown fit evidence. Numerical 0–100
+ranking belongs to P17 after calibration; it is not a Beta requirement. Never
+present compatibility or fit as universal accuracy or probability of correctness.
 Warn about slow or memory-heavy choices and block known incompatible execution.
 
 The picker must show:
@@ -398,3 +403,18 @@ the command, failure, and bounded retry options.
 
 The app reports evidence unavailable or observation-only. It never replaces
 missing enforcement evidence with a green sovereignty claim.
+
+## Reported workflow gaps to close in P06
+
+The [2026-09-18 walkthrough](evaluation.md#p01-manual-20260918) records evidence
+and uncertainty. Acceptance must cover legitimate synthetic scan-to-draft work,
+explicit reuse of selected sources, useful findings with real citations, and no
+invented completed review, approval or signature. An uncited generic document
+must not satisfy a request for a source-grounded approval note.
+
+Code must make selection and permission scope clear. Keep valid selections
+within the same project/conversation across ordinary follow-up edits; refresh
+file contents and approval bindings before use. Switching projects must not
+carry permissions or selected paths across the boundary. Exercise every visible
+access mode, including approval followed by the exact intended operation; do
+not bypass approval or automatically read the entire repository to fix friction.
