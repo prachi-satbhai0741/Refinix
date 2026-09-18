@@ -1967,7 +1967,7 @@ work. No repository file change means no changelog entry.
 - aliases: P01 proposed matrix, Beta support contract draft
 - paths: docs/evaluation.md, agent-memory/
 - summary: Added a proposed narrow Beta support matrix and the requester decisions that close P01.
-- changes: Proposed macOS arm64 requester and peer, retained Ubuntu validator as sandbox, and Windows 11 outside the Beta matrix, citing the macOS-only source paths.
+- changes: Recorded Windows, macOS and Linux as the target matrix with per-OS source gaps (Quartz rendering, Keychain credentials, dir_fd writes, macOS-only packaging) and the tasks.md P18 conflict for requester decision.
 - verification: Local anchors checked by inspection; git diff --check passed. No application tests, runtime checks, installs or Git writes.
 - remaining: Requester acceptance of the contract; macOS runtime checkpoint results and gap-to-task assignment.
 
