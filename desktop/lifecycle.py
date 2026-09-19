@@ -32,12 +32,20 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from backend.coordinator import runtime
+from backend.coordinator import paths, runtime
 
-# Compatibility-sensitive: existing state, identities and history live here and
-# the directory name does not change with the product name.
-STATE_DIR = Path.home() / ".aegisforge"
-STATE_DB = STATE_DIR / "coordinator.sqlite3"
+# Which root this installation uses is a platform decision, and
+# `backend.coordinator.paths` owns it: the OS-native location, the existing
+# `.aegisforge` store when one is already there, or an explicit portable profile.
+# Resolved once at import because these constants are the defaults every entry
+# point passes down. Resolution only reads directory names — it creates nothing,
+# moves nothing and never raises, so an ambiguous store still yields usable
+# constants and is reported by `run_startup` instead.
+DATA_ROOT = paths.select_root()
+STATE_DIR = DATA_ROOT.path
+STATE_DB = DATA_ROOT.database
+# One lock per store, so two different roots are two different applications
+# rather than one lock silently guarding the wrong data.
 LOCK_FILE = STATE_DIR / "desktop.lock"
 
 DEFAULT_PORT = 8770
@@ -243,6 +251,22 @@ def identify_occupant(port: int, timeout: float = 2.0) -> dict | None:
     if not isinstance(body, dict) or not {"node_id", "workspace_id", "contract_version"} <= body.keys():
         return None
     return body
+
+
+def check_data_root(state_path: Path = STATE_DB,
+                    root: paths.DataRoot | None = None) -> None:
+    """Refuse to start when two roots each hold a canonical store.
+
+    Only when the caller is actually about to use the ambiguous path: a test
+    database or an explicitly chosen root is the user's answer to the question,
+    so it starts normally even while two other stores exist on the computer.
+    """
+    root = DATA_ROOT if root is None else root
+    if root.conflict is None or Path(state_path) != root.database:
+        return
+    raise StartupError(
+        "Refinix found workspace data in two places and will not choose for you.",
+        str(root.conflict))
 
 
 def read_workspace_id(state_path: Path = STATE_DB) -> str | None:
@@ -464,6 +488,12 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
     # Callers take the SingleInstance lock before reaching here, so arriving at
     # all is the evidence that no other copy holds it.
     progress.set("instance", "ok", "This is the only copy of Refinix running.")
+
+    # Before anything opens the database: two occupied roots have no safe
+    # automatic answer, and `docs/PROJECT.md` 12.5 forbids running both at once.
+    # Refusing here is what keeps a workspace's chats, approvals and artifacts
+    # from being stranded in a store nothing opens again.
+    check_data_root(state_path)
 
     def remaining(minimum=1.0):
         return max(minimum, deadline - clock())

@@ -181,7 +181,15 @@ def render_ok(data, *, should_cancel=None, **_kwargs):
 # --------------------------------------------------------------------------
 
 class TestRenderer(unittest.TestCase):
+    """The macOS Quartz backend, through `FakeQuartz`.
+
+    `backend=` is passed explicitly: the portable renderer is preferred now, so
+    a patched `_quartz` would simply be bypassed without it. These bounds and
+    refusals are the retained fallback's, and they still have to hold.
+    """
+
     def render(self, quartz, data=b"%PDF-1.4 fake", **kwargs):
+        kwargs.setdefault("backend", pdfrender.QUARTZ)
         with patch.object(pdfrender, "_quartz", return_value=quartz):
             return list(pdfrender.render_pages(data, **kwargs))
 
@@ -193,12 +201,34 @@ class TestRenderer(unittest.TestCase):
         self.assertEqual(quartz.drawn, [1, 2, 3])
 
     def test_a_missing_renderer_is_reported_rather_than_crashing_the_import(self):
-        with patch.object(pdfrender, "_quartz",
-                          side_effect=pdfrender.RenderError("no_renderer", "absent")):
+        """Unavailable means *no* backend. One missing renderer is not a failure
+        while the other is present, which is the whole point of having two."""
+        absent = pdfrender.RenderError("no_renderer", "absent")
+        with patch.object(pdfrender, "_quartz", side_effect=absent), \
+                patch.object(pdfrender, "_pdfium", side_effect=absent):
             state = pdfrender.probe()
             self.assertFalse(pdfrender.available())
+            self.assertIsNone(pdfrender.selected_backend())
         self.assertFalse(state["available"])
         self.assertIsNone(state["module"])
+        self.assertEqual(state["backends"], [])
+
+    def test_one_missing_backend_still_leaves_the_other_usable(self):
+        with patch.object(pdfrender, "_quartz",
+                          side_effect=pdfrender.RenderError("no_renderer", "absent")):
+            self.assertTrue(pdfrender.available())
+            self.assertEqual(pdfrender.selected_backend(), pdfrender.PDFIUM)
+
+    def test_the_portable_renderer_is_preferred_where_both_exist(self):
+        """One qualified path across three OS families beats the platform one."""
+        with patch.object(pdfrender, "_quartz", return_value=FakeQuartz()):
+            self.assertEqual(pdfrender.selected_backend(), pdfrender.PDFIUM)
+        self.assertEqual(pdfrender.BACKEND_ORDER[0], pdfrender.PDFIUM)
+
+    def test_an_unknown_backend_name_is_refused(self):
+        with self.assertRaises(pdfrender.RenderError) as caught:
+            list(pdfrender.render_pages(b"%PDF", backend="imagemagick"))
+        self.assertEqual(caught.exception.code, "no_renderer")
 
     def test_a_partial_pyobjc_build_is_reported_as_unavailable(self):
         """A Quartz that imports but lacks a call would fail mid-render."""
@@ -206,7 +236,7 @@ class TestRenderer(unittest.TestCase):
             CGPDFDocumentCreateWithProvider = staticmethod(lambda *a: None)
 
         with patch.object(pdfrender, "_quartz", return_value=Partial()):
-            state = pdfrender.probe()
+            state = pdfrender._quartz_probe()
         self.assertFalse(state["available"])
         self.assertIn("CGBitmapContextCreate", state["detail"])
 
@@ -286,7 +316,9 @@ class TestRenderer(unittest.TestCase):
 
         with patch.object(pdfrender, "_quartz", return_value=quartz):
             with self.assertRaises(pdfrender.RenderError) as caught:
-                for page in pdfrender.render_pages(b"%PDF", should_cancel=stop):
+                for page in pdfrender.render_pages(
+                        b"%PDF", should_cancel=stop,
+                        backend=pdfrender.QUARTZ):
                     drawn.append(page.number)
         self.assertEqual(caught.exception.code, "cancelled")
         self.assertEqual(drawn, [1, 2])
@@ -386,9 +418,22 @@ class TestCapability(unittest.TestCase):
         self.assertIn("standalone vision-language component", state["detail"])
 
     def test_the_method_label_names_the_exact_model_tag(self):
-        label = ocr.method_label("a" * 64)
+        label = ocr.method_label("a" * 64, renderer=pdfrender.QUARTZ)
         self.assertIn(runtime.OCR_MODEL, label)
         self.assertIn("Quartz", label)
+
+    def test_the_method_label_names_whichever_renderer_drew_the_pages(self):
+        """A page drawn by the portable engine must not be recorded as Quartz."""
+        self.assertIn(pdfrender.PDFIUM,
+                      ocr.method_label("a" * 64, renderer=pdfrender.PDFIUM))
+        self.assertNotIn("Quartz",
+                         ocr.method_label("a" * 64, renderer=pdfrender.PDFIUM))
+
+    def test_an_unrecorded_renderer_is_named_unrecorded_not_guessed(self):
+        label = ocr.method_label("a" * 64)
+        self.assertIn("not recorded", label)
+        self.assertNotIn("Quartz", label)
+        self.assertNotIn(pdfrender.PDFIUM, label)
 
 
 # --------------------------------------------------------------------------
@@ -631,15 +676,16 @@ class TestThroughDocuments(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 class TestRealRenderer(unittest.TestCase):
-    """Runs only where PyObjC Quartz is actually installed.
+    """Runs against whichever backend this computer actually selects.
 
-    Labelled deliberately: this proves the renderer produces pixels from the
-    C07 scan on this computer. It proves nothing about OCR quality.
+    Labelled deliberately: this proves the selected renderer produces pixels
+    from the C07 scan on this computer. It proves nothing about OCR quality, and
+    nothing about the backend it did not use.
     """
 
     def setUp(self):
         if not pdfrender.available():
-            self.skipTest("PyObjC Quartz is not installed in this environment")
+            self.skipTest("no PDF renderer is installed in this environment")
         from pathlib import Path
         self.scan = Path(SCAN_FIXTURE)
         if not self.scan.exists():

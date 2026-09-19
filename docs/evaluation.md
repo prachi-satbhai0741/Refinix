@@ -214,7 +214,6 @@ thresholds before P03/P04/P06 results are judged.
 <a id="p01-proposed-contract"></a>
 ### Beta support contract — requester correction, 2026-09-18
 
-<<<<<<< Updated upstream
 Windows, macOS and Linux are required for the first downloadable Beta under the
 [PRD](prd.md#release-bands). This supersedes the unaccepted Mac-requester/Mac-peer
 proposal; no second Mac is a product prerequisite. P01 records baseline and exact
@@ -225,26 +224,6 @@ target profiles; P02–P13 implement and qualify them. P18/P22 expand coverage.
 | macOS | Requester reports Tahoe 26.7, M5, 16 GB unified memory; walkthrough below | Preserve working paths, qualify package/runtime and peer participation: P02–P13 |
 | Windows | Windows 11 x86_64 inventory; current device/build readiness not re-observed | Portable document processing, safe Code access, credentials, runtime/receiver and installer: P02/P03/P06/P08/P09/P13 |
 | Linux | Ubuntu 24.04.4 LTS x86_64 historical candidate; worker history is not desktop acceptance | Desktop document processing, credentials, runtime/receiver and installer: P02/P03/P06/P08/P09/P13 |
-=======
-**Proposal for requester decision; not accepted.** Target: Refinix runs on
-Windows, macOS and Linux ([PRD](prd.md#1-product-definition), FR-022). The macOS
-and Ubuntu devices were demonstration test hosts, not intended platform limits.
-Every row stays unqualified until its gate passes on that OS.
-
-| Target profile | Existing evidence | macOS-only or missing in current source |
-|---|---|---|
-| macOS 26.6.2, arm64 | App bundle, local checks and demonstrations recorded | Complete installer/runtime (P02/P03/P13) |
-| Windows 11, x86_64 | None beyond hardware inventory | PDF/scan rendering uses Quartz/AppKit (`pdfrender.py`, `pdfgen.py`, `ocr.py`); pairing credential needs macOS Keychain (`pairing.py`); Code writes disabled without `dir_fd` (`repo.py`); no installer (`setup_py2app.py` is macOS-only) |
-| Ubuntu 24.04.4 LTS, x86_64 | Retained Kubernetes worker/validator | Same Quartz and Keychain gaps as Windows; no desktop installer |
-
-Sandbox: the retained Ubuntu validator (`deploy/k3s/50-validation.yaml`) is the
-only existing restricted Code validation route; any OS may use it as a peer (P07/P11).
-
-**Conflict to resolve:** [tasks.md](../tasks.md#band-b--post-beta-product-improvements)
-places Windows/Linux desktop support in P18/P22, after the Beta. Requiring all
-three OSes in Beta 0.1 moves the portable rendering, credential storage,
-path-safe writes and Windows/Linux installers into Band A (P02, P06, P09, P13).
->>>>>>> Stashed changes
 
 Exact Windows/Linux edition/build/hardware and minimum measured resources remain
 qualification inputs. Supported sandbox capability is separate: P07 qualifies
@@ -253,7 +232,6 @@ execution fallback. Missing implementation must not silently remove an OS.
 P01 remains in progress until target profiles, representative thresholds and
 gap ownership are accepted; it does not wait for every future feature to work.
 
-<<<<<<< Updated upstream
 <a id="p01-manual-20260918"></a>
 ### Manual Mac walkthrough — supplied 2026-09-18
 
@@ -277,19 +255,6 @@ application logs. No live app, model, sandbox or network verification ran during
 this review. Embeddings/vector search (P16) improve retrieval; they cannot replace
 Quartz/AppKit or fix unsupported claims by themselves. P06 must solve portable
 PDF/image processing and grounded drafting independently of that upgrade.
-=======
-1. Which OSes Beta 0.1 must pass: all three (larger Band A), or macOS first with
-   Windows/Linux in versioned Beta 0.2/0.3 under P18. The product target is all
-   three either way.
-2. Accept the fixed Chat/Documents/Code criteria in the [section above](#representative-fixtures-and-fixed-baseline-criteria)
-   as the pass/fail floor on every OS in the Beta matrix.
-3. Minimum RAM/storage stay unstated until P03/P04 measure them; no number is
-   advertised from hardware inventory alone.
-
-P01 closes when the [macOS runtime checkpoint](#next-human-checkpoint--current-runtime-evidence)
-results and any Windows/Linux baseline are recorded here, each observed gap
-names its owning task, and the requester accepts this contract.
->>>>>>> Stashed changes
 
 ### Next human checkpoint — current runtime evidence
 

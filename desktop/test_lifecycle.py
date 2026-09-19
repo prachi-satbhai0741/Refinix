@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import db, runtime
+from backend.coordinator import db, paths, runtime
 from desktop import lifecycle
 
 
@@ -334,6 +334,83 @@ class TestProgress(unittest.TestCase):
         finally:
             stop.set()
             thread.join(timeout=2)
+
+
+class TestDataRoot(unittest.TestCase):
+    """Where the desktop shell keeps durable data, and when it refuses to start.
+
+    `backend.coordinator.paths` owns the per-OS decision and is checked there.
+    What matters here is that the shell actually uses it, that the lock follows
+    the store, and that an ambiguous store stops startup instead of opening one
+    of the two at random.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.home = Path(self.dir.name)
+
+    def occupied(self, root):
+        root.mkdir(parents=True, exist_ok=True)
+        (root / paths.DATABASE_NAME).write_bytes(b"SQLite format 3\x00")
+        return root
+
+    def conflicted(self):
+        legacy = self.occupied(paths.legacy_root(home=self.home))
+        native = self.occupied(paths.platform_root(platform="darwin", environ={},
+                                                   home=self.home))
+        root = paths.select_root(platform="darwin", environ={}, home=self.home)
+        self.assertIsNotNone(root.conflict)
+        return root, legacy, native
+
+    def test_the_shell_uses_the_root_the_platform_module_chose(self):
+        self.assertEqual(lifecycle.STATE_DIR, lifecycle.DATA_ROOT.path)
+        self.assertEqual(lifecycle.STATE_DB, lifecycle.DATA_ROOT.database)
+
+    def test_the_lock_lives_beside_the_store_it_guards(self):
+        """Two different roots must be two applications, not one lock over the
+        wrong data."""
+        self.assertEqual(lifecycle.LOCK_FILE.parent, lifecycle.STATE_DIR)
+
+    def test_an_unambiguous_store_starts_normally(self):
+        root = paths.select_root(platform="darwin", environ={}, home=self.home)
+        lifecycle.check_data_root(root.database, root)      # does not raise
+
+    def test_two_canonical_stores_stop_startup_rather_than_picking_one(self):
+        root, legacy, native = self.conflicted()
+        with self.assertRaises(lifecycle.StartupError) as caught:
+            lifecycle.check_data_root(root.database, root)
+        self.assertIn(str(legacy), caught.exception.detail)
+        self.assertIn(str(native), caught.exception.detail)
+
+    def test_an_explicitly_named_database_is_the_answer_to_the_question(self):
+        """A test database or a chosen root is the user deciding, so it runs
+        even while two other stores exist on the computer."""
+        root, _legacy, _native = self.conflicted()
+        chosen = Path(self.dir.name) / "elsewhere" / "coordinator.sqlite3"
+        lifecycle.check_data_root(chosen, root)             # does not raise
+
+    def test_startup_refuses_before_anything_opens_the_database(self):
+        root, _legacy, _native = self.conflicted()
+        opened = []
+
+        def start_server(state_path, port):
+            opened.append(state_path)
+            return ("server", "coordinator")
+
+        with patch.object(lifecycle, "DATA_ROOT", root):
+            with self.assertRaises(lifecycle.StartupError):
+                lifecycle.run_startup(lifecycle.Progress(),
+                                      state_path=root.database,
+                                      start_server=start_server,
+                                      supervisor=self._unused_supervisor())
+        self.assertEqual(opened, [], "the ambiguous store was opened anyway")
+
+    def _unused_supervisor(self):
+        return lifecycle.EngineSupervisor(
+            probe=lambda *a, **k: self.fail("the engine was reached"),
+            locate=lambda: None, spawn=lambda *a, **k: FakeProcess(),
+            sleep=lambda _s: None)
 
 
 if __name__ == "__main__":

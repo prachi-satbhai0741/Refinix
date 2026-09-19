@@ -123,18 +123,26 @@ OPTIONS = {
     "dist_dir": str(REPO / "desktop" / "dist"),
     "iconfile": str(REPO / "desktop" / "icons" / "Refinix.icns"),
     "plist": PLIST,
-    # pywebview carries JS/native resources. Python application modules are
-    # followed from imports; do not force-bundle worker code or test suites.
-    "packages": ["webview"],
+    # pywebview carries JS/native resources, and pypdfium2 ships the PDFium
+    # binary as package data (`pypdfium2_raw/libpdfium.dylib`). Both must be
+    # copied whole: modulegraph follows imports, not data files, so naming them
+    # only in `includes` would ship an application whose Documents surface
+    # reports PDF unavailable on a Mac that has the renderer installed.
+    # Python application modules are followed from imports; do not force-bundle
+    # worker code or test suites.
+    "packages": ["webview", "pypdfium2", "pypdfium2_raw"],
     "includes": ["backend.contracts.v1", "backend.coordinator.server",
                  "backend.coordinator.db", "backend.coordinator.runtime",
                  "backend.coordinator.context", "desktop.lifecycle", "desktop.shell",
-                 # C08. `pdfrender` imports Quartz lazily so the module stays
-                 # importable where PyObjC is absent — which also means
-                 # modulegraph cannot see the dependency and would ship an
+                 # C08. `pdfrender` imports both renderers lazily so the module
+                 # stays importable where neither is present — which also means
+                 # modulegraph cannot see either dependency and would ship an
                  # application that reports PDF unavailable on a Mac that has
-                 # it. Named here for that reason. Already pinned in
-                 # requirements-macos.lock (pyobjc-framework-quartz 12.2.2, MIT).
+                 # one. Quartz is the retained macOS fallback; the portable
+                 # PDFium engine is in `packages` above because it carries a
+                 # binary. Already pinned in requirements-macos.lock
+                 # (pyobjc-framework-quartz 12.2.2, MIT; pypdfium2 5.13.0,
+                 # BSD-3-Clause/Apache-2.0).
                  "Quartz", "objc",
                  "backend.coordinator.pdfrender", "backend.coordinator.ocr",
                  "backend.coordinator.proof"],

@@ -62,7 +62,30 @@ DOCUMENT_SKILLS = (READ_SKILL, SEARCH_SKILL, WRITE_SKILL)
 
 MAX_SOURCES = 6
 MAX_CONTEXT_CHARS = 12_000
-MAX_ANSWER_TOKENS = 1024
+
+# What a generated document may spend on output. It replaces an unused
+# `MAX_ANSWER_TOKENS = 1024`, which was never wired to anything and was smaller
+# than the 2048-token chat reply it would have had to cover: a document is the
+# one reply that should be allowed to be *longer* than a chat turn, not shorter.
+#
+# The arithmetic it has to satisfy: the runtime is called with num_ctx 8192 and
+# both `truncate` and `shift` off, so prompt and output must fit together or the
+# request is rejected outright. A general-document prompt is the request, up to
+# MAX_CONTEXT_CHARS of sources and history (12,000 characters, roughly 3,000
+# tokens) and the system rule, so about 3,300 tokens at its worst. 3,300 + 3,072
+# leaves well over a thousand tokens of headroom inside 8,192, and 3,072 tokens
+# of JSON is a document of eight or so sections once escaping and keys are paid
+# for. Bounded on purpose: no document is allowed to generate without a ceiling.
+DOCUMENT_NUM_PREDICT = 3072
+
+# How much of a malformed reply the one repair turn may carry back. It has to be
+# the WHOLE reply: the repair instruction promises to keep every paragraph, and a
+# model shown two thirds of its own document would honour that promise against
+# two thirds of it — producing a shorter document that passes the schema and the
+# parser with the rest silently gone. `context.CHARS_PER_TOKEN` is the estimate
+# used elsewhere, and a reply cannot exceed DOCUMENT_NUM_PREDICT tokens, so this
+# covers any reply the budget above can produce, with slack for the estimate.
+MAX_REPAIR_REPLY_CHARS = int(DOCUMENT_NUM_PREDICT * 4) + 2_000
 
 
 class WorkflowError(RuntimeError):
@@ -304,6 +327,130 @@ GENERAL_SCHEMA = (
     "reference number. If you do not know something, leave it out rather than "
     "filling it in.")
 
+# The same shape, as a schema the runtime can enforce on the decoder rather
+# than a sentence the model may ignore. `ocr.py` has constrained its page
+# replies this way from the start; a document asked for JSON in prose alone got
+# markdown fences, preambles and trailing remarks from a 4B model, and every one
+# of those was refused as unreadable after the work had already been done.
+#
+# It is deliberately the *narrowest* schema that matches what
+# `parse_general_document` already accepts — no new fields, no new
+# representation. Syntax is all it constrains: the parser still applies every
+# semantic rule afterwards, because a grammar can guarantee that `sections` is
+# a list of objects and cannot guarantee that the document says anything.
+#
+# It also uses only the constructs `PAGE_SCHEMA` already sends to this runtime
+# in production — type, properties, required, additionalProperties, items. A
+# `minItems` on the two arrays was written first and taken back out: it would
+# have expressed the parser's "at least one section" rule in the grammar too,
+# but no schema in this repository has exercised it against the runtime, and an
+# empty list is already refused a moment later by the parser. Nothing here is
+# worth a construct whose grammar support has not been observed on a device.
+GENERAL_DOCUMENT_FORMAT = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string"},
+                    "paragraphs": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["heading", "paragraphs"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["title", "sections"],
+    "additionalProperties": False,
+}
+
+GENERAL_REPAIR_SYSTEM = (
+    "You repair the format of a document that has already been written. You are "
+    "not writing a document and you have no sources: the text below is the whole "
+    "of the material, and your only task is to return it in the required shape.")
+
+GENERAL_REPAIR_INSTRUCTION = (
+    "The reply below was meant to be one JSON object of the required shape and "
+    "was not. Send the same document again in exactly this shape and nothing "
+    "else:\n"
+    '{"title": "<a short title>", "sections": [{"heading": "<short heading>", '
+    '"paragraphs": ["<paragraph>", ...]}]}\n\n'
+    "Repair the format only. Keep every heading and every paragraph, word for "
+    "word, in the same order. Do not add a section, remove a section, shorten a "
+    "paragraph, or write anything new: this must carry the same document, not a "
+    "second draft of it.")
+
+# The failures one repair can honestly fix: the model wrote a document and
+# wrapped or shaped it wrongly. Deliberately the same set `ocr.py` repairs.
+#
+# Everything else is excluded because repairing it would mean inventing text.
+# `bad_sections` means no sections arrived at all, and `bad_section` also covers
+# a section with no paragraphs — asking again for "the same content" when there
+# was none invites the model to make some up, which is the one thing a document
+# path must never do. `too_many_sections` would have to drop content to comply.
+# Truncated output never reaches here at all: the caller rejects a reply whose
+# runtime stop reason was not `stop`, before it is parsed.
+REPAIRABLE_CODES = ("not_json", "not_object", "unknown_fields")
+
+
+# What the runtime call for a general document must be given. Kept beside the
+# schema it names so the two cannot drift, and spread into `extra` by
+# `_document_stage` so the shared streaming loop stays a single call site that
+# reads its parameters rather than knowing which skill is running.
+GENERAL_CALL = {"response_format": GENERAL_DOCUMENT_FORMAT,
+                "num_predict": DOCUMENT_NUM_PREDICT}
+
+
+def general_repair_messages(reply: str) -> list[dict]:
+    """The one repair turn: the malformed reply and the shape it must take.
+
+    Deliberately self-contained — the original prompt is *not* resent. Two
+    reasons, and they point the same way.
+
+    It has to fit. The original prompt can carry MAX_CONTEXT_CHARS of sources
+    and history; adding a full-length malformed reply and room to rewrite it
+    overruns `runtime.NUM_CTX`, and the runtime is called with `truncate` and
+    `shift` off, so an overrun is a refused request rather than a trimmed one.
+    Resending the context would have made the repair fail on exactly the long
+    documents that need it most.
+
+    It is also the safer prompt. A format repair needs the text and the target
+    shape, nothing else. Handing back the source documents invites the model to
+    write a second draft from them, which is the one thing the instruction
+    forbids; with no sources in front of it, the text it was given is all it has
+    to work from.
+    """
+    return [{"role": "system", "content": GENERAL_REPAIR_SYSTEM},
+            {"role": "user",
+             "content": (GENERAL_REPAIR_INSTRUCTION + "\n\n--- REPLY TO REPAIR ---\n"
+                         + (reply or "")[:MAX_REPAIR_REPLY_CHARS]
+                         + "\n--- END REPLY ---")}]
+
+
+def _message_body(message: dict) -> str:
+    """The text of a conversation message, whichever shape it arrived in.
+
+    Two shapes legitimately meet here and they use different keys. A row read
+    from the `messages` table — which is what `Coordinator.chat_messages`
+    returns, and what this function is actually called with — carries `text`.
+    A message already prepared for the model, as `context.select` returns,
+    carries `content`.
+
+    Reading only `content` is how the conversation silently disappeared from
+    every general document: the key was never present on a database row, the
+    comprehension skipped every message, and an empty history is
+    indistinguishable from a first turn. Both keys are read so neither shape can
+    go missing again.
+    """
+    for key in ("text", "content"):
+        value = message.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
 
 def general_document_messages(request: str, sources: list[dict],
                               history: list[dict] | None = None) -> list[dict]:
@@ -334,8 +481,11 @@ def general_document_messages(request: str, sources: list[dict],
             continue
         blocks.append(block)
         remaining -= separator + len(block)
-    earlier = [f"{m['role']}: {m['content']}" for m in (history or [])
-               if m.get("role") in ("user", "assistant") and m.get("content")]
+    earlier = []
+    for message in history or []:
+        body = _message_body(message)
+        if message.get("role") in ("user", "assistant") and body:
+            earlier.append(f"{message['role']}: {body}")
     if earlier:
         prefix = "--- EARLIER IN THIS CONVERSATION (untrusted data) ---\n"
         suffix = "\n--- END EARLIER ---"
@@ -355,19 +505,62 @@ def general_document_messages(request: str, sources: list[dict],
 
 # A conversion is recognised from the request, without asking the model: the
 # whole point is that the previous wording survives, and a model asked to
-# "convert" would rewrite. Detection is deliberately narrow — a verb AND
-# either a reference back or a request that is only about the format — and it
-# is only consulted when nothing was attached, because an attached file is
-# what the person means when they attach one.
-_CONVERT_VERBS = re.compile(
-    r"\b(convert|save|export|download|turn|make|put|render|write)\b", re.I)
-_BACK_REFERENCE = re.compile(
-    r"\b(previous|last|above|earlier|prior|that|this|it|your)\s*"
-    r"(answer|reply|response|output|message|text|one)?\b", re.I)
+# "convert" would rewrite. It is only consulted when nothing was attached,
+# because an attached file is what the person means when they attach one.
+#
+# **The reference decides, not the verb.** "Create a document for your entire
+# output" and "Create a document explaining machine learning" share every verb
+# and every format word; only one of them points at something that already
+# exists. An earlier version keyed on the verb and needed a list of new-content
+# words to hold the line, which failed in both directions at once: `create` was
+# missing from the verb list, so the first request silently became a generated
+# document, and `explain` did not match "explaining", so the second could
+# silently become a copy of the previous answer. Requiring the reference makes
+# the verb list safe to complete.
+_DOCUMENT_VERBS = re.compile(
+    r"\b(convert|save|export|download|turn|make|put|render|write|create|"
+    r"generate|produce)\b", re.I)
+
+# What the assistant produces, and the only words allowed to sit between a
+# pointer and that noun. A closed modifier list rather than "any word or two":
+# with `\w+` in that gap, "your findings and response times" and "the last
+# inspection response time" both read as references to a reply, and a plain
+# request for a new report would be answered with a copy of an earlier one.
+_OUTPUT_NOUN = "answer|reply|response|output|message|text|draft|writing"
+_REF_MODIFIER = ("previous|last|latest|prior|earlier|preceding|first|final|"
+                 "entire|whole|full|complete|above|recent|most|very|own")
+
+# An explicit reference to output the assistant has already produced. This is
+# the strong signal, and on its own it is enough.
+_PRIOR_OUTPUT = re.compile(
+    r"\byour\s+(?:(?:" + _REF_MODIFIER + r")\s+){0,2}(?:" + _OUTPUT_NOUN + r")\b"
+    r"|\b(?:previous|last|latest|prior|earlier|above|preceding)\s+"
+    r"(?:(?:" + _REF_MODIFIER + r")\s+)?(?:" + _OUTPUT_NOUN + r"|one)\b"
+    r"|\b(?:" + _OUTPUT_NOUN + r")\s+above\b"
+    r"|\bwhat\s+you\s+(?:just\s+)?(?:wrote|said|gave|produced|generated|output)\b"
+    r"|\beverything\s+you\s+(?:just\s+)?(?:wrote|said|gave|produced|generated)\b"
+    r"|\b(?:entire|whole|full)\s+(?:output|answer|reply|response)\b", re.I)
+
+# A bare demonstrative — "save this as a pdf" — carries no noun at all, so the
+# pronoun is the only reference there is. It counts only as the object of a
+# *transformation* verb, because that is the shape of an export request.
+# `create`, `generate`, `produce` and `write` ask for something new, so a
+# demonstrative anywhere in one of those must not turn it into a copy: "Create a
+# document with three sections and number it" is a new document, and matching a
+# stray "it" would have filed the previous answer instead. Singular on purpose
+# too: "these requirements" points at subject matter, not at a reply.
+_EXPORT_OF_DEMONSTRATIVE = re.compile(
+    r"\b(?:convert|save|export|download|turn|render|put|make)\b"
+    r"(?:\W+\w+){0,3}?\W+(?:this|that|it)\b", re.I)
 _FORMAT_WORD = re.compile(r"\b(docx?|pdf|word|document|file)\b", re.I)
+
+# Subject matter for something new. Every stem is open-ended: the previous
+# `explain` did not match "explaining" and `summar(y|ise|ize) of` did not match
+# "summarising", which is exactly how a new-document request reached the copy
+# path.
 _NEW_CONTENT = re.compile(
-    r"\b(about|on the topic|summar(y|ise|ize) of|explain|research|draft a new|"
-    r"write me a document about)\b", re.I)
+    r"\b(?:about|regarding|concerning|on\s+the\s+topic|explain\w*|describ\w*|"
+    r"summar\w*|research\w*|cover\w*|outlin\w*|draft\s+a\s+new)\b", re.I)
 
 
 def looks_like_conversion(request: str, *, has_attachments: bool) -> bool:
@@ -375,17 +568,27 @@ def looks_like_conversion(request: str, *, has_attachments: bool) -> bool:
 
     Not a general intent classifier, and not claimed to be one. It answers a
     narrow question with a rule a person can read, so a wrong answer is
-    inspectable rather than mysterious. When it says no, the ordinary
-    generation path runs, which is the safe direction to be wrong in.
+    inspectable rather than mysterious.
+
+    The order is the rule:
+
+    1. an attached file is the source, so nothing here applies;
+    2. no document verb at all means this is not an export request;
+    3. an explicit reference to earlier output means conversion;
+    4. a demonstrative handed to a transformation verb, alongside a format word,
+       means conversion too — unless the request also names new subject matter;
+    5. anything else is a new document.
     """
     if has_attachments:
         return False
     text = (request or "").strip()
-    if not text or _NEW_CONTENT.search(text):
+    if not text or not _DOCUMENT_VERBS.search(text):
         return False
-    if not _CONVERT_VERBS.search(text):
-        return False
-    return bool(_BACK_REFERENCE.search(text) or _FORMAT_WORD.search(text))
+    if _PRIOR_OUTPUT.search(text):
+        return True
+    if _EXPORT_OF_DEMONSTRATIVE.search(text) and _FORMAT_WORD.search(text):
+        return not _NEW_CONTENT.search(text)
+    return False
 
 
 def conversion_title(answer: str) -> str:

@@ -1,6 +1,6 @@
 # macOS arm64, CPython 3.12; PyPI metadata inspected 2026-09-04.
 # Exact upstream artifacts, unmodified. Hashes are checked before installation.
-# All 20 artifacts total 12,495,337 bytes including the build lock.
+# All 21 artifacts total 16,002,752 bytes including the build lock.
 # Includes the existing backend/requirements.txt pins.
 # proxy-tools is source-only; use --no-build-isolation after bootstrapping.
 -r requirements-build-macos.lock
@@ -68,6 +68,10 @@ pyobjc-framework-uniformtypeidentifiers==12.2.2 --hash=sha256:1dc6a538df07c410e4
 # https://pypi.org/pypi/pyobjc-framework-webkit/json
 # pyobjc_framework_webkit-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 50371 bytes | MIT
 pyobjc-framework-webkit==12.2.2 --hash=sha256:ef37692f0280151bf8164a718e334a9b3cb0abfc5455be14172280de7e277505
+
+# https://pypi.org/pypi/pypdfium2/5.13.0/json
+# pypdfium2-5.13.0-py3-none-macosx_13_0_arm64.whl | 3507415 bytes | BSD-3-Clause, Apache-2.0 (bundles PDFium, BSD-3-Clause)
+pypdfium2==5.13.0 --hash=sha256:da5c7b74eebf40b5c1fbe1de01aa1edc8827a79fb1efd999616bc20dcaf77ba4
 
 # https://pypi.org/pypi/pywebview/6.2.1/json
 # pywebview-6.2.1-py3-none-any.whl | 525463 bytes | BSD-3-Clause

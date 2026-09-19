@@ -17,8 +17,8 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import (db, docflow, docgen, documents, retrieval,
-                                 runtime)
+from backend.coordinator import (db, docflow, docgen, documents, pdfrender,
+                                 retrieval, runtime)
 from backend.coordinator.server import Coordinator
 
 
@@ -90,10 +90,12 @@ INSTALLED_RUNTIME = {"reachable": True, "server_version": "0.0.0-fake",
                      "digests": {runtime.OCR_MODEL: "b" * 64},
                      "loaded": None, "endpoint": "http://127.0.0.1:11434",
                      "error": None}
-RENDERER_PRESENT = {"available": True, "module": "Quartz", "detail": "fake renderer"}
-RENDERER_ABSENT = {"available": False, "module": None,
-                   "detail": "PDF rendering needs the macOS Quartz framework "
-                             "(PyObjC), which is not available in this environment."}
+RENDERER_PRESENT = {"available": True, "module": pdfrender.PDFIUM,
+                    "detail": "fake renderer", "backends": [pdfrender.PDFIUM]}
+RENDERER_ABSENT = {"available": False, "module": None, "backends": [],
+                   "detail": "Refinix cannot render PDF pages on this computer. "
+                             "PDF rendering needs the pypdfium2 renderer, which "
+                             "is not installed in this environment."}
 
 
 class TestCapabilityProbe(unittest.TestCase):
@@ -110,7 +112,7 @@ class TestCapabilityProbe(unittest.TestCase):
                 if not entry["available"]:
                     self.assertEqual(entry["formats"], [])
                     self.assertTrue(
-                        "Quartz" in entry["detail"]
+                        "render" in entry["detail"]
                         or runtime.OCR_MODEL in entry["detail"]
                         or "not answering" in entry["detail"],
                         entry["detail"])
@@ -140,7 +142,11 @@ class TestCapabilityProbe(unittest.TestCase):
             capability = documents.probe(INSTALLED_RUNTIME)
         self.assertFalse(capability["pdf"]["available"])
         self.assertFalse(capability["ocr"]["available"])
-        self.assertIn("Quartz", capability["pdf"]["detail"])
+        # The renderer's own words, not a named framework: the missing
+        # prerequisite differs per platform now, and the detail has to carry
+        # whichever one this computer is actually short of.
+        self.assertIn("render", capability["pdf"]["detail"])
+        self.assertEqual(capability["pdf"]["detail"], RENDERER_ABSENT["detail"])
 
     def test_both_halves_present_advertises_pdf_and_says_what_it_is_not(self):
         with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT), \
@@ -290,7 +296,7 @@ class TestExtraction(Base):
                                   filename="scan.pdf", media_type="application/pdf",
                                   expected_sha256=record["sha256"])
         self.assertEqual(caught.exception.code, "no_pdf_parser")
-        self.assertIn("Quartz", str(caught.exception))
+        self.assertIn("render", str(caught.exception))
 
     def test_a_pdf_is_refused_when_the_model_cannot_read_images(self):
         """The observed 2026-09-05 state: installed, and completion-only."""
@@ -765,14 +771,27 @@ class TestDocxGeneration(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 def fake_stream(reply, thinking="", done_reason="stop"):
+    """A `runtime.stream_chat` stand-in that records how it was called.
+
+    `response_format` and `num_predict` are recorded rather than ignored: a
+    general document is decoded against a runtime-enforced schema, and a double
+    that silently accepted anything could not tell whether the production call
+    actually asked for one.
+    """
     def stream(messages, *, should_cancel=None, think=None, model=None,
-               num_predict=None):
+               num_predict=None, response_format=None, images=None):
         stream.messages = messages
+        stream.response_format = response_format
+        stream.num_predict = num_predict
+        stream.calls += 1
         if thinking:
             yield "thinking", thinking
         yield "delta", reply
         yield "done", {"done_reason": done_reason}
     stream.messages = None
+    stream.response_format = None
+    stream.num_predict = None
+    stream.calls = 0
     return stream
 
 

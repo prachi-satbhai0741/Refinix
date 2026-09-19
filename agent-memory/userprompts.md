@@ -1573,3 +1573,70 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve prior dirty edits, historical evidence and runtime behaviour; no installs, live tests, model calls or Git writes.
 - follow_up_to: [UP-20260918-002](#up-20260918-002)
 - linked_changes: [AC-20260919-001](agentchangelog.md#ac-20260919-001)
+
+<a id="up-20260919-002"></a>
+## UP-20260919-002 — Recheck the revised plan and begin Phase 1 execution
+- date: 2026-09-19
+- status: authorised implementation of a named Phase 1 slice on the macOS device
+- tags: phase-1, portability, platform-paths, credentials, execution
+- aliases: P plan retired, all-OS setup, move to execution, first Phase 1 batch
+- paths: backend/coordinator/, desktop/, frontend/app/, fixtures/c07/, docs/evaluation.md, agent-memory/
+- summary: Re-read the revised plan and product contract, then execute the first coherent Phase 1 slice on the available macOS device.
+- request: Recheck tasks.md, docs/PROJECT.md and AGENTS.md after the P01-P26 retirement and the shift from a compulsory Mac device to all-OS support, then move to execution.
+- decisions: Requester selected the platform data-root abstraction, portable protected credential storage and the fixture portability fix as the first batch; authorised resolving the docs/evaluation.md merge-conflict markers only; authorised adding pypdfium2 for portable PDF rendering when Phase 1 item E is executed.
+- constraints: Repository edits limited to the selected batch; no other protected documentation edited; no installs, downloads, model or live runtime calls, deployments or Git/GitHub writes.
+- follow_up_to: [UP-20260919-001](#up-20260919-001)
+- linked_changes: [AC-20260919-002](agentchangelog.md#ac-20260919-002)
+
+<a id="up-20260919-003"></a>
+## UP-20260919-003 — Apply external review repairs before committing the Phase 1 batch
+- date: 2026-09-19
+- status: authorised focused repair of the uncommitted Phase 1 batch
+- tags: phase-1, review, data-root, credentials, documentation
+- aliases: codex review, occupancy too narrow, secret-tool prerequisite, keychain_available deprecation
+- paths: backend/coordinator/paths.py, backend/coordinator/test_paths.py, backend/coordinator/credentials.py, backend/coordinator/server.py, agent-memory/
+- summary: Repair the data-root occupancy rule and two documentation overstatements raised by an external review of the report, before the batch is committed.
+- request: Relayed a review that had read the project documents and this session's report but not the source; asked for the flagged issues to be addressed.
+- constraints: Repair only; no scope expansion, no new dependency, no protected documentation beyond the already-authorised file, no Git writes.
+- follow_up_to: [UP-20260919-002](#up-20260919-002)
+- linked_changes: [AC-20260919-003](agentchangelog.md#ac-20260919-003)
+
+<a id="up-20260919-004"></a>
+## UP-20260919-004 — Record live data-root acceptance and execute Phase 1 E
+- date: 2026-09-19
+- status: acceptance recorded; portable PDF rendering authorised
+- tags: phase-1, data-root, acceptance, documents, pdf, portability
+- aliases: restart persistence passed, pypdfium2 authorised, remove Quartz-only read path
+- paths: agent-memory/, backend/coordinator/
+- summary: Record the requester's restart-persistence observations, then remove the Quartz-only dependency from the Beta-critical PDF reading path.
+- request: Requester reported both live checks passed — completed-task persistence after restart and cancelled-task persistence after restart — then authorised Phase 1 E with the already-approved pypdfium2.
+- constraints: Preserve current document behaviour; add portability and failure tests; keep PDF writing separate unless the Phase 1 contract requires it; run the relevant suites and report source-tested and device-observed evidence separately.
+- follow_up_to: [UP-20260919-003](#up-20260919-003)
+- linked_changes: [AC-20260919-004](agentchangelog.md#ac-20260919-004)
+
+<a id="up-20260919-005"></a>
+## UP-20260919-005 — Repair the Documents routing and history defects (Batch 1)
+- date: 2026-09-19
+- status: authorised focused repair; generation-robustness hardening deferred to a separate batch
+- tags: documents, routing, classifier, history, regression, phase-1
+- aliases: create a document for your entire output, conversion vs general, text vs content, batch 1
+- paths: backend/coordinator/docflow.py, backend/coordinator/test_document_intent.py, agent-memory/
+- summary: Fix the confirmed conversion/general misrouting in both directions and the history binding that emptied every general document prompt.
+- request: Execute the audited repair only; add the intent matrix and coordinator-level regression coverage; preserve the existing generation architecture.
+- decisions: Reviewer rejected a bare verb-list addition because it would deepen the inverse-routing defect; the classifier must decide from source reference. Batch 2 (structured-output enforcement, output sizing, repair retries, truncation detection, parser tolerance) is explicitly NOT authorised yet.
+- constraints: No protected-document edits, Git/GitHub writes, installs, model downloads, schema/API/frontend changes, or changes to `response_format`, `num_predict`, retry or JSON-parse tolerance.
+- follow_up_to: [UP-20260919-004](#up-20260919-004)
+- linked_changes: [AC-20260919-006](agentchangelog.md#ac-20260919-006)
+
+<a id="up-20260919-006"></a>
+## UP-20260919-006 — General document generation robustness (Batch 2)
+- date: 2026-09-19
+- status: authorised narrow robustness repair; Batch 1 accepted and not reopened
+- tags: documents, generation, structured-output, repair, truncation, phase-1
+- aliases: response_format, num_predict, MAX_ANSWER_TOKENS, one repair round, batch 2
+- paths: backend/coordinator/docflow.py, backend/coordinator/server.py, backend/coordinator/test_document_generation.py, backend/coordinator/test_documents.py, agent-memory/
+- summary: Make the general-document path dependable once a request has correctly reached it, using the runtime's existing structured-output support.
+- request: Enforce a schema on the document call, give it a document-sized output budget, allow at most one bounded repair, reject truncated generation, and decide parser tolerance deliberately.
+- constraints: No Documents redesign, no source-mode work, no schema/API/frontend change, no protected-document edits, no Git/GitHub writes, no installs or model downloads. Do not reopen the Batch 1 classifier without direct evidence of a regression.
+- follow_up_to: [UP-20260919-005](#up-20260919-005)
+- linked_changes: [AC-20260919-007](agentchangelog.md#ac-20260919-007)

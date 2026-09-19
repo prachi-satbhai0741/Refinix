@@ -31,6 +31,12 @@ jobs:
       - name: Install pinned Python dependencies
         run: python -m pip install --disable-pip-version-check --require-hashes -r backend/worker-image/requirements.lock
 
+      # Without this the coordinator's PDF rendering checks skip instead of
+      # running, and the portable reading path would go unverified on the one
+      # Linux runner that can prove it works there.
+      - name: Install the pinned PDF renderer
+        run: python -m pip install --disable-pip-version-check --require-hashes -r backend/requirements-render.lock
+
       - name: Run Python checks
         run: |
           python -m unittest discover -s backend/contracts -t . -p 'test_*.py' -q

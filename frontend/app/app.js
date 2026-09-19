@@ -2854,8 +2854,14 @@ function renderOthersCard(s, worker) {
     $('c-others-lead').textContent = worker.keychain_available
       ? 'Refinix can share work with another computer you connect. None is '
         + 'connected, so everything runs here.'
-      : 'Connecting another computer needs the macOS Keychain to hold its '
-        + 'credential. It is not available here, so connecting is switched off.';
+      // The coordinator names this computer's own missing prerequisite. Only
+      // an older coordinator omits it, so the macOS wording is the fallback
+      // rather than the sentence every operating system is shown.
+      : 'Connecting another computer needs a protected credential store to '
+        + 'hold its credential. '
+        + ((worker.credential_store && worker.credential_store.detail)
+          || 'It is not available here.')
+        + ' Connecting is switched off.';
     facts($('c-others-facts'), [
       ['Connected computers', null, 'none'],
       ['This computer', `${s.node_id.slice(0, 8)} — the only one in use`],

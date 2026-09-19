@@ -477,10 +477,19 @@ class Coordinator:
                 db.append_output(self.conn, attempt_id, note)
                 self._emit(job_id, attempt_id,
                            {"kind": "output.delta", "text": note[:2048]})
+            # A document that must come back as one JSON object is decoded
+            # against a schema the runtime enforces, and is given its own output
+            # ceiling. Both travel in `extra`, so this stays one call site;
+            # they are passed only when a route actually set them, so an
+            # ordinary Chat turn is called exactly as it was before.
+            constrained = {}
+            if (extra or {}).get("response_format"):
+                constrained = {"response_format": extra["response_format"],
+                               "num_predict": extra.get("num_predict")}
             for kind, payload in runtime.stream_chat(
                     messages, model=model_id, think=reasoning,
                     should_cancel=lambda: self.is_cancelled(job_id)
-                    or self.stopping.is_set()):
+                    or self.stopping.is_set(), **constrained):
                 if kind == "thinking":
                     # Progress only. Never collected, never persisted, never
                     # shown as the reply.
@@ -523,7 +532,7 @@ class Coordinator:
                 try:
                     answer = self._document_answer(
                         job_id, chat_id, attempt_id, skill_id, answer, prepared,
-                        extra)
+                        extra, model_id=model_id)
                 except docflow.Cancelled:
                     self._stop(job_id, attempt_id, "cancelled", "running", {
                         "code": "cancelled_by_user",
@@ -827,7 +836,7 @@ class Coordinator:
             built = docflow.general_document_messages(
                 request_text, [], self.chat_messages(chat_id)[:-1])
             return built, None, {"workflow": docflow.WORKFLOW_GENERAL,
-                                 "general": True}
+                                 "general": True, **docflow.GENERAL_CALL}
 
         prepared = docflow.prepare_sources(
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
@@ -868,7 +877,8 @@ class Coordinator:
             built = docflow.general_document_messages(
                 question, prepared.sources, self.chat_messages(chat_id)[:-1])
             return built, prepared, {"prepared": prepared, "general": True,
-                                     "workflow": docflow.WORKFLOW_GENERAL}
+                                     "workflow": docflow.WORKFLOW_GENERAL,
+                                     **docflow.GENERAL_CALL}
 
         # The fixed approval note: the report is the first attachment, the rest
         # are SOPs. Unchanged, and still what C08 is accepted against.
@@ -897,8 +907,71 @@ class Coordinator:
                                  "prepared": prepared,
                                  "citation_sources": citation_sources}
 
+    def _general_document(self, job_id, answer, extra, *, model_id):
+        """Parse a general document, repairing the shape at most once.
+
+        The schema is enforced on the decoder, so a malformed reply should be
+        rare. When one arrives anyway it is nearly always a document that was
+        written and then wrapped wrongly, and asking the same model to send the
+        same content in the right shape recovers it without a second draft.
+
+        Exactly one repair, and only for the codes that mean "wrongly shaped"
+        rather than "nothing to shape" — `docflow.REPAIRABLE_CODES` says which,
+        and why the others would have to invent content. A reply the repair
+        cannot fix is reported, never retried again: a loop here would burn a
+        person's machine on a model that cannot produce the format at all.
+
+        Truncation never reaches this method. `_run` refuses any document reply
+        whose runtime stop reason was not `stop`, before the parse, so half a
+        JSON object is a failure rather than something to repair.
+        """
+        try:
+            return docflow.parse_general_document(answer)
+        except docflow.WorkflowError as exc:
+            if (exc.code not in docflow.REPAIRABLE_CODES
+                    or not extra.get("response_format")):
+                raise
+        if self.is_cancelled(job_id) or self.stopping.is_set():
+            raise docflow.Cancelled()
+
+        repaired, metrics = self._buffered_reply(
+            job_id, docflow.general_repair_messages(answer),
+            model_id=model_id, num_predict=extra.get("num_predict"),
+            response_format=extra.get("response_format"))
+        if metrics.get("done_reason") != "stop":
+            raise docflow.WorkflowError(
+                "incomplete",
+                "The model stopped before it finished rewriting the document "
+                f"({metrics.get('done_reason') or 'no reason reported'}). "
+                "Nothing was written.")
+        # Parsed once more and not caught: a second malformed reply is the
+        # answer, and it fails with its own reason rather than a third attempt.
+        return docflow.parse_general_document(repaired)
+
+    def _buffered_reply(self, job_id, messages, *, model_id, num_predict,
+                        response_format):
+        """One model call whose output is collected, not streamed.
+
+        Deliberately not the loop in `_run`: a repair reply is an internal
+        format fix, so it is never appended to the saved output and never
+        emitted to the page. The person sees the document or the failure.
+        """
+        collected, metrics = [], {}
+        for kind, payload in runtime.stream_chat(
+                messages, model=model_id, think=False,
+                num_predict=num_predict, response_format=response_format,
+                should_cancel=lambda: self.is_cancelled(job_id)
+                or self.stopping.is_set()):
+            if kind == "delta":
+                collected.append(payload)
+            elif kind == "cancelled":
+                raise docflow.Cancelled()
+            elif kind == "done":
+                metrics = payload
+        return "".join(collected), metrics
+
     def _document_answer(self, job_id, chat_id, attempt_id, skill_id, answer,
-                         prepared, extra):
+                         prepared, extra, *, model_id=None):
         """Turn the model's reply into the skill's real result."""
         if self.is_cancelled(job_id) or self.stopping.is_set():
             raise docflow.Cancelled()
@@ -908,7 +981,8 @@ class Coordinator:
             return docflow.read_answer(parsed, prepared, extra.get("notes", []))
 
         if extra.get("general"):
-            document = docflow.parse_general_document(answer)
+            document = self._general_document(job_id, answer, extra,
+                                              model_id=model_id)
             if self.is_cancelled(job_id) or self.stopping.is_set():
                 raise docflow.Cancelled()
             sources = prepared.sources if prepared else []
@@ -1043,9 +1117,19 @@ class Coordinator:
         current is exactly the fabricated health AF-007 forbids.
         """
         relationship = self.paired_worker()
+        store = pairing.credential_store()
         state = {
             "paired": relationship is not None,
-            "keychain_available": pairing.keychain_available(),
+            # Deprecated, and kept only so an older interface build keeps
+            # working. It is NOT a macOS-specific flag any more: it is derived
+            # from the same `store` read on the line below, so the two can never
+            # disagree, and on Windows or Linux it means "this computer's own
+            # protected store is usable". New callers read `credential_store`,
+            # which also says which store and why not — a Windows computer must
+            # never be told it is missing a macOS framework. Remove this field
+            # once no shipped interface reads it.
+            "keychain_available": store["available"],
+            "credential_store": store,
             "relationship": pairing.describe(relationship) if relationship else None,
             "node": None, "health": "unavailable", "identity_mismatch": None,
             "route_reason": None,
@@ -1233,15 +1317,19 @@ class Coordinator:
         """Complete OD-06 against a worker whose fingerprint a human confirmed.
 
         Order matters and is not an implementation detail: pin, verify the
-        presented certificate, redeem the code, store the credential in the
-        Keychain, and only then record the relationship. A row written before
-        the Keychain write would describe a pairing with no usable credential.
+        presented certificate, redeem the code, store the credential in the OS
+        credential store, and only then record the relationship. A row written
+        before that store accepts it would describe a pairing with no usable
+        credential.
         """
         fingerprint = pairing.normalise_fingerprint(fingerprint)
-        if not pairing.keychain_available():
+        store = pairing.credential_store()
+        if not store["available"]:
+            # The store's own words, so each platform names its own missing
+            # prerequisite instead of every computer being sent to fix macOS.
             raise RequestError(
-                "Pairing needs the macOS Keychain to hold the worker credential. "
-                "Storing it in the database is not permitted.", 501)
+                f"Pairing needs a protected credential store. {store['detail']} "
+                "Storing the credential in the database is not permitted.", 501)
         relationship_id = db.new_id()
         body = json.dumps({"relationship_id": relationship_id,
                            "workspace_id": self.workspace_id,

@@ -125,6 +125,17 @@ class TestBundleContents(unittest.TestCase):
         source = (REPO / "backend" / "coordinator" / "pdfrender.py").read_text()
         self.assertNotIn("\nimport Quartz", source,
                          "a top-level import would break the Ubuntu worker")
+        self.assertNotIn("\nimport pypdfium2", source,
+                         "a top-level import would break an install without it")
+
+    def test_the_portable_renderer_is_bundled_whole_not_merely_imported(self):
+        """pypdfium2 ships the PDFium binary as package data. modulegraph
+        follows imports and not data files, so the package has to be copied or
+        the bundle reports PDF unavailable on a Mac that has the renderer."""
+        packages = self.ns["OPTIONS"]["packages"]
+        self.assertIn("pypdfium2", packages)
+        self.assertIn("pypdfium2_raw", packages,
+                      "the PDFium binary lives in pypdfium2_raw")
 
     def test_the_desktop_lock_includes_the_existing_backend_versions(self):
         lock = (REPO / "desktop" / "requirements-macos.lock").read_text()
