@@ -47,6 +47,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+from backend.coordinator import device
+
 # The product directory name on platforms that capitalise application data, and
 # the lower-case form used where the convention is a dotted/XDG directory.
 PRODUCT_DIRECTORY = "Refinix"
@@ -239,10 +241,15 @@ class Occupancy:
     state_files: tuple[str, ...] = ()
     populated: tuple[str, ...] = ()          # defined subdirectories with content
     residue: tuple[str, ...] = ()
+    unreadable: tuple[str, ...] = ()
 
     @property
     def occupied(self) -> bool:
-        return bool(self.databases or self.state_files or self.populated)
+        # Unreadable is deliberately occupied. Treating "could not inspect" as
+        # "empty" can create a second writable store while the first still
+        # holds a workspace — the exact ambiguity this resolver prevents.
+        return bool(self.databases or self.state_files or self.populated
+                    or self.unreadable)
 
     @property
     def database(self) -> Path | None:
@@ -251,7 +258,7 @@ class Occupancy:
     def summary(self) -> str:
         """What was found, in the words a refusal can quote."""
         found = [*(p.name for p in self.databases), *self.state_files,
-                 *(f"{name}/" for name in self.populated)]
+                 *(f"{name}/" for name in self.populated), *self.unreadable]
         return ", ".join(found) if found else "nothing durable"
 
 
@@ -265,16 +272,18 @@ def inspect_root(root: str | os.PathLike) -> Occupancy:
     directory = Path(root)
     try:
         entries = sorted(directory.iterdir())
-    except OSError:
-        # A missing or unreadable root holds nothing as far as selection goes.
-        # The open that follows will fail with a real reason of its own.
+    except FileNotFoundError:
         return Occupancy()
+    except OSError as exc:
+        reason = exc.strerror or str(exc) or type(exc).__name__
+        return Occupancy(unreadable=(f"{directory} ({reason})",))
 
     database_names = (DATABASE_NAME, *ALTERNATE_DATABASE_NAMES)
     databases: list[Path] = []
     state_files: list[str] = []
     populated: list[str] = []
     residue: list[str] = []
+    unreadable: list[str] = []
 
     for entry in entries:
         name = entry.name
@@ -313,10 +322,11 @@ def inspect_root(root: str | os.PathLike) -> Occupancy:
             # over a stray file would be a worse failure than reporting it.
             residue.append(name)
         except OSError:
-            residue.append(f"{name} (unreadable)")
+            unreadable.append(f"{name} (unreadable)")
 
-    return Occupancy(tuple(databases), tuple(state_files), tuple(populated),
-                     tuple(residue))
+    return Occupancy(databases=tuple(databases), state_files=tuple(state_files),
+                     populated=tuple(populated), residue=tuple(residue),
+                     unreadable=tuple(unreadable))
 
 
 def database_in(root: str | os.PathLike) -> Path | None:
@@ -449,7 +459,7 @@ def select_root(*, platform: str | None = None, environ=None,
     return DataRoot(
         path=native, database=held_native.database or database_path(native),
         source="platform", legacy=legacy, platform=native,
-        detail=(f"Using the {_platform_label(platform)} location for "
+        detail=(f"Using the {device.os_label(platform)} location for "
                 f"application data: {native}."),
         unselected_residue=held_legacy.residue)
 
@@ -464,11 +474,6 @@ def require_root(**kwargs) -> DataRoot:
     if root.conflict is not None:
         raise root.conflict
     return root
-
-
-def _platform_label(platform: str | None) -> str:
-    platform = sys.platform if platform is None else platform
-    return {"darwin": "macOS", "win32": "Windows"}.get(platform, "Linux")
 
 
 def state_path(**kwargs) -> Path:

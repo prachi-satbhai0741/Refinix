@@ -460,25 +460,32 @@ class OtherRoutesUnconstrained(Harness):
     """Only general generation opted into the schema. The other routes must be
     called exactly as they were, because their replies are different shapes."""
 
-    def test_the_approval_note_route_is_not_given_the_document_schema(self):
+    def test_the_approval_note_route_gets_its_own_schema_not_the_documents(self):
         from backend.coordinator.test_documents import fake_stream
         record = self.attach("report.txt", b"page one\nvibration 7.9 mm/s")
         job = self.send("draft the approval note", skill_id=docflow.WRITE_SKILL,
                         doc_workflow=docflow.WORKFLOW_APPROVAL_NOTE)
         self.bind(job, record)
+        cite = [{"source_id": record["attachment_id"], "page": 1}]
         reply = json.dumps({
-            "title": "Approval note", "summary": "The pump exceeded its limit.",
-            "findings": [{"text": "Vibration 7.9 mm/s.",
-                          "citations": [{"source_id": record["attachment_id"],
-                                         "page": 1}]}],
-            "recommendation": "Re-torque and re-measure.",
+            "title": "Approval note",
+            "summary": {"text": "The pump exceeded its limit.",
+                        "citations": cite},
+            "findings": [{"text": "Vibration 7.9 mm/s.", "citations": cite}],
+            "recommendation": {"text": "Re-torque and re-measure.",
+                               "citations": cite},
             "unresolved": ["Suction pressure was not recorded."]})
         stream = fake_stream(reply)
         with patch.object(runtime, "stream_chat", stream):
             self.c._run(job, self.chat, docflow.WRITE_SKILL)
-        self.assertIsNone(stream.response_format,
-                          "the approval note has its own shape")
-        self.assertIsNone(stream.num_predict)
+        # Batch 3 gave the approval note its own enforced shape. What must
+        # stay true is that it is not handed the *document* one: the two
+        # replies are different objects and either grammar would refuse the
+        # other's output.
+        self.assertIsNotNone(stream.response_format)
+        self.assertNotEqual(stream.response_format,
+                            docflow.GENERAL_DOCUMENT_FORMAT)
+        self.assertEqual(stream.response_format, docflow.APPROVAL_NOTE_FORMAT)
         self.assertEqual(self.artifacts()[0]["workflow"],
                          docflow.WORKFLOW_APPROVAL_NOTE)
 

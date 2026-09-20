@@ -449,10 +449,21 @@ class TestOrdinaryChatAttachments(Harness):
         # Corrected after review: the rule is now a system instruction, which
         # a document cannot imitate. The injected text still arrives as user
         # content inside a fenced block, never as the system turn.
+        #
+        # Asserted as a property rather than a count. An attachment turn now
+        # carries two coordinator-authored system messages — the product
+        # identity and the untrusted-document rule — and the number may change
+        # again; what must never change is that none of them is written by the
+        # file.
         system = [m for m in stream.messages if m["role"] == "system"]
-        self.assertEqual(len(system), 1)
-        self.assertNotIn("Ignore previous instructions", system[0]["content"])
-        self.assertIn("untrusted data", system[0]["content"])
+        self.assertTrue(system, "the untrusted-document rule is a system turn")
+        for message in system:
+            self.assertNotIn("Ignore previous instructions", message["content"])
+            self.assertNotIn("evil.example", message["content"])
+        # The rule is present on one of them; which position it holds is not
+        # the contract.
+        self.assertTrue(any("untrusted data" in m["content"] for m in system),
+                        "the untrusted-document rule is still a system turn")
         injected = [m for m in stream.messages
                     if "Ignore previous instructions" in (m["content"] or "")]
         self.assertTrue(injected and all(m["role"] == "user" for m in injected))
@@ -529,12 +540,14 @@ class TestArtifactsAndRouting(Harness):
         job = self.send("draft the approval note", skill_id=docflow.WRITE_SKILL,
                         doc_workflow=docflow.WORKFLOW_APPROVAL_NOTE)
         self.bind(job, record)
+        cite = [{"source_id": record["attachment_id"], "page": 1}]
         reply = json.dumps({
-            "title": "Approval note", "summary": "The pump exceeded its limit.",
-            "findings": [{"text": "Vibration 7.9 mm/s.",
-                          "citations": [{"source_id": record["attachment_id"],
-                                         "page": 1}]}],
-            "recommendation": "Re-torque and re-measure.",
+            "title": "Approval note",
+            "summary": {"text": "The pump exceeded its limit.",
+                        "citations": cite},
+            "findings": [{"text": "Vibration 7.9 mm/s.", "citations": cite}],
+            "recommendation": {"text": "Re-torque and re-measure.",
+                               "citations": cite},
             "unresolved": ["Suction pressure was not recorded."]})
         with patch.object(runtime, "stream_chat", fake_stream(reply)):
             self.c._run(job, self.chat, docflow.WRITE_SKILL)
@@ -686,6 +699,14 @@ class TestWorkbookReading(unittest.TestCase):
 
 
 class TestPdfPaginationLogic(unittest.TestCase):
+    def test_list_markers_remain_visible_in_pdf_text(self):
+        self.assertEqual(
+            pdfgen._visible_text(docgen.Block("Finding", "ListNumber", "3")),
+            "3. Finding")
+        self.assertEqual(
+            pdfgen._visible_text(docgen.Block("Open item", "ListBullet", "•")),
+            "• Open item")
+
     def test_pagination_preserves_whitespace_without_native_frameworks(self):
         text = "AA  BBB\nCCCC"
 

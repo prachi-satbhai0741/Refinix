@@ -11,8 +11,13 @@ an easy and convincing lie:
 * **`unavailable` is not `zero`, `false`, or `healthy`.** A queue time that was
   never recorded is `None`, not `0`. A validation nobody ran is `unavailable`,
   not `failed`.
-* **A local attempt has no Pod evidence.** Documents runs on the Mac. Attaching
-  a `PodEvidence` to it would describe a Pod that does not exist.
+* **A local attempt has no Pod evidence.** Documents runs on the computer the
+  user is at. Attaching a `PodEvidence` to it would describe a Pod that does
+  not exist.
+* **A device is named by its role, not by an operating system.** Where an
+  attempt ran is "this computer" or "paired worker"; writing "macOS
+  coordinator" into the record made every Windows and Linux installation
+  report a machine that is not theirs.
 * **A validation attempt has no model evidence.** The sandbox runs no model, so
   `model` is `None` — not the model that happened to generate the patch.
 * **Configuration is not observation.** A NetworkPolicy that denies egress is
@@ -32,7 +37,7 @@ from __future__ import annotations
 import json
 
 from backend.contracts import v1
-from backend.coordinator import db
+from backend.coordinator import db, device
 
 # Where each displayed value came from. The UI shows these next to the value,
 # so a reader can tell a measurement from a record from an absence.
@@ -165,7 +170,7 @@ def attempt_proof(*, workspace_id: str, job_id: str, attempt: dict,
 
     return {
         "proof": json.loads(record.model_dump_json()),
-        "where": "Ubuntu worker" if remote else "macOS coordinator",
+        "where": device.location_label(local=not remote),
         "sources": {
             "state": SOURCE_SQLITE,
             "route_reason": SOURCE_SQLITE,

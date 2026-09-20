@@ -39,7 +39,7 @@ def digest(text: str) -> str:
 
 class Base(unittest.TestCase):
     def setUp(self):
-        if not repo.descriptor_traversal_supported():
+        if not repo.containment_supported():
             self.skipTest("this platform cannot contain repository access")
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

@@ -7,6 +7,7 @@ listener is synthetic, and the only state is a temporary directory.
 """
 
 import socket
+import sys
 import tempfile
 import threading
 import unittest
@@ -120,6 +121,92 @@ class TestEngine(unittest.TestCase):
             spawn=lambda *a, **k: self.fail("must not restart a live service"))
         state = supervisor.ensure()
         self.assertFalse(state["started_by_refinix"])
+
+
+class TestCrossPlatformEngineStart(unittest.TestCase):
+    """How the engine is located and started, on each OS family.
+
+    The failures here are quiet ones: a relative candidate path tested against
+    whatever folder Refinix was launched from, and a POSIX-only detachment flag
+    that Windows accepts and ignores — which left the engine in Refinix's
+    process group, where closing a console would take it down with the
+    application.
+    """
+
+    def test_a_relative_candidate_is_skipped_rather_than_resolved(self):
+        with patch.object(lifecycle, "OLLAMA_BINARIES",
+                          {"linux": ("some/relative/ollama",),
+                           sys.platform: ("some/relative/ollama",)}):
+            self.assertIsNone(lifecycle.find_ollama(which=lambda _n: None))
+
+    def test_a_bare_name_goes_through_the_path(self):
+        with patch.object(lifecycle, "OLLAMA_BINARIES",
+                          {"linux": ("ollama",), sys.platform: ("ollama",)}):
+            self.assertEqual(
+                lifecycle.find_ollama(which=lambda n: f"/somewhere/{n}"),
+                "/somewhere/ollama")
+
+    def test_an_absolute_candidate_is_used_only_when_it_is_executable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / "ollama"
+            binary.write_text("#!/bin/sh\n")
+            with patch.object(lifecycle, "OLLAMA_BINARIES",
+                              {"linux": (str(binary),),
+                               sys.platform: (str(binary),)}):
+                self.assertIsNone(lifecycle.find_ollama(which=lambda _n: None),
+                                  "a file nobody can execute is not the engine")
+                binary.chmod(0o700)
+                self.assertEqual(lifecycle.find_ollama(which=lambda _n: None),
+                                 str(binary))
+
+    def test_the_windows_candidates_never_include_a_relative_path(self):
+        for environ in ({}, {"LOCALAPPDATA": ""},
+                        {"LOCALAPPDATA": "AppData\\Local"},
+                        {"LOCALAPPDATA": "C:\\Users\\someone\\AppData\\Local"}):
+            with self.subTest(environ=environ), \
+                    patch.dict(lifecycle.os.environ, environ, clear=True):
+                candidates = lifecycle._windows_ollama_paths()
+                self.assertEqual(candidates[0], "ollama.exe")
+                for candidate in candidates[1:]:
+                    self.assertTrue(candidate[1:3] == ":\\" or candidate.startswith("\\\\"),
+                                    f"{candidate} is not absolute on Windows")
+
+    def test_a_set_local_appdata_contributes_its_per_user_location(self):
+        with patch.dict(lifecycle.os.environ,
+                        {"LOCALAPPDATA": "C:\\Users\\someone\\AppData\\Local"},
+                        clear=True):
+            self.assertEqual(len(lifecycle._windows_ollama_paths()), 3)
+
+    def test_posix_detaches_with_a_new_session(self):
+        with patch.object(lifecycle.sys, "platform", "darwin"):
+            self.assertEqual(lifecycle._detached(), {"start_new_session": True})
+
+    def test_windows_detaches_with_creation_flags_not_the_ignored_posix_flag(self):
+        with patch.object(lifecycle.sys, "platform", "win32"):
+            flags = lifecycle._detached()
+        self.assertNotIn("start_new_session", flags,
+                         "Windows accepts that flag and ignores it")
+        self.assertTrue(flags["creationflags"] & 0x8, "detached from the console")
+        self.assertTrue(flags["creationflags"] & 0x200, "its own process group")
+
+    def test_the_spawn_actually_carries_the_platform_flags(self):
+        seen = {}
+        supervisor = lifecycle.EngineSupervisor(
+            probe=probes(DOWN, REACHABLE), locate=lambda: "/usr/local/bin/ollama",
+            spawn=lambda argv, **kwargs: (seen.update(kwargs), FakeProcess())[1],
+            sleep=lambda _s: None)
+        supervisor.ensure()
+        for key, value in lifecycle._detached().items():
+            self.assertEqual(seen[key], value)
+
+    def test_one_install_hint_serves_every_platform(self):
+        self.assertIsInstance(lifecycle.INSTALL_HINT, str)
+        self.assertIn("ollama.com/download", lifecycle.INSTALL_HINT)
+
+    def test_every_platform_family_has_candidate_locations(self):
+        for platform in ("darwin", "linux", "win32"):
+            with self.subTest(platform=platform):
+                self.assertTrue(lifecycle.OLLAMA_BINARIES[platform])
 
 
 class TestModel(unittest.TestCase):

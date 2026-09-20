@@ -12,8 +12,13 @@ plain `py2app` build produces a bundle that stands on its own; the acceptance
 check for that is in desktop/README.md.
 
 The bundle carries the frontend and the icon. It does not carry a model, the
-model runtime, or any state: `~/.aegisforge` stays where it is, so an existing
-database, identity and history are picked up unchanged.
+model runtime, or any state: `backend.coordinator.paths` chooses the durable
+root, which is always outside the bundle, so an existing database, identity and
+history are picked up unchanged and survive the application being replaced.
+
+The application boundary itself — which modules, which frontend files, which
+icon — lives in `desktop/packaging.py`, shared with the Windows and Linux
+package steps so the three describe the same application.
 """
 
 from __future__ import annotations
@@ -26,38 +31,22 @@ from pathlib import Path
 
 from setuptools import setup
 
-REPO = Path(__file__).resolve().parents[1]
-VERSION = "0.1.0"
-APPLICATION_PACKAGES = ("desktop", "backend/coordinator", "backend/contracts")
+from desktop import packaging
 
+REPO = packaging.REPO
+VERSION = packaging.VERSION
+APPLICATION_PACKAGES = packaging.APPLICATION_PACKAGES
+BUNDLE_ID = packaging.BUNDLE_ID
 
-def stage_application_sources(destination: Path) -> Path:
-    """Give modulegraph source-only packages, never the package's build/venv.
-
-    py2app recursively copies non-Python package data. Pointing it at desktop/
-    would copy its virtualenv and recursively copy the build into itself.
-    The frontend is shipped separately by frontend_data_files().
-    """
-    for package in APPLICATION_PACKAGES:
-        target = destination / package
-        target.mkdir(parents=True, exist_ok=True)
-        for source in (REPO / package).glob("*.py"):
-            if source.name.startswith(("test_", "setup_")):
-                continue
-            shutil.copy2(source, target / source.name)
-    # Make the existing backend namespace explicit only in the build staging
-    # tree; no worker code or unrelated repository data belongs in this app.
-    (destination / "backend" / "__init__.py").touch()
-    return destination
+# The application boundary — which modules, which frontend files, which icon —
+# lives in `desktop/packaging.py` so a Windows or Linux packaging step uses the
+# same answers instead of a second hand-maintained list.
+stage_application_sources = packaging.stage_application_sources
+frontend_data_files = packaging.frontend_data_files
 
 
 def verify_application_contents(bundle: Path) -> None:
     """Check both loose packages and the ZIP, not just the staging directory."""
-    allowed = {"backend/__init__.py"}
-    for package in APPLICATION_PACKAGES:
-        allowed.update(f"{package}/{source.name}" for source in (REPO / package).glob("*.py")
-                       if not source.name.startswith(("test_", "setup_")))
-    allowed |= {name + "c" for name in allowed}
     library = bundle / "Contents" / "Resources" / "lib"
     shipped = set()
     for root in library.glob("python3.*"):
@@ -68,33 +57,12 @@ def verify_application_contents(bundle: Path) -> None:
         with zipfile.ZipFile(archive) as files:
             shipped.update(name for name in files.namelist()
                            if name.startswith(("backend/", "desktop/")) and not name.endswith("/"))
-    unexpected = shipped - allowed
-    required = ("backend/coordinator/server.py", "backend/contracts/v1.py", "desktop/shell.py")
-    missing = [name for name in required if not {name, name + "c"} & shipped]
+    unexpected = packaging.unexpected_shipped_files(shipped)
+    missing = packaging.missing_shipped_files(
+        shipped, ("backend/coordinator/server.py", "backend/contracts/v1.py",
+                  "desktop/shell.py"))
     if unexpected or missing:
-        raise RuntimeError(f"Invalid application bundle: unexpected={sorted(unexpected)}, missing={missing}")
-
-# Reverse-DNS identifier. Nothing is signed or distributed from this repository,
-# so this is a local identifier only; a real distribution needs an owned domain
-# and a Developer ID, which is a requester decision, not an implementation one.
-BUNDLE_ID = "com.refinix.desktop"
-
-
-def frontend_data_files() -> list[tuple[str, list[str]]]:
-    """Ship frontend/app exactly as the coordinator serves it."""
-    root = REPO / "frontend" / "app"
-    grouped: dict[str, list[str]] = {}
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.name.startswith("."):
-            continue
-        # The synthetic UI fixture and its Node check are development tools.
-        if path.name in ("fixture.html", "fixture.js") or path.name.endswith(".cjs"):
-            continue
-        parent = path.relative_to(root).parent
-        destination = "frontend/app" if parent == Path(".") else \
-            str(Path("frontend/app") / parent)
-        grouped.setdefault(destination, []).append(str(path))
-    return sorted(grouped.items())
+        raise RuntimeError(f"Invalid application bundle: unexpected={unexpected}, missing={missing}")
 
 
 PLIST = {
@@ -121,7 +89,7 @@ PLIST = {
 OPTIONS = {
     "bdist_base": str(REPO / "desktop" / "build"),
     "dist_dir": str(REPO / "desktop" / "dist"),
-    "iconfile": str(REPO / "desktop" / "icons" / "Refinix.icns"),
+    "iconfile": str(packaging.icon_for("macos")),
     "plist": PLIST,
     # pywebview carries JS/native resources, and pypdfium2 ships the PDFium
     # binary as package data (`pypdfium2_raw/libpdfium.dylib`). Both must be

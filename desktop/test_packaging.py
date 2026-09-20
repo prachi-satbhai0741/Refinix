@@ -20,7 +20,8 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import server
+from backend.coordinator import paths, server
+from desktop import packaging
 
 REPO = Path(__file__).resolve().parents[1]
 ICONS = REPO / "desktop" / "icons"
@@ -170,6 +171,112 @@ class TestBundleMetadata(unittest.TestCase):
     def test_the_icon_file_the_build_points_at_exists(self):
         options = setup_module_namespace()["OPTIONS"]
         self.assertTrue(Path(options["iconfile"]).is_file())
+
+
+class TestTheSharedBoundary(unittest.TestCase):
+    """One application boundary, used by every platform's package step.
+
+    The macOS build owned these answers privately, inside a script that exits
+    on anything but Darwin, so a Windows or Linux step had to restate them and
+    would drift. These checks are what stop the shared version drifting
+    instead.
+    """
+
+    def test_the_three_platforms_share_one_module_list(self):
+        modules = packaging.application_module_names()
+        for platform in ("macos", "windows", "linux"):
+            with self.subTest(platform=platform):
+                self.assertEqual(set(packaging.plan(platform)["modules"]),
+                                 modules)
+
+    def test_no_test_fixture_or_build_module_is_inside_the_boundary(self):
+        for name in packaging.application_module_names():
+            with self.subTest(module=name):
+                self.assertFalse(Path(name).name.startswith(("test_", "setup_")))
+                self.assertNotIn("worker", name)
+
+    def test_the_worker_and_the_repository_tooling_are_excluded_by_name(self):
+        excluded = packaging.plan("windows")["excludes"]["packages"]
+        for name in ("backend/worker", "deploy", "fixtures", "scripts", "docs"):
+            self.assertIn(name, excluded)
+
+    def test_a_new_coordinator_module_joins_the_boundary_automatically(self):
+        """A per-file list would have to be edited; a rule does not."""
+        for name in ("models.py", "device.py", "winfs.py", "paths.py"):
+            with self.subTest(module=name):
+                self.assertIn(f"backend/coordinator/{name}",
+                              packaging.application_module_names())
+
+    def test_each_platform_selects_its_own_icon_and_they_all_exist(self):
+        for platform in ("macos", "windows", "linux"):
+            with self.subTest(platform=platform):
+                for asset in packaging.platform_assets(platform):
+                    self.assertTrue(asset.is_file(), f"{asset} is missing")
+
+    def test_linux_ships_every_launcher_size_not_only_one(self):
+        self.assertEqual(len(packaging.platform_assets("linux")),
+                         len(packaging.LINUX_ICON_SIZES))
+
+    def test_an_unpackaged_platform_is_refused_rather_than_guessed(self):
+        with self.assertRaises(ValueError):
+            packaging.icon_for("solaris")
+
+    def test_only_macos_claims_it_can_be_built_from_this_checkout(self):
+        """A plan that read as a capability would be fabricated readiness."""
+        self.assertTrue(packaging.plan("macos")["buildable"])
+        for platform in ("windows", "linux"):
+            with self.subTest(platform=platform):
+                plan = packaging.plan(platform)
+                self.assertFalse(plan["buildable"])
+                self.assertIn("No ", plan["checkpoint"])
+                self.assertIn("remaining step", plan["checkpoint"])
+
+    def test_every_platform_names_the_native_prerequisites_it_imposes(self):
+        for platform in ("macos", "windows", "linux"):
+            with self.subTest(platform=platform):
+                self.assertTrue(packaging.plan(platform)["native_prerequisites"])
+
+    def test_no_platform_data_root_lands_inside_an_application_package(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            for platform in ("darwin", "win32", "linux"):
+                with self.subTest(platform=platform):
+                    root = paths.platform_root(platform=platform, environ={},
+                                               home=home)
+                    self.assertTrue(packaging.runtime_data_is_external(root))
+        # The check is real: a root inside a bundle is refused.
+        self.assertFalse(packaging.runtime_data_is_external(
+            Path("/Applications/Refinix.app/Contents/Resources/data")))
+
+    def test_the_frontend_group_is_the_same_for_every_platform(self):
+        destinations = [destination for destination, _f
+                        in packaging.frontend_data_files()]
+        self.assertIn("frontend/app", destinations)
+        for platform in ("macos", "windows", "linux"):
+            self.assertEqual(packaging.plan(platform)["frontend"], destinations)
+
+    def test_a_shipped_package_carrying_something_else_is_reported(self):
+        shipped = set(packaging.application_module_names())
+        self.assertEqual(packaging.unexpected_shipped_files(shipped), [])
+        shipped.add("backend/worker/app.py")
+        self.assertEqual(packaging.unexpected_shipped_files(shipped),
+                         ["backend/worker/app.py"])
+
+    def test_a_missing_required_module_is_reported_by_name(self):
+        self.assertEqual(
+            packaging.missing_shipped_files({"desktop/shell.pyc"},
+                                            ("desktop/shell.py",
+                                             "backend/coordinator/server.py")),
+            ["backend/coordinator/server.py"])
+
+    def test_prerequisites_are_probed_rather_than_named_from_the_platform(self):
+        observed = packaging.prerequisites()
+        for key in ("credential_store", "pdf_reading", "word_writing",
+                    "code_containment"):
+            with self.subTest(key=key):
+                self.assertIn("available", observed[key])
+                self.assertIsInstance(observed[key]["available"], bool)
+        self.assertEqual(observed["platform"]["platform"], sys.platform)
 
 
 class TestIconAssets(unittest.TestCase):

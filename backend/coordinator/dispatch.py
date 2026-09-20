@@ -1,4 +1,4 @@
-"""AF-006 routing: Mac coordinator to a paired worker, and back honestly.
+"""AF-006 routing: this workspace to a paired worker, and back honestly.
 
 This module decides *whether* to dispatch, builds the envelope, talks to the
 worker over the pinned channel, and turns the worker's event stream back into

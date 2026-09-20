@@ -131,7 +131,7 @@ class CodeService:
         Checked before the policy gate, so an unsupported computer never even
         creates an approval for work it could not carry out safely.
         """
-        if repo.descriptor_traversal_supported():
+        if repo.containment_supported():
             return
         db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
                         action="repo.platform", outcome="denied",
@@ -1551,7 +1551,10 @@ class CodeService:
                        "max_total_bytes": repo.MAX_TOTAL_BYTES},
             # One answer for the whole surface: without descriptor-relative
             # traversal nothing here is safe, reading included.
-            "code_supported": repo.descriptor_traversal_supported(),
-            "writes_supported": repo.descriptor_traversal_supported(),
-            "platform_note": None if repo.descriptor_traversal_supported() else repo.PLATFORM_NOTE,
+            "code_supported": repo.containment_supported(),
+            "writes_supported": repo.containment_supported(),
+            "platform_note": None if repo.containment_supported() else repo.PLATFORM_NOTE,
+            # Which guarantee this computer gives, so the surface can say so
+            # rather than implying one shape of support on every platform.
+            "containment_backend": repo.containment_backend(),
         }

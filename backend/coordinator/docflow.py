@@ -78,16 +78,6 @@ MAX_CONTEXT_CHARS = 12_000
 # for. Bounded on purpose: no document is allowed to generate without a ceiling.
 DOCUMENT_NUM_PREDICT = 3072
 
-# How much of a malformed reply the one repair turn may carry back. It has to be
-# the WHOLE reply: the repair instruction promises to keep every paragraph, and a
-# model shown two thirds of its own document would honour that promise against
-# two thirds of it — producing a shorter document that passes the schema and the
-# parser with the rest silently gone. `context.CHARS_PER_TOKEN` is the estimate
-# used elsewhere, and a reply cannot exceed DOCUMENT_NUM_PREDICT tokens, so this
-# covers any reply the budget above can produce, with slack for the estimate.
-MAX_REPAIR_REPLY_CHARS = int(DOCUMENT_NUM_PREDICT * 4) + 2_000
-
-
 class WorkflowError(RuntimeError):
     """A stop with a reason the person can act on."""
 
@@ -271,10 +261,12 @@ before or after it, no markdown fences.
 
 {
   "title": "short title for the approval note",
-  "summary": "one paragraph describing what the report found",
+  "summary": {"text": "one paragraph describing what the report found",
+              "citations": [{"source_id": "<id from a DOCUMENT block>", "page": 1}]},
   "findings": [{"text": "one finding",
                 "citations": [{"source_id": "<id from a DOCUMENT block>", "page": 1}]}],
-  "recommendation": "what the note recommends",
+  "recommendation": {"text": "what the note recommends",
+                     "citations": [{"source_id": "<id from a DOCUMENT block>", "page": 1}]},
   "unresolved": ["anything the documents did not establish"]
 }
 
@@ -283,8 +275,89 @@ Rules:
   page numbers that appear in that document.
 - If a fact is not in the documents, put it in "unresolved". Never invent a
   value, a date, a measurement, a name or a reference.
-- Every finding must have at least one citation. Put anything not established
-  by a cited page in "unresolved" instead."""
+- The summary, every finding and the recommendation each need at least one
+  citation. A citation on one of them does not support the others: whatever a
+  sentence claims, cite the page it came from.
+- Do not write a conclusion the cited pages do not carry. If the documents do
+  not establish that something is compliant, approved, safe, passed or within
+  limits, do not say so — put what is missing in "unresolved" instead."""
+
+
+_REPORT_DETAILS = {
+    "report number": "Report number",
+    "report no": "Report number",
+    "asset": "Asset",
+    "asset location": "Asset location",
+    "inspection date": "Inspection date",
+    "inspector": "Inspector",
+    "inspection standard": "Inspection standard",
+}
+_OPEN_VALUE = re.compile(
+    r"\b(?:not recorded|not countersigned|illegible|could not be|unknown|"
+    r"unavailable|not provided|not stated|missing)\b", re.IGNORECASE)
+_FIELD_LINE = re.compile(r"^([^:\n]{1,80}):\s*(.+)$")
+MAX_REPORT_DETAILS = 8
+MAX_REPORT_OPEN_ITEMS = 8
+MAX_REPORT_EVIDENCE_CHARS = 240
+
+
+def _logical_lines(text: str) -> list[str]:
+    """Join indented continuations without guessing across real fields."""
+    lines: list[str] = []
+    for raw in (text or "").splitlines():
+        stripped = " ".join(raw.split())
+        if not stripped:
+            continue
+        if raw[:1].isspace() and lines and ":" not in stripped:
+            lines[-1] += " " + stripped
+        else:
+            lines.append(stripped)
+    return lines
+
+
+def report_evidence(report: dict, pages: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Coordinator-owned traceability and explicit open report evidence.
+
+    These are copied from labelled report fields, not inferred by the model.
+    That makes identifiers and explicit missing values impossible to omit from
+    the artifact while keeping document text untrusted data.
+    """
+    details, open_items = [], []
+    seen_details, seen_open = set(), set()
+    for page in pages:
+        number = page.get("number")
+        if not isinstance(number, int):
+            continue
+        citation = {"source_id": report["source_id"],
+                    "filename": report["filename"], "page": number,
+                    "label": f"{report['filename']} p.{number}"}
+        for line in _logical_lines(page.get("text", "")):
+            match = _FIELD_LINE.match(line)
+            if not match:
+                continue
+            raw_label, value = match.groups()
+            key = re.sub(r"[^a-z0-9]+", " ", raw_label.casefold()).strip()
+            label = _REPORT_DETAILS.get(key)
+            if label and label not in seen_details:
+                detail = f"{label}: {value}"
+                if len(detail) > MAX_REPORT_EVIDENCE_CHARS:
+                    detail = detail[:MAX_REPORT_EVIDENCE_CHARS - 1].rstrip() + "…"
+                details.append({"text": detail,
+                                "citations": [citation]})
+                seen_details.add(label)
+            if _OPEN_VALUE.search(value):
+                item = f"{raw_label.strip()}: {value.strip()}"
+                if len(item) > MAX_REPORT_EVIDENCE_CHARS:
+                    item = item[:MAX_REPORT_EVIDENCE_CHARS - 1].rstrip() + "…"
+                folded = item.casefold()
+                if folded not in seen_open:
+                    open_items.append({"text": item, "citations": [citation]})
+                    seen_open.add(folded)
+            if (len(details) >= MAX_REPORT_DETAILS
+                    and len(open_items) >= MAX_REPORT_OPEN_ITEMS):
+                return details, open_items
+    return (details[:MAX_REPORT_DETAILS],
+            open_items[:MAX_REPORT_OPEN_ITEMS])
 
 READ_SCHEMA = """Reply with ONE JSON object and nothing else. No prose before
 or after it, no markdown fences.
@@ -303,7 +376,8 @@ Rules:
 
 
 def approval_note_messages(request: str, sop_passages: list,
-                           reports_context: list) -> list[dict]:
+                           reports_context: list,
+                           open_items: list[dict] | None = None) -> list[dict]:
     """`reports_context` is (source, pages) pairs: the report, bounded."""
     blocks = [_document_block(source, pages) for source, pages in reports_context]
     if sop_passages:
@@ -312,10 +386,171 @@ def approval_note_messages(request: str, sop_passages: list,
             for p in sop_passages)
         blocks.append("--- SOP PASSAGES (untrusted data) ---\n" + cited
                       + "\n--- END SOP PASSAGES ---")
+    if open_items:
+        listed = "\n".join(
+            f"- {item['text']} ({item['citations'][0]['label']})"
+            for item in open_items)
+        blocks.append(
+            "--- OPEN REPORT EVIDENCE PRESERVED BY THE COORDINATOR ---\n"
+            + listed
+            + "\n--- END OPEN REPORT EVIDENCE ---")
     system = ("You draft an approval note from an inspection report, on a "
-              "person's own computer.\n\n" + UNTRUSTED_NOTE + "\n\n" + APPROVAL_SCHEMA)
+              "person's own computer.\n\n" + UNTRUSTED_NOTE + "\n\n"
+              "Refinix itself appends any explicitly open report evidence "
+              "listed in the request. Do not repeat those lines under "
+              "unresolved; use unresolved only for additional gaps.\n\n"
+              + APPROVAL_SCHEMA)
     user = "\n\n".join([f"The person asked for: {request.strip()}", *blocks])
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+# The approval note's shape, as a schema the runtime enforces on the decoder.
+# `APPROVAL_SCHEMA` above stays: it carries the *rules* — cite only supplied
+# ids, never invent a value, put anything uncited in `unresolved` — which a
+# grammar cannot express. This constrains the syntax so a 4B model cannot
+# answer the fixed workflow with a markdown fence, which was the one failure
+# mode the general path had already been hardened against.
+#
+# Syntax only, and deliberately so. A grammar can promise `citations` is a list
+# of {source_id, page}; it cannot promise those point at a document that was
+# selected or a page that exists. `parse_approval_note` and `retrieval.resolve`
+# still decide that afterwards, and a note that cites something it was never
+# given still fails whatever the grammar allowed.
+APPROVAL_NOTE_FORMAT = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "summary": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "citations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"source_id": {"type": "string"},
+                                       "page": {"type": "integer"}},
+                        "required": ["source_id", "page"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["text", "citations"],
+            "additionalProperties": False,
+        },
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "citations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"source_id": {"type": "string"},
+                                           "page": {"type": "integer"}},
+                            "required": ["source_id", "page"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["text", "citations"],
+                "additionalProperties": False,
+            },
+        },
+        "recommendation": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "citations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"source_id": {"type": "string"},
+                                       "page": {"type": "integer"}},
+                        "required": ["source_id", "page"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["text", "citations"],
+            "additionalProperties": False,
+        },
+        "unresolved": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["title", "summary", "findings", "recommendation", "unresolved"],
+    "additionalProperties": False,
+}
+
+# A note is bounded by MAX_FINDINGS rather than by subject length: twenty
+# findings, each a sentence plus its citation objects, come to roughly 2,000
+# tokens once JSON keys and escaping are paid for, and the summary,
+# recommendation and unresolved list add several hundred more. 3,072 covers a
+# maximal note and still leaves the worst-case prompt — the report pages and SOP
+# passages, up to MAX_CONTEXT_CHARS — inside `runtime.NUM_CTX` with the runtime's
+# truncate and shift off. Sized for this workflow, not inherited from the
+# general document's.
+APPROVAL_NUM_PREDICT = 3072
+
+APPROVAL_CALL = {"response_format": APPROVAL_NOTE_FORMAT,
+                 "num_predict": APPROVAL_NUM_PREDICT}
+
+# How much of a malformed reply the one repair turn may carry back. It has to be
+# the WHOLE reply: the repair instruction promises to keep every finding and
+# paragraph, and a model shown two thirds of its own output would honour that
+# promise against two thirds of it — returning something shorter that passes the
+# schema and the parser with the rest silently gone. Four characters a token is
+# the estimate used elsewhere, and a reply cannot exceed its route's budget, so
+# this covers anything either can produce with slack to spare. It tracks the
+# larger of the two deliberately: deriving it from one would start truncating
+# the other the moment that one was raised.
+MAX_REPAIR_REPLY_CHARS = int(max(DOCUMENT_NUM_PREDICT,
+                                 APPROVAL_NUM_PREDICT) * 4) + 2_000
+
+APPROVAL_REPAIR_SYSTEM = (
+    "You repair the format of an approval note that has already been drafted. "
+    "You are not drafting a note, you have no inspection report and no "
+    "procedure in front of you, and you cannot check anything: the text below "
+    "is the whole of the material, and your only task is to return it in the "
+    "required shape.")
+
+APPROVAL_REPAIR_INSTRUCTION = (
+    "The reply below was meant to be one JSON object of the required shape and "
+    "was not. Send the same note again in exactly this shape and nothing "
+    "else:\n"
+    '{"title": "...", '
+    '"summary": {"text": "...", "citations": [{"source_id": "...", "page": 1}]}, '
+    '"findings": [{"text": "...", "citations": [{"source_id": "...", "page": 1}]}], '
+    '"recommendation": {"text": "...", "citations": [{"source_id": "...", "page": 1}]}, '
+    '"unresolved": ["..."]}\n\n'
+    "Repair the format only. Every finding, every citation, every unresolved "
+    "item and the summary and recommendation must come back word for word, in "
+    "the same order, each keeping its own citations.\n"
+    "Do not add or remove a finding. Do not add, remove, renumber or change a "
+    "citation, and never replace one with a different source or page. Do not "
+    "supply a measurement, a date or a value that is absent. Do not move "
+    "anything out of the unresolved list or resolve it. Do not add a "
+    "conclusion — nothing about approval, compliance, safety, passing, or "
+    "readings being within limits — that is not already written below.")
+
+
+def approval_repair_messages(reply: str) -> list[dict]:
+    """The one repair turn for a note: the malformed reply and its shape.
+
+    Self-contained for the same two reasons the general repair is, and for one
+    more that matters more here. The report pages and SOP passages are
+    deliberately *not* resent: a model holding the evidence again could redraft
+    a finding or choose a different citation and still satisfy every check,
+    because the new citation would resolve. With nothing but its own text in
+    front of it, the only note it can return is the one it already wrote.
+    """
+    return [{"role": "system", "content": APPROVAL_REPAIR_SYSTEM},
+            {"role": "user",
+             "content": (APPROVAL_REPAIR_INSTRUCTION
+                         + "\n\n--- REPLY TO REPAIR ---\n"
+                         + (reply or "")[:MAX_REPAIR_REPLY_CHARS]
+                         + "\n--- END REPLY ---")}]
 
 
 GENERAL_SCHEMA = (
@@ -823,6 +1058,26 @@ def parse_approval_note(reply: str, sources: list[dict]) -> dict:
             return ""
         return _strict_text(value, name)
 
+    def claim_field(name: str) -> dict:
+        """A sentence the note asserts, with the evidence it rests on.
+
+        The summary and the recommendation are where a note says what it
+        concludes, and they used to be plain strings. A cited finding elsewhere
+        in the same note did nothing to support them, so "equipment is fully
+        compliant and approved for unrestricted operation" passed the grounded
+        workflow as long as some unrelated finding carried a citation. They now
+        answer for themselves, through the same resolver everything else uses.
+        """
+        value = loaded.get(name)
+        if not isinstance(value, dict) or set(value) != {"text", "citations"}:
+            raise WorkflowError(
+                "bad_claim",
+                f"The {name} was not in the expected shape: it needs its own "
+                "text and its own citations.")
+        return {"text": _strict_text(value["text"], name),
+                "citations": _strict_citations(value["citations"], sources,
+                                               required=True)}
+
     findings_raw = loaded["findings"]
     if not isinstance(findings_raw, list):
         raise WorkflowError("bad_findings", "The model's findings were not a list.")
@@ -840,8 +1095,31 @@ def parse_approval_note(reply: str, sources: list[dict]) -> dict:
 
     unresolved_items = _strict_unresolved(loaded["unresolved"])
 
-    return {"title": text_field("title"), "summary": text_field("summary"),
-            "findings": findings, "recommendation": text_field("recommendation"),
+    # A note with no findings carries no citations anywhere: the summary and
+    # the recommendation are free text, so "everything is in order, approved
+    # for continued operation" would pass the *grounded* workflow having cited
+    # nothing at all. Every finding needing a citation is worth nothing if a
+    # note is allowed to have no findings.
+    #
+    # Empty findings are still legitimate in one case — the documents
+    # established nothing — and that case has to say so. This is the rule
+    # `parse_read_answer` already applies to an answer, applied to a note.
+    # Fields first: a missing or oversized title is a more specific and more
+    # actionable answer than "nothing is grounded", and checking grounding
+    # ahead of it would mask the real problem behind a vaguer one.
+    title = text_field("title")
+    summary = claim_field("summary")
+    recommendation = claim_field("recommendation")
+
+    if not findings and not unresolved_items:
+        raise WorkflowError(
+            "ungrounded_note",
+            "The note made no cited finding and listed nothing as unresolved, "
+            "so nothing in it is supported by the documents. Nothing was "
+            "written.")
+
+    return {"title": title, "summary": summary,
+            "findings": findings, "recommendation": recommendation,
             "unresolved": unresolved_items,
             "unresolved_citations": []}
 
@@ -850,21 +1128,36 @@ def parse_approval_note(reply: str, sources: list[dict]) -> dict:
 # Artifact assembly
 # --------------------------------------------------------------------------
 
+def _cited(claim: dict) -> str:
+    """A claim with its sources named after it, the way a finding is."""
+    labels = "".join(f" ({c['label']})" for c in claim["citations"])
+    return f"{claim['text']}{labels}"
+
+
 def note_blocks(note: dict, sources: list[dict], passages: list) -> list[docgen.Block]:
-    blocks = [docgen.Block(note["title"], "Title"),
-              docgen.Block("Summary", "Heading1"),
-              docgen.Block(note["summary"])]
+    blocks = [docgen.Block(note["title"], "Title")]
+    if note.get("report_details"):
+        blocks.append(docgen.Block("Report details", "Heading1"))
+        for detail in note["report_details"]:
+            blocks.append(docgen.Block(_cited(detail), "ListBullet", "•"))
+    blocks += [docgen.Block("Summary", "Heading1"),
+              docgen.Block(_cited(note["summary"]))]
     if note["findings"]:
         blocks.append(docgen.Block("Findings", "Heading1"))
         for index, finding in enumerate(note["findings"], start=1):
             citations = "".join(f" ({c['label']})" for c in finding["citations"])
-            blocks.append(docgen.Block(f"{index}. {finding['text']}{citations}"))
+            blocks.append(docgen.Block(f"{finding['text']}{citations}",
+                                       "ListNumber", str(index)))
     blocks += [docgen.Block("Recommendation", "Heading1"),
-               docgen.Block(note["recommendation"])]
+               docgen.Block(_cited(note["recommendation"]))]
+    if note.get("open_items"):
+        blocks.append(docgen.Block("Open items recorded in the report", "Heading1"))
+        for item in note["open_items"]:
+            blocks.append(docgen.Block(_cited(item), "ListBullet", "•"))
     if note["unresolved"]:
         blocks.append(docgen.Block("Not established by these documents", "Heading1"))
         for item in note["unresolved"]:
-            blocks.append(docgen.Block(f"• {item}"))
+            blocks.append(docgen.Block(item, "ListBullet", "•"))
     blocks.append(docgen.Block("Sources", "Heading1"))
     for source in sources:
         pages = source["page_count"]
@@ -878,6 +1171,28 @@ def note_blocks(note: dict, sources: list[dict], passages: list) -> list[docgen.
         blocks.append(docgen.Block("Passages used", "Heading2"))
         for passage in passages:
             blocks.append(docgen.Block(f"{passage.citation}: {passage.text}", "Quote"))
+    else:
+        # Said in the artifact, not left to the reader to notice. The note is
+        # still grounded — every finding cites the report — but nothing was
+        # checked against a procedure, and a note that looked the same either
+        # way would let "drafted from an inspection report" be read as
+        # "checked against the standard". The two cases are distinguished
+        # because the fix differs: attach a reference, or accept that none
+        # applied. `sources[0]` is the report; anything after it is a
+        # reference source the person selected.
+        blocks.append(docgen.Block("Procedure comparison", "Heading2"))
+        blocks.append(docgen.Block(
+            ("A reference document was read, but no passage in it matched "
+             "this request, so nothing here was compared against one."
+             if len(sources) > 1 else
+             # Not "none was selected": a procedure may have been attached and
+             # been unreadable, in which case it is missing from `sources` and
+             # this block cannot tell the two apart. The sentence says what is
+             # certainly true either way.
+             "No reference or procedure passage was used, so nothing here was "
+             "compared against one. Attach a procedure to have these findings "
+             "checked against it."),
+            "Quote"))
     blocks.append(docgen.Block(
         "Drafted by Refinix on this computer from the documents listed above. "
         "A person must check it before it is used.", "Quote"))
@@ -885,9 +1200,13 @@ def note_blocks(note: dict, sources: list[dict], passages: list) -> list[docgen.
 
 
 def citation_list(note: dict) -> list[dict]:
+    """Every citation the note rests on, including the summary's and the
+    recommendation's — the artifact record must show what supported the
+    conclusion, not only what supported the findings."""
     seen, found = set(), []
-    for finding in note["findings"]:
-        for citation in finding["citations"]:
+    for claim in (note["summary"], note["recommendation"], *note["findings"],
+                  *note.get("report_details", []), *note.get("open_items", [])):
+        for citation in claim["citations"]:
             key = (citation["source_id"], citation["page"])
             if key not in seen:
                 seen.add(key)
@@ -898,7 +1217,7 @@ def citation_list(note: dict) -> list[dict]:
 def artifact_answer(note: dict, artifact: dict, prepared: Prepared,
                     passages: list) -> str:
     """The chat message that accompanies a generated document."""
-    lines = [f"**{note['title']}**", "", note["summary"], ""]
+    lines = [f"**{note['title']}**", "", note["summary"]["text"], ""]
     if note["findings"]:
         lines.append(f"{len(note['findings'])} finding(s) recorded.")
     citations = citation_list(note)
@@ -906,6 +1225,9 @@ def artifact_answer(note: dict, artifact: dict, prepared: Prepared,
     if note["unresolved"]:
         lines += ["", "Left unresolved:"]
         lines += [f"- {item}" for item in note["unresolved"]]
+    if note.get("open_items"):
+        lines += ["", "Open items recorded in the report:"]
+        lines += [f"- {item['text']}" for item in note["open_items"]]
     if prepared.skipped:
         lines += ["", "Not read:"]
         lines += [f"- {item['filename']}: {item['reason']}" for item in prepared.skipped]

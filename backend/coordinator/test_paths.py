@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from backend.coordinator import paths
+from backend.coordinator import device, paths
 
 
 class PlatformRoots(unittest.TestCase):
@@ -211,6 +213,14 @@ class OccupiedRoots(unittest.TestCase):
     def test_a_missing_root_is_empty_rather_than_an_error(self):
         self.assertIsNone(paths.database_in(self.root / "absent"))
 
+    def test_an_unreadable_root_is_never_treated_as_empty(self):
+        with patch.object(Path, "iterdir",
+                          side_effect=PermissionError("permission denied")):
+            held = paths.inspect_root(self.root)
+        self.assertTrue(held.occupied)
+        self.assertTrue(held.unreadable)
+        self.assertIn("permission denied", held.summary())
+
     @unittest.skipIf(os.name != "posix", "POSIX permission bits")
     def test_owner_only_is_observed_not_enforced(self):
         os.chmod(self.root, 0o700)
@@ -253,6 +263,16 @@ class Selection(unittest.TestCase):
         self.assertEqual(chosen.path, self.legacy)
         self.assertEqual(chosen.source, "legacy")
         self.assertIn("separate versioned migration", chosen.detail)
+
+    def test_an_unreadable_legacy_store_is_not_replaced_by_a_new_one(self):
+        unreadable = paths.Occupancy(unreadable=("legacy (unreadable)",))
+        empty = paths.Occupancy()
+        with patch.object(paths, "inspect_root",
+                          side_effect=lambda root: unreadable
+                          if root == self.legacy else empty):
+            chosen = self.select()
+        self.assertEqual(chosen.path, self.legacy)
+        self.assertEqual(chosen.source, "legacy")
 
     def test_an_explicit_override_wins_over_both(self):
         self.occupy(self.legacy)
@@ -362,3 +382,54 @@ class Selection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDeviceLabels(unittest.TestCase):
+    """How Refinix is allowed to describe the computer it is running on.
+
+    The product had two operating systems written into its source as device
+    names — "macOS coordinator" and "Ubuntu worker" — which described the two
+    machines the prototype was built on and misdescribed every other one.
+    `docs/PROJECT.md` 6 makes coordinator and worker runtime responsibilities,
+    not OS assignments, so the label has to be a role.
+    """
+
+    def test_a_location_names_a_role_and_never_an_operating_system(self):
+        self.assertEqual(device.location_label(local=True), "this computer")
+        self.assertEqual(device.location_label(local=False), "paired worker")
+        for label in (device.HERE, device.PEER):
+            for name in ("macOS", "Windows", "Linux", "Ubuntu", "Mac"):
+                self.assertNotIn(name, label)
+
+    def test_each_family_is_identified_from_the_platform_it_was_given(self):
+        for platform, family, label in (
+                ("darwin", "macos", "macOS"),
+                ("win32", "windows", "Windows"),
+                ("linux", "linux", "Linux"),
+                ("linux2", "linux", "Linux")):
+            with self.subTest(platform=platform):
+                self.assertEqual(device.os_family(platform), family)
+                self.assertEqual(device.os_label(platform), label)
+
+    def test_an_unrecognised_platform_is_shown_by_its_own_name(self):
+        """Folding it into "Linux" would be a guess presented as a fact."""
+        self.assertEqual(device.os_family("freebsd14"), "other")
+        self.assertEqual(device.os_label("freebsd14"), "freebsd14")
+
+    def test_describing_another_platform_reports_no_hardware_of_its_own(self):
+        other = "win32" if sys.platform != "win32" else "darwin"
+        described = device.describe(other)
+        self.assertEqual(described["platform"], other)
+        self.assertIsNone(described["machine"])
+        self.assertIsNone(described["python"])
+
+    def test_describing_this_platform_reports_what_it_observed(self):
+        described = device.describe()
+        self.assertEqual(described["platform"], sys.platform)
+        self.assertTrue(described["python"])
+
+    def test_the_data_root_detail_names_the_platform_it_chose(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            chosen = paths.select_root(platform="win32", environ={}, home=home)
+        self.assertIn("Windows", chosen.detail)
