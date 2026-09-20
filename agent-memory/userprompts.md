@@ -1742,3 +1742,29 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve the committed baseline and unrelated work. No protected-document edits, installs, downloads, live model calls, remote-worker calls, packaging, deployment, credential changes or Git/GitHub writes. Run existing focused offline checks only and keep source/test evidence separate from device and release acceptance.
 - follow_up_to: [UP-20260920-007](#up-20260920-007)
 - linked_changes: [AC-20260921-001](agentchangelog.md#ac-20260921-001)
+
+<a id="up-20260921-002"></a>
+## UP-20260921-002 — Repair the py2app packaging-module collision
+- date: 2026-09-21
+- status: authorised narrow packaging correction and focused offline verification; packaged acceptance remains pending
+- tags: macos, py2app, setuptools, packaging, module-shadowing
+- aliases: packaging.utils missing, desktop packaging collision, packaging_plan
+- paths: desktop/packaging_plan.py, desktop/setup_py2app.py, desktop/test_packaging.py, agent-memory/
+- summary: Rename the Refinix-owned packaging-boundary module so the macOS build path can import setuptools' third-party `packaging` package.
+- request: Fix the confirmed `desktop/packaging.py` shadowing failure at its root, retain the shared cross-platform packaging boundary, update all live callers, and add a regression reproducing the build-path import order.
+- constraints: No `sys.path` workaround, dependency reinstall/downgrade, setuptools or py2app weakening, unrelated refactor, new dependency, protected-document edit, Git/GitHub write, package acceptance claim or human walkthrough.
+- follow_up_to: [UP-20260921-001](#up-20260921-001)
+- linked_changes: [AC-20260921-002](agentchangelog.md#ac-20260921-002)
+
+<a id="up-20260921-003"></a>
+## UP-20260921-003 — Repair the direct-script setup import and build the macOS package
+- date: 2026-09-21
+- status: authorised packaging repair, focused verification, real macOS build and bundle inspection; human GUI acceptance still pending
+- tags: macos, py2app, packaging, direct-script-import, bundle-inspection
+- aliases: No module named 'desktop', setup_py2app direct execution, sys.path[0] script directory
+- paths: desktop/setup_py2app.py, desktop/test_packaging.py, agent-memory/
+- summary: Fix the `from desktop import packaging_plan` failure that stopped the macOS build after UP-20260921-002, then run `desktop/setup-macos.command` and inspect the resulting bundle.
+- request: Verify the repository state independently, repair the direct-script import defect at its root, add a regression modelling the real production invocation, run focused verification, run the actual macOS setup path, continue through directly related packaging blockers, inspect the built `.app`, and stop before the human GUI acceptance walkthrough.
+- constraints: No `sys.path`/`PYTHONPATH` workaround, dependency or lock change, py2app replacement, recreated `desktop/packaging.py`, weakened staging/content/signature checks, trust-boundary regression, protected-document edit, Git/GitHub write, model download, GUI walkthrough or acceptance claim.
+- follow_up_to: [UP-20260921-002](#up-20260921-002)
+- linked_changes: [AC-20260921-003](agentchangelog.md#ac-20260921-003)
