@@ -368,6 +368,13 @@ class Directory:
                                 flags=FILE_FLAG_OPEN_REPARSE_POINT)
         return self._adopt(handle, _BINARY)
 
+    def open_file_locked(self, name: str) -> tuple[int, Entry]:
+        """Open a target while denying new read, write, rename and delete handles."""
+        handle = self._api.open(join(self.path, name), access=GENERIC_READ,
+                                share=0, disposition=OPEN_EXISTING,
+                                flags=FILE_FLAG_OPEN_REPARSE_POINT)
+        return self._adopt(handle, _BINARY)
+
     def create_file(self, name: str) -> tuple[int, Entry]:
         """Create one child exclusively, for the temporary file a write uses.
 

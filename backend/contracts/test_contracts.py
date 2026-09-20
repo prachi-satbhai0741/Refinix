@@ -39,6 +39,7 @@ class ContractChecks(unittest.TestCase):
             ("JobEnvelope", ("extra",), "not-allowed"),
             ("JobEnvelope", ("job_id",), "../../canonical"),
             ("JobEnvelope", ("original_request",), "   "),
+            ("JobEnvelope", ("system_instruction",), "   "),
             ("JobEnvelope", ("required_capabilities",), []),
             ("JobEnvelope", ("limits", "cpu_millis"), True),
             ("JobEnvelope", ("limits", "runtime_seconds"), "60"),

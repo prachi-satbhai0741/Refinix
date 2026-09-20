@@ -18,8 +18,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import (db, docflow, docgen, documents, pdfrender,
-                                 retrieval, runtime)
+from backend.coordinator import (db, docflow, docgen, documents, models,
+                                 pdfrender, retrieval, runtime)
 from backend.coordinator.server import Coordinator
 
 
@@ -57,7 +57,10 @@ class Base(unittest.TestCase):
         self.state.parent.mkdir(parents=True)
         self.runtime_probe = patch.object(
             runtime, "probe", return_value={"reachable": True,
-                                             "models": [runtime.MODEL]})
+                                             "models": [runtime.MODEL],
+                                             "digests": {runtime.MODEL:
+                                                 models.entry_for(runtime.MODEL).manifest_sha256},
+                                             "server_version": "test"})
         self.runtime_probe.start()
         self.addCleanup(self.runtime_probe.stop)
         self.c = Coordinator(self.state)
@@ -100,6 +103,14 @@ RENDERER_ABSENT = {"available": False, "module": None, "backends": [],
 
 
 class TestCapabilityProbe(unittest.TestCase):
+    def test_a_disabled_ocr_model_cannot_receive_a_new_image(self):
+        with patch.object(runtime, "stream_chat") as called:
+            with self.assertRaises(documents.DocumentError) as caught:
+                documents._extract_image(b"pixels", "scan.png", "image/png",
+                                         ocr_model=None)
+        self.assertEqual(caught.exception.code, "model_disabled")
+        called.assert_not_called()
+
     def test_pdf_and_ocr_name_the_prerequisite_that_is_actually_missing(self):
         """An unavailable capability says which of the two halves is missing.
 
@@ -977,7 +988,9 @@ class TestSkillsInsideChat(Base):
                 "supported": [], "unavailable": [{"kind": "text", "detail": "none"}],
                 "reads_pdf": False, "reads_scans": False, "detail": {}, "max_bytes": 1}):
             rows = {r["id"]: r for r in self.c.capabilities(
-                {"reachable": True, "models": [runtime.MODEL]})}
+                {"reachable": True, "models": [runtime.MODEL],
+                 "digests": {runtime.MODEL:
+                             models.entry_for(runtime.MODEL).manifest_sha256}})}
         self.assertEqual(rows["chat"]["state"], "available")
         self.assertEqual(rows["code"]["state"], "available")
         self.assertEqual(rows[docflow.READ_SKILL]["state"], "blocked")

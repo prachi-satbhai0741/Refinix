@@ -23,8 +23,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.contracts import v1
-from backend.coordinator import (code_service, codeflow, db, dispatch, repo,
-                                 runtime)
+from backend.coordinator import (code_service, codeflow, db, dispatch, models,
+                                 repo, runtime)
 from backend.coordinator.server import Coordinator
 from backend.worker import packages, validate
 
@@ -133,7 +133,8 @@ class Base(unittest.TestCase):
         return dispatch.Route(
             "remote", "paired worker ubuntu-worker: healthy, qwen3.5:4b-q4_K_M",
             node_id=self.worker_node, relationship_id=self.relationship_id,
-            model={"model_id": "qwen3.5:4b-q4_K_M", "manifest_sha256": "a" * 64,
+            model={"model_id": runtime.MODEL,
+                   "manifest_sha256": models.entry_for(runtime.MODEL).manifest_sha256,
                    "runtime": "ollama", "runtime_version": "0.33.3"})
 
     def proposal_reply(self, *, path="pumpcheck/limits.py", content=IMPROVED,

@@ -476,6 +476,11 @@ class CodeService:
             # healthy and advertises `code.generate`; otherwise it runs here,
             # and the attempt records which and why.
             model_id = self.c.model_for("code")
+            if not db.get_model_enabled(self.conn, model_id):
+                raise CodeError(
+                    "model_disabled",
+                    f"The selected model {model_id} is switched off for new work.",
+                    409)
             if target == TARGET_LOCAL:
                 # Explicitly this device. No preflight, no route decision and
                 # no worker call: local permission is something the person
@@ -487,6 +492,13 @@ class CodeService:
             else:
                 route = self.c.choose_route(required=["code.generate"],
                                             model_id=model_id)
+            if route.kind == "identity-mismatch":
+                raise CodeError("permission_denied", route.reason, 403)
+            if route.model is None:
+                raise CodeError(
+                    "model_unavailable",
+                    f"The selected model {model_id} has no eligible manifest "
+                    "at this execution target.", 409)
             if route.remote:
                 parsed, job_id, attempt_id, model = self._propose_remote(
                     repo_id, request, selection, route, cancel, conversation_id)

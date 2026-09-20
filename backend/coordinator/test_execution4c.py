@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import code_service, db, policy, repo
+from backend.coordinator import code_service, db, models, policy, repo, runtime
 from backend.coordinator.code_service import (CodeError, TARGET_DISTRIBUTED,
                                               TARGET_LOCAL)
 from backend.coordinator.server import Coordinator
@@ -31,9 +31,15 @@ class Base(unittest.TestCase):
         self.home = Path(self.dir.name)
         self.state = self.home / "state" / "coordinator.sqlite3"
         self.state.parent.mkdir(parents=True)
-        with patch("backend.coordinator.runtime.probe",
-                   return_value={"reachable": True, "models": []}):
-            self.c = Coordinator(self.state)
+        self.runtime_probe = patch.object(runtime, "probe", return_value={
+            "reachable": True, "server_version": "test",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256},
+            "loaded": None, "error": None})
+        self.runtime_probe.start()
+        self.addCleanup(self.runtime_probe.stop)
+        self.c = Coordinator(self.state)
         self.addCleanup(self.c.conn.close)
         self.project = self.home / "project"
         self.project.mkdir()

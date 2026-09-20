@@ -161,6 +161,9 @@ class JobEnvelope(Record):
     original_request: Annotated[str, StringConstraints(
         min_length=1, max_length=16_384, pattern=r"\S"
     )]
+    system_instruction: Annotated[str, StringConstraints(
+        min_length=1, max_length=4096, pattern=r"\S"
+    )] | None = None
     task_type: Literal["chat", "documents", "code"]
     model: ModelRef | None = None
     required_capabilities: Annotated[list[Capability], Field(min_length=1, max_length=6)]

@@ -163,7 +163,18 @@ test('an installed catalogue model shows its recorded source and licence', () =>
   assert.match(row, /qwen3\.5:4b-q4_K_M/);
   assert.match(row, /registry\.ollama\.ai/);
   assert.match(row, /Apache-2\.0/);
-  assert.match(p.text('c-models-chip'), /1 installed/);
+  assert.match(p.text('c-models-chip'), /1 here/);
+});
+
+test('a worker-only model is never counted as installed on this computer', () => {
+  const remote = Object.assign({}, INSTALLED, {
+    locations: ['paired worker'],
+    digests: { local: null, worker: 'a'.repeat(64) },
+  });
+  const p = render({ models: [remote] });
+  assert.match(p.text('c-models-chip'), /0 here/);
+  assert.match(p.text('c-models-lead'), /0 model\(s\) are installed on this computer/);
+  assert.match(p.text('c-models-lead'), /1 are visible on a paired worker/);
 });
 
 test('a supported model that is absent offers the command and never a download', () => {

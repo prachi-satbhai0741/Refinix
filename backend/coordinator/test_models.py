@@ -19,6 +19,7 @@ step is supplied by the caller, and every test supplies a fake.
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,6 +27,16 @@ from backend.coordinator import db, device, docgen, models, runtime
 from backend.coordinator.server import Coordinator
 
 CATALOGUED = models.CATALOGUE[0].id
+CATALOG_DIGEST = models.CATALOGUE[0].manifest_sha256
+
+
+def chat_reply(_model, _messages, **_options):
+    return "Four."
+
+
+def document_reply(_model, _messages, **_options):
+    return json.dumps({"title": "Refinix", "sections": [
+        {"heading": "Overview", "paragraphs": ["Refinix runs locally."]}]})
 
 
 class TestTheCatalogue(unittest.TestCase):
@@ -108,21 +119,41 @@ class TestLifecycleStates(unittest.TestCase):
 class TestSelfTests(unittest.TestCase):
     def test_a_passing_check_says_what_it_does_not_prove(self):
         result = models.run_selftest(models.CHAT, CATALOGUED,
-                                     generate=lambda model, prompt: "ready")
+                                     generate=chat_reply)
         self.assertEqual(result["state"], models.PASSED)
         self.assertIn("nothing about the quality", result["detail"])
 
     def test_an_empty_answer_is_a_failure_rather_than_a_pass(self):
         result = models.run_selftest(models.CHAT, CATALOGUED,
-                                     generate=lambda model, prompt: "   ")
+                                     generate=lambda *_args, **_kwargs: "   ")
         self.assertEqual(result["state"], models.FAILED)
+
+    def test_code_requires_a_parseable_proposal_not_any_nonempty_reply(self):
+        result = models.run_selftest(
+            models.CODE, CATALOGUED,
+            generate=lambda *_args, **_kwargs: "ready")
+        self.assertEqual(result["state"], models.FAILED)
+        self.assertIn("valid Code proposal", result["detail"])
+
+    def test_ocr_sends_an_image_and_requires_its_visible_text(self):
+        seen = {}
+
+        def generate(_model, _messages, **options):
+            seen.update(options)
+            return json.dumps({"status": "transcription", "text": "REFINIX"})
+
+        result = models.run_selftest(
+            models.DOCUMENTS_OCR, "ocr:1", generate=generate,
+            capabilities=[runtime.VISION_CAPABILITY])
+        self.assertEqual(result["state"], models.PASSED)
+        self.assertTrue(seen["images"][0].startswith(b"\x89PNG"))
 
     def test_a_missing_prerequisite_is_unavailable_not_a_failed_model(self):
         with self.assertRaises(models.SelfTestError):
             models.run_selftest(models.CHAT, CATALOGUED, generate=None)
 
     def test_a_runtime_error_never_becomes_a_verdict_on_the_model(self):
-        def broken(model, prompt):
+        def broken(*_args, **_kwargs):
             raise runtime.RuntimeUnavailable("the engine went away")
         with self.assertRaises(models.SelfTestError) as caught:
             models.run_selftest(models.CHAT, CATALOGUED, generate=broken)
@@ -145,15 +176,16 @@ class TestSelfTests(unittest.TestCase):
         observed = docgen.selftest()
         self.assertTrue(observed["valid"], observed["detail"])
         result = models.run_selftest(models.DOCUMENTS_GENERATE, CATALOGUED,
-                                     generate=lambda *_: "ready",
+                                     generate=document_reply,
                                      artifact=docgen.selftest)
         self.assertEqual(result["state"], models.PASSED)
 
     def test_a_writer_that_cannot_produce_a_document_fails_the_check(self):
         result = models.run_selftest(
             models.DOCUMENTS_GENERATE, CATALOGUED,
-            generate=lambda *_: "ready",
-            artifact=lambda: {"valid": False, "detail": "no temporary folder"})
+            generate=document_reply,
+            artifact=lambda **_kwargs:
+                {"valid": False, "detail": "no temporary folder"})
         self.assertEqual(result["state"], models.FAILED)
         self.assertIn("no temporary folder", result["detail"])
 
@@ -235,7 +267,7 @@ class CoordinatorBase(unittest.TestCase):
     """The inventory as the interface receives it, against a fake runtime."""
 
     HEALTH = {"reachable": True, "server_version": "0.33.3",
-              "models": [CATALOGUED], "digests": {CATALOGUED: "a" * 64},
+              "models": [CATALOGUED], "digests": {CATALOGUED: CATALOG_DIGEST},
               "loaded": None, "endpoint": runtime.HOST, "error": None}
 
     def setUp(self):
@@ -282,13 +314,41 @@ class TestInventory(CoordinatorBase):
     def test_an_installed_model_without_provenance_is_marked_unverified(self):
         with patch.object(runtime, "probe", return_value={
                 **self.HEALTH, "models": [CATALOGUED, "somebody/random:latest"],
-                "digests": {CATALOGUED: "a" * 64,
+                "digests": {CATALOGUED: CATALOG_DIGEST,
                             "somebody/random:latest": "b" * 64}}):
             row = self.row("somebody/random:latest")
         self.assertEqual(row["state"], models.UNLISTED)
         self.assertEqual(row["provenance"]["evidence_state"], models.UNVERIFIED)
         # Still usable — it is installed — but never presented as verified.
         self.assertIn("chat", row["eligible_scopes"])
+
+    def test_a_catalogue_digest_mismatch_is_visible_and_ineligible(self):
+        with patch.object(runtime, "probe", return_value={
+                **self.HEALTH, "digests": {CATALOGUED: "f" * 64}}):
+            row = self.row(CATALOGUED)
+        self.assertEqual(row["integrity"]["local"]["state"], models.MISMATCH)
+        self.assertEqual(row["eligible_scopes"], [])
+        self.assertIsNone(self.c.local_model_ref(
+            CATALOGUED, {**self.HEALTH,
+                         "digests": {CATALOGUED: "f" * 64}}))
+
+    def test_a_worker_catalogue_mismatch_falls_back_to_verified_local_bytes(self):
+        relationship = {"relationship_id": "rel", "state": "paired"}
+        node = {
+            "node_id": "worker", "display_name": "worker",
+            "supported_contract_versions": ["1.0"], "health": "healthy",
+            "capabilities": ["text.generate"], "queue_depth": 0,
+            "models": [{"model_id": CATALOGUED,
+                        "manifest_sha256": "f" * 64,
+                        "runtime": "ollama", "runtime_version": "test"}],
+        }
+        with patch.object(self.c, "paired_worker", return_value=relationship), \
+                patch.object(self.c, "preflight", return_value=node):
+            route = self.c.choose_route(model_id=CATALOGUED,
+                                        runtime_state=self.HEALTH)
+        self.assertFalse(route.remote)
+        self.assertIn("does not match", route.reason)
+        self.assertEqual(route.model["manifest_sha256"], CATALOG_DIGEST)
 
 
 class TestEnablement(CoordinatorBase):
@@ -305,6 +365,14 @@ class TestEnablement(CoordinatorBase):
         self.assertTrue(row["installed"])
         self.assertIn("chat", row["selected_for"])
         self.assertEqual(len(self.c.jobs(limit=-1)), before)
+
+    def test_a_switched_off_selection_cannot_create_a_chat_job(self):
+        chat = db.create_chat(self.c.conn, self.c.workspace_id, "disabled")
+        self.c.set_model_enabled(CATALOGUED, False)
+        with self.assertRaises(Exception) as caught:
+            self.c.submit(chat, "hello")
+        self.assertIn("switched off", str(caught.exception))
+        self.assertEqual(self.c.jobs(chat, limit=-1), [])
 
     def test_a_switched_off_model_cannot_be_selected_and_says_why(self):
         self.c.set_model_enabled(CATALOGUED, False)
@@ -348,16 +416,16 @@ class TestEnablement(CoordinatorBase):
 class TestSelfTestRoute(CoordinatorBase):
     def test_a_pass_is_recorded_against_the_manifest_it_was_observed_on(self):
         with patch.object(self.c, "_selftest_generate",
-                          lambda model, prompt: "ready"):
+                          chat_reply):
             record = self.c.run_model_selftest(models.CHAT)
         self.assertEqual(record["state"], models.PASSED)
-        self.assertEqual(record["digest"], "a" * 64)
+        self.assertEqual(record["digest"], CATALOG_DIGEST)
         self.assertEqual(record["runtime_version"], "0.33.3")
         self.assertTrue(self.row(CATALOGUED)["selftests"][models.CHAT]["current"])
 
     def test_a_result_is_superseded_when_the_bytes_change_under_the_tag(self):
         with patch.object(self.c, "_selftest_generate",
-                          lambda model, prompt: "ready"):
+                          chat_reply):
             self.c.run_model_selftest(models.CHAT)
         with patch.object(runtime, "probe", return_value={
                 **self.HEALTH, "digests": {CATALOGUED: "c" * 64}}):
@@ -367,7 +435,7 @@ class TestSelfTestRoute(CoordinatorBase):
 
     def test_uninstalling_a_model_stops_its_pass_reading_as_current(self):
         with patch.object(self.c, "_selftest_generate",
-                          lambda model, prompt: "ready"):
+                          chat_reply):
             self.c.run_model_selftest(models.CHAT)
         with patch.object(runtime, "probe", return_value={
                 **self.HEALTH, "models": [], "digests": {}}):
@@ -396,7 +464,7 @@ class TestSelfTestRoute(CoordinatorBase):
         with patch.object(runtime, "model_capabilities",
                           lambda m: asked.append(m) or ["completion"]), \
                 patch.object(self.c, "_selftest_generate",
-                             lambda model, prompt: "ready"):
+                             chat_reply):
             self.c.run_model_selftest(models.CHAT)
         self.assertEqual(asked, [], "chat needs no modality answer")
 
@@ -405,8 +473,8 @@ class TestSelfTestRoute(CoordinatorBase):
         with patch.object(runtime, "model_capabilities",
                           lambda m: asked.append(m) or ["completion"]), \
                 patch.object(runtime, "probe", return_value={
-                    **self.HEALTH, "models": [CATALOGUED, runtime.OCR_MODEL],
-                    "digests": {CATALOGUED: "a" * 64,
+                **self.HEALTH, "models": [CATALOGUED, runtime.OCR_MODEL],
+                    "digests": {CATALOGUED: CATALOG_DIGEST,
                                 runtime.OCR_MODEL: "b" * 64}}):
             record = self.c.run_model_selftest(models.DOCUMENTS_OCR)
         self.assertEqual(asked, [runtime.OCR_MODEL])
@@ -417,8 +485,8 @@ class TestSelfTestRoute(CoordinatorBase):
 
         def capture(messages, **kwargs):
             seen.update(kwargs)
-            yield "delta", "ready"
-            yield "done", {}
+            yield "delta", "Four."
+            yield "done", {"done_reason": "stop"}
 
         with patch.object(runtime, "stream_chat", capture):
             self.c.run_model_selftest(models.CHAT)
@@ -435,9 +503,9 @@ class TestSelfTestRoute(CoordinatorBase):
     def test_running_one_never_downloads_or_installs(self):
         calls = []
 
-        def generate(model, prompt):
-            calls.append((model, prompt))
-            return "ready"
+        def generate(model, messages, **options):
+            calls.append((model, messages, options))
+            return "Four."
         with patch.object(self.c, "_selftest_generate", generate):
             self.c.run_model_selftest(models.CHAT)
         self.assertEqual(len(calls), 1)

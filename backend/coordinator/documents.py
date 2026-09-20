@@ -98,7 +98,7 @@ class DocumentError(ValueError):
 # --------------------------------------------------------------------------
 
 def probe(runtime_state: dict | None = None,
-          ocr_model: str = ocr.runtime.OCR_MODEL) -> dict:
+          ocr_model: str | None = ocr.runtime.OCR_MODEL) -> dict:
     """What this module can actually extract, not merely what is importable.
 
     `runtime_state` is an already-observed `runtime.probe()`. Passing it keeps
@@ -106,10 +106,18 @@ def probe(runtime_state: dict | None = None,
     omitting it makes one fresh observation. Either way the answer describes
     what was observed, never a configured default.
     """
-    scan = (ocr.probe(ocr_model) if runtime_state is None
-            else _scan_capability(runtime_state, ocr_model))
-    image = (ocr.image_probe(ocr_model) if runtime_state is None
-             else _image_capability(runtime_state, ocr_model))
+    if ocr_model is None:
+        model = {"state": "disabled", "model": None,
+                 "detail": "The selected OCR model is switched off for new work."}
+        scan = {"available": False, "renderer": pdfrender.probe(),
+                "model": model, "detail": model["detail"]}
+        image = {"available": False, "model": model,
+                 "detail": model["detail"]}
+    else:
+        scan = (ocr.probe(ocr_model) if runtime_state is None
+                else _scan_capability(runtime_state, ocr_model))
+        image = (ocr.image_probe(ocr_model) if runtime_state is None
+                 else _image_capability(runtime_state, ocr_model))
     return {
         "text": {
             "available": True,
@@ -203,7 +211,7 @@ def supported_suffixes(runtime_state: dict | None = None,
 
 
 def capability_summary(runtime_state: dict | None = None,
-                       ocr_model: str = ocr.runtime.OCR_MODEL) -> dict:
+                       ocr_model: str | None = ocr.runtime.OCR_MODEL) -> dict:
     """One shape the surfaces and the capability rows both read."""
     capability = probe(runtime_state, ocr_model)
     unavailable = [
@@ -443,7 +451,7 @@ def _docx_declared_pages(archive: zipfile.ZipFile, filename: str) -> int | None:
 
 
 def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
-                 ocr_model: str = ocr.runtime.OCR_MODEL):
+                 ocr_model: str | None = ocr.runtime.OCR_MODEL):
     """Render each page and read it with the local vision model.
 
     The capability is re-checked here rather than trusted from an earlier
@@ -452,6 +460,9 @@ def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
     whole extraction — a document silently missing a page would be worse than
     no document at all.
     """
+    if ocr_model is None:
+        raise DocumentError(
+            "model_disabled", "The selected OCR model is switched off for new work.")
     scan = ocr.probe(ocr_model)
     if not scan["available"]:
         # Three prerequisites, three codes. Collapsing them would send someone
@@ -505,12 +516,15 @@ def _extract_xlsx(data: bytes, filename: str) -> tuple[list[Page], str, list[str
 
 def _extract_image(data: bytes, filename: str, media_type: str, *,
                    should_cancel=None,
-                   ocr_model: str = ocr.runtime.OCR_MODEL):
+                   ocr_model: str | None = ocr.runtime.OCR_MODEL):
     """Send one supplied image to the local vision model, as page 1.
 
     No renderer at all: the file already is a page image. The method string says
     exactly that, so a reader is never told a PDF was rendered when none was.
     """
+    if ocr_model is None:
+        raise DocumentError(
+            "model_disabled", "The selected OCR model is switched off for new work.")
     state = ocr.image_probe(ocr_model)
     if not state["available"]:
         code = {"runtime_unavailable": "runtime_unavailable",
@@ -532,7 +546,7 @@ def _extract_image(data: bytes, filename: str, media_type: str, *,
 
 def extract(path: Path, *, source_id: str, filename: str, media_type: str,
             expected_sha256: str, should_cancel=None,
-            ocr_model: str = ocr.runtime.OCR_MODEL) -> Extraction:
+            ocr_model: str | None = ocr.runtime.OCR_MODEL) -> Extraction:
     """Read one attachment, after proving it is the file that was accepted.
 
     `expected_sha256` is the digest recorded at intake. Recomputing it here is

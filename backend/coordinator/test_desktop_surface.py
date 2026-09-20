@@ -19,7 +19,7 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import db, runtime
+from backend.coordinator import db, models, runtime
 from backend.coordinator.server import (MAX_UPLOAD_BYTES, Coordinator, Handler,
                                         RequestError)
 
@@ -29,6 +29,14 @@ class Base(unittest.TestCase):
         self.dir = tempfile.TemporaryDirectory()
         self.path = Path(self.dir.name) / "state.sqlite3"
         self.c = Coordinator(self.path)
+        self.runtime_probe = patch.object(runtime, "probe", return_value={
+            "reachable": True, "server_version": "test",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256},
+            "loaded": None, "error": None})
+        self.runtime_probe.start()
+        self.addCleanup(self.runtime_probe.stop)
         self.root = self.c.attachments_root
         self.chat = db.create_chat(self.c.conn, self.c.workspace_id, "check")
 
@@ -185,7 +193,10 @@ class TestCapabilities(Base):
                          "Choose an installed model in the model selector.")
 
     def test_execution_three_document_skills_are_available_when_ready(self):
-        rows = self.c.capabilities({"reachable": True, "models": [runtime.MODEL]})
+        rows = self.c.capabilities({
+            "reachable": True, "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256}})
         by_id = {r["id"]: r for r in rows}
         self.assertEqual(by_id["chat"]["state"], "available")
         self.assertEqual(by_id["code"]["state"], "available")
@@ -196,7 +207,10 @@ class TestCapabilities(Base):
         """Execution 2 enforces the access modes, so the old 'no enforcement'
         wording is gone. What replaces it must still be honest about the
         boundary rather than implying a general development platform."""
-        rows = self.c.capabilities({"reachable": True, "models": [runtime.MODEL]})
+        rows = self.c.capabilities({
+            "reachable": True, "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256}})
         code = next(r for r in rows if r["id"] == "code")
         self.assertEqual(code["state"], "available")
         for missing in ("Creating", "deleting", "renaming", "commands", "Git"):
@@ -445,7 +459,12 @@ class TestCancelAgainstARealStalledSocket(unittest.TestCase):
             c = Coordinator(Path(folder) / "state.sqlite3")
             chat = db.create_chat(c.conn, c.workspace_id, "Synthetic stalled headers")
             try:
-                with patch.object(runtime, "HOST", self.host):
+                ready = {"reachable": True, "server_version": "test",
+                         "models": [runtime.MODEL],
+                         "digests": {runtime.MODEL:
+                                     models.entry_for(runtime.MODEL).manifest_sha256}}
+                with patch.object(runtime, "HOST", self.host), \
+                        patch.object(runtime, "probe", return_value=ready):
                     job = c.submit(chat, "Synthetic request")
                     self.assertTrue(self.Stalling.received.wait(2))
                     c.request_cancel(job)
