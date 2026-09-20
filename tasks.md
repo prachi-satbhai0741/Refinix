@@ -132,6 +132,37 @@ credential storage, Windows-safe bounded filesystem operations, a desktop packag
 contain the full peer execution role, and unqualified runtime/installer/sandbox paths on the three
 OS families.
 
+### Current SIH reviewer priority
+
+For the current SIH reviewer cycle, prioritise a dependable standalone Refinix
+installation on the selected Windows, macOS and Linux profiles before expanding
+the trusted-device mesh.
+
+The immediate target is:
+
+download/install -> detect hardware -> recommend compatible local models ->
+set up or import a model -> self-test -> use Chat, Documents and Code locally ->
+persist and reopen work successfully.
+
+During this portability pass:
+
+- fix immediately any defect that blocks one of the selected OS profiles,
+  causes data loss/corruption, weakens security/isolation, prevents installation,
+  prevents model setup/inference, or makes a core standalone workflow unusable;
+- record non-blocking workflow, model-quality, artifact-quality and UI regressions
+  for the dedicated stabilization pass rather than interrupting cross-platform
+  foundation work;
+- after standalone operation is established across all three OS families, run a
+  focused stabilization/bug-fix pass before reviewer packaging and publication;
+- trusted-device discovery, pairing, distributed execution and scheduling remain
+  part of the product architecture, but should not delay a usable standalone
+  reviewer build. Resume that work when the standalone baseline is stable and
+  schedule permits.
+
+This is an execution priority, not a product-scope reduction. The trusted-device
+mesh and later release phases remain in scope and retain their existing security,
+qualification and acceptance requirements.
+
 ## Phase 1 checklist
 
 ### A. Current profile facts and assumptions

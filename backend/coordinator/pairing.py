@@ -14,28 +14,35 @@ A mismatch raises `IdentityMismatch`, which callers must never treat as
 exactly the event pinning exists to detect.
 
 **The credential never touches SQLite, a dotfile or the repository.** It lives in
-the macOS Keychain, reached through the `security` binary that ships with the OS
-— no dependency, no bespoke crypto, and the OS owns the at-rest protection. What
-SQLite holds is the non-secret half: node address, fingerprint, relationship ID,
-paired timestamp. That split is what lets the database be copied, backed up or
-inspected without carrying the bearer token with it.
+the operating system's own credential store — no dependency, no bespoke crypto,
+and the OS owns the at-rest protection. What SQLite holds is the non-secret half:
+node address, fingerprint, relationship ID, paired timestamp. That split is what
+lets the database be copied, backed up or inspected without carrying the bearer
+token with it.
 
-On a host without `security` (Linux CI, a container), `KeychainUnavailable` is
-raised rather than silently falling back to a file. A quieter fallback would put
-the credential exactly where the decision says it must never be.
+`credentials.py` owns which store that is per platform: the macOS Keychain,
+Windows Credential Manager or the Secret Service keyring on Linux. This module
+keeps the pairing-facing names, so the rule reads the same at every call site as
+it did when only macOS had an implementation.
+
+Where the platform has no such store (a headless Linux box, a container, CI),
+`KeychainUnavailable` is raised rather than silently falling back to a file. A
+quieter fallback would put the credential exactly where the decision says it must
+never be.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 import ssl
-import subprocess
-import sys
 
-SERVICE = "AegisForge worker credential"
-KEYCHAIN_TIMEOUT = 10
+from backend.coordinator import credentials
+
+# Kept as re-exports: callers and existing checks refer to them through this
+# module, and the values themselves are compatibility-sensitive.
+SERVICE = credentials.SERVICE
+KEYCHAIN_TIMEOUT = credentials.TIMEOUT_SECONDS
 
 
 class PairingError(Exception):
@@ -44,7 +51,12 @@ class PairingError(Exception):
 
 class KeychainUnavailable(PairingError):
     """No OS credential store on this host, so there is nowhere legitimate to
-    put the credential. Callers must stop, not improvise."""
+    put the credential. Callers must stop, not improvise.
+
+    Still a `PairingError`, so every existing caller that handles pairing
+    failures keeps handling this one. The name predates Windows and Linux
+    support and is kept because the callers and the interface use it.
+    """
 
 
 class IdentityMismatch(PairingError):
@@ -111,59 +123,52 @@ def verify_presented(connection, expected_fingerprint: str) -> None:
             "the worker identity changed and the connection was aborted")
 
 
-# ------------------------------------------------------------------ keychain ---
+# ---------------------------------------------------- credential storage ---
+# `credentials.py` owns the per-platform store. These names stay because the
+# callers, the status payload and the interface copy all use them, and because a
+# rename here would be a change to the pairing contract rather than to storage.
 
 def keychain_available() -> bool:
-    return sys.platform == "darwin" and shutil.which("security") is not None
+    """Whether this computer has an OS credential store Refinix will use.
+
+    The name is historical; the answer is now per platform. `credential_store()`
+    is the one to report to a person, because it names which store and why not.
+    """
+    return credentials.available()
 
 
-def _security(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(["security", *args], capture_output=True, text=True,
-                          timeout=KEYCHAIN_TIMEOUT, input=stdin, check=False)
+def credential_store() -> dict:
+    """Which protected store this computer has, and why not if it has none.
+
+    An observation the interface can show instead of naming a framework from
+    another operating system.
+    """
+    return credentials.probe()
 
 
 def store_credential(relationship_id: str, credential: str) -> None:
-    """Write the credential to the login Keychain, replacing any prior value.
-
-    `-w` takes the secret as an argument, which would put it in this process's
-    argv where any local process could read it. `security` has no stdin mode for
-    add-generic-password, so the value is passed as hex via `-X`, which is the
-    documented alternative and keeps the plaintext out of the command line.
-    """
-    if not keychain_available():
-        raise KeychainUnavailable(
-            "this coordinator has no macOS Keychain, and OD-06 forbids storing "
-            "the worker credential in SQLite or a file")
-    encoded = credential.encode("utf-8").hex()
-    result = _security("add-generic-password", "-U", "-a", relationship_id,
-                       "-s", SERVICE, "-X", encoded)
-    if result.returncode != 0:
-        raise PairingError("the Keychain refused to store the worker credential")
+    """Hand the credential to the OS store, replacing any prior value."""
+    try:
+        credentials.store_credential(relationship_id, credential)
+    except credentials.CredentialUnavailable as exc:
+        raise KeychainUnavailable(str(exc)) from exc
+    except credentials.CredentialError as exc:
+        raise PairingError(str(exc)) from exc
 
 
 def load_credential(relationship_id: str) -> str:
-    if not keychain_available():
-        raise KeychainUnavailable(
-            "this coordinator has no macOS Keychain, so no worker credential "
-            "can be read")
-    result = _security("find-generic-password", "-a", relationship_id,
-                       "-s", SERVICE, "-w")
-    if result.returncode != 0:
-        raise PairingError("no stored credential for this relationship")
-    value = result.stdout.strip()
     try:
-        # `-X` stored hex, so `-w` returns hex. A pre-existing plain value is
-        # accepted rather than corrupted into nonsense.
-        return bytes.fromhex(value).decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
-        return value
+        return credentials.load_credential(relationship_id)
+    except credentials.CredentialUnavailable as exc:
+        raise KeychainUnavailable(str(exc)) from exc
+    except credentials.CredentialError as exc:
+        raise PairingError(str(exc)) from exc
 
 
 def delete_credential(relationship_id: str) -> bool:
-    if not keychain_available():
-        return False
-    return _security("delete-generic-password", "-a", relationship_id,
-                     "-s", SERVICE).returncode == 0
+    """True when a credential was removed. A store that is absent returns False
+    rather than raising: revocation must not be blocked by the store being gone."""
+    return credentials.delete_credential(relationship_id)
 
 
 # -------------------------------------------------------------- relationship ---

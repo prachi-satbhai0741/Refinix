@@ -52,6 +52,8 @@ STYLE_METRICS = {
     "Heading1": (16.0, 10.0, True),
     "Heading2": (13.0, 8.0, True),
     "Quote": (11.0, 8.0, False),
+    "ListNumber": (11.0, 8.0, False),
+    "ListBullet": (11.0, 8.0, False),
     "Body": (11.0, 8.0, False),
 }
 
@@ -136,28 +138,40 @@ def _attributes(frameworks: _Frameworks, style: str):
             else appkit.NSFont.systemFontOfSize_(size))
     paragraph = appkit.NSMutableParagraphStyle.alloc().init()
     paragraph.setLineSpacing_(2.0)
-    if style == "Quote":
+    if style in ("Quote", "ListNumber", "ListBullet"):
         paragraph.setFirstLineHeadIndent_(18.0)
         paragraph.setHeadIndent_(18.0)
     return {appkit.NSFontAttributeName: font,
             appkit.NSParagraphStyleAttributeName: paragraph}
 
 
-def _measured(frameworks: _Frameworks, block: Block):
-    """One block as an attributed string plus the height it needs.
+def _visible_text(block: Block) -> str:
+    if block.style == "ListNumber" and block.marker:
+        return f"{block.marker}. {block.text}"
+    if block.style == "ListBullet" and block.marker:
+        return f"{block.marker} {block.text}"
+    return block.text
+
+
+def _measured_text(frameworks: _Frameworks, value: str, style: str):
+    """Text as an attributed string plus the height it needs.
 
     Measuring before drawing is what makes pagination honest: a block is only
     placed on a page that can actually hold it.
     """
     appkit, foundation = frameworks.appkit, frameworks.foundation
     text = frameworks.foundation.NSAttributedString.alloc(
-        ).initWithString_attributes_(block.text or " ",
-                                     _attributes(frameworks, block.style))
+        ).initWithString_attributes_(value or " ",
+                                     _attributes(frameworks, style))
     bounds = text.boundingRectWithSize_options_(
         foundation.NSMakeSize(TEXT_WIDTH, 1.0e6),
         appkit.NSStringDrawingUsesLineFragmentOrigin)
-    _size, after, _bold = STYLE_METRICS.get(block.style, STYLE_METRICS["Body"])
+    _size, after, _bold = STYLE_METRICS.get(style, STYLE_METRICS["Body"])
     return text, float(bounds.size.height), after
+
+
+def _measured(frameworks: _Frameworks, block: Block):
+    return _measured_text(frameworks, _visible_text(block), block.style)
 
 
 USABLE_HEIGHT = PAGE_HEIGHT - (2 * MARGIN)
@@ -173,7 +187,7 @@ def _split_to_pages(frameworks: _Frameworks, block: Block):
     if height <= USABLE_HEIGHT:
         return [(text, height, after)]
 
-    remaining = block.text
+    remaining = _visible_text(block)
     out = []
     while remaining:
         low, high, best = 1, len(remaining), 0

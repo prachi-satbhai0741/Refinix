@@ -8,14 +8,29 @@ Three rules shape the whole module:
 * A root enters only through a native user gesture and is canonicalised once.
   After that the page and the model see an opaque repository id and validated
   *relative* paths — never the absolute root.
-* Traversal is descriptor-relative and refuses to follow links at every step.
-  `Path.resolve()` followed by an ordinary `open()` is a time-of-check /
-  time-of-use hole: the resolved answer can stop being true before the open.
-  Where the platform cannot give us `dir_fd`, canonical writes are disabled
-  rather than performed on a weaker guarantee.
+* Traversal refuses to follow a link at every step, and the object operated on
+  is always the object that was checked. `Path.resolve()` followed by an
+  ordinary `open()` is a time-of-check / time-of-use hole: the resolved answer
+  can stop being true before the open. Where a platform cannot give that
+  guarantee, the whole Code surface is disabled rather than run on a weaker
+  one.
 * Identity is verified twice — once when a proposal is built, once immediately
   before the replacement lands. A file that changed underneath is stale, not
   something to overwrite.
+
+**Two backends, one guarantee.** POSIX gets it from `dir_fd` and `O_NOFOLLOW`:
+each component is opened relative to the previous handle, so no resolved path
+is ever re-walked. Windows has no `openat`, and until now that meant Code was
+simply unavailable there. `winfs` supplies the same property from documented
+Win32 behaviour — `FILE_FLAG_OPEN_REPARSE_POINT` opens the link rather than its
+target, and a handle held without `FILE_SHARE_DELETE` pins every ancestor
+against rename and delete for the whole operation. The bounds, the refusals and
+the identity checks below are shared: only the way a name becomes an open
+object differs.
+
+The Windows backend is **source-present, not device-observed**. It is exercised
+through an injected API, which proves the sequence and every refusal but not
+the real `kernel32`.
 
 Standard library only.
 """
@@ -26,8 +41,12 @@ import errno
 import hashlib
 import os
 import stat
+import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+
+from backend.coordinator import winfs
 
 # Conservative bounds. They are visible in the errors, so a refusal explains
 # itself instead of looking arbitrary.
@@ -67,9 +86,15 @@ EXCLUDED_SUFFIXES = frozenset({
     ".kdbx", ".ppk",
 })
 
-# Roots a person can select by accident and never means as a project.
+# Roots a person can select by accident and never means as a project. The
+# Windows names are the same idea in that platform's spelling; a drive root is
+# caught separately by the anchor comparison, which needs no list.
 _FORBIDDEN_ROOTS = ("/", "/Users", "/home", "/etc", "/var", "/usr", "/System",
                     "/Library", "/private", "/tmp", "/opt", "/bin", "/sbin")
+
+_FORBIDDEN_WINDOWS_NAMES = frozenset({
+    "windows", "program files", "program files (x86)", "programdata",
+    "system32", "users", "$recycle.bin", "perflogs"})
 
 
 class RepositoryError(ValueError):
@@ -84,14 +109,15 @@ class RepositoryError(ValueError):
 # Platform capability
 # --------------------------------------------------------------------------
 
-def descriptor_traversal_supported() -> bool:
-    """True when the OS can give the containment guarantee this module needs.
+POSIX_BACKEND = "descriptor-relative"
+WINDOWS_BACKEND = "pinned-handle"
 
-    Reported honestly rather than worked around: without `dir_fd` there is no
-    way to open a path component-by-component without following a link that
-    appeared between the check and the open. Every operation here depends on
-    it — reading as much as writing — so the whole Code surface is gated on
-    this one answer rather than only the write.
+
+def descriptor_traversal_supported() -> bool:
+    """True when POSIX can open a path component-by-component safely.
+
+    One of the two ways the containment guarantee can be obtained, not the
+    question the Code surface should ask — use `containment_supported`.
     """
     # POSIX exposes the capability under `rename`; `os.replace` is the same
     # renameat call with the overwrite semantics we want.
@@ -100,34 +126,95 @@ def descriptor_traversal_supported() -> bool:
             and hasattr(os, "O_NOFOLLOW"))
 
 
+def containment_backend() -> str | None:
+    """Which backend can bound a connected folder here, or None for neither.
+
+    Checked in this order because `dir_fd` is the stronger, already-observed
+    path: a POSIX computer never reaches the Windows probe, and a Windows one
+    never pretends to have `dir_fd`.
+    """
+    if descriptor_traversal_supported():
+        return POSIX_BACKEND
+    if winfs.supported():
+        return WINDOWS_BACKEND
+    return None
+
+
+def containment_supported() -> bool:
+    """The one question the Code surface asks about this computer.
+
+    Reported honestly rather than worked around: without a way to open each
+    component without following a link that appeared between the check and the
+    open, there is no bounded folder. Every operation here depends on it —
+    reading as much as writing — so the whole surface is gated on this one
+    answer rather than only the write.
+    """
+    return containment_backend() is not None
+
+
 PLATFORM_NOTE = (
-    "This computer cannot open files relative to a directory handle, so Refinix "
-    "cannot keep a connected folder safely bounded here. Code is unavailable on "
-    "this computer: nothing is listed, read, proposed or written. Chat is "
-    "unaffected."
+    "This computer cannot open files inside a connected folder without the risk "
+    "of following a link that changed underneath, so Refinix cannot keep the "
+    "folder safely bounded here. Code is unavailable on this computer: nothing "
+    "is listed, read, proposed or written. Chat is unaffected."
 )
 
 
-def _require_platform() -> None:
-    """Fail closed everywhere, not only on the write.
+def _require_platform() -> str:
+    """Fail closed everywhere, not only on the write, and say which backend.
 
     Reading through a resolved path and an ordinary `open()` would be a
     weaker guarantee wearing the same words, so it is refused instead.
     """
-    if not descriptor_traversal_supported():
+    backend = containment_backend()
+    if backend is None:
         raise RepositoryError("platform", PLATFORM_NOTE)
+    return backend
 
 
 # --------------------------------------------------------------------------
 # Roots and relative paths
 # --------------------------------------------------------------------------
 
+def _is_reparse_point(path: Path) -> bool:
+    """True for a Windows junction, mount point or symlink; False elsewhere.
+
+    `Path.is_symlink()` answers for POSIX links and for Windows symlinks, but
+    not for a junction — which redirects just as effectively. The attribute is
+    the reliable answer and is simply absent on POSIX.
+    """
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    return bool(getattr(info, "st_file_attributes", 0)
+                & winfs.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _is_windows_system_folder(root: Path) -> bool:
+    """A Windows folder nobody means as a project.
+
+    Matched by name under a drive root rather than by absolute string, because
+    the system drive letter is not always `C:` and the profile directory is
+    not always `Users`.
+    """
+    if sys.platform != "win32":
+        return False
+    parts = root.parts
+    if len(parts) != 2:                 # anchor plus one name
+        return False
+    return parts[1].casefold() in _FORBIDDEN_WINDOWS_NAMES
+
+
 def canonical_root(selected: str | os.PathLike, *, state_dir: Path) -> Path:
     """Canonicalise a natively selected folder once, or refuse it."""
     if not isinstance(selected, (str, os.PathLike)) or not str(selected).strip():
         raise RepositoryError("no_selection", "No folder was selected.")
     root = Path(selected).expanduser()
-    if root.is_symlink():
+    # A junction or a mount point is a link Windows does not report as one, so
+    # the attribute is read as well. Checked before `resolve`, which would
+    # follow it and leave nothing to refuse.
+    if root.is_symlink() or _is_reparse_point(root):
         raise RepositoryError("symlinked_root", "A linked folder cannot be connected.")
     try:
         root = root.resolve(strict=True)
@@ -139,7 +226,8 @@ def canonical_root(selected: str | os.PathLike, *, state_dir: Path) -> Path:
     home = Path.home().resolve()
     state = Path(state_dir).expanduser().resolve()
     # Ordered deliberately, so each refusal gives the most specific reason.
-    if str(root) in _FORBIDDEN_ROOTS or root == Path(root.anchor):
+    if str(root) in _FORBIDDEN_ROOTS or root == Path(root.anchor) \
+            or _is_windows_system_folder(root):
         raise RepositoryError(
             "system_root", "Connect a project folder, not a system folder.")
     if root == home:
@@ -292,22 +380,69 @@ class FileIdentity:
                 "mode": self.mode, "sha256": self.sha256}
 
 
+def _check_bounds(name: str, *, links: int, size: int) -> None:
+    """The limits both backends enforce, on the object already open.
+
+    Separate from the type checks because those are expressed differently on
+    each platform — `S_ISLNK` there, a reparse attribute here — while a hard
+    link and an oversized file mean exactly the same thing on both.
+    """
+    if links > 1:
+        raise RepositoryError("hard_link", f"{name} has more than one name on disk.")
+    if size > MAX_FILE_BYTES:
+        raise RepositoryError(
+            "too_large", f"{name} is larger than {MAX_FILE_BYTES // 1024} KB.")
+
+
 def _check_regular(info: os.stat_result, name: str) -> None:
     if stat.S_ISLNK(info.st_mode):
         raise RepositoryError("symlink", f"{name} is a link, which Refinix does not follow.")
     if not stat.S_ISREG(info.st_mode):
         raise RepositoryError("not_regular", f"{name} is not an ordinary file.")
-    if info.st_nlink > 1:
-        raise RepositoryError("hard_link", f"{name} has more than one name on disk.")
-    if info.st_size > MAX_FILE_BYTES:
+    _check_bounds(name, links=info.st_nlink, size=info.st_size)
+
+
+@dataclass(frozen=True)
+class _Opened:
+    """What a backend observed about the object it just opened.
+
+    The two backends read different structures; everything past the open is
+    written once against this one.
+    """
+
+    device: int
+    inode: int
+    size: int
+    mode: int
+
+
+def _decoded(relative: str, data: bytes, info: _Opened) -> tuple[str, FileIdentity]:
+    """The checks and the identity that follow any successful read."""
+    if len(data) > MAX_FILE_BYTES:
+        raise RepositoryError("too_large", f"{relative} is larger than {MAX_FILE_BYTES // 1024} KB.")
+    if b"\x00" in data:
+        raise RepositoryError("binary", f"{relative} is not a text file.")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
         raise RepositoryError(
-            "too_large", f"{name} is larger than {MAX_FILE_BYTES // 1024} KB.")
+            "encoding",
+            f"{relative} is not UTF-8 text. Refinix only reads UTF-8 files in this version."
+        ) from exc
+    return text, FileIdentity(device=info.device, inode=info.inode, size=info.size,
+                              mode=info.mode, sha256=hashlib.sha256(data).hexdigest())
 
 
 def read_text_file(root: Path, relative: str) -> tuple[str, FileIdentity]:
     """Read one bounded UTF-8 file from inside `root`, refusing anything else."""
-    _require_platform()
+    backend = _require_platform()
     relative = normalise_relative(relative)
+    if backend == WINDOWS_BACKEND:
+        return _decoded(relative, *_windows_read(root, relative))
+    return _decoded(relative, *_posix_read(root, relative))
+
+
+def _posix_read(root: Path, relative: str) -> tuple[bytes, _Opened]:
     parts = relative.split("/")
     root_fd = _open_directory(root)
     try:
@@ -342,27 +477,62 @@ def read_text_file(root: Path, relative: str) -> tuple[str, FileIdentity]:
             os.close(parent_fd)
     finally:
         os.close(root_fd)
+    return data, _Opened(device=info.st_dev, inode=info.st_ino,
+                         size=info.st_size, mode=stat.S_IMODE(info.st_mode))
 
-    if len(data) > MAX_FILE_BYTES:
-        raise RepositoryError("too_large", f"{relative} is larger than {MAX_FILE_BYTES // 1024} KB.")
-    if b"\x00" in data:
-        raise RepositoryError("binary", f"{relative} is not a text file.")
+
+def _windows_read(root: Path, relative: str) -> tuple[bytes, _Opened]:
+    """The same read, with every ancestor pinned by an open handle.
+
+    `winfs.pinned` refuses a reparse point at each step and `open_file`
+    refuses one on the final name, so the descriptor adopted here holds the
+    object that was checked — the property `O_NOFOLLOW` gives above.
+    """
+    parts = relative.split("/")
+    with _windows_errors(relative), winfs.pinned(root, parts[:-1]) as folder:
+        descriptor, entry = folder.open_file(parts[-1])
+        try:
+            _check_bounds(relative, links=entry.links, size=entry.size)
+            data = _read_all(descriptor, MAX_FILE_BYTES)
+        finally:
+            os.close(descriptor)
+    return data, _Opened(device=entry.device, inode=entry.inode,
+                         size=entry.size, mode=entry.mode)
+
+
+@contextmanager
+def _windows_errors(relative: str):
+    """Turn a Win32 failure into the refusal vocabulary POSIX already uses.
+
+    One place, so a Windows user sees "is not in the connected folder" rather
+    than an error number, and a test can assert the same codes on both
+    backends.
+    """
     try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError as exc:
+        yield
+    except winfs.Unavailable as exc:
+        raise RepositoryError("platform", PLATFORM_NOTE) from exc
+    except winfs.WindowsError_ as exc:
+        message = {
+            "missing": f"{relative} is not in the connected folder.",
+            "symlink": f"{relative} is a link, which Refinix does not follow.",
+            "symlinked_root": "The connected folder is a link.",
+            "not_a_directory": "The connected folder is not a folder.",
+            "not_regular": f"{relative} is not an ordinary file.",
+            "bad_path": f"{relative} could not be opened as a path.",
+            "exists": f"{relative} could not be written: the name already exists.",
+        }.get(exc.reason, f"{relative} could not be read: {exc}")
+        raise RepositoryError(exc.reason, message) from exc
+    except OSError as exc:
         raise RepositoryError(
-            "encoding",
-            f"{relative} is not UTF-8 text. Refinix only reads UTF-8 files in this version."
-        ) from exc
-    identity = FileIdentity(device=info.st_dev, inode=info.st_ino, size=info.st_size,
-                            mode=stat.S_IMODE(info.st_mode),
-                            sha256=hashlib.sha256(data).hexdigest())
-    return text, identity
+            "unreadable",
+            f"{relative} could not be used: {exc.strerror or exc}") from exc
 
 
 def list_text_files(root: Path, *, limit: int = MAX_LIST_ENTRIES) -> list[dict]:
     """Bounded listing of candidate files. Excluded trees are never entered."""
-    _require_platform()
+    if _require_platform() == WINDOWS_BACKEND:
+        return _windows_list(root, limit=limit)
     found: list[dict] = []
     truncated = False
 
@@ -416,6 +586,49 @@ def list_text_files(root: Path, *, limit: int = MAX_LIST_ENTRIES) -> list[dict]:
     return found if not truncated else found[:limit]
 
 
+def _windows_list(root: Path, *, limit: int) -> list[dict]:
+    """The same listing, descending only through pinned directories.
+
+    The walk descends with `folder.child`, which keeps every directory above
+    it open, rather than reopening the chain from the root for each folder —
+    the same shape the POSIX walk has, and the reason a deep tree costs one
+    open per directory instead of one per level per directory.
+
+    A listing offers candidates; it is not the read. Every name is opened and
+    re-verified by `read_text_file` before a byte of it is used, so a folder
+    that disappears mid-walk is skipped rather than failing the listing.
+    """
+    found: list[dict] = []
+
+    def walk(folder, prefix: str, depth: int) -> None:
+        if len(found) >= limit or depth > MAX_DEPTH:
+            return
+        for name, entry in sorted(folder.entries(), key=lambda item: item[0]):
+            if len(found) >= limit:
+                return
+            if entry.is_reparse_point:
+                continue
+            if entry.is_directory:
+                if name in EXCLUDED_DIRECTORIES:
+                    continue
+                try:
+                    with folder.child(name) as inner:
+                        walk(inner, f"{prefix}{name}/", depth + 1)
+                except (winfs.WindowsError_, OSError):
+                    continue
+                continue
+            if name in EXCLUDED_FILENAMES \
+                    or PurePosixPath(name).suffix.lower() in EXCLUDED_SUFFIXES:
+                continue
+            if entry.size > MAX_FILE_BYTES or entry.links > 1:
+                continue
+            found.append({"path": f"{prefix}{name}", "bytes": entry.size})
+
+    with _windows_errors(str(root)), winfs.root_directory(root) as folder:
+        walk(folder, "", 0)
+    return found[:limit]
+
+
 # --------------------------------------------------------------------------
 # Atomic replacement
 # --------------------------------------------------------------------------
@@ -429,7 +642,7 @@ def replace_text_file(root: Path, relative: str, *, expected_sha256: str,
     temporary file, flushed, and moved over the target in one `os.replace`, so
     a reader never sees a half-written file and a failure leaves the original.
     """
-    _require_platform()
+    backend = _require_platform()
     relative = normalise_relative(relative)
     if not isinstance(text, str):
         raise RepositoryError("bad_content", "The replacement must be text.")
@@ -438,6 +651,9 @@ def replace_text_file(root: Path, relative: str, *, expected_sha256: str,
         raise RepositoryError(
             "too_large", f"The replacement for {relative} is larger than "
                          f"{MAX_FILE_BYTES // 1024} KB.")
+    if backend == WINDOWS_BACKEND:
+        return _windows_replace(root, relative, expected_sha256=expected_sha256,
+                                data=data)
 
     parts = relative.split("/")
     root_fd = _open_directory(root)
@@ -466,7 +682,7 @@ def replace_text_file(root: Path, relative: str, *, expected_sha256: str,
                              "Nothing was written.")
 
             mode = stat.S_IMODE(info.st_mode)
-            temporary = f".refinix-{os.getpid()}-{os.urandom(6).hex()}.tmp"
+            temporary = _temporary_name()
             create = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
             out = os.open(temporary, create, mode, dir_fd=parent_fd)
             try:
@@ -510,6 +726,102 @@ def replace_text_file(root: Path, relative: str, *, expected_sha256: str,
                         sha256=hashlib.sha256(data).hexdigest())
 
 
+def _temporary_name() -> str:
+    return f".refinix-{os.getpid()}-{os.urandom(6).hex()}.tmp"
+
+
+def _windows_replace(root: Path, relative: str, *, expected_sha256: str,
+                     data: bytes) -> FileIdentity:
+    """The same replacement, inside a directory pinned for its whole duration.
+
+    The order is the one the POSIX path uses, for the same reasons: reopen and
+    re-hash the target through a fresh handle, write the replacement to a
+    temporary file beside it, flush, and only then move it over the name. A
+    failure at any point leaves the original untouched and removes the
+    temporary file.
+
+    The target's handle is closed before the move because Windows refuses to
+    replace a file that something still holds open. The window that opens is
+    the same one POSIX has between closing its handle and calling `renameat`,
+    and it is bounded the same way: the parent directory is pinned, so the
+    name being replaced is still a name in the directory that was verified,
+    and `os.replace` acts on the name rather than following a link left there.
+    """
+    parts = relative.split("/")
+    with _windows_errors(relative), winfs.pinned(root, parts[:-1]) as folder:
+        try:
+            descriptor, entry = folder.open_file(parts[-1])
+        except winfs.WindowsError_ as exc:
+            raise RepositoryError(
+                "stale", f"{relative} could not be reopened: {exc}") from exc
+        try:
+            _check_bounds(relative, links=entry.links, size=entry.size)
+            current = _read_all(descriptor, MAX_FILE_BYTES)
+        finally:
+            os.close(descriptor)
+        if hashlib.sha256(current).hexdigest() != expected_sha256:
+            raise RepositoryError(
+                "stale", f"{relative} changed on disk after the preview was made. "
+                         "Nothing was written.")
+
+        # `temporary` names a file that must not survive this block unless it
+        # was promoted over the target, and `out` must be closed however the
+        # block ends. Both are cleaned in one `finally` rather than at each
+        # raise, so a failure this code does not anticipate — not only an
+        # `OSError` — still leaves the folder as it was found. The POSIX path
+        # is built the same way, for the same reason.
+        temporary, out, promoted = _temporary_name(), None, False
+        created = False
+        try:
+            try:
+                out, _entry = folder.create_file(temporary)
+            except winfs.WindowsError_ as exc:
+                # `CREATE_NEW` fails without creating anything when the name
+                # already exists, and that name is then somebody else's file —
+                # so nothing is cleaned up for it. Every *other* outcome, a
+                # success or any other failure, may have left the name behind:
+                # the file is created before the handle is inspected.
+                created = exc.reason != "exists"
+                raise
+            except BaseException:
+                created = True
+                raise
+            else:
+                created = True
+            _write_all(out, data)
+            os.fsync(out)
+            if os.fstat(out).st_size != len(data):
+                raise OSError(errno.EIO, "the replacement was written short")
+            os.close(out)
+            out = None
+            # The bytes are already flushed, so the content is durable before
+            # the name changes. Windows offers no directory fsync; NTFS
+            # journals the rename itself, and `os.replace` is the same
+            # `MoveFileExW` the POSIX `renameat` mirrors.
+            folder.replace(temporary, parts[-1])
+            promoted = True
+        except (OSError, winfs.WindowsError_) as exc:
+            if isinstance(exc, winfs.WindowsError_) and exc.reason == "exists":
+                raise
+            raise RepositoryError(
+                "write_failed",
+                f"{relative} could not be written ({getattr(exc, 'strerror', None) or exc}). "
+                "The original file was not changed.") from exc
+        finally:
+            if out is not None:
+                try:
+                    os.close(out)
+                except OSError:
+                    pass
+            if created and not promoted:
+                folder.unlink(temporary)
+        written = folder.stat(parts[-1])
+
+    return FileIdentity(device=written.device, inode=written.inode,
+                        size=written.size, mode=written.mode,
+                        sha256=hashlib.sha256(data).hexdigest())
+
+
 def root_is_intact(root: Path, identity: dict | None) -> bool:
     """True when the connected folder is still the same directory it was."""
     try:
@@ -517,6 +829,10 @@ def root_is_intact(root: Path, identity: dict | None) -> bool:
     except OSError:
         return False
     if not stat.S_ISDIR(info.st_mode):
+        return False
+    # A junction put in place of the folder keeps `S_ISDIR` true while sending
+    # every name somewhere else, so the reparse attribute is checked as well.
+    if getattr(info, "st_file_attributes", 0) & winfs.FILE_ATTRIBUTE_REPARSE_POINT:
         return False
     if not identity:
         return True

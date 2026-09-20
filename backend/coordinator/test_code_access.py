@@ -551,7 +551,7 @@ class TestUnsupportedPlatform(RepoBase):
     """Where the containment guarantee is unavailable, everything fails closed."""
 
     def test_listing_reading_and_writing_all_refuse_together(self):
-        with patch.object(repo, "descriptor_traversal_supported", return_value=False):
+        with patch.object(repo, "containment_backend", return_value=None):
             for call in (lambda: repo.list_text_files(self.project),
                          lambda: repo.read_text_file(self.project, "notes.md"),
                          lambda: repo.replace_text_file(
@@ -567,7 +567,7 @@ class TestUnsupportedPlatform(RepoBase):
 
     def test_the_surface_reports_code_as_unsupported(self):
         repo_id = self.connect("partial")
-        with patch.object(repo, "descriptor_traversal_supported", return_value=False):
+        with patch.object(repo, "containment_backend", return_value=None):
             state = self.svc.state(repo_id)
             self.assertFalse(state["writes_supported"])
             self.assertEqual(state["platform_note"], repo.PLATFORM_NOTE)

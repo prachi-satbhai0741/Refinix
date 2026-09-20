@@ -38,7 +38,7 @@ class TestViewPolicy(unittest.TestCase):
         self.assertIn("model", policy.ACTION_LABELS[policy.ACTION_READ])
 
 
-@unittest.skipUnless(repo.descriptor_traversal_supported(),
+@unittest.skipUnless(repo.containment_supported(),
                      "this platform cannot contain repository access")
 class TestViewingThroughTheCoordinator(unittest.TestCase):
     def setUp(self):

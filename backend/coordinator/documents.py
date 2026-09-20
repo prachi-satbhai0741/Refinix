@@ -9,10 +9,13 @@ is actually installed, not by what the interface would like to offer:
   pages at explicit page breaks.
 * **Excel** — `.xlsx`. Also a ZIP of OOXML, read by `xlsx.py`, one page per
   worksheet so a cell reference resolves. No formula is ever calculated.
-* **PDF** — rendered page by page with the macOS Quartz framework and read by
-  the local vision model (`pdfrender.py` and `ocr.py`). Where PyObjC or the
-  model is absent, `probe()` reports the exact missing prerequisite and the
-  file is refused rather than half-read.
+* **PDF** — rendered page by page by whichever renderer this computer has, and
+  read by the local vision model (`pdfrender.py` and `ocr.py`). The portable
+  PDFium engine is preferred on Windows, macOS and Linux alike, with the macOS
+  Quartz framework retained as a fallback. Where no renderer or no model is
+  present, `probe()` reports the exact missing prerequisite and the file is
+  refused rather than half-read. The method string names the renderer that
+  actually drew the pages, never a fixed framework.
 * **images** — `.png` and `.jpg`/`.jpeg`, sent straight to the local vision
   model as one page. A supplied image already *is* a page image, so there is
   no renderer in that path and the method string never claims one. Other
@@ -505,9 +508,8 @@ def _extract_image(data: bytes, filename: str, media_type: str, *,
                    ocr_model: str = ocr.runtime.OCR_MODEL):
     """Send one supplied image to the local vision model, as page 1.
 
-    No renderer and no Quartz: the file already is a page image. The method
-    string says exactly that, so a reader is never told a PDF was rendered
-    when none was.
+    No renderer at all: the file already is a page image. The method string says
+    exactly that, so a reader is never told a PDF was rendered when none was.
     """
     state = ocr.image_probe(ocr_model)
     if not state["available"]:

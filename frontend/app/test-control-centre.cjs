@@ -116,11 +116,30 @@ test('with nothing connected it says work runs here', () => {
   assert.match(p.text('c-others-facts'), /on this computer/);
 });
 
-test('without a Keychain it says connecting is switched off, not that it failed', () => {
+test('without a credential store it says connecting is switched off, not that it failed', () => {
   const p = render({ paired: false, keychain_available: false });
-  assert.match(p.text('c-others-lead'), /Keychain/);
+  assert.match(p.text('c-others-lead'), /switched off/);
   assert.equal(p.document.getElementById('c-others-actions').children.length, 0,
     'no connect button when the credential has nowhere legitimate to go');
+});
+
+test('the unavailable store names this computer\'s own prerequisite', () => {
+  // The coordinator knows which store this OS uses; the card must repeat that
+  // rather than sending a Windows or Linux user to fix a macOS framework.
+  const p = render({
+    paired: false, keychain_available: false,
+    credential_store: {
+      available: false, backend: 'secret-service',
+      detail: 'This computer has no `secret-tool`, so the desktop keyring cannot be reached.',
+    },
+  });
+  assert.match(p.text('c-others-lead'), /secret-tool/);
+  assert.doesNotMatch(p.text('c-others-lead'), /Keychain/);
+});
+
+test('an older coordinator that sends no store detail still explains itself', () => {
+  const p = render({ paired: false, keychain_available: false });
+  assert.match(p.text('c-others-lead'), /not available here/);
 });
 
 test('a paired healthy worker shows its observed measurements', () => {

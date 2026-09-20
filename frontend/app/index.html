@@ -168,7 +168,12 @@
         <ul class="attachments" id="attachments" hidden
             aria-label="Files attached to this request"></ul>
 
-        <div class="composer-line">
+        <!-- What the request is configured to do, on its own row. These used
+             to share a flex line with the prompt, so each chip took width the
+             person was trying to write in; with two of them the prompt became
+             a narrow column beside the controls. Configuration reads across
+             the top, the prompt gets the whole width below it. -->
+        <div class="composer-task" id="composer-task" hidden>
           <span class="skill-chip" id="skill-chip" hidden>
             <span class="skill-icon" id="skill-icon" aria-hidden="true"></span>
             <button class="skill-name" type="button" id="skill-name"
@@ -176,12 +181,28 @@
             <button class="skill-remove" type="button" id="skill-remove"
                     aria-label="Remove the selected skill">&#215;</button>
           </span>
+          <!-- The document workflow, beside the skill it belongs to. It used
+               to be reachable only inside the model-settings popover, so a
+               person selecting Write a document saw no sign that the fixed
+               approval-note workflow existed at all. -->
+          <span class="workflow-chip" id="workflow-chip" hidden>
+            <label class="workflow-label" for="workflow-select">Workflow</label>
+            <select class="workflow-select" id="workflow-select"
+                    aria-describedby="workflow-hint"></select>
+          </span>
+        </div>
+
+        <div class="composer-line">
           <label class="visually-hidden" for="input">Your request</label>
           <textarea class="composer-input" id="input" rows="1"
                     placeholder="Ask, or describe the task. Enter sends, Shift+Enter for a new line."></textarea>
         </div>
 
         <p class="skill-status" id="skill-status" hidden></p>
+        <!-- Guidance, not a warning. It explains how the files will be read;
+             nothing has gone wrong, so it must not wear the caution colour
+             `skill-status` carries. -->
+        <p class="composer-hint" id="workflow-hint" hidden></p>
 
         <div class="composer-bar">
           <button class="round-btn" type="button" id="plus-btn"

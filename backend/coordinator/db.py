@@ -24,7 +24,7 @@ from unicodedata import category
 
 from backend.contracts import v1
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # ponytail: one coordinator database; use per-database locks if hosting several.
 LOCK = threading.RLock()
@@ -146,6 +146,20 @@ CREATE TABLE IF NOT EXISTS model_selections (
     scope      TEXT PRIMARY KEY,
     model      TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+-- One capability self-test result per model and workflow. `digest` is the
+-- manifest the result was observed against: replacing a model's bytes under
+-- the same tag must not inherit its pass, and the row stays so the fact that a
+-- check was once run is not lost either.
+CREATE TABLE IF NOT EXISTS model_selftests (
+    model           TEXT NOT NULL,
+    scope           TEXT NOT NULL,
+    state           TEXT NOT NULL,
+    detail          TEXT NOT NULL,
+    digest          TEXT,
+    runtime_version TEXT,
+    ran_at          TEXT NOT NULL,
+    PRIMARY KEY (model, scope)
 );
 -- A folder the user connected through the native picker. `root` is the
 -- canonical absolute path and never leaves the coordinator: the page and the
@@ -506,6 +520,13 @@ def connect(path: Path) -> sqlite3.Connection:
     audit_columns = {r["name"] for r in conn.execute("PRAGMA table_info(code_audit)")}
     if "conversation_id" not in audit_columns:
         conn.execute("ALTER TABLE code_audit ADD COLUMN conversation_id TEXT")
+    # Whether a model may be chosen for new work. Everything that existed
+    # before this column was choosable, so the default is on: a migration must
+    # not silently disable a model somebody is already using.
+    pref_columns = {r["name"] for r in conn.execute("PRAGMA table_info(model_prefs)")}
+    if "enabled" not in pref_columns:
+        conn.execute("ALTER TABLE model_prefs ADD COLUMN enabled INTEGER NOT NULL"
+                     " DEFAULT 1")
     # Full-text search is created only where this SQLite build has FTS5. Its
     # absence disables document search and says so; it never fails a startup.
     try:
@@ -1053,6 +1074,70 @@ def set_reasoning(conn, model: str, enabled: bool) -> bool:
             " updated_at=excluded.updated_at",
             (model, int(enabled), now()))
     return enabled
+
+
+@serialized
+def get_model_enabled(conn, model: str) -> bool:
+    """Whether this model may be chosen for new work.
+
+    Absent means enabled. Disabling is an explicit act, so a model nobody has
+    touched must not arrive switched off.
+    """
+    row = conn.execute("SELECT enabled FROM model_prefs WHERE model=?",
+                       (model,)).fetchone()
+    return bool(row["enabled"]) if row else True
+
+
+@serialized
+def set_model_enabled(conn, model: str, enabled: bool) -> bool:
+    if not isinstance(model, str) or not model.strip() or len(model) > 200:
+        raise ValueError("a model name is required")
+    if not isinstance(enabled, bool):
+        raise ValueError("enabled must be true or false")
+    with conn:
+        conn.execute(
+            "INSERT INTO model_prefs(model, reasoning, enabled, updated_at)"
+            " VALUES (?,?,?,?)"
+            " ON CONFLICT(model) DO UPDATE SET enabled=excluded.enabled,"
+            " updated_at=excluded.updated_at",
+            (model, int(DEFAULT_REASONING), int(enabled), now()))
+    return enabled
+
+
+@serialized
+def model_enablement(conn) -> dict:
+    """Every explicit enable/disable decision, for one read instead of many."""
+    return {row["model"]: bool(row["enabled"])
+            for row in conn.execute("SELECT model, enabled FROM model_prefs")}
+
+
+@serialized
+def record_selftest(conn, *, model: str, scope: str, state: str, detail: str,
+                    digest: str | None, runtime_version: str | None) -> dict:
+    """Store one capability check against the manifest it was observed on."""
+    if not isinstance(model, str) or not model.strip() or len(model) > 200:
+        raise ValueError("a model name is required")
+    if not isinstance(scope, str) or not scope or len(scope) > 64:
+        raise ValueError("a model scope is required")
+    ran_at = now()
+    with conn:
+        conn.execute(
+            "INSERT INTO model_selftests(model, scope, state, detail, digest,"
+            " runtime_version, ran_at) VALUES (?,?,?,?,?,?,?)"
+            " ON CONFLICT(model, scope) DO UPDATE SET state=excluded.state,"
+            " detail=excluded.detail, digest=excluded.digest,"
+            " runtime_version=excluded.runtime_version, ran_at=excluded.ran_at",
+            (model, scope, state, detail[:2000], digest, runtime_version, ran_at))
+    return {"model": model, "scope": scope, "state": state,
+            "detail": detail[:2000], "digest": digest,
+            "runtime_version": runtime_version, "ran_at": ran_at}
+
+
+@serialized
+def selftests(conn) -> list[dict]:
+    return [dict(row) for row in conn.execute(
+        "SELECT model, scope, state, detail, digest, runtime_version, ran_at"
+        " FROM model_selftests ORDER BY model, scope")]
 
 
 @serialized

@@ -106,10 +106,11 @@ def probe(model: str = runtime.OCR_MODEL) -> dict:
     """Whether this computer can read a scan right now, and why not if not.
 
     Every unavailable answer names one prerequisite, because each needs a
-    different fix: no renderer (install PyObjC), no runtime (start Ollama), no
-    such model (a device checkpoint, since nothing here downloads), or a model
-    that is present and does not accept images (choose another installed
-    model). Collapsing them would send someone to fix the wrong thing.
+    different fix: no renderer (the renderer's own probe names which one is
+    missing on this platform), no runtime (start Ollama), no such model (a
+    device checkpoint, since nothing here downloads), or a model that is present
+    and does not accept images (choose another installed model). Collapsing them
+    would send someone to fix the wrong thing.
     """
     render = pdfrender.probe()
     model = runtime.model_state(model, requires=runtime.VISION_CAPABILITY)
@@ -127,10 +128,19 @@ def probe(model: str = runtime.OCR_MODEL) -> dict:
 
 
 def method_label(digest: str | None = None,
-                 model: str = runtime.OCR_MODEL) -> str:
-    """How an extraction says it was produced. Always the exact model tag."""
+                 model: str = runtime.OCR_MODEL,
+                 renderer: str | None = None) -> str:
+    """How an extraction says it was produced. Always the exact model tag.
+
+    `renderer` is the backend that actually drew the pages, taken from the pages
+    themselves. Naming a fixed framework here stopped being truthful the moment
+    there was more than one renderer: a page drawn by the portable engine must
+    not be recorded as a Quartz render. An unnamed renderer is reported as
+    unnamed rather than filled in with whichever backend happens to be selected.
+    """
     suffix = f" manifest {digest[:16]}…" if digest else " manifest unavailable"
-    return f"pdf render (Quartz) + vision ({model}){suffix}"
+    return (f"pdf render ({renderer or 'renderer not recorded'}) "
+            f"+ vision ({model}){suffix}")
 
 
 # --------------------------------------------------------------------------
@@ -369,6 +379,10 @@ def extract_pdf(data: bytes, *, filename: str, should_cancel=None,
     renderer = render or pdfrender.render_pages
     digest = state["model"].get("digest")
     pages, warnings = [], []
+    # Recorded from the pages as they arrive, never assumed from the probe: an
+    # injected renderer, or a second backend, must not be reported as the one
+    # `probe()` happens to prefer.
+    drew_pages = None
     try:
         for rendered in renderer(data, should_cancel=should_cancel):
             if should_cancel is not None and should_cancel():
@@ -378,6 +392,7 @@ def extract_pdf(data: bytes, *, filename: str, should_cancel=None,
             if text == "[unreadable]":
                 warnings.append(
                     f"Page {rendered.number} produced no readable text.")
+            drew_pages = getattr(rendered, "renderer", "") or drew_pages
             pages.append({
                 # The coordinator's number, from the renderer. The model was
                 # never told which page this is and never supplies one.
@@ -401,7 +416,7 @@ def extract_pdf(data: bytes, *, filename: str, should_cancel=None,
             "guessed to fill the gap.")
     return {
         "pages": pages,
-        "method": method_label(digest, model),
+        "method": method_label(digest, model, drew_pages),
         "uncertain": uncertain,
         # The renderer counted these pages; it is an observation of the file.
         "page_count": len(pages),

@@ -27,6 +27,8 @@ const tick = () => new Promise(setImmediate);
  * exercised without a browser. */
 function makeDocument() {
   const node = (tag = 'div') => {
+    const handlers = {};
+    const listenerCounts = {};
     const el = {
       tag, children: [], dataset: {}, style: {}, hidden: false, disabled: false,
       value: '', checked: false, className: '', title: '', rows: 3, _text: '',
@@ -50,8 +52,12 @@ function makeDocument() {
       setAttribute(name, value) { this.attributes[name] = String(value); },
       getAttribute(name) { return this.attributes[name]; },
       removeAttribute(name) { delete this.attributes[name]; },
-      addEventListener(type, fn) { (this.handlers ||= {})[type] = fn; },
-      dispatch(type) { if (this.handlers && this.handlers[type]) this.handlers[type](); },
+      addEventListener(type, fn) {
+        handlers[type] = fn;
+        listenerCounts[type] = (listenerCounts[type] || 0) + 1;
+      },
+      dispatch(type) { if (handlers[type]) handlers[type](); },
+      listenerCount(type) { return listenerCounts[type] || 0; },
       querySelector() { return null; }, querySelectorAll() { return []; },
       getBoundingClientRect() { return { top: 100, left: 10, right: 60, bottom: 120 }; },
       focus() {}, remove() {}, contains() { return false; },
@@ -551,6 +557,64 @@ test('the document choices start on Word and the general workflow', () => {
   assert.deepEqual(checked(groups[1]), ['General document']);
 });
 
+/* A format this computer cannot write.
+ *
+ * Word is portable and is the required artifact; PDF writing still needs the
+ * macOS frameworks. The picker used to offer PDF everywhere, which meant a
+ * Windows or Linux user chose it, pressed Send, and only then learned it was
+ * impossible. The coordinator now says which formats it can write. */
+test('a format this computer cannot write is shown disabled with a reason', () => {
+  const p = page();
+  p.run(`lastStatus = { documents: { generates: ['docx'],
+    generate_detail: { pdf: 'Writing a PDF needs the macOS frameworks.' } } };
+    appendDocumentChoices(document.body);`);
+  const format = p.document.body.children.filter(
+    (node) => node.className === 'mp-choices')[0];
+  const rows = format.children[1].children;
+  assert.equal(rows[0].disabled, false, 'Word is always writable');
+  assert.equal(rows[1].disabled, true, 'PDF is not writable here');
+  assert.equal(rows[1].children[2].textContent, 'unavailable here');
+});
+
+test('an unwritable format cannot become the selection', () => {
+  const p = page();
+  p.run(`outputFormat = 'pdf';
+    lastStatus = { documents: { generates: ['docx'], generate_detail: {} } };
+    appendDocumentChoices(document.body);`);
+  assert.equal(p.run('outputFormat'), 'docx',
+    'a selection that cannot be written must not survive to Send');
+});
+
+test('clicking a disabled format changes nothing', () => {
+  const p = page();
+  p.run(`lastStatus = { documents: { generates: ['docx'], generate_detail: {} } };
+    appendDocumentChoices(document.body);`);
+  const format = p.document.body.children.filter(
+    (node) => node.className === 'mp-choices')[0];
+  format.children[1].children[1].onclick();
+  assert.equal(p.run('outputFormat'), 'docx');
+});
+
+test('before any status arrives nothing is switched off', () => {
+  // Guessing "unavailable" from a missing answer would disable a format that
+  // works. The coordinator still refuses an impossible one at Send.
+  const p = page();
+  p.run(`lastStatus = null; appendDocumentChoices(document.body);`);
+  const rows = p.document.body.children.filter(
+    (node) => node.className === 'mp-choices')[0].children[1].children;
+  assert.deepEqual(rows.map((row) => row.disabled), [false, false]);
+});
+
+test('both formats stay offered where the computer can write both', () => {
+  const p = page();
+  p.run(`lastStatus = { documents: { generates: ['docx', 'pdf'],
+                                     generate_detail: {} } };
+    appendDocumentChoices(document.body);`);
+  const rows = p.document.body.children.filter(
+    (node) => node.className === 'mp-choices')[0].children[1].children;
+  assert.deepEqual(rows.map((row) => row.disabled), [false, false]);
+});
+
 test('the document choices travel with the request, not just the page', () => {
   assert.match(source,
     /output_format: skill\?\.id === 'write-document' \? sentFormat : undefined/,
@@ -613,4 +677,243 @@ test('an earlier source is sent explicitly and remains scoped to its chat', asyn
                    ['11111111-1111-1111-1111-111111111111']);
   p.requests.shift().reply({job_id:'job-1'}); await sending;
   assert.equal(p.run("(reusedByChat.get('chat-1') || []).length"), 0);
+});
+
+/* ------------------------------------------------------------------------
+ * The document workflow, chosen in the composer.
+ *
+ * The control and the payload were already correct; the control lived inside
+ * the model-settings popover, where nobody looks for it. A real run attached
+ * an inspection report and an SOP, asked in plain English for a grounded
+ * approval note, and got the general route — because the composer never
+ * offered the choice. These checks are about the choice being visible and the
+ * chosen value being what is sent, not about the backend workflow.
+ * --------------------------------------------------------------------- */
+
+const APPROVAL = 'inspection_report_to_approval_note';
+
+/* A page with Write a document selected, as the + menu leaves it. */
+function writing() {
+  const p = page();
+  p.run(`chatId='chat-1'; renderStaged=()=>{}; saveDraftSoon=async()=>{};
+    openChat=async()=>{}; loadChats=async()=>{}; refreshContext=()=>{};
+    capabilities=[{id:'write-document', name:'Write a document', icon:'doc',
+                   kind:'document', state:'available', detail:''}];
+    skillByChat.set('chat-1', capabilities[0]);
+    renderSkill();`);
+  return p;
+}
+
+test('choosing Write a document shows the workflow, defaulting to general', () => {
+  const p = writing();
+  assert.equal(p.run("document.getElementById('workflow-chip').hidden"), false,
+               'the workflow is visible before Send');
+  assert.equal(p.run("document.getElementById('workflow-select').value"),
+               'general_document');
+  // Both workflows are offered, by name rather than by identifier. Joined
+  // rather than compared as arrays: the vm returns another realm's Array, so
+  // a strict deep-equal fails on the prototype even when the contents match.
+  assert.equal(
+    p.run("Array.from(document.getElementById('workflow-select').children)"
+          + ".map(o => o.textContent).join('|')"),
+    'General document|Inspection approval note');
+  assert.equal(
+    p.run("Array.from(document.getElementById('workflow-select').children)"
+          + ".map(o => o.value).join('|')"),
+    `general_document|${APPROVAL}`);
+});
+
+test('the approval note can be chosen and stays chosen', () => {
+  const p = writing();
+  p.run(`document.getElementById('workflow-select').value = '${APPROVAL}';
+         document.getElementById('workflow-select').dispatch('change');`);
+  assert.equal(p.run('docWorkflow'), APPROVAL);
+  assert.equal(p.run("document.getElementById('workflow-select').value"), APPROVAL);
+  // The positional rule is stated only for the workflow that depends on it.
+  assert.equal(p.run("document.getElementById('workflow-hint').hidden"), false);
+  assert.match(p.run("document.getElementById('workflow-hint').textContent"),
+               /First attachment is treated as the inspection report/);
+});
+
+test('rendering the skill repeatedly wires the workflow only once', () => {
+  const p = writing();
+  p.run('renderSkill(); renderSkill(); renderSkill();');
+  assert.equal(
+    p.run("document.getElementById('workflow-select').listenerCount('change')"),
+    1,
+    'real DOM elements expose no test-harness handlers field, so wiring needs '
+      + 'its own idempotent marker');
+});
+
+test('the general workflow carries no attachment-order instruction', () => {
+  const p = writing();
+  assert.equal(p.run("document.getElementById('workflow-hint').hidden"), true);
+});
+
+test('the chosen workflow is what the request actually sends', async () => {
+  const p = writing();
+  p.run(`document.getElementById('workflow-select').value = '${APPROVAL}';
+         document.getElementById('workflow-select').dispatch('change');`);
+  const sending = p.run("send('Draft the approval note')");
+  await tick();
+  assert.equal(p.requests[0].body.skill_id, 'write-document');
+  assert.equal(p.requests[0].body.doc_workflow, APPROVAL);
+  p.requests.shift().reply({ job_id: 'job-1' }); await sending;
+});
+
+test('the default workflow sends general_document, not the approval note', async () => {
+  const p = writing();
+  const sending = p.run("send('Write me a document explaining machine learning')");
+  await tick();
+  assert.equal(p.requests[0].body.doc_workflow, 'general_document');
+  p.requests.shift().reply({ job_id: 'job-1' }); await sending;
+});
+
+test('attaching and removing files does not change the chosen workflow', () => {
+  const p = writing();
+  p.run(`document.getElementById('workflow-select').value = '${APPROVAL}';
+         document.getElementById('workflow-select').dispatch('change');
+         chooseReuse({attachment_id:'11111111-1111-1111-1111-111111111111',
+                      filename:'scan.png'});
+         renderSkill();`);
+  assert.equal(p.run('docWorkflow'), APPROVAL, 'adding a source kept it');
+  p.run(`reusedByChat.set('chat-1', []); renderSkill();`);
+  assert.equal(p.run('docWorkflow'), APPROVAL, 'removing a source kept it');
+});
+
+test('removing the skill hides the workflow and stops sending one', async () => {
+  const p = writing();
+  p.run(`document.getElementById('workflow-select').value = '${APPROVAL}';
+         document.getElementById('workflow-select').dispatch('change');
+         skillByChat.delete('chat-1'); renderSkill();`);
+  assert.equal(p.run("document.getElementById('workflow-chip').hidden"), true);
+  assert.equal(p.run("document.getElementById('workflow-hint').hidden"), true);
+  const sending = p.run("send('an ordinary question')");
+  await tick();
+  // No stale document workflow contaminates an ordinary turn.
+  assert.equal(p.requests[0].body.doc_workflow, undefined);
+  assert.equal(p.requests[0].body.skill_id, undefined);
+  p.requests.shift().reply({ job_id: 'job-1' }); await sending;
+});
+
+test('the other document skills neither show nor send a workflow', async () => {
+  for (const id of ['read-document', 'search-documents']) {
+    const p = page();
+    p.run(`chatId='chat-1'; renderStaged=()=>{}; saveDraftSoon=async()=>{};
+      openChat=async()=>{}; loadChats=async()=>{}; refreshContext=()=>{};
+      capabilities=[{id:'${id}', name:'${id}', icon:'doc', kind:'document',
+                     state:'available', detail:''}];
+      skillByChat.set('chat-1', capabilities[0]); renderSkill();`);
+    assert.equal(p.run("document.getElementById('workflow-chip').hidden"), true,
+                 `${id} must not offer a document workflow`);
+    const sending = p.run("send('read it')");
+    await tick();
+    assert.equal(p.requests[0].body.doc_workflow, undefined, id);
+    p.requests.shift().reply({ job_id: 'job-1' }); await sending;
+  }
+});
+
+test('the composer and the model popover are two views of one value', () => {
+  const p = writing();
+  p.run(`document.getElementById('workflow-select').value = '${APPROVAL}';
+         document.getElementById('workflow-select').dispatch('change');`);
+  // The popover writes the same state the chip reads, so they cannot disagree.
+  p.run("docWorkflow = 'general_document'; renderWorkflowChip();");
+  assert.equal(p.run("document.getElementById('workflow-select').value"),
+               'general_document');
+});
+
+/* ------------------------------------------------------------------------
+ * Composer hierarchy.
+ *
+ * The skill chip, the workflow chip and the prompt shared one flex row, so
+ * each control took width away from the thing the person was trying to write
+ * in — with two chips the prompt became a narrow column beside them. The
+ * guidance line also inherited `skill-status`, which is the caution colour
+ * reserved for a capability that is unavailable, so ordinary advice about
+ * attachment order read as a warning.
+ * --------------------------------------------------------------------- */
+
+test('configuration sits on its own row, not in the prompt row', () => {
+  // The prompt no longer shares a flex row with controls that can shrink it:
+  // the chips live in `composer-task`, and `composer-line` holds the textarea
+  // alone. Asserted against the markup, which is where the structure lives.
+  const task = chatHtml.match(
+    /<div class="composer-task"[\s\S]*?<\/div>\s*<div class="composer-line"/);
+  assert.ok(task, 'the task row precedes the prompt row');
+  assert.match(task[0], /id="skill-chip"/);
+  assert.match(task[0], /id="workflow-chip"/);
+  const line = chatHtml.match(/<div class="composer-line">[\s\S]*?<\/div>/);
+  assert.ok(line);
+  assert.doesNotMatch(line[0], /skill-chip|workflow-chip/,
+                      'no control shares the prompt row');
+  assert.match(line[0], /id="input"/);
+
+  const p = writing();
+  assert.equal(p.run("document.getElementById('composer-task').hidden"), false,
+               'the task row is shown while a skill is selected');
+});
+
+test('the task row disappears when nothing configures the request', () => {
+  const p = writing();
+  p.run("skillByChat.delete('chat-1'); renderSkill();");
+  assert.equal(p.run("document.getElementById('composer-task').hidden"), true,
+               'an empty configuration row would leave a band above the prompt');
+});
+
+test('the attachment-order line is guidance, not a warning', () => {
+  const p = writing();
+  p.run(`document.getElementById('workflow-select').value = '${APPROVAL}';
+         document.getElementById('workflow-select').dispatch('change');`);
+  // The class is declared in the markup, so it is asserted there — the
+  // harness's document does not parse index.html. `skill-status` is the
+  // caution tier and belongs to an unavailable capability; nothing has gone
+  // wrong here, so the guidance must not wear it.
+  assert.match(chatHtml, /class="composer-hint" id="workflow-hint"/);
+  assert.doesNotMatch(chatHtml, /class="skill-status" id="workflow-hint"/);
+  assert.doesNotMatch(
+    p.run("document.getElementById('workflow-hint').textContent"),
+    /must|error|invalid|required/i,
+    'it explains how files are read; it does not report a failure');
+});
+
+test('the workflow control is described by its own guidance', () => {
+  // Read with the select rather than only reachable by scanning the page.
+  // When the guidance is hidden — the general workflow — assistive tech
+  // ignores the hidden target, so nothing extra is announced.
+  assert.match(chatHtml,
+               /id="workflow-select"[\s\S]{0,80}aria-describedby="workflow-hint"/);
+  assert.match(chatHtml, /<label class="workflow-label" for="workflow-select"/);
+});
+
+test('the guidance is absent for the general workflow', () => {
+  const p = writing();
+  assert.equal(p.run("document.getElementById('workflow-hint').hidden"), true);
+  assert.equal(p.run("document.getElementById('workflow-hint').textContent"), '');
+});
+
+test('the task row survives attachments being added and removed', () => {
+  const p = writing();
+  p.run(`document.getElementById('workflow-select').value = '${APPROVAL}';
+         document.getElementById('workflow-select').dispatch('change');
+         chooseReuse({attachment_id:'11111111-1111-1111-1111-111111111111',
+                      filename:'scan.png'});
+         chooseReuse({attachment_id:'22222222-2222-2222-2222-222222222222',
+                      filename:'sop.txt'});
+         renderSkill();`);
+  assert.equal(p.run("document.getElementById('composer-task').hidden"), false);
+  assert.equal(p.run('docWorkflow'), APPROVAL);
+  assert.equal(p.run("(reusedByChat.get('chat-1') || []).length"), 2,
+               'both attachments are held');
+});
+
+test('sending still works unchanged from the new layout', async () => {
+  const p = writing();
+  p.run(`document.getElementById('workflow-select').value = '${APPROVAL}';
+         document.getElementById('workflow-select').dispatch('change');`);
+  const sending = p.run("send('Draft the approval note')");
+  await tick();
+  assert.equal(p.requests[0].body.doc_workflow, APPROVAL);
+  assert.equal(p.requests[0].body.text, 'Draft the approval note');
+  p.requests.shift().reply({ job_id: 'job-1' }); await sending;
 });

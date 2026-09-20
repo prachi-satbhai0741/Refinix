@@ -24,9 +24,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from backend.contracts import v1
-from backend.coordinator import (code_service, context, db, dispatch, docflow,
-                                 docgen, documents, pairing, pdfgen, policy,
-                                 proof, repo, retrieval, runtime)
+from backend.coordinator import (code_service, context, db, device, dispatch,
+                                 docflow, docgen, documents, identity, models,
+                                 pairing, pdfgen, policy, proof, repo,
+                                 retrieval, runtime)
 
 repo_errors = repo.RepositoryError
 
@@ -100,15 +101,30 @@ CAPABILITIES = (
 )
 
 
+# Which self-test answers for which capability. Only the capabilities whose
+# smallest representative check exists are listed; the rest simply carry no
+# self-test rather than an invented "passed".
+CAPABILITY_SELFTEST_SCOPE = {
+    "chat": models.CHAT,
+    "code": models.CODE,
+    "write-document": models.DOCUMENTS_GENERATE,
+    "read-document": models.DOCUMENTS_OCR,
+}
+
 def _as_payload(query: dict) -> dict:
     """One-value view of a query string, so `_text` validates GET the same way."""
     return {key: values[0] for key, values in query.items() if values}
 
 
 def docgen_available() -> bool:
-    """Writing a .docx needs only the standard library here, but the check is
-    real rather than assumed: it is what the capability row reports."""
-    return hasattr(docgen, "write_docx") and hasattr(docgen, "validate")
+    """Whether real Word output works on this computer.
+
+    An observation, not a guess about the platform: `docgen.probe` writes a
+    small document to a temporary folder and reopens it once per process. A
+    computer that cannot do that reports Documents as blocked rather than
+    failing at the end of somebody's work.
+    """
+    return docgen.available()
 
 
 class RequestError(ValueError):
@@ -202,9 +218,37 @@ class Coordinator:
                 "runtime": "ollama",
                 "runtime_version": state.get("server_version") or "unknown"}
 
+    def _identity_message(self, model_id, runtime_state=None):
+        """The product-identity block for one Chat turn.
+
+        The installed list comes from the runtime health probe, which is the
+        cheapest authoritative answer available here — no second registry, and
+        no per-model capability call or paired-worker round trip on the path
+        every Chat message takes. When it cannot be read the block says so; it
+        never falls back to a number.
+        """
+        try:
+            # Named `installed`, not `models`: this module now imports a
+            # `models` module, and a local of the same name would shadow it.
+            installed = identity.linked_models(
+                runtime_state if runtime_state is not None else runtime.probe())
+        except Exception:                                  # noqa: BLE001
+            # An unreachable engine or worker is a reason to say the inventory
+            # is unavailable, never a reason to fail the person's message.
+            installed = None
+        return identity.system_message(engine=model_id, models=installed)
+
     def model_inventory(self, runtime_state: dict | None = None) -> list[dict]:
-        """Every observed installed model, plus absent configured defaults."""
+        """Every model this installation knows about, and its state here.
+
+        Four states rather than a list of names: installed, supported but not
+        installed, installed without recorded provenance, and unknown because
+        the engine did not answer. A model the person disabled keeps its row —
+        it is simply no longer eligible for new work, which is a different
+        fact from being absent.
+        """
         state = runtime_state if runtime_state is not None else runtime.probe()
+        reachable = bool(state.get("reachable"))
         digests = state.get("digests") or {}
         local = {model: digests.get(model) for model in (state.get("models") or [])
                  if model}
@@ -217,22 +261,42 @@ class Coordinator:
             if item.get("model_id") and len(item.get("manifest_sha256") or "") == 64:
                 remote[item["model_id"]] = item
         selected = {scope: self.model_for(scope) for scope in MODEL_DEFAULTS}
-        names = sorted(set(local) | set(remote) | set(MODEL_DEFAULTS.values()))
+        enablement = db.model_enablement(self.conn)
+        recorded = db.selftests(self.conn)
+        names = sorted(set(local) | set(remote) | set(MODEL_DEFAULTS.values())
+                       | set(models.BY_ID))
         rows = []
         for model in names:
-            locations = (["macOS coordinator"] if model in local else []) + \
-                        (["Ubuntu worker"] if model in remote else [])
+            # Named by role, not by operating system: the same words are true
+            # on Windows, macOS and Linux, and this installation cannot know a
+            # peer's OS beyond what that peer reports of itself.
+            locations = ([device.location_label(local=True)] if model in local else []) + \
+                        ([device.location_label(local=False)] if model in remote else [])
+            enabled = enablement.get(model, True)
             eligible = []
-            if model in local or model in remote:
+            if enabled and (model in local or model in remote):
                 eligible.extend(["chat", "code"])
-            if model in local:
+            if enabled and model in local:
                 eligible.append("documents.generate")
                 if runtime.VISION_CAPABILITY in \
                         (runtime.model_capabilities(model) or []):
                     eligible.append("documents.ocr")
+            lifecycle = models.lifecycle_state(
+                model, installed_here=model in local,
+                installed_elsewhere=model in remote, runtime_reachable=reachable)
             rows.append({
                 "id": model, "installed": bool(locations), "locations": locations,
+                "state": lifecycle,
+                "enabled": enabled,
                 "eligible_scopes": eligible,
+                "supported_scopes": list(
+                    (models.entry_for(model).scopes if models.entry_for(model)
+                     else ())),
+                "provenance": models.provenance(model),
+                "setup": models.setup_action(model) if lifecycle == models.ABSENT
+                         else None,
+                "selftests": models.selftest_view(
+                    recorded, model=model, digest=local.get(model)),
                 "selected_for": [scope for scope, chosen in selected.items()
                                  if chosen == model],
                 "reasoning": db.get_reasoning(self.conn, model),
@@ -250,13 +314,109 @@ class Coordinator:
         row = next((item for item in self.model_inventory() if item["id"] == model),
                    None)
         if row is None or scope not in row["eligible_scopes"]:
-            if scope == "documents.ocr" and row and row["installed"]:
+            # Ordered from the most fundamental reason outwards, so the message
+            # names the thing that actually has to change. A model that is both
+            # absent and switched off is absent first: turning it back on would
+            # not make it selectable.
+            if row is None or not row["installed"]:
+                raise RequestError("that model is not available for this workflow",
+                                   409)
+            if not row["enabled"]:
+                raise RequestError(
+                    "that model is switched off for new work; turn it back on first",
+                    409)
+            if scope == "documents.ocr":
                 raise RequestError(
                     "the runtime did not confirm that model accepts document images",
                     409)
             raise RequestError("that model is not available for this workflow", 409)
         db.set_model_selection(self.conn, scope, model)
         return {"scope": scope, "model": model}
+
+    def set_model_enabled(self, model: str, enabled: bool) -> dict:
+        """Turn one model on or off for new work.
+
+        Nothing is deleted and no running attempt changes: a job already
+        under way keeps the model it was dispatched with, because silently
+        swapping it would make the recorded attempt describe work that did not
+        happen. A disabled model simply stops being eligible for the next one.
+        """
+        row = next((item for item in self.model_inventory() if item["id"] == model),
+                   None)
+        if row is None:
+            raise RequestError("that model is not known to this installation", 404)
+        db.set_model_enabled(self.conn, model, bool(enabled))
+        return {"model": model, "enabled": bool(enabled),
+                "impact": self.removal_impact(model)}
+
+    def removal_impact(self, model: str) -> dict:
+        """What a removal would and would not break, before it happens."""
+        return models.removal_impact(
+            model,
+            selections={scope: self.model_for(scope) for scope in MODEL_DEFAULTS},
+            enabled=db.model_enablement(self.conn))
+
+    def run_model_selftest(self, scope: str,
+                           runtime_state: dict | None = None) -> dict:
+        """Run one capability's smallest representative check and record it.
+
+        Named apart from `run_selftest`, which is the *worker* round-trip: the
+        two answer different questions and must never be confused for one
+        another in a status line.
+
+        The result is stored against the manifest digest observed at the time,
+        so replacing a model's bytes under the same tag cannot inherit a pass.
+        A check that could not run is recorded as unavailable with its reason,
+        never as a failure of the model.
+        """
+        if scope not in models.SELFTESTS:
+            raise RequestError("there is no self-test for that workflow", 404)
+        state = runtime_state if runtime_state is not None else runtime.probe()
+        model = self.model_for(scope)
+        try:
+            if not state.get("reachable"):
+                raise models.SelfTestError(
+                    f"The local engine at {runtime.HOST} did not answer.")
+            if model not in (state.get("models") or []):
+                raise models.SelfTestError(
+                    f"{model} is not installed on this computer.")
+            # Asked only by the one check that needs a modality, so the other
+            # three do not pay for a round trip whose answer they ignore.
+            capabilities = (runtime.model_capabilities(model)
+                            if models.SELFTESTS[scope].needs_vision else None)
+            result = models.run_selftest(
+                scope, model, generate=self._selftest_generate,
+                artifact=docgen.selftest, capabilities=capabilities)
+        except models.SelfTestError as exc:
+            result = {"scope": scope, "model": model, "state": "unavailable",
+                      "detail": str(exc)}
+        return db.record_selftest(
+            conn=self.conn, model=model, scope=scope, state=result["state"],
+            detail=result["detail"],
+            digest=(state.get("digests") or {}).get(model),
+            runtime_version=state.get("server_version"))
+
+    def _selftest_generate(self, model: str, prompt: str) -> str:
+        """One bounded local generation, with no history and no tools.
+
+        Deliberately tiny: a self-test asks whether a reply arrives at all on
+        this computer, so the output allowance is small enough that a slow
+        model still answers and nothing here can be mistaken for a quality
+        measurement.
+
+        It watches the coordinator's stopping flag for the same reason every
+        other streaming path does: without it, quitting while a self-test is
+        loading a cold model would wait out the runtime's whole request
+        timeout instead of closing.
+        """
+        collected = []
+        for kind, payload in runtime.stream_chat(
+                [{"role": "user", "content": prompt}], model=model,
+                think=False, num_predict=32,
+                should_cancel=self.stopping.is_set):
+            if kind == "delta":
+                collected.append(payload)
+        return "".join(collected)
 
     @db.serialized
     def request_cancel(self, job_id: str):
@@ -369,8 +529,14 @@ class Coordinator:
                     and docflow.requests_transcription(request_text)):
                 raise docflow.WorkflowError("source_selection_required",
                     "Choose the earlier source with + → Reuse, or attach it again. No file was reread; earlier answer text is not the original source.")
+            # Probed once and shared. Routing needs the model reference and the
+            # Chat identity block needs the installed list, and both used to ask
+            # separately — three extra loopback calls on every message for an
+            # answer the turn already had.
+            runtime_state = runtime.probe() if uses_model else None
             if skill_id in docflow.DOCUMENT_SKILLS:
-                model = self.local_model_ref(model_id) if uses_model else None
+                model = (self.local_model_ref(model_id, runtime_state)
+                         if uses_model else None)
                 route = dispatch.Route(
                     "local", "local coordinator: Documents runs on this computer",
                     node_id=self.node_id, model=model)
@@ -380,9 +546,11 @@ class Coordinator:
                     "local coordinator: this request has attached files, which "
                     "are read on this computer",
                     node_id=self.node_id,
-                    model=self.local_model_ref(model_id) if uses_model else None)
+                    model=(self.local_model_ref(model_id, runtime_state)
+                           if uses_model else None))
             else:
-                route = self.choose_route(model_id=model_id)
+                route = self.choose_route(model_id=model_id,
+                                          runtime_state=runtime_state)
             attempt_id = db.create_attempt(
                 self.conn, job_id=job_id,
                 node_id=route.node_id or self.node_id,
@@ -466,6 +634,15 @@ class Coordinator:
                 if final_selection is not None:
                     db.set_attempt_selection(self.conn, attempt_id,
                                              final_selection.as_dict())
+                # Who the person is talking to, and what is answering. Without
+                # it the model introduces itself as whatever family its weights
+                # came from, which is true of the weights and wrong about the
+                # product. Built from this attempt's own model, so changing the
+                # selection changes the answer with no edit here. Chat only:
+                # the document routes carry their own strict-JSON instructions
+                # and must not be given a second voice.
+                messages = [self._identity_message(model_id, runtime_state),
+                            *messages]
 
             collected, metrics = [], {}
             thinking_seen = False
@@ -477,10 +654,19 @@ class Coordinator:
                 db.append_output(self.conn, attempt_id, note)
                 self._emit(job_id, attempt_id,
                            {"kind": "output.delta", "text": note[:2048]})
+            # A document that must come back as one JSON object is decoded
+            # against a schema the runtime enforces, and is given its own output
+            # ceiling. Both travel in `extra`, so this stays one call site;
+            # they are passed only when a route actually set them, so an
+            # ordinary Chat turn is called exactly as it was before.
+            constrained = {}
+            if (extra or {}).get("response_format"):
+                constrained = {"response_format": extra["response_format"],
+                               "num_predict": extra.get("num_predict")}
             for kind, payload in runtime.stream_chat(
                     messages, model=model_id, think=reasoning,
                     should_cancel=lambda: self.is_cancelled(job_id)
-                    or self.stopping.is_set()):
+                    or self.stopping.is_set(), **constrained):
                 if kind == "thinking":
                     # Progress only. Never collected, never persisted, never
                     # shown as the reply.
@@ -523,7 +709,7 @@ class Coordinator:
                 try:
                     answer = self._document_answer(
                         job_id, chat_id, attempt_id, skill_id, answer, prepared,
-                        extra)
+                        extra, model_id=model_id)
                 except docflow.Cancelled:
                     self._stop(job_id, attempt_id, "cancelled", "running", {
                         "code": "cancelled_by_user",
@@ -827,7 +1013,7 @@ class Coordinator:
             built = docflow.general_document_messages(
                 request_text, [], self.chat_messages(chat_id)[:-1])
             return built, None, {"workflow": docflow.WORKFLOW_GENERAL,
-                                 "general": True}
+                                 "general": True, **docflow.GENERAL_CALL}
 
         prepared = docflow.prepare_sources(
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
@@ -868,7 +1054,8 @@ class Coordinator:
             built = docflow.general_document_messages(
                 question, prepared.sources, self.chat_messages(chat_id)[:-1])
             return built, prepared, {"prepared": prepared, "general": True,
-                                     "workflow": docflow.WORKFLOW_GENERAL}
+                                     "workflow": docflow.WORKFLOW_GENERAL,
+                                     **docflow.GENERAL_CALL}
 
         # The fixed approval note: the report is the first attachment, the rest
         # are SOPs. Unchanged, and still what C08 is accepted against.
@@ -884,8 +1071,9 @@ class Coordinator:
                 passages = []          # no passages is a truthful outcome
         budget = docflow.MAX_CONTEXT_CHARS
         pages, _trimmed = docflow.bounded_pages(report, budget)
+        report_details, open_items = docflow.report_evidence(report, pages)
         built = docflow.approval_note_messages(
-            question, passages, [(report, pages)])
+            question, passages, [(report, pages)], open_items)
         allowed_pages = {report["source_id"]: {p["number"] for p in pages}}
         for passage in passages:
             allowed_pages.setdefault(passage.source_id, set()).add(passage.page)
@@ -895,10 +1083,106 @@ class Coordinator:
             for source in prepared.sources if source["source_id"] in allowed_pages]
         return built, prepared, {"passages": passages, "report": report,
                                  "prepared": prepared,
-                                 "citation_sources": citation_sources}
+                                 "citation_sources": citation_sources,
+                                 "report_details": report_details,
+                                 "open_items": open_items,
+                                 **docflow.APPROVAL_CALL}
+
+    def _general_document(self, job_id, answer, extra, *, model_id):
+        """A general document: parse, repairing the shape at most once."""
+        return self._structured_reply(
+            job_id, answer, extra, model_id=model_id,
+            parse=docflow.parse_general_document,
+            repair_messages=docflow.general_repair_messages,
+            subject="document")
+
+    def _approval_note(self, job_id, answer, extra, *, model_id):
+        """The fixed approval note: the same contract, a stricter repair.
+
+        The repair cannot smuggle grounding past the checks. Whatever comes
+        back is handed to the same `parse` closure, so it meets
+        `_strict_citations` and `retrieval.resolve` against the same selected
+        sources and the same supplied pages: a citation the model changed or
+        invented during the repair fails exactly as it would have the first
+        time. The instruction forbids touching substance; validation is what
+        enforces it.
+        """
+        sources = extra.get("citation_sources", [])
+        note = self._structured_reply(
+            job_id, answer, extra, model_id=model_id,
+            parse=lambda reply: docflow.parse_approval_note(reply, sources),
+            repair_messages=docflow.approval_repair_messages,
+            subject="note")
+        note["report_details"] = extra.get("report_details", [])
+        note["open_items"] = extra.get("open_items", [])
+        return note
+
+    def _structured_reply(self, job_id, answer, extra, *, model_id, parse,
+                          repair_messages, subject):
+        """Parse a structured reply, repairing the shape at most once.
+
+        The schema is enforced on the decoder, so a malformed reply should be
+        rare. When one arrives anyway it is nearly always a document that was
+        written and then wrapped wrongly, and asking the same model to send the
+        same content in the right shape recovers it without a second draft.
+
+        Exactly one repair, and only for the codes that mean "wrongly shaped"
+        rather than "nothing to shape" — `docflow.REPAIRABLE_CODES` says which,
+        and why the others would have to invent content. A reply the repair
+        cannot fix is reported, never retried again: a loop here would burn a
+        person's machine on a model that cannot produce the format at all.
+
+        Truncation never reaches this method. `_run` refuses any document reply
+        whose runtime stop reason was not `stop`, before the parse, so half a
+        JSON object is a failure rather than something to repair.
+        """
+        try:
+            return parse(answer)
+        except docflow.WorkflowError as exc:
+            if (exc.code not in docflow.REPAIRABLE_CODES
+                    or not extra.get("response_format")):
+                raise
+        if self.is_cancelled(job_id) or self.stopping.is_set():
+            raise docflow.Cancelled()
+
+        repaired, metrics = self._buffered_reply(
+            job_id, repair_messages(answer),
+            model_id=model_id, num_predict=extra.get("num_predict"),
+            response_format=extra.get("response_format"))
+        if metrics.get("done_reason") != "stop":
+            raise docflow.WorkflowError(
+                "incomplete",
+                f"The model stopped before it finished rewriting the {subject} "
+                f"({metrics.get('done_reason') or 'no reason reported'}). "
+                "Nothing was written.")
+        # Parsed once more and not caught: a second malformed reply is the
+        # answer, and it fails with its own reason rather than a third attempt.
+        return parse(repaired)
+
+    def _buffered_reply(self, job_id, messages, *, model_id, num_predict,
+                        response_format):
+        """One model call whose output is collected, not streamed.
+
+        Deliberately not the loop in `_run`: a repair reply is an internal
+        format fix, so it is never appended to the saved output and never
+        emitted to the page. The person sees the document or the failure.
+        """
+        collected, metrics = [], {}
+        for kind, payload in runtime.stream_chat(
+                messages, model=model_id, think=False,
+                num_predict=num_predict, response_format=response_format,
+                should_cancel=lambda: self.is_cancelled(job_id)
+                or self.stopping.is_set()):
+            if kind == "delta":
+                collected.append(payload)
+            elif kind == "cancelled":
+                raise docflow.Cancelled()
+            elif kind == "done":
+                metrics = payload
+        return "".join(collected), metrics
 
     def _document_answer(self, job_id, chat_id, attempt_id, skill_id, answer,
-                         prepared, extra):
+                         prepared, extra, *, model_id=None):
         """Turn the model's reply into the skill's real result."""
         if self.is_cancelled(job_id) or self.stopping.is_set():
             raise docflow.Cancelled()
@@ -908,7 +1192,8 @@ class Coordinator:
             return docflow.read_answer(parsed, prepared, extra.get("notes", []))
 
         if extra.get("general"):
-            document = docflow.parse_general_document(answer)
+            document = self._general_document(job_id, answer, extra,
+                                              model_id=model_id)
             if self.is_cancelled(job_id) or self.stopping.is_set():
                 raise docflow.Cancelled()
             sources = prepared.sources if prepared else []
@@ -919,8 +1204,7 @@ class Coordinator:
             extra["_artifact"] = artifact
             return docflow.written_answer(document["title"], artifact, sources)
 
-        note = docflow.parse_approval_note(
-            answer, extra.get("citation_sources", []))
+        note = self._approval_note(job_id, answer, extra, model_id=model_id)
         if self.is_cancelled(job_id) or self.stopping.is_set():
             raise docflow.Cancelled()
 
@@ -1043,9 +1327,19 @@ class Coordinator:
         current is exactly the fabricated health AF-007 forbids.
         """
         relationship = self.paired_worker()
+        store = pairing.credential_store()
         state = {
             "paired": relationship is not None,
-            "keychain_available": pairing.keychain_available(),
+            # Deprecated, and kept only so an older interface build keeps
+            # working. It is NOT a macOS-specific flag any more: it is derived
+            # from the same `store` read on the line below, so the two can never
+            # disagree, and on Windows or Linux it means "this computer's own
+            # protected store is usable". New callers read `credential_store`,
+            # which also says which store and why not — a Windows computer must
+            # never be told it is missing a macOS framework. Remove this field
+            # once no shipped interface reads it.
+            "keychain_available": store["available"],
+            "credential_store": store,
             "relationship": pairing.describe(relationship) if relationship else None,
             "node": None, "health": "unavailable", "identity_mismatch": None,
             "route_reason": None,
@@ -1197,17 +1491,23 @@ class Coordinator:
 
     def choose_route(self, required: list[str] | None = None,
                      model_id: str | None = None,
-                     require_model: bool = True) -> dispatch.Route:
+                     require_model: bool = True,
+                     runtime_state: dict | None = None) -> dispatch.Route:
         """Where one attempt should run, and the sentence explaining why.
 
         `required` names the capabilities the step actually needs, so Code asks
         for `code.generate` rather than borrowing Chat's answer. It defaults to
         Chat's, which keeps every C06 caller unchanged.
+
+        `runtime_state` lets a caller that has already probed hand the result
+        in rather than paying for a second one. Optional, so every existing
+        caller is unchanged.
         """
         relationship = self.paired_worker()
         if relationship is None:
             route = dispatch.Route("local", "local coordinator: no paired worker")
-            return self._local_route(route, model_id, require_model)
+            return self._local_route(route, model_id, require_model,
+                                     runtime_state)
         try:
             node = self.preflight(relationship)
         except pairing.IdentityMismatch as exc:
@@ -1217,13 +1517,15 @@ class Coordinator:
             relationship=relationship, node=node,
             required=required or ["text.generate"], model_id=model_id,
             require_model=require_model)
-        return self._local_route(route, model_id, require_model)
+        return self._local_route(route, model_id, require_model, runtime_state)
 
     def _local_route(self, route: dispatch.Route, model_id: str | None,
-                     require_model: bool) -> dispatch.Route:
+                     require_model: bool,
+                     runtime_state: dict | None = None) -> dispatch.Route:
         if route.remote or not require_model:
             return route
-        model = self.local_model_ref(model_id) if model_id else None
+        model = (self.local_model_ref(model_id, runtime_state)
+                 if model_id else None)
         reason = route.reason if model else route.reason + \
             "; the selected model is not installed locally"
         return dispatch.Route("local", reason, node_id=self.node_id, model=model)
@@ -1233,15 +1535,19 @@ class Coordinator:
         """Complete OD-06 against a worker whose fingerprint a human confirmed.
 
         Order matters and is not an implementation detail: pin, verify the
-        presented certificate, redeem the code, store the credential in the
-        Keychain, and only then record the relationship. A row written before
-        the Keychain write would describe a pairing with no usable credential.
+        presented certificate, redeem the code, store the credential in the OS
+        credential store, and only then record the relationship. A row written
+        before that store accepts it would describe a pairing with no usable
+        credential.
         """
         fingerprint = pairing.normalise_fingerprint(fingerprint)
-        if not pairing.keychain_available():
+        store = pairing.credential_store()
+        if not store["available"]:
+            # The store's own words, so each platform names its own missing
+            # prerequisite instead of every computer being sent to fix macOS.
             raise RequestError(
-                "Pairing needs the macOS Keychain to hold the worker credential. "
-                "Storing it in the database is not permitted.", 501)
+                f"Pairing needs a protected credential store. {store['detail']} "
+                "Storing the credential in the database is not permitted.", 501)
         relationship_id = db.new_id()
         body = json.dumps({"relationship_id": relationship_id,
                            "workspace_id": self.workspace_id,
@@ -1577,6 +1883,7 @@ class Coordinator:
         # once more per capability row.
         reading = documents.capability_summary(state, ocr_model=ocr_model)
         searchable = retrieval.fts_available(self.conn)
+        recorded = db.selftests(self.conn)
         rows = []
         for entry in CAPABILITIES:
             row = dict(entry)
@@ -1595,12 +1902,21 @@ class Coordinator:
                 if blocked:
                     row["setup"] = blocked[0]
             elif entry.get("kind") == "surface":
-                # Implemented, but it needs the runtime like everything else.
-                row["state"] = ("available" if (code_model, "code") in usable
-                                else "blocked")
-                row["detail"] = (entry["detail_available"] if row["state"] == "available"
-                                 else "The AI engine or the configured model is not "
-                                      "ready, so Code cannot propose changes yet.")
+                # Two prerequisites, reported separately because they need
+                # different fixes: this computer must be able to keep a folder
+                # bounded at all, and the model must be ready. Collapsing them
+                # would send a Windows user to the model picker for something
+                # no model can solve.
+                if not repo.containment_supported():
+                    row["state"] = "unavailable"
+                    row["detail"] = repo.PLATFORM_NOTE
+                    row["setup"] = repo.PLATFORM_NOTE
+                else:
+                    row["state"] = ("available" if (code_model, "code") in usable
+                                    else "blocked")
+                    row["detail"] = (entry["detail_available"] if row["state"] == "available"
+                                     else "The AI engine or the configured model is not "
+                                          "ready, so Code cannot propose changes yet.")
             elif (chat_model, "chat") not in usable and not state.get("reachable"):
                 row["state"] = "blocked"
                 row["detail"] = ("The AI engine on this computer did not answer, "
@@ -1614,6 +1930,16 @@ class Coordinator:
             else:
                 row["state"] = "available"
                 row["detail"] = "Runs on this computer."
+            # The self-test is reported beside the state, not folded into it.
+            # "This can run" and "this was checked here" are different claims,
+            # and `docs/PROJECT.md` 4.5 asks for the second to be visible.
+            scope = CAPABILITY_SELFTEST_SCOPE.get(entry["id"])
+            if scope:
+                model = self.model_for(scope)
+                digest = next((r["digests"]["local"] for r in inventory
+                               if r["id"] == model), None)
+                row["selftest"] = models.selftest_view(
+                    recorded, model=model, digest=digest)[scope]
             rows.append(row)
         return rows
 
@@ -1647,6 +1973,10 @@ class Coordinator:
         return {
             "product": {"name": "Refinix", "surface": "local"},
             "desktop": dict(self.desktop),
+            # What this computer is, observed rather than assumed. Nothing here
+            # claims the profile is qualified: that is evidence held elsewhere.
+            "device": {**device.describe(),
+                       "code_containment": repo.containment_backend()},
             "node_id": self.node_id,
             "workspace_id": self.workspace_id,
             "contract_version": v1.CONTRACT_VERSION,
@@ -1660,6 +1990,9 @@ class Coordinator:
             "auto_model": {"enabled": False,
                            "detail": "Automatic model choice is planned after the internal hackathon."},
             "models": inventory,
+            # Which workflows have a smallest representative check the person
+            # can run. Sent so the interface offers only the checks that exist.
+            "selftest_scopes": sorted(models.SELFTESTS),
             "capabilities": self.capabilities(runtime_state, inventory),
             "attachments": {
                 "max_bytes": db.MAX_ATTACHMENT_BYTES,
@@ -1679,7 +2012,15 @@ class Coordinator:
                 "search": retrieval.METHOD if retrieval.fts_available(self.conn)
                           else None,
                 "search_note": retrieval.METHOD_NOTE,
-                "generates": ["docx"] if docgen_available() else [],
+                # Which artifact formats this computer can actually write,
+                # observed rather than listed. Word is portable and is the
+                # required artifact; PDF writing still needs the macOS
+                # frameworks, and a picker that offered it anyway would fail at
+                # Send instead of saying so beforehand.
+                "generates": ([docflow.FORMAT_DOCX] if docgen_available() else [])
+                             + ([docflow.FORMAT_PDF] if pdfgen.available() else []),
+                "generate_detail": {docflow.FORMAT_DOCX: docgen.probe()["detail"],
+                                    docflow.FORMAT_PDF: pdfgen.probe()["detail"]},
                 "workflow": docflow.WORKFLOW,
             },
             "bounded": {"num_ctx": runtime.NUM_CTX,
@@ -1696,8 +2037,14 @@ class Coordinator:
             },
             "jobs_by_state": counts,
             "repaired_on_start": len(self.repaired),
+            # Observed, not declared. Code needs a containment guarantee this
+            # computer may not give, and saying "available" anyway would be the
+            # fabricated green state `docs/PROJECT.md` 19 forbids.
             "surfaces": {"chat": "available", "settings": "available",
-                         "code": "available"},
+                         "code": ("available" if repo.containment_supported()
+                                  else "unavailable")},
+            "surface_notes": {"code": None if repo.containment_supported()
+                              else repo.PLATFORM_NOTE},
             # Every value below needs evidence this chunk cannot produce.
             "unavailable": {
                 "workers": "no worker is paired; C06 establishes pairing",
@@ -1912,6 +2259,9 @@ class Handler(BaseHTTPRequestHandler):
                                                         with_attachments=True)})
             elif route == "/v1/capabilities":
                 self._json({"capabilities": c.capabilities()})
+            elif route == "/v1/model/impact":
+                self._json({"impact": c.removal_impact(
+                    self._text(_as_payload(query), "model", 200))})
             elif route == "/v1/attachments":
                 self._json({"attachments": db.list_attachments(
                     c.conn, chat_id=query["chat_id"][0])})
@@ -2090,6 +2440,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(c.select_model(
                     self._text(payload, "scope", 64),
                     self._text(payload, "model", 200)))
+            elif route == "/v1/model/enabled":
+                enabled = payload.get("enabled")
+                if not isinstance(enabled, bool):
+                    raise RequestError("enabled must be true or false")
+                self._json(c.set_model_enabled(
+                    self._text(payload, "model", 200), enabled))
+            elif route == "/v1/model/selftest":
+                # A self-test asks the local engine one bounded question. It
+                # downloads nothing and installs nothing, and it is only ever
+                # started by the person.
+                self._json({"selftest": c.run_model_selftest(
+                    self._text(payload, "scope", 64))})
             elif route == "/v1/code/mode":
                 self._code(lambda: c.code.set_mode(
                     self._text(payload, "repo_id", 36),

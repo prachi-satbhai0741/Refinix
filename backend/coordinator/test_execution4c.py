@@ -22,7 +22,7 @@ ORIGINAL = "def exceeds(value, limit):\n    return value >= limit\n"
 REPAIRED = "def exceeds(value, limit):\n    return value > limit\n"
 
 
-@unittest.skipUnless(repo.descriptor_traversal_supported(),
+@unittest.skipUnless(repo.containment_supported(),
                      "this platform cannot contain repository access")
 class Base(unittest.TestCase):
     def setUp(self):

@@ -24,7 +24,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.contracts import v1
-from backend.coordinator import db, proof
+from backend.coordinator import db, device, proof
 from backend.coordinator.server import Coordinator
 
 
@@ -219,7 +219,7 @@ class TestProofCards(Base):
         card = proof.job_card(self.c, job_id)
         entry = card["attempts"][0]
         self.assertIsNone(entry["proof"]["pod"])
-        self.assertEqual(entry["where"], "macOS coordinator")
+        self.assertEqual(entry["where"], device.HERE)
         self.assertIn("ran on the coordinator", entry["sources"]["pod"])
 
     def test_a_validation_attempt_carries_no_model_evidence(self):
@@ -236,7 +236,7 @@ class TestProofCards(Base):
         self.assertIsNone(entry["proof"]["model"])
         self.assertIn("ran no model", entry["sources"]["model"])
         self.assertIsNotNone(entry["proof"]["pod"])
-        self.assertEqual(entry["where"], "Ubuntu worker")
+        self.assertEqual(entry["where"], device.PEER)
 
     def test_validation_is_unavailable_rather_than_failed_when_nothing_ran(self):
         job_id = self.job()
