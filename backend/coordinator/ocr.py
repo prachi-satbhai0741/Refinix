@@ -38,7 +38,10 @@ Standard library only; the renderer and the runtime adapter do the rest.
 
 from __future__ import annotations
 
+import binascii
 import json
+import struct
+import zlib
 
 from backend.coordinator import pdfrender, runtime
 
@@ -55,6 +58,38 @@ PAGE_SCHEMA = {
     "required": ["status", "text"],
     "additionalProperties": False,
 }
+
+
+def selftest_image() -> bytes:
+    """A tiny generated PNG whose visible text is REFINIX."""
+    glyphs = {
+        "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
+        "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
+        "F": ("11111", "10000", "10000", "11110", "10000", "10000", "10000"),
+        "I": ("11111", "00100", "00100", "00100", "00100", "00100", "11111"),
+        "N": ("10001", "11001", "11001", "10101", "10011", "10011", "10001"),
+        "X": ("10001", "10001", "01010", "00100", "01010", "10001", "10001"),
+    }
+    scale, margin, word = 6, 12, "REFINIX"
+    width = margin * 2 + (len(word) * 5 + len(word) - 1) * scale
+    height = margin * 2 + 7 * scale
+    rows = [bytearray([255] * width) for _ in range(height)]
+    for index, letter in enumerate(word):
+        left = margin + index * 6 * scale
+        for y, line in enumerate(glyphs[letter]):
+            for x, pixel in enumerate(line):
+                if pixel == "1":
+                    for row in rows[margin + y * scale:margin + (y + 1) * scale]:
+                        row[left + x * scale:left + (x + 1) * scale] = bytes([0]) * scale
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", binascii.crc32(kind + data) & 0xffffffff))
+
+    pixels = b"".join(b"\0" + bytes(row) for row in rows)
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b""))
 
 SYSTEM_INSTRUCTION = (
     "You transcribe one page of a scanned document, on a person's own computer.\n\n"

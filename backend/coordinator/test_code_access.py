@@ -17,7 +17,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import code_service, codeflow, db, policy, repo, runtime
+from backend.coordinator import (code_service, codeflow, db, models, policy,
+                                 repo, runtime)
 from backend.coordinator.server import Coordinator
 
 
@@ -52,6 +53,17 @@ class RepoBase(unittest.TestCase):
         self.write("notes.md", "# notes\n")
         self.c = Coordinator(self.state)
         self.svc = self.c.code
+        self.runtime_probe = patch.object(runtime, "probe", return_value={
+            "reachable": True, "server_version": "test",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256},
+            "loaded": None, "error": None})
+        self.runtime_probe.start()
+        self.addCleanup(self.runtime_probe.stop)
+        self.worker_probe = patch.object(self.c, "preflight", return_value=None)
+        self.worker_probe.start()
+        self.addCleanup(self.worker_probe.stop)
 
     def tearDown(self):
         self.c.conn.close()
@@ -294,6 +306,16 @@ class TestPolicyMatrix(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 class TestPartialAccess(RepoBase):
+    def test_a_disabled_selected_model_never_reaches_code_generation(self):
+        repo_id = self.connect("partial")
+        db.set_model_enabled(self.c.conn, runtime.MODEL, False)
+        stream = stub_stream(proposal_reply([]))
+        with patch.object(runtime, "stream_chat", stream):
+            with self.assertRaises(code_service.CodeError) as caught:
+                self.svc.propose(repo_id, "change it", ["notes.md"])
+        self.assertEqual(caught.exception.code, "model_disabled")
+        self.assertIsNone(stream.messages)
+
     def test_reads_run_automatically_but_a_write_needs_the_exact_approval(self):
         repo_id = self.connect("partial")
         reply = proposal_reply([{"path": "src/main.py",
@@ -846,6 +868,26 @@ class TestAtomicWrites(RepoBase):
         self.assertEqual(caught.exception.code, "stale")
         self.assertEqual((self.project / "notes.md").read_text(),
                          "# edited elsewhere\n")
+
+    def test_a_change_while_the_replacement_is_prepared_is_refused(self):
+        expected = self.sha("notes.md")
+        real = repo._posix_target
+        calls = 0
+
+        def change_before_final_check(*args):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.write("notes.md", "# edited during preparation\n")
+            return real(*args)
+
+        with patch.object(repo, "_posix_target", change_before_final_check):
+            with self.assertRaises(repo.RepositoryError) as caught:
+                repo.replace_text_file(self.project, "notes.md",
+                                       expected_sha256=expected, text="# mine\n")
+        self.assertEqual(caught.exception.code, "stale")
+        self.assertEqual((self.project / "notes.md").read_text(),
+                         "# edited during preparation\n")
 
     def test_a_failed_write_leaves_the_original_and_no_temporary_file(self):
         before = (self.project / "notes.md").read_text()

@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import db, runtime
+from backend.coordinator import db, models, runtime
 from backend.coordinator.server import Coordinator, RequestError
 
 
@@ -172,6 +172,14 @@ class TestCancellationWithReasoning(RuntimeBase):
 class CoordinatorBase(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
+        self.runtime_probe = patch.object(runtime, "probe", return_value={
+            "reachable": True, "server_version": "test",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256},
+            "loaded": None, "endpoint": runtime.HOST, "error": None})
+        self.runtime_probe.start()
+        self.addCleanup(self.runtime_probe.stop)
         self.c = Coordinator(Path(self.dir.name) / "state.sqlite3")
         self.chat = db.create_chat(self.c.conn, self.c.workspace_id, "check")
 

@@ -285,6 +285,16 @@ class TestEnvelopeConstruction(unittest.TestCase):
             coordinator_node_id=COORDINATOR, request_text="hello")
         self.assertGreater(env.deadline_at, env.created_at)
 
+    def test_chat_identity_is_carried_as_a_system_instruction(self):
+        route = dispatch.Route("remote", "ok", node_id=NODE,
+                               relationship_id=RELATIONSHIP)
+        env = dispatch.build_envelope(
+            job=self.job(), attempt_id=str(uuid.uuid4()),
+            step_id=str(uuid.uuid4()), route=route,
+            coordinator_node_id=COORDINATOR, request_text="hello",
+            system_instruction="You are Refinix.")
+        self.assertEqual(env.system_instruction, "You are Refinix.")
+
     def test_a_remote_target_without_a_relationship_is_rejected(self):
         """The contract refuses it; this proves the coordinator cannot build
         one by accident."""

@@ -21,14 +21,15 @@ from urllib.error import HTTPError
 from urllib.parse import quote
 
 from backend.contracts import v1
-from backend.coordinator import db
+from backend.coordinator import db, models
 from backend.coordinator.server import Coordinator, Handler, RequestError
 from backend.coordinator import runtime
 
 
 READY_RUNTIME = {"reachable": True, "server_version": "test",
                  "models": [runtime.MODEL],
-                 "digests": {runtime.MODEL: "a" * 64},
+                 "digests": {runtime.MODEL:
+                             models.entry_for(runtime.MODEL).manifest_sha256},
                  "loaded": None, "endpoint": runtime.HOST, "error": None}
 
 
@@ -391,7 +392,8 @@ class TestLocalBoundary(unittest.TestCase):
                 yield 'delta', 'partial'
                 c.request_cancel(job)
                 yield 'done', {}
-            with patch.object(runtime, 'stream_chat', result):
+            with patch.object(runtime, 'probe', return_value=READY_RUNTIME), \
+                    patch.object(runtime, 'stream_chat', result):
                 c._run(job, chat)
             self.assertEqual(c.job_detail(job)['job']['state'], 'cancelled')
             self.assertEqual([m['role'] for m in c.chat_messages(chat)], ['user'])
@@ -498,7 +500,8 @@ class TestCompletion(unittest.TestCase):
             chat = db.create_chat(c.conn, c.workspace_id, 'legacy check')
             with patch('backend.coordinator.server.threading.Thread.start'):
                 job = c.submit(chat, 'retained legacy message')
-            with patch.object(runtime, 'stream_chat', return_value=iter([
+            with patch.object(runtime, 'probe', return_value=READY_RUNTIME), \
+                    patch.object(runtime, 'stream_chat', return_value=iter([
                     ('delta', 'retained legacy answer'), ('done', {'done_reason': 'stop'})])):
                 c._run(job, chat)
             # Recreate the old on-disk shape in this disposable database only.

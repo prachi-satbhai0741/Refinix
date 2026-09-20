@@ -1729,3 +1729,16 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve the inherited dirty tree and the existing trusted-peer, worker, Redis and Kubernetes work. Keep the Ollama runtime adapter; no second inference runtime. Offline-first: no telemetry, background update check, silent download, cloud inference or non-loopback local service. Do not weaken repository containment to make Windows appear supported, and never substitute ordinary path resolution followed by an unrestricted open. No protected-document edits, installs, downloads, model downloads, live model calls, remote-worker access, deployment, credential changes, host-service changes or Git/GitHub writes. Do not publish Beta 0.1.
 - follow_up_to: [UP-20260920-006](#up-20260920-006)
 - linked_changes: [AC-20260920-007](agentchangelog.md#ac-20260920-007)
+
+<a id="up-20260921-001"></a>
+## UP-20260921-001 — Close the standalone reviewer correction batch
+- date: 2026-09-21
+- status: authorised implementation, focused offline verification and self-review; no Git/GitHub writes
+- tags: model-lifecycle, selftest, provenance, remote-chat, containment, frontend, takeover
+- aliases: disabled model still runs, representative self-test, manifest mismatch, stale replace window, worker identity, worker-only count
+- paths: backend/contracts/, backend/coordinator/, backend/worker/, frontend/app/, agent-memory/
+- summary: Take over after the other agent reached its limit and close the six reviewed standalone-reviewer defects with the smallest coherent reuse-first patch.
+- request: Fix the reviewed issues directly, independently inspect and self-review the result, reuse existing code instead of introducing parallel machinery, and minimise back-and-forth before human verification.
+- constraints: Preserve the committed baseline and unrelated work. No protected-document edits, installs, downloads, live model calls, remote-worker calls, packaging, deployment, credential changes or Git/GitHub writes. Run existing focused offline checks only and keep source/test evidence separate from device and release acceptance.
+- follow_up_to: [UP-20260920-007](#up-20260920-007)
+- linked_changes: [AC-20260921-001](agentchangelog.md#ac-20260921-001)

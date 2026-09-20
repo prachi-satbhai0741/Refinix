@@ -2848,15 +2848,22 @@ function renderReadyLine(s) {
   const line = $('ready-line');
   if (!line) return;
   const reachable = s.runtime.reachable;
-  if (!reachable) {
+  const available = s.model_available ?? s.model_installed;
+  if (available && s.model_installed) {
+    line.dataset.state = 'ok';
+    line.textContent = 'Ready on this computer.';
+  } else if (available) {
+    line.dataset.state = 'ok';
+    line.textContent = 'Ready through a paired worker.';
+  } else if (!reachable) {
     line.dataset.state = 'failed';
     line.textContent = 'The AI engine is not answering. Open Settings.';
   } else if (!s.model_installed) {
     line.dataset.state = 'attention';
-    line.textContent = 'The model is not installed. Open Settings.';
+    line.textContent = 'The selected model is not eligible. Open Settings.';
   } else {
-    line.dataset.state = 'ok';
-    line.textContent = 'Ready on this computer.';
+    line.dataset.state = 'attention';
+    line.textContent = 'The selected model is unavailable for new work. Open Settings.';
   }
 }
 
@@ -2974,14 +2981,21 @@ function selftestSummary(model) {
 
 function modelFactRows(model) {
   const p = model.provenance || {};
+  const local = model.integrity?.local;
+  const worker = model.integrity?.worker;
+  const integrity = [
+    local?.observed ? `this computer: ${local.state}` : null,
+    worker?.observed ? `paired worker: ${worker.state}` : null,
+  ].filter(Boolean).join('; ');
   return [
     ['Where', model.locations?.length ? model.locations.join(' and ') : null,
      'not installed anywhere Refinix can see'],
     ['Source', p.source, 'not recorded by Refinix'],
     ['Licence', p.licence, 'not recorded by Refinix'],
     ['Format', p.format, 'not recorded'],
-    ['Manifest digest', model.digests?.local || p.manifest_sha256,
-     'not observed'],
+    ['Integrity', integrity, 'not observed'],
+    ['Expected manifest', p.manifest_sha256, 'not recorded by Refinix'],
+    ['Observed here', model.digests?.local, 'not observed on this computer'],
     ['Used for', model.selected_for?.length ? model.selected_for.join(', ') : null,
      'no workflow is set to use it'],
     ['Evidence', p.evidence || p.note, 'nothing recorded'],
@@ -3052,20 +3066,23 @@ function renderModelsCard(s) {
   const host = $('c-model-list');
   if (!host) return;
   const list = s.models || [];
-  const installed = list.filter((m) => m.installed).length;
+  const local = list.filter((m) => m.locations?.includes('this computer')).length;
+  const workers = list.filter((m) => m.locations?.includes('paired worker')).length;
   // "Supported and not installed" means Refinix records a manifest for it.
   // A model that is merely configured and absent is not something Refinix
   // vouches for, so it is not counted as one it supports.
   const supported = list.filter(
     (m) => m.state === 'absent' && m.provenance?.known).length;
   chip($('c-models-chip'),
-       s.runtime.reachable ? `${installed} installed` : 'engine not answering',
-       s.runtime.reachable && installed ? 'enforced' : 'unknown');
+       s.runtime.reachable ? `${local} here` : 'local engine not answering',
+       s.runtime.reachable && local ? 'enforced' : 'unknown');
   $('c-models-lead').textContent = s.runtime.reachable
-    ? `${installed} model(s) are installed on this computer`
+    ? `${local} model(s) are installed on this computer`
+      + (workers ? `; ${workers} are visible on a paired worker` : '')
       + (supported ? `, and ${supported} Refinix supports are not.` : '.')
     : 'The AI engine did not answer, so what is installed on this computer is '
-      + 'unknown. Refinix does not guess, and it does not download anything.';
+      + 'unknown.' + (workers ? ` ${workers} model(s) are visible on a paired worker.` : '')
+      + ' Refinix does not guess, and it does not download anything.';
 
   host.replaceChildren();
   for (const model of list) {

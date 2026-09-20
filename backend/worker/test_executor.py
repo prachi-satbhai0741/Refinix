@@ -279,6 +279,24 @@ class Base(unittest.TestCase):
             return self.executor.execute(env, epoch=0)
 
 
+class TestChatIdentity(Base):
+    def test_remote_chat_keeps_the_coordinator_system_instruction(self):
+        seen = {}
+
+        def generating(messages, **_options):
+            seen["messages"] = messages
+            yield "delta", "hello"
+            yield DONE_STOP
+
+        env = envelope(system_instruction="You are Refinix, not the model engine.")
+        self.session.claim(env.attempt_id, 0)
+        with patch.object(runtime, "stream_chat", generating):
+            self.assertEqual(self.executor.execute(env, epoch=0), "completed")
+        self.assertEqual([message["role"] for message in seen["messages"]],
+                         ["system", "user"])
+        self.assertIn("Refinix", seen["messages"][0]["content"])
+
+
 class TestPackageRetention(unittest.TestCase):
     def test_an_idle_executor_periodically_reclaims_abandoned_packages(self):
         class Store:

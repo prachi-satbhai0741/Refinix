@@ -46,6 +46,7 @@ Standard library only.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 
 # Workflow scopes a model can be selected for. The same strings `MODEL_DEFAULTS`
 # uses, so a catalogue entry and a selection cannot drift apart.
@@ -65,6 +66,8 @@ UNAVAILABLE = "unavailable"
 VERIFIED = "verified"
 UNVERIFIED = "unverified"
 UNRESOLVED = "unresolved"
+MISMATCH = "mismatch"
+NOT_OBSERVED = "not_observed"
 
 
 @dataclass(frozen=True)
@@ -174,16 +177,6 @@ PASSED = "passed"
 FAILED = "failed"
 NOT_RUN = "not_run"
 
-# Prompts kept here beside the checks they belong to. Deliberately trivial: the
-# point is that a reply arrives at all, so a hard prompt would turn a runtime
-# check into a quality opinion.
-_PROMPTS = {
-    CHAT: "Reply with the single word: ready",
-    CODE: "Reply with the single word: ready",
-    DOCUMENTS_GENERATE: "Reply with the single word: ready",
-}
-
-
 class SelfTestError(RuntimeError):
     """A self-test could not run. Never recorded as a failure of the model."""
 
@@ -208,6 +201,26 @@ def provenance(model: str) -> dict:
             "note": ("Refinix has no recorded source, licence or manifest for "
                      "this model. It is available because the local engine "
                      "reports it, not because Refinix verified it.")}
+
+
+def integrity(model: str, digest: str | None) -> dict:
+    """Compare observed bytes with the catalogue without trusting the tag."""
+    entry = BY_ID.get(model)
+    expected = entry.manifest_sha256 if entry else None
+    if expected is None:
+        return {"state": UNVERIFIED, "expected": None, "observed": digest,
+                "eligible": bool(digest)}
+    if not digest:
+        return {"state": NOT_OBSERVED, "expected": expected, "observed": None,
+                "eligible": False}
+    matched = digest == expected
+    return {"state": VERIFIED if matched else MISMATCH,
+            "expected": expected, "observed": digest, "eligible": matched}
+
+
+def digest_eligible(model: str, digest: str | None) -> bool:
+    """Known models must match their recorded manifest; unlisted models do not."""
+    return integrity(model, digest)["eligible"]
 
 
 def lifecycle_state(model: str, *, installed_here: bool, installed_elsewhere: bool,
@@ -299,25 +312,75 @@ def run_selftest(scope: str, model: str, *, generate=None, artifact=None,
             return {"scope": scope, "model": model, "state": FAILED,
                     "detail": (f"{model} does not accept page images on this "
                                "computer, so it cannot read a scan.")}
-    if check.writes_artifact:
-        if artifact is None:
-            raise SelfTestError("no document writer was available to check.")
-        written = artifact()
-        if not written.get("valid"):
-            return {"scope": scope, "model": model, "state": FAILED,
-                    "detail": written.get("detail")
-                    or "A Word document could not be written and reopened here."}
-    if check.needs_model:
-        if generate is None:
-            raise SelfTestError("the local engine was not available to ask.")
-        try:
-            reply = generate(model, _PROMPTS.get(scope, _PROMPTS[CHAT]))
-        except Exception as exc:                            # noqa: BLE001
-            raise SelfTestError(str(exc)) from exc
-        if not (reply or "").strip():
-            return {"scope": scope, "model": model, "state": FAILED,
-                    "detail": (f"{model} answered with nothing visible, so "
-                               "this capability is not usable yet.")}
+    if generate is None:
+        raise SelfTestError("the local engine was not available to ask.")
+
+    def failed(detail: str) -> dict:
+        return {"scope": scope, "model": model, "state": FAILED,
+                "detail": detail}
+
+    try:
+        if scope == CHAT:
+            reply = generate(
+                model, [{"role": "user", "content":
+                         "Answer this short question in one sentence: what is 2 + 2?"}],
+                num_predict=64)
+            if not (reply or "").strip():
+                return failed(f"{model} answered with nothing visible, so this "
+                              "capability is not usable yet.")
+        elif scope == CODE:
+            from backend.coordinator import codeflow
+            before = "before\n"
+            selected = [{"path": "selftest.txt", "text": before,
+                         "sha256": hashlib.sha256(before.encode()).hexdigest()}]
+            reply = generate(
+                model,
+                codeflow.build_messages(
+                    "Replace the entire file text with the single line: after",
+                    selected),
+                response_format=codeflow.PROPOSAL_SCHEMA, num_predict=512)
+            try:
+                proposal = codeflow.parse_proposal(reply, selected)
+            except codeflow.ProposalError as exc:
+                return failed(f"The model did not produce a valid Code proposal: {exc}")
+            if not proposal["edits"]:
+                return failed("The model produced no edit for the selected test file.")
+        elif scope == DOCUMENTS_GENERATE:
+            from backend.coordinator import docflow
+            reply = generate(
+                model,
+                docflow.general_document_messages(
+                    "Write a one-section document with one short paragraph about Refinix.",
+                    []),
+                response_format=docflow.GENERAL_DOCUMENT_FORMAT,
+                num_predict=512)
+            try:
+                document = docflow.parse_general_document(reply)
+            except docflow.WorkflowError as exc:
+                return failed(f"The model did not produce a valid document: {exc}")
+            if artifact is None:
+                raise SelfTestError("no document writer was available to check.")
+            written = artifact(title=document["title"],
+                               blocks=docflow.general_blocks(document, []))
+            if not written.get("valid"):
+                return failed(written.get("detail") or
+                              "A Word document could not be written and reopened here.")
+        elif scope == DOCUMENTS_OCR:
+            from backend.coordinator import ocr
+            reply = generate(model, ocr.page_messages("image/png"),
+                             images=[ocr.selftest_image()],
+                             response_format=ocr.PAGE_SCHEMA,
+                             num_predict=ocr.PAGE_NUM_PREDICT)
+            try:
+                reading = ocr.parse_page_reply(reply)
+            except ocr.OcrError as exc:
+                return failed(f"The model did not produce a valid page reading: {exc}")
+            if "refinix" not in reading.lower():
+                return failed("The model did not read REFINIX from the test page image.")
+    except SelfTestError:
+        raise
+    except Exception as exc:                                # noqa: BLE001
+        raise SelfTestError(str(exc)) from exc
     return {"scope": scope, "model": model, "state": PASSED,
             "detail": f"{check.label} succeeded on this computer. {check.caveat}"}
 

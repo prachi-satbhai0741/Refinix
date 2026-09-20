@@ -325,7 +325,11 @@ class Executor:
                 return "", "this attempt's file package could not be resolved"
             messages = codegen.build_messages(envelope.original_request, selection)
         else:
-            messages = [{"role": "user", "content": envelope.original_request}]
+            messages = ([{"role": "system",
+                          "content": envelope.system_instruction}]
+                        if envelope.system_instruction else [])
+            messages.append({"role": "user",
+                             "content": envelope.original_request})
 
         produced, metrics, failed = [], {}, None
         try:

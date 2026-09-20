@@ -203,16 +203,26 @@ class Coordinator:
                               (key, workspace_id))
         return workspace_id
 
-    def model_for(self, scope: str) -> str:
+    def model_for(self, scope: str, *, new_work: bool = False) -> str:
         if scope not in MODEL_DEFAULTS:
             raise RequestError("that model scope does not exist")
-        return db.get_model_selection(self.conn, scope, MODEL_DEFAULTS[scope])
+        model = db.get_model_selection(self.conn, scope, MODEL_DEFAULTS[scope])
+        if new_work and not db.get_model_enabled(self.conn, model):
+            raise RequestError(
+                f"The selected model {model} is switched off for new work.", 409)
+        return model
+
+    def enabled_model_for(self, scope: str) -> str | None:
+        """The selected model only when it may receive a new request."""
+        model = self.model_for(scope)
+        return model if db.get_model_enabled(self.conn, model) else None
 
     def local_model_ref(self, model: str,
                         runtime_state: dict | None = None) -> dict | None:
         state = runtime_state if runtime_state is not None else runtime.probe()
         digest = (state.get("digests") or {}).get(model) or ""
-        if not state.get("reachable") or len(digest) != 64:
+        if (not state.get("reachable") or len(digest) != 64
+                or not models.digest_eligible(model, digest)):
             return None
         return {"model_id": model, "manifest_sha256": digest,
                 "runtime": "ollama",
@@ -273,10 +283,15 @@ class Coordinator:
             locations = ([device.location_label(local=True)] if model in local else []) + \
                         ([device.location_label(local=False)] if model in remote else [])
             enabled = enablement.get(model, True)
+            local_integrity = models.integrity(model, local.get(model))
+            worker_integrity = models.integrity(
+                model, (remote.get(model) or {}).get("manifest_sha256"))
+            local_eligible = model in local and local_integrity["eligible"]
+            remote_eligible = model in remote and worker_integrity["eligible"]
             eligible = []
-            if enabled and (model in local or model in remote):
+            if enabled and (local_eligible or remote_eligible):
                 eligible.extend(["chat", "code"])
-            if enabled and model in local:
+            if enabled and local_eligible:
                 eligible.append("documents.generate")
                 if runtime.VISION_CAPABILITY in \
                         (runtime.model_capabilities(model) or []):
@@ -303,6 +318,8 @@ class Coordinator:
                 "reasoning_note": "Reasoning may improve difficult work but is slower.",
                 "digests": {"local": local.get(model),
                             "worker": (remote.get(model) or {}).get("manifest_sha256")},
+                "integrity": {"local": local_integrity,
+                              "worker": worker_integrity},
             })
         return rows
 
@@ -372,7 +389,7 @@ class Coordinator:
         if scope not in models.SELFTESTS:
             raise RequestError("there is no self-test for that workflow", 404)
         state = runtime_state if runtime_state is not None else runtime.probe()
-        model = self.model_for(scope)
+        model = self.model_for(scope, new_work=True)
         try:
             if not state.get("reachable"):
                 raise models.SelfTestError(
@@ -396,26 +413,30 @@ class Coordinator:
             digest=(state.get("digests") or {}).get(model),
             runtime_version=state.get("server_version"))
 
-    def _selftest_generate(self, model: str, prompt: str) -> str:
-        """One bounded local generation, with no history and no tools.
+    def _selftest_generate(self, model: str, messages: list[dict], **options) -> str:
+        """One bounded local generation through a production message shape.
 
-        Deliberately tiny: a self-test asks whether a reply arrives at all on
-        this computer, so the output allowance is small enough that a slow
-        model still answers and nothing here can be mistaken for a quality
-        measurement.
+        Each caller supplies the same messages and decoder constraint as its
+        real workflow. The allowance stays bounded, so this remains a
+        capability check rather than a benchmark.
 
         It watches the coordinator's stopping flag for the same reason every
         other streaming path does: without it, quitting while a self-test is
         loading a cold model would wait out the runtime's whole request
         timeout instead of closing.
         """
-        collected = []
+        collected, done = [], None
         for kind, payload in runtime.stream_chat(
-                [{"role": "user", "content": prompt}], model=model,
-                think=False, num_predict=32,
-                should_cancel=self.stopping.is_set):
+                messages, model=model, think=False,
+                should_cancel=self.stopping.is_set, **options):
             if kind == "delta":
                 collected.append(payload)
+            elif kind == "cancelled":
+                raise models.SelfTestError("the self-test was stopped")
+            elif kind == "done":
+                done = payload
+        if not done or done.get("done_reason") != "stop":
+            raise models.SelfTestError("the model's self-test reply was incomplete")
         return "".join(collected)
 
     @db.serialized
@@ -467,6 +488,10 @@ class Coordinator:
             raise RequestError("that document workflow does not exist", 400)
         if output_format == docflow.FORMAT_PDF and not pdfgen.available():
             raise RequestError(pdfgen.probe()["detail"], 409)
+        scope = ("documents.generate" if skill_id in docflow.DOCUMENT_SKILLS
+                 else "chat")
+        if skill_id != docflow.SEARCH_SKILL:
+            self.model_for(scope, new_work=True)
         reuse_source_ids = [] if reuse_source_ids is None else reuse_source_ids
         if (not isinstance(reuse_source_ids, list) or len(reuse_source_ids) > docflow.MAX_SOURCES
                 or any(not isinstance(i, str) or len(i) != 36 for i in reuse_source_ids)
@@ -590,6 +615,13 @@ class Coordinator:
                     "code": "permission_denied", "message": route.reason[:256],
                     "retryable": False})
                 return
+            if uses_model and route.model is None:
+                self._stop(job_id, attempt_id, "failed", "running", {
+                    "code": "unavailable",
+                    "message": (f"the selected model {model_id} has no eligible "
+                                "manifest at this execution target")[:256],
+                    "retryable": True})
+                return
             if route.remote and skill_id is None:
                 # Ordinary chat goes to the paired worker. Document and Code
                 # skills stay local: their workflows are C08/C09 and the worker
@@ -613,7 +645,7 @@ class Coordinator:
                 # this request's attachments, then answers or writes from them.
                 messages, prepared, extra = self._document_stage(
                     job_id, chat_id, skill_id, messages,
-                    ocr_model=self.model_for("documents.ocr"))
+                    ocr_model=self.enabled_model_for("documents.ocr"))
                 if messages is None:
                     # The skill produced its own answer without the model.
                     if extra.get("conversion"):
@@ -924,7 +956,7 @@ class Coordinator:
         prepared = docflow.prepare_sources(
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
             attachments=attachments, should_cancel=cancel,
-            ocr_model=self.model_for("documents.ocr"))
+            ocr_model=self.enabled_model_for("documents.ocr"))
         if any(a.get("reused") for a in attachments) and prepared.skipped:
             reasons = "; ".join(f"{s['filename']}: {s['reason']}" for s in prepared.skipped)
             raise docflow.WorkflowError("source_unavailable", reasons)
@@ -1517,6 +1549,12 @@ class Coordinator:
             relationship=relationship, node=node,
             required=required or ["text.generate"], model_id=model_id,
             require_model=require_model)
+        if (route.remote and route.model
+                and not models.digest_eligible(
+                    route.model["model_id"], route.model.get("manifest_sha256"))):
+            route = dispatch.Route(
+                "local", "local coordinator: the worker's model manifest does "
+                         "not match Refinix's recorded catalogue")
         return self._local_route(route, model_id, require_model, runtime_state)
 
     def _local_route(self, route: dispatch.Route, model_id: str | None,
@@ -1649,7 +1687,10 @@ class Coordinator:
         try:
             envelope = dispatch.build_envelope(
                 job=job, attempt_id=attempt_id, step_id=step, route=route,
-                coordinator_node_id=self.node_id, request_text=text)
+                coordinator_node_id=self.node_id, request_text=text,
+                system_instruction=identity.system_message(
+                    engine=(route.model or {}).get("model_id"), models=None,
+                    location="the paired worker")["content"])
             client = self.worker_client(relationship)
             # One key per attempt, reused by any retry of it. A fresh key on a
             # retry would create a second remote attempt instead of replaying
@@ -1881,7 +1922,8 @@ class Coordinator:
         ocr_model = self.model_for("documents.ocr")
         # The runtime was already observed above; reuse it rather than probing
         # once more per capability row.
-        reading = documents.capability_summary(state, ocr_model=ocr_model)
+        reading = documents.capability_summary(
+            state, ocr_model=self.enabled_model_for("documents.ocr"))
         searchable = retrieval.fts_available(self.conn)
         recorded = db.selftests(self.conn)
         rows = []
@@ -1984,7 +2026,10 @@ class Coordinator:
             "bind": f"{BIND_HOST}",
             "runtime": runtime_state,
             "model_configured": chat_model,
-            "model_installed": bool(chat_row and "chat" in chat_row["eligible_scopes"]),
+            "model_installed": bool(
+                chat_row and chat_row["integrity"]["local"]["eligible"]),
+            "model_available": bool(
+                chat_row and "chat" in chat_row["eligible_scopes"]),
             "model_selections": {scope: self.model_for(scope)
                                  for scope in MODEL_DEFAULTS},
             "auto_model": {"enabled": False,
@@ -2008,7 +2053,8 @@ class Coordinator:
             },
             "documents": {
                 **documents.capability_summary(
-                    runtime_state, ocr_model=self.model_for("documents.ocr")),
+                    runtime_state,
+                    ocr_model=self.enabled_model_for("documents.ocr")),
                 "search": retrieval.METHOD if retrieval.fts_available(self.conn)
                           else None,
                 "search_note": retrieval.METHOD_NOTE,

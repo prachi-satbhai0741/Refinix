@@ -357,6 +357,23 @@ class TestReplacing(WindowsBase):
         self.assertEqual((self.project / "notes.md").read_text(),
                          "somebody else wrote this\n")
 
+    def test_a_change_while_the_replacement_is_prepared_is_refused(self):
+        expected = self.sha("notes.md")
+        real = winfs.Directory.open_file_locked
+
+        def change_before_final_check(folder, name):
+            self.write("notes.md", "changed during preparation\n")
+            return real(folder, name)
+
+        with patch.object(winfs.Directory, "open_file_locked",
+                          change_before_final_check):
+            with self.assertRaises(repo.RepositoryError) as caught:
+                repo.replace_text_file(self.project, "notes.md",
+                                       expected_sha256=expected, text="mine\n")
+        self.assertEqual(caught.exception.code, "stale")
+        self.assertEqual((self.project / "notes.md").read_text(),
+                         "changed during preparation\n")
+
     def test_a_linked_target_is_refused_and_its_destination_is_untouched(self):
         outside = Path(self.scratch.name) / "victim.txt"
         outside.write_text("original\n")

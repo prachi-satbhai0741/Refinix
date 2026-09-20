@@ -276,7 +276,8 @@ MEDIA_TYPE = ("application/vnd.openxmlformats-officedocument"
 _PROBE: dict | None = None
 
 
-def selftest() -> dict:
+def selftest(*, title: str = "Refinix self-test",
+             blocks: list[Block] | None = None) -> dict:
     """Write a real .docx to a temporary folder and reopen it.
 
     The whole Word path, executed rather than assumed: a package is built, the
@@ -287,15 +288,14 @@ def selftest() -> dict:
     It proves the writer works here. It says nothing about the content of any
     document Refinix later generates.
 
-    The file holds two fixed sentences and no user content, which is why it
-    may use an ordinary temporary folder rather than the workspace's own: a
-    capability probe must not need a data root to exist before it can answer,
-    and nothing private passes through it.
+    The default file holds two fixed sentences. A capability self-test may
+    instead supply the model-derived blocks it is validating; neither path
+    contains workspace data, so an ordinary temporary folder is sufficient.
     """
     with tempfile.TemporaryDirectory(prefix="refinix-docx-") as folder:
         target = Path(folder) / "refinix-self-test.docx"
         try:
-            write_docx(target, title="Refinix self-test", blocks=[
+            write_docx(target, title=title, blocks=blocks or [
                 Block("Refinix self-test", style="Title"),
                 Block("Refinix wrote this file to check that Word output works "
                       "on this computer, then reopened it to confirm.")])

@@ -661,21 +661,7 @@ def replace_text_file(root: Path, relative: str, *, expected_sha256: str,
     try:
         parent_fd = _descend(root_fd, parts[:-1])
         try:
-            # Re-verify the target through a fresh no-follow handle: whatever
-            # was checked at proposal time may have changed since.
-            flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-                     | getattr(os, "O_NONBLOCK", 0))
-            try:
-                handle = os.open(parts[-1], flags, dir_fd=parent_fd)
-            except OSError as exc:
-                raise RepositoryError(
-                    "stale", f"{relative} could not be reopened: {exc.strerror}") from exc
-            try:
-                info = os.fstat(handle)
-                _check_regular(info, relative)
-                current = _read_all(handle, MAX_FILE_BYTES)
-            finally:
-                os.close(handle)
+            info, current = _posix_target(parent_fd, parts[-1], relative)
             if hashlib.sha256(current).hexdigest() != expected_sha256:
                 raise RepositoryError(
                     "stale", f"{relative} changed on disk after the preview was made. "
@@ -704,6 +690,12 @@ def replace_text_file(root: Path, relative: str, *, expected_sha256: str,
                     "The original file was not changed.") from exc
             else:
                 os.close(out)
+            final, current = _posix_target(parent_fd, parts[-1], relative)
+            if ((final.st_dev, final.st_ino) != (info.st_dev, info.st_ino)
+                    or hashlib.sha256(current).hexdigest() != expected_sha256):
+                raise RepositoryError(
+                    "stale", f"{relative} changed while the replacement was being "
+                             "prepared. Nothing was written.")
             os.replace(temporary, parts[-1], src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
             temporary = None
             try:
@@ -730,6 +722,23 @@ def _temporary_name() -> str:
     return f".refinix-{os.getpid()}-{os.urandom(6).hex()}.tmp"
 
 
+def _posix_target(parent_fd: int, name: str, relative: str):
+    """Read one no-follow target for the initial and final stale checks."""
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_NONBLOCK", 0))
+    try:
+        handle = os.open(name, flags, dir_fd=parent_fd)
+    except OSError as exc:
+        raise RepositoryError(
+            "stale", f"{relative} could not be reopened: {exc.strerror}") from exc
+    try:
+        info = os.fstat(handle)
+        _check_regular(info, relative)
+        return info, _read_all(handle, MAX_FILE_BYTES)
+    finally:
+        os.close(handle)
+
+
 def _windows_replace(root: Path, relative: str, *, expected_sha256: str,
                      data: bytes) -> FileIdentity:
     """The same replacement, inside a directory pinned for its whole duration.
@@ -740,12 +749,10 @@ def _windows_replace(root: Path, relative: str, *, expected_sha256: str,
     failure at any point leaves the original untouched and removes the
     temporary file.
 
-    The target's handle is closed before the move because Windows refuses to
-    replace a file that something still holds open. The window that opens is
-    the same one POSIX has between closing its handle and calling `renameat`,
-    and it is bounded the same way: the parent directory is pinned, so the
-    name being replaced is still a name in the directory that was verified,
-    and `os.replace` acts on the name rather than following a link left there.
+    The target is checked again under an exclusive handle after the temporary
+    file is durable. Windows requires that handle to close before the move;
+    the remaining close-to-rename boundary is one syscall-sized window rather
+    than the whole temporary-file write.
     """
     parts = relative.split("/")
     with _windows_errors(relative), winfs.pinned(root, parts[:-1]) as folder:
@@ -794,12 +801,28 @@ def _windows_replace(root: Path, relative: str, *, expected_sha256: str,
                 raise OSError(errno.EIO, "the replacement was written short")
             os.close(out)
             out = None
+            try:
+                locked, final = folder.open_file_locked(parts[-1])
+            except winfs.WindowsError_ as exc:
+                raise RepositoryError(
+                    "stale", f"{relative} could not be rechecked: {exc}") from exc
+            try:
+                current = _read_all(locked, MAX_FILE_BYTES)
+            finally:
+                os.close(locked)
+            if ((final.device, final.inode) != (entry.device, entry.inode)
+                    or hashlib.sha256(current).hexdigest() != expected_sha256):
+                raise RepositoryError(
+                    "stale", f"{relative} changed while the replacement was being "
+                             "prepared. Nothing was written.")
             # The bytes are already flushed, so the content is durable before
             # the name changes. Windows offers no directory fsync; NTFS
             # journals the rename itself, and `os.replace` is the same
             # `MoveFileExW` the POSIX `renameat` mirrors.
             folder.replace(temporary, parts[-1])
             promoted = True
+        except RepositoryError:
+            raise
         except (OSError, winfs.WindowsError_) as exc:
             if isinstance(exc, winfs.WindowsError_) and exc.reason == "exists":
                 raise

@@ -24,13 +24,14 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from backend.coordinator import db, docflow, identity, runtime
+from backend.coordinator import db, docflow, identity, models, runtime
 from backend.coordinator.test_document_generation import scripted_stream
 from backend.coordinator.test_execution4a import Harness
 
 # Two engines on purpose. The second is a test string and is deliberately not
 # in the catalogue: nothing in identity may depend on the shipped baseline.
 BASELINE = "qwen3.5:4b-q4_K_M"
+BASELINE_DIGEST = models.entry_for(BASELINE).manifest_sha256
 OTHER = "hypothetical-local-model:7b-q4"
 
 
@@ -177,8 +178,11 @@ class ChatCarriesIdentity(Harness):
             inventory=None):
         stream = scripted_stream("an answer")
         job = self.send(text)
-        state = {"reachable": True,
-                 "models": inventory if inventory is not None else [engine]}
+        installed = inventory if inventory is not None else [engine]
+        state = {"reachable": True, "models": installed,
+                 "digests": {model: (BASELINE_DIGEST if model == BASELINE
+                                     else "b" * 64)
+                             for model in installed}}
         with patch.object(self.c, "model_for", return_value=engine), \
                 patch.object(runtime, "probe", return_value=state), \
                 patch.object(runtime, "stream_chat", stream):
@@ -222,13 +226,9 @@ class ChatCarriesIdentity(Harness):
             self.assertIn(model, content)
 
     def test_an_unreachable_engine_reports_unavailable_not_a_number(self):
-        stream = scripted_stream("an answer")
-        job = self.send("how many models do you have")
-        with patch.object(runtime, "probe",
-                          return_value={"reachable": False, "models": []}), \
-                patch.object(runtime, "stream_chat", stream):
-            self.c._run(job, self.chat, None)
-        self.assertIn("unavailable", self.system_text(stream))
+        message = self.c._identity_message(
+            BASELINE, {"reachable": False, "models": []})
+        self.assertIn("unavailable", message["content"])
 
     def test_a_failure_reading_the_inventory_never_loses_the_message(self):
         """The guard around the lookup: a broken inventory is a reason to say
@@ -252,7 +252,7 @@ class ChatCarriesIdentity(Harness):
         stream = scripted_stream("an answer")
         job = self.send("who are you")
         state = {"reachable": True, "models": [BASELINE],
-                 "digests": {BASELINE: "a" * 64}}
+                 "digests": {BASELINE: BASELINE_DIGEST}}
         relationship = {"relationship_id": "rel", "state": "paired"}
         with patch.object(self.c, "paired_worker", return_value=relationship), \
                 patch.object(self.c, "preflight", return_value=None), \
