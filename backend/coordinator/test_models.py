@@ -24,6 +24,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.contracts import profiles, v1
 from backend.coordinator import db, device, docgen, models, runtime
 from backend.coordinator.server import Coordinator
 
@@ -361,7 +362,7 @@ class TestRemovalImpact(unittest.TestCase):
 class CoordinatorBase(unittest.TestCase):
     """The inventory as the interface receives it, against a fake runtime."""
 
-    HEALTH = {"reachable": True, "server_version": "0.33.3",
+    HEALTH = {"reachable": True, "server_version": "0.32.14",
               "models": [CATALOGUED], "digests": {CATALOGUED: CATALOG_DIGEST},
               "loaded": None, "endpoint": runtime.HOST, "error": None}
 
@@ -369,6 +370,7 @@ class CoordinatorBase(unittest.TestCase):
         self.scratch = tempfile.TemporaryDirectory()
         self.addCleanup(self.scratch.cleanup)
         self.c = Coordinator(Path(self.scratch.name) / "state.sqlite3")
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.addCleanup(self.c.conn.close)
         patches = [
             patch.object(runtime, "probe", return_value=dict(self.HEALTH)),
@@ -414,8 +416,9 @@ class TestInventory(CoordinatorBase):
             row = self.row("somebody/random:latest")
         self.assertEqual(row["state"], models.UNLISTED)
         self.assertEqual(row["provenance"]["evidence_state"], models.UNVERIFIED)
-        # Still usable — it is installed — but never presented as verified.
-        self.assertIn("chat", row["eligible_scopes"])
+        # Installed is not qualified: arbitrary bytes cannot inherit another
+        # model's profile merely because the runtime lists them.
+        self.assertEqual(row["eligible_scopes"], [])
 
     def test_a_catalogue_digest_mismatch_is_visible_and_ineligible(self):
         with patch.object(runtime, "probe", return_value={
@@ -429,13 +432,23 @@ class TestInventory(CoordinatorBase):
 
     def test_a_worker_catalogue_mismatch_falls_back_to_verified_local_bytes(self):
         relationship = {"relationship_id": "rel", "state": "paired"}
+        wrong = profiles.PROFILES[-1].model_dump()
+        wrong["model"]["manifest_sha256"] = "f" * 64
+        wrong["profile_id"] = v1.execution_profile_id(wrong)
         node = {
-            "node_id": "worker", "display_name": "worker",
-            "supported_contract_versions": ["1.0"], "health": "healthy",
+            "contract_version": v1.CONTRACT_VERSION,
+            "node_id": "22222222-2222-4222-8222-222222222222",
+            "display_name": "worker", "app_version": "test",
+            "platform": "Linux x86_64",
+            "supported_contract_versions": [v1.CONTRACT_VERSION],
+            "health": "healthy",
             "capabilities": ["text.generate"], "queue_depth": 0,
             "models": [{"model_id": CATALOGUED,
                         "manifest_sha256": "f" * 64,
-                        "runtime": "ollama", "runtime_version": "test"}],
+                        "runtime": "ollama", "runtime_version": "0.33.2"}],
+            "inference_profiles": [wrong],
+            "observed_at": "2026-09-21T00:00:00Z",
+            "available_memory_bytes": None, "loaded_model_id": None,
         }
         with patch.object(self.c, "paired_worker", return_value=relationship), \
                 patch.object(self.c, "preflight", return_value=node):
@@ -515,7 +528,7 @@ class TestSelfTestRoute(CoordinatorBase):
             record = self.c.run_model_selftest(models.CHAT)
         self.assertEqual(record["state"], models.PASSED)
         self.assertEqual(record["digest"], CATALOG_DIGEST)
-        self.assertEqual(record["runtime_version"], "0.33.3")
+        self.assertEqual(record["runtime_version"], "0.32.14")
         self.assertTrue(self.row(CATALOGUED)["selftests"][models.CHAT]["current"])
 
     def test_a_result_is_superseded_when_the_bytes_change_under_the_tag(self):

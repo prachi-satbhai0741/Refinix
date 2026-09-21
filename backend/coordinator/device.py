@@ -30,7 +30,10 @@ Standard library only.
 from __future__ import annotations
 
 import platform as _platform
+import subprocess
 import sys
+
+from backend.contracts import profiles as inference_profiles
 
 # The label for work that ran on the computer the user is sitting at. A role,
 # not an operating system: the same words are correct on all three families.
@@ -101,3 +104,41 @@ def location_label(*, local: bool) -> str:
     change — naming a specific paired device, say — lands in one place.
     """
     return HERE if local else PEER
+
+
+def _sysctl(name: str) -> str | None:
+    """Read one stable macOS hardware fact without invoking a shell."""
+    try:
+        result = subprocess.run(
+            ["/usr/sbin/sysctl", "-n", name], check=True, capture_output=True,
+            text=True, timeout=2)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def qualified_target_profile(*, platform: str | None = None,
+                             machine: str | None = None,
+                             hardware_model: str | None = None,
+                             memory_bytes: int | None = None) -> str | None:
+    """Stable measured device profile, or ``None`` when it is not proven.
+
+    The only current local qualification belongs to the recorded Mac17,3 M5
+    with 16 GiB.  OS family or architecture alone would include other Macs and
+    fabricate evidence, so all stable hardware fields must match.  Free memory,
+    load and queue state are deliberately irrelevant.
+    """
+    platform = sys.platform if platform is None else platform
+    machine = (_platform.machine() if machine is None else machine).lower()
+    if platform != "darwin" or machine not in {"arm64", "aarch64"}:
+        return None
+    hardware_model = _sysctl("hw.model") if hardware_model is None else hardware_model
+    if memory_bytes is None:
+        raw = _sysctl("hw.memsize")
+        try:
+            memory_bytes = int(raw) if raw is not None else None
+        except ValueError:
+            memory_bytes = None
+    if hardware_model == "Mac17,3" and memory_bytes == 16 * 1024 ** 3:
+        return inference_profiles.MAC_M5_16GB
+    return None

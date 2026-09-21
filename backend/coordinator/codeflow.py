@@ -27,6 +27,8 @@ import hashlib
 import json
 import uuid
 
+from backend.contracts import v1
+
 MAX_SUMMARY_CHARS = 2000
 MAX_EDITS = 8
 MAX_RESPONSE_CHARS = 120_000
@@ -348,7 +350,7 @@ def build_package(selected: list[dict], *, workspace_id: str,
                                 "size_bytes": len(content)}
     digest = package_digest(entries)
     return {
-        "body": {"contract_version": "1.0", "workspace_id": workspace_id,
+        "body": {"contract_version": v1.CONTRACT_VERSION, "workspace_id": workspace_id,
                  "relationship_id": relationship_id, "attempt_id": attempt_id,
                  "package_sha256": digest, "files": entries},
         "resources": resources, "mapping": mapping,

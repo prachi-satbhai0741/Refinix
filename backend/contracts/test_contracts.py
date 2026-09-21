@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import unittest
 
+from . import profiles, v1
 from .v1 import (
     CONTRACT_VERSION, MAX_EVENT_BYTES, MAX_REQUEST_BYTES, RECORDS,
     TERMINAL_ATTEMPT_STATES, TERMINAL_JOB_STATES,
@@ -159,6 +160,16 @@ class ContractChecks(unittest.TestCase):
         envelope = deepcopy(EXAMPLES["JobEnvelope"])
         envelope["task_type"] = "documents"
         envelope["required_capabilities"] = ["document.extract"]
+        envelope["messages"] = []
+        envelope["inference"] = {
+            "profile_id": profiles.PROFILES[2].profile_id,
+            "workflow_mode": "documents.structured",
+            "context_window_tokens": 8192,
+            "output_allowance_tokens": 3072,
+            "reasoning": "disabled",
+            "decoder": "json_schema",
+            "decoder_schema_sha256": "b" * 64,
+        }
         envelope["context"] = [{
             "resource_id": EXAMPLES["Proof"]["citations"][0]["resource_id"],
             "sha256": "a" * 64, "size_bytes": 4096, "media_type": "application/pdf",
@@ -204,13 +215,61 @@ class ContractChecks(unittest.TestCase):
         retry["attempt_id"] = "00000000-0000-4000-8000-000000000011"
         self.assertNotEqual(payload_sha256(original), payload_sha256(parse("JobEnvelope", retry)))
         relationship = "00000000-0000-4000-8000-000000000012"
-        self.assertEqual(redis_key("dispatch", relationship), f"af:1.0:{relationship}:dispatch")
+        self.assertEqual(redis_key("dispatch", relationship), f"af:1.1:{relationship}:dispatch")
         self.assertEqual(redis_key("lease", relationship, original.attempt_id),
-                         f"af:1.0:{relationship}:lease:{original.attempt_id}")
+                         f"af:1.1:{relationship}:lease:{original.attempt_id}")
         for args in (("dispatch", "../escape"), ("lease", relationship),
                      ("arbitrary", relationship), ("dispatch", relationship, original.attempt_id)):
             with self.assertRaises(ValueError):
                 redis_key(*args)
+
+    def test_profile_identity_binds_every_material_semantic(self):
+        original = profiles.PROFILES[0].model_dump()
+        for path, value in (
+            (("qualified_context_tokens",), 4096),
+            (("default_output_tokens",), 1024),
+            (("reasoning_modes",), ["disabled"]),
+            (("decoder_modes",), ["json_schema"]),
+            (("model", "runtime_version"), "0.32.15"),
+            (("target_profile_id",), "another-device"),
+        ):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                changed = deepcopy(original)
+                target = changed
+                for part in path[:-1]:
+                    target = target[part]
+                target[path[-1]] = value
+                v1.ExecutionProfile.model_validate(changed)
+
+    def test_node_profiles_are_qualified_and_bound_to_advertised_models(self):
+        profile = profiles.PROFILES[-1]
+        node = deepcopy(EXAMPLES["Node"])
+        node["models"] = [profile.model.model_dump()]
+        node["inference_profiles"] = [profile.model_dump()]
+        parsed = parse("Node", node)
+        self.assertEqual(parsed.inference_profiles[0].profile_id, profile.profile_id)
+
+        stale = deepcopy(node)
+        stale["models"][0]["runtime_version"] = "0.33.3"
+        with self.assertRaises(ValueError):
+            parse("Node", stale)
+
+        candidate = deepcopy(node)
+        candidate["inference_profiles"][0]["qualification_state"] = "candidate"
+        candidate["inference_profiles"][0]["eligible"] = False
+        with self.assertRaises(ValueError):
+            parse("Node", candidate)
+
+    def test_legacy_contract_cannot_claim_qualified_semantics(self):
+        legacy = deepcopy(EXAMPLES["JobEnvelope"])
+        legacy["contract_version"] = "1.0"
+        legacy["messages"] = []
+        legacy["inference"] = None
+        self.assertEqual(parse("JobEnvelope", legacy).contract_version, "1.0")
+
+        legacy["inference"] = deepcopy(EXAMPLES["JobEnvelope"]["inference"])
+        with self.assertRaises(ValueError):
+            parse("JobEnvelope", legacy)
 
 
 if __name__ == "__main__":

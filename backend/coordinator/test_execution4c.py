@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.contracts import profiles
 from backend.coordinator import (code_service, codeflow, db, models, policy, repo,
                                  runtime)
 from backend.coordinator.code_service import (CodeError, TARGET_DISTRIBUTED,
@@ -32,14 +33,16 @@ class TestProposalEnvelope(unittest.TestCase):
         selected = self.selection(9_000)
         messages = codeflow.build_messages("change one line", selected)
         self.assertGreater(
-            code_service.CodeService._proposal_output_limit(messages, selected),
+            code_service.CodeService._proposal_output_limit(
+                messages, selected, profiles.PROFILES[1]),
             code_service.PROPOSAL_NUM_PREDICT)
 
     def test_an_impossible_selection_fails_before_generation(self):
         selected = self.selection(30_000)
         messages = codeflow.build_messages("change one line", selected)
         with self.assertRaisesRegex(CodeError, "Select fewer or smaller files"):
-            code_service.CodeService._proposal_output_limit(messages, selected)
+            code_service.CodeService._proposal_output_limit(
+                messages, selected, profiles.PROFILES[1])
 
     def test_format_repair_does_not_resend_the_selected_source(self):
         messages = codeflow.repair_messages('{"summary":"wrapped","edits":[]}')
@@ -57,7 +60,7 @@ class Base(unittest.TestCase):
         self.state = self.home / "state" / "coordinator.sqlite3"
         self.state.parent.mkdir(parents=True)
         self.runtime_probe = patch.object(runtime, "probe", return_value={
-            "reachable": True, "server_version": "test",
+            "reachable": True, "server_version": "0.32.14",
             "models": [runtime.MODEL],
             "digests": {runtime.MODEL:
                         models.entry_for(runtime.MODEL).manifest_sha256},
@@ -65,6 +68,7 @@ class Base(unittest.TestCase):
         self.runtime_probe.start()
         self.addCleanup(self.runtime_probe.stop)
         self.c = Coordinator(self.state)
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.addCleanup(self.c.conn.close)
         self.project = self.home / "project"
         self.project.mkdir()
