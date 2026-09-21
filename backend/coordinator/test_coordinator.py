@@ -20,13 +20,13 @@ from threading import Event
 from urllib.error import HTTPError
 from urllib.parse import quote
 
-from backend.contracts import v1
+from backend.contracts import profiles, v1
 from backend.coordinator import db, models
 from backend.coordinator.server import Coordinator, Handler, RequestError
 from backend.coordinator import runtime
 
 
-READY_RUNTIME = {"reachable": True, "server_version": "test",
+READY_RUNTIME = {"reachable": True, "server_version": "0.32.14",
                  "models": [runtime.MODEL],
                  "digests": {runtime.MODEL:
                              models.entry_for(runtime.MODEL).manifest_sha256},
@@ -385,6 +385,7 @@ class TestLocalBoundary(unittest.TestCase):
     def test_cancel_at_last_output_does_not_save_an_assistant_message(self):
         with tempfile.TemporaryDirectory() as directory:
             c = Coordinator(Path(directory) / 'state.sqlite3')
+            c.target_profile_id = profiles.MAC_M5_16GB
             chat = db.create_chat(c.conn, c.workspace_id, 'check')
             with patch('backend.coordinator.server.threading.Thread.start'):
                 job = c.submit(chat, 'hello')
@@ -406,7 +407,12 @@ class TestCompletion(unittest.TestCase):
                           BytesIO(b'{"error":"exceed_context_size_error"}'))
         with patch.object(runtime, '_request', side_effect=error):
             with self.assertRaisesRegex(runtime.RuntimeUnavailable, 'Shorten your message'):
-                list(runtime.stream_chat([{'role': 'user', 'content': 'dense input'}]))
+                profile = profiles.PROFILES[0]
+                inference = profiles.request(
+                    profile, reasoning='disabled', decoder='text')
+                list(runtime.stream_chat(
+                    [{'role': 'user', 'content': 'dense input'}],
+                    profile=profile, inference=inference))
 
     def test_context_and_output_limits_keep_partial_answers_with_distinct_notices(self):
         for prompt, output, limit in [(8042, 150, 'context'), (40, 2048, 'output'),
@@ -414,6 +420,7 @@ class TestCompletion(unittest.TestCase):
                                       (None, 2048, 'output'), (None, 100, 'unknown')]:
             with self.subTest(limit=limit), tempfile.TemporaryDirectory() as directory:
                 c = Coordinator(Path(directory) / 'state.sqlite3')
+                c.target_profile_id = profiles.MAC_M5_16GB
                 chat = db.create_chat(c.conn, c.workspace_id, 'limit test')
                 with patch('backend.coordinator.server.threading.Thread.start'):
                     job = c.submit(chat, 'Count')
@@ -445,6 +452,7 @@ class TestCompletion(unittest.TestCase):
             with self.subTest(reason=reason), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / 'state.sqlite3'
                 c = Coordinator(path)
+                c.target_profile_id = profiles.MAC_M5_16GB
                 chat = db.create_chat(c.conn, c.workspace_id, 'synthetic check')
                 with patch('backend.coordinator.server.threading.Thread.start'):
                     job = c.submit(chat, 'Give a detailed answer.')
@@ -464,6 +472,7 @@ class TestCompletion(unittest.TestCase):
                                            'num_predict': runtime.NUM_PREDICT})
                 c.conn.close()
                 c = Coordinator(path)
+                c.target_profile_id = profiles.MAC_M5_16GB
                 detail = c.job_detail(job)
                 expected = 'completed' if reason == 'stop' else 'failed'
                 self.assertEqual(detail['job']['state'], expected)
@@ -496,6 +505,7 @@ class TestCompletion(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'state.sqlite3'
             c = Coordinator(path)
+            c.target_profile_id = profiles.MAC_M5_16GB
             node = c.node_id
             chat = db.create_chat(c.conn, c.workspace_id, 'legacy check')
             with patch('backend.coordinator.server.threading.Thread.start'):

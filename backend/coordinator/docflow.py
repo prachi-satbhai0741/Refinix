@@ -644,6 +644,22 @@ Rules:
   establish an answer, leave citations empty and explain the gap in unresolved.
 - Never invent a value, date, measurement, name or reference."""
 
+READ_FORMAT = {
+    "type": "object", "additionalProperties": False,
+    "required": ["answer", "citations", "unresolved"],
+    "properties": {
+        "answer": {"type": "string"},
+        "citations": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["source_id", "page"],
+            "properties": {
+                "source_id": {"type": "string"},
+                "page": {"type": "integer", "minimum": 1}}}},
+        "unresolved": {"type": "array", "items": {"type": "string"}},
+    },
+}
+READ_CALL = {"response_format": READ_FORMAT, "num_predict": 2048}
+
 
 def approval_note_messages(request: str, sop_passages: list,
                            reports_context: list,

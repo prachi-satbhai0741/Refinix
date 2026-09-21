@@ -30,7 +30,7 @@ def envelope(*, attempt_id=None, workspace_id=None, relationship_id=None,
              validators=("patch.applies", "sandbox.exit_zero")) -> v1.JobEnvelope:
     node = str(uuid.uuid4())
     return v1.JobEnvelope(
-        contract_version="1.0",
+        contract_version=v1.CONTRACT_VERSION,
         workspace_id=workspace_id or str(uuid.uuid4()),
         workflow_id=str(uuid.uuid4()), job_id=str(uuid.uuid4()),
         step_id=str(uuid.uuid4()),

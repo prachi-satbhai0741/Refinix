@@ -10,13 +10,15 @@ from pydantic import (
     model_validator,
 )
 
-CONTRACT_VERSION = "1.0"
+LEGACY_CONTRACT_VERSION = "1.0"
+CONTRACT_VERSION = "1.1"
+SUPPORTED_CONTRACT_VERSIONS = (LEGACY_CONTRACT_VERSION, CONTRACT_VERSION)
 MAX_REQUEST_BYTES = 262_144
 MAX_EVENT_BYTES = 16_384
 WORKER_PORT = 8443
 WORKER_NODE_PORT = 30443
-REDIS_PREFIX = "af:1.0"
-REDIS_GROUP = "executors-v1"
+REDIS_PREFIX = "af:1.1"
+REDIS_GROUP = "executors-v1.1"
 LEASE_SECONDS = 30
 HEARTBEAT_SECONDS = 10
 HEARTBEAT_TTL_SECONDS = 30
@@ -55,7 +57,7 @@ class Object(BaseModel):
 
 
 class Record(Object):
-    contract_version: Literal["1.0"]
+    contract_version: Literal["1.0", "1.1"]
 
 
 class ModelRef(Object):
@@ -63,6 +65,92 @@ class ModelRef(Object):
     manifest_sha256: Digest
     runtime: Label
     runtime_version: Label
+
+
+ReasoningMode = Literal["disabled", "enabled"]
+DecoderMode = Literal["text", "json_schema"]
+WorkflowMode = Literal["chat", "code.whole_file", "documents.structured"]
+
+
+class ExecutionProfile(Object):
+    """One measured execution capability, not a routing preference.
+
+    ``profile_id`` is the SHA-256 identity of every material execution field.
+    A caller cannot retain an identity while changing a limit, decoder,
+    reasoning mode, model artifact, runtime or target-device qualification.
+    """
+
+    profile_id: Digest
+    model: ModelRef
+    target_profile_id: Label
+    workflow_mode: WorkflowMode
+    qualified_context_tokens: Annotated[int, Field(ge=512, le=262_144)]
+    default_output_tokens: Annotated[int, Field(ge=1, le=65_536)]
+    max_output_tokens: Annotated[int, Field(ge=1, le=65_536)]
+    reasoning_modes: Annotated[list[ReasoningMode], Field(min_length=1, max_length=2)]
+    default_reasoning: ReasoningMode
+    decoder_modes: Annotated[list[DecoderMode], Field(min_length=1, max_length=2)]
+    qualified_memory_bytes: Annotated[int, Field(ge=1_048_576)] | None
+    qualification_state: Literal["qualified", "candidate", "unqualified"]
+    eligible: bool
+    evidence_kind: Literal["measured", "documented", "estimated", "unverified"]
+    evidence_ref: Label
+
+    @model_validator(mode="after")
+    def coherent_profile(self):
+        if self.default_output_tokens > self.max_output_tokens:
+            raise ValueError("default output cannot exceed the qualified maximum")
+        if self.max_output_tokens > self.qualified_context_tokens:
+            raise ValueError("output maximum cannot exceed the context window")
+        if len(set(self.reasoning_modes)) != len(self.reasoning_modes):
+            raise ValueError("reasoning modes must be unique")
+        if self.default_reasoning not in self.reasoning_modes:
+            raise ValueError("default reasoning must be an allowed mode")
+        if len(set(self.decoder_modes)) != len(self.decoder_modes):
+            raise ValueError("decoder modes must be unique")
+        if self.eligible != (self.qualification_state == "qualified"):
+            raise ValueError("only a qualified profile may be eligible")
+        if self.profile_id != execution_profile_id(self):
+            raise ValueError("profile identity does not match its execution semantics")
+        return self
+
+
+def execution_profile_id(profile) -> str:
+    """Hash all material execution semantics of a profile."""
+    if isinstance(profile, BaseModel):
+        values = profile.model_dump(exclude={"profile_id", "qualification_state",
+                                             "eligible", "evidence_kind",
+                                             "evidence_ref"})
+    else:
+        values = {key: value for key, value in dict(profile).items()
+                  if key not in {"profile_id", "qualification_state", "eligible",
+                                 "evidence_kind", "evidence_ref"}}
+    return sha256(json.dumps(values, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+class InferenceRequest(Object):
+    """Actual semantics requested from one already-qualified profile."""
+
+    profile_id: Digest
+    workflow_mode: WorkflowMode
+    context_window_tokens: Annotated[int, Field(ge=512, le=262_144)]
+    output_allowance_tokens: Annotated[int, Field(ge=1, le=65_536)]
+    reasoning: ReasoningMode
+    decoder: DecoderMode
+    decoder_schema_sha256: Digest | None
+
+    @model_validator(mode="after")
+    def decoder_schema(self):
+        if (self.decoder == "json_schema") != (self.decoder_schema_sha256 is not None):
+            raise ValueError("json_schema requests require exactly one schema hash")
+        return self
+
+
+class InferenceMessage(Object):
+    role: Literal["system", "user", "assistant"]
+    content: Annotated[str, StringConstraints(min_length=1, max_length=16_384,
+                                               pattern=r"\S")]
 
 
 class ResourceRef(Object):
@@ -82,6 +170,8 @@ class Node(Record):
     supported_contract_versions: Annotated[list[Label], Field(min_length=1, max_length=8)]
     capabilities: Annotated[list[Capability], Field(max_length=6)]
     models: Annotated[list[ModelRef], Field(max_length=16)]
+    inference_profiles: Annotated[list[ExecutionProfile], Field(max_length=32)] = Field(
+        default_factory=list)
     health: Literal["healthy", "degraded", "unavailable", "unknown"]
     observed_at: Timestamp | None
     queue_depth: Count | None
@@ -90,6 +180,22 @@ class Node(Record):
 
     @model_validator(mode="after")
     def observed_health(self):
+        if self.contract_version == LEGACY_CONTRACT_VERSION and self.inference_profiles:
+            raise ValueError("contract 1.0 cannot advertise inference profiles")
+        advertised = {(model.model_id, model.manifest_sha256, model.runtime,
+                       model.runtime_version) for model in self.models}
+        identities = set()
+        for profile in self.inference_profiles:
+            bound = (profile.model.model_id, profile.model.manifest_sha256,
+                     profile.model.runtime, profile.model.runtime_version)
+            if bound not in advertised:
+                raise ValueError("inference profile must bind an advertised model")
+            if not profile.eligible or profile.qualification_state != "qualified" \
+                    or profile.evidence_kind != "measured":
+                raise ValueError("nodes may advertise only measured qualified profiles")
+            if profile.profile_id in identities:
+                raise ValueError("profile identities must be unique")
+            identities.add(profile.profile_id)
         if self.observed_at is None and (
             self.health != "unknown" or self.queue_depth is not None
             or self.available_memory_bytes is not None or self.loaded_model_id is not None
@@ -164,8 +270,11 @@ class JobEnvelope(Record):
     system_instruction: Annotated[str, StringConstraints(
         min_length=1, max_length=4096, pattern=r"\S"
     )] | None = None
+    messages: Annotated[list[InferenceMessage], Field(max_length=64)] = Field(
+        default_factory=list)
     task_type: Literal["chat", "documents", "code"]
     model: ModelRef | None = None
+    inference: InferenceRequest | None = None
     required_capabilities: Annotated[list[Capability], Field(min_length=1, max_length=6)]
     context: Annotated[list[ResourceRef], Field(max_length=32)]
     attachments: Annotated[list[ResourceRef], Field(max_length=16)]
@@ -188,6 +297,31 @@ class JobEnvelope(Record):
             raise ValueError("resource references must be unique within the package")
         if sum(item.size_bytes for item in resources) > self.limits.workspace_bytes:
             raise ValueError("referenced inputs exceed the workspace limit")
+        generation = not (self.task_type == "code"
+                          and self.required_capabilities == ["code.validate"])
+        if self.contract_version == LEGACY_CONTRACT_VERSION:
+            if self.messages or self.inference is not None:
+                raise ValueError("contract 1.0 cannot carry qualified inference semantics")
+        elif generation:
+            if self.model is None or self.inference is None:
+                raise ValueError("contract 1.1 generation requires a model and profile")
+            expected_workflow = {
+                "chat": "chat",
+                "documents": "documents.structured",
+                "code": "code.whole_file",
+            }[self.task_type]
+            if self.inference.workflow_mode != expected_workflow:
+                raise ValueError("task type and inference workflow do not match")
+            if self.inference.workflow_mode == "chat":
+                if self.task_type != "chat" or not self.messages:
+                    raise ValueError("chat inference requires bounded conversation messages")
+                if self.messages[-1].role != "user" \
+                        or self.messages[-1].content != self.original_request:
+                    raise ValueError("chat messages must end with the original request")
+            elif self.messages:
+                raise ValueError("non-chat workflows build messages from bounded task inputs")
+            if sum(len(item.content.encode("utf-8")) for item in self.messages) > 131_072:
+                raise ValueError("conversation messages exceed the bounded task package")
         return self
 
 
@@ -244,6 +378,7 @@ class Failure(Object):
         "invalid_request", "incompatible_contract", "unavailable", "deadline_exceeded",
         "worker_lost", "redis_lost", "validation_failed", "permission_denied",
         "idempotency_conflict", "events_expired", "cancelled_by_user", "internal_error",
+        "incompatible_profile",
     ]
     message: Label
     retryable: bool
@@ -338,6 +473,21 @@ class ProofUpdated(Object):
     proof_id: Id
 
 
+class InferenceMetrics(Object):
+    """Worker-observed execution semantics and bounded runtime counters."""
+
+    kind: Literal["inference.metrics"]
+    requested_profile_id: Digest
+    actual_profile_id: Digest
+    context_window: Annotated[int, Field(ge=512, le=262_144)]
+    output_token_limit: Annotated[int, Field(ge=1, le=65_536)]
+    reasoning: ReasoningMode
+    decoder: DecoderMode
+    prompt_tokens: Count | None
+    output_tokens: Count | None
+    runtime_ms: Count | None
+
+
 class Event(Record):
     workspace_id: Id
     job_id: Id
@@ -348,7 +498,8 @@ class Event(Record):
     producer: Literal["coordinator", "worker"]
     occurred_at: Timestamp
     data: Annotated[
-        JobStateChange | AttemptStateChange | TextDelta | ArtifactCreated | ApprovalRequired | ProofUpdated,
+        JobStateChange | AttemptStateChange | TextDelta | ArtifactCreated |
+        ApprovalRequired | ProofUpdated | InferenceMetrics,
         Field(discriminator="kind"),
     ]
 

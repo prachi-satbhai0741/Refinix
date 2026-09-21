@@ -23,8 +23,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
-from backend.coordinator import (code_service, context, db, device, dispatch,
+from backend.coordinator import (code_service, codeflow, context, db, device, dispatch,
                                  docflow, docgen, documents, identity, models,
                                  pairing, pdfgen, policy, proof, repo,
                                  retrieval, runtime)
@@ -171,6 +172,10 @@ class Coordinator:
         self.node_id = node_id or self._identity("node_id")
         self.hub = Hub()
         self.workspace_id = self._identity("workspace_id")
+        # A stable measured target identity, never the node UUID or a volatile
+        # memory/health reading.  Unknown hardware intentionally has no local
+        # production profile until it is qualified.
+        self.target_profile_id = device.qualified_target_profile()
         self._cancelled: set[str] = set()
         self._cancel_lock = threading.Lock()
         # Set on Ctrl+C so streaming loops leave promptly instead of holding
@@ -228,6 +233,34 @@ class Coordinator:
                 "runtime": "ollama",
                 "runtime_version": state.get("server_version") or "unknown"}
 
+    def local_profiles(self, runtime_state: dict | None = None) \
+            -> list[v1.ExecutionProfile]:
+        state = runtime_state if runtime_state is not None else runtime.probe()
+        refs = []
+        for model, digest in (state.get("digests") or {}).items():
+            if model and isinstance(digest, str) and len(digest) == 64:
+                try:
+                    refs.append(v1.ModelRef(
+                        model_id=model, manifest_sha256=digest,
+                        runtime="ollama",
+                        runtime_version=state.get("server_version") or "unknown"))
+                except ValueError:
+                    continue
+        return inference_profiles.for_observation(
+            target_profile_id=self.target_profile_id, models=refs)
+
+    def local_profile(self, *, workflow: str, model_id: str, reasoning: str,
+                      decoder: str, runtime_state: dict | None = None,
+                      output_allowance: int | None = None,
+                      context_window: int | None = None) \
+            -> v1.ExecutionProfile | None:
+        return next((profile for profile in self.local_profiles(runtime_state)
+                     if inference_profiles.compatible(
+                         profile, model_id=model_id, workflow=workflow,
+                         reasoning=reasoning, decoder=decoder,
+                         output_allowance=output_allowance,
+                         context_window=context_window)), None)
+
     def _identity_message(self, model_id, runtime_state=None):
         """The product-identity block for one Chat turn.
 
@@ -263,6 +296,7 @@ class Coordinator:
         local = {model: digests.get(model) for model in (state.get("models") or [])
                  if model}
         remote = {}
+        remote_profiles = []
         try:
             node = self.preflight()
         except pairing.IdentityMismatch:
@@ -270,6 +304,12 @@ class Coordinator:
         for item in (node or {}).get("models") or []:
             if item.get("model_id") and len(item.get("manifest_sha256") or "") == 64:
                 remote[item["model_id"]] = item
+        for item in (node or {}).get("inference_profiles") or []:
+            try:
+                remote_profiles.append(v1.ExecutionProfile.model_validate(item))
+            except ValueError:
+                continue
+        local_profiles = self.local_profiles(state)
         selected = {scope: self.model_for(scope) for scope in MODEL_DEFAULTS}
         enablement = db.model_enablement(self.conn)
         recorded = db.selftests(self.conn)
@@ -286,13 +326,24 @@ class Coordinator:
             local_integrity = models.integrity(model, local.get(model))
             worker_integrity = models.integrity(
                 model, (remote.get(model) or {}).get("manifest_sha256"))
-            local_eligible = model in local and local_integrity["eligible"]
-            remote_eligible = model in remote and worker_integrity["eligible"]
+            local_eligible = (model in local and local_integrity["eligible"]
+                              and any(p.model.model_id == model
+                                      for p in local_profiles))
+            remote_eligible = (model in remote and worker_integrity["eligible"]
+                               and any(p.model.model_id == model
+                                       for p in remote_profiles))
             eligible = []
-            if enabled and (local_eligible or remote_eligible):
-                eligible.extend(["chat", "code"])
+            profile_scopes = {
+                inference_profiles.CHAT: "chat",
+                inference_profiles.CODE: "code",
+                inference_profiles.DOCUMENTS: "documents.generate",
+            }
+            if enabled:
+                for profile in [*local_profiles, *remote_profiles]:
+                    scope = profile_scopes.get(profile.workflow_mode)
+                    if profile.model.model_id == model and scope and scope not in eligible:
+                        eligible.append(scope)
             if enabled and local_eligible:
-                eligible.append("documents.generate")
                 if runtime.VISION_CAPABILITY in \
                         (runtime.model_capabilities(model) or []):
                     eligible.append("documents.ocr")
@@ -320,6 +371,12 @@ class Coordinator:
                             "worker": (remote.get(model) or {}).get("manifest_sha256")},
                 "integrity": {"local": local_integrity,
                               "worker": worker_integrity},
+                "execution_profiles": {
+                    "local": [p.model_dump() for p in local_profiles
+                              if p.model.model_id == model],
+                    "worker": [p.model_dump() for p in remote_profiles
+                               if p.model.model_id == model],
+                },
             })
         return rows
 
@@ -425,9 +482,31 @@ class Coordinator:
         loading a cold model would wait out the runtime's whole request
         timeout instead of closing.
         """
+        response_format = options.pop("response_format", None)
+        output_allowance = options.pop("num_predict", None)
+        if response_format == codeflow.PROPOSAL_SCHEMA:
+            workflow, decoder = inference_profiles.CODE, "json_schema"
+        elif response_format is not None:
+            workflow, decoder = inference_profiles.DOCUMENTS, "json_schema"
+        else:
+            workflow, decoder = inference_profiles.CHAT, "text"
+        state = runtime.probe()
+        profile = self.local_profile(
+            workflow=workflow, model_id=model, reasoning="disabled",
+            decoder=decoder, runtime_state=state,
+            output_allowance=output_allowance)
+        if profile is None:
+            raise models.SelfTestError(
+                "this model/runtime/device combination has no qualified execution profile")
+        inference = inference_profiles.request(
+            profile, reasoning="disabled", decoder=decoder,
+            output_allowance=output_allowance,
+            decoder_schema_sha256=(inference_profiles.schema_sha256(response_format)
+                                   if response_format is not None else None))
         collected, done = [], None
         for kind, payload in runtime.stream_chat(
-                messages, model=model, think=False,
+                messages, profile=profile, inference=inference,
+                response_format=response_format,
                 should_cancel=self.stopping.is_set, **options):
             if kind == "delta":
                 collected.append(payload)
@@ -528,18 +607,19 @@ class Coordinator:
                                         ("context_preparing", "queued")):
                 self._advance_job(job_id, following, previous)
 
-            history = self.chat_messages(chat_id)
-            # Saved history stays whole; only the request is bounded.
-            messages, selection = context.select(
-                history, window=runtime.NUM_CTX,
-                output_allowance=runtime.NUM_PREDICT)
-
             # AF-006. The route is decided before the attempt is created, so
             # the reason is part of the canonical record from the first write
             # rather than being back-filled once something has already run.
             uses_model = skill_id != docflow.SEARCH_SKILL
             scope = "documents.generate" if skill_id in docflow.DOCUMENT_SKILLS else "chat"
             model_id = self.model_for(scope) if uses_model else None
+            reasoning = db.get_reasoning(self.conn, model_id) if uses_model else False
+            reasoning_mode = "enabled" if reasoning else "disabled"
+            workflow_mode = (inference_profiles.DOCUMENTS
+                             if skill_id in docflow.DOCUMENT_SKILLS
+                             else inference_profiles.CHAT)
+            decoder_mode = ("json_schema" if skill_id in docflow.DOCUMENT_SKILLS
+                            else "text")
             # Decided BEFORE routing. A request carrying files is answered on
             # this computer: the worker contract has no field for an
             # attachment, so dispatching one would produce an answer from a
@@ -560,22 +640,42 @@ class Coordinator:
             # answer the turn already had.
             runtime_state = runtime.probe() if uses_model else None
             if skill_id in docflow.DOCUMENT_SKILLS:
-                model = (self.local_model_ref(model_id, runtime_state)
-                         if uses_model else None)
-                route = dispatch.Route(
-                    "local", "local coordinator: Documents runs on this computer",
-                    node_id=self.node_id, model=model)
+                route = self._local_route(
+                    dispatch.Route(
+                        "local", "local coordinator: Documents runs on this computer"),
+                    model_id, uses_model, runtime_state,
+                    workflow=workflow_mode, reasoning=reasoning_mode,
+                    decoder=decoder_mode, context_window=None,
+                    output_allowance=None)
             elif request_files:
-                route = dispatch.Route(
-                    "local",
-                    "local coordinator: this request has attached files, which "
-                    "are read on this computer",
-                    node_id=self.node_id,
-                    model=(self.local_model_ref(model_id, runtime_state)
-                           if uses_model else None))
+                route = self._local_route(
+                    dispatch.Route(
+                        "local", "local coordinator: this request has attached "
+                        "files, which are read on this computer"),
+                    model_id, uses_model, runtime_state,
+                    workflow=workflow_mode, reasoning=reasoning_mode,
+                    decoder=decoder_mode, context_window=None,
+                    output_allowance=None)
             else:
                 route = self.choose_route(model_id=model_id,
-                                          runtime_state=runtime_state)
+                                          runtime_state=runtime_state,
+                                          workflow=workflow_mode,
+                                          reasoning=reasoning_mode,
+                                          decoder=decoder_mode)
+            profile = (v1.ExecutionProfile.model_validate(route.profile)
+                       if route.profile else None)
+            inference = None
+            history = self.chat_messages(chat_id)
+            # Context selection consumes the chosen qualified profile. A
+            # remote worker with a smaller measured window therefore receives
+            # a different explicit pre-execution selection, never a hidden
+            # runtime truncation.
+            window = (profile.qualified_context_tokens if profile
+                      else runtime.NUM_CTX)
+            allowance = (profile.default_output_tokens if profile
+                         else runtime.NUM_PREDICT)
+            messages, selection = context.select(
+                history, window=window, output_allowance=allowance)
             attempt_id = db.create_attempt(
                 self.conn, job_id=job_id,
                 node_id=route.node_id or self.node_id,
@@ -585,9 +685,6 @@ class Coordinator:
             if route.remote:
                 db.set_attempt_relationship(self.conn, attempt_id,
                                             route.relationship_id)
-            # Read once, here. A later change to the switch cannot reach an
-            # attempt that has already recorded what it runs with.
-            reasoning = db.get_reasoning(self.conn, model_id) if uses_model else False
             if uses_model:
                 db.set_attempt_reasoning(self.conn, attempt_id, model_id, reasoning)
             self._emit(job_id, attempt_id, {"kind": "attempt.state",
@@ -615,11 +712,16 @@ class Coordinator:
                     "code": "permission_denied", "message": route.reason[:256],
                     "retryable": False})
                 return
-            if uses_model and route.model is None:
+            if uses_model and (route.model is None or profile is None):
+                db.set_attempt_metrics(self.conn, attempt_id, {
+                    "requested_profile_id": (route.profile or {}).get("profile_id"),
+                    "actual_profile_id": None,
+                    "route": "remote" if route.remote else "local",
+                    "refusal_reason": "no compatible qualified execution profile"})
                 self._stop(job_id, attempt_id, "failed", "running", {
                     "code": "unavailable",
-                    "message": (f"the selected model {model_id} has no eligible "
-                                "manifest at this execution target")[:256],
+                    "message": (f"the selected model {model_id} has no compatible "
+                                "qualified execution profile at this target")[:256],
                     "retryable": True})
                 return
             if route.remote and skill_id is None:
@@ -627,8 +729,18 @@ class Coordinator:
                 # skills stay local: their workflows are C08/C09 and the worker
                 # advertises neither capability, so dispatching them would be a
                 # promise this build cannot keep.
-                handled, attempt_id = self._run_remote(
-                    job_id, chat_id, attempt_id, route, text=request_text)
+                inference = inference_profiles.request(
+                    profile, reasoning=reasoning_mode, decoder="text",
+                    output_allowance=selection.output_allowance,
+                    context_window=selection.context_window)
+                logical_messages = [identity.system_message(
+                    engine=model_id, models=None,
+                    location="the paired worker"), *messages]
+                db.set_attempt_inference(
+                    self.conn, attempt_id, inference.model_dump())
+                handled, attempt_id, profile, inference = self._run_remote(
+                    job_id, chat_id, attempt_id, route, text=request_text,
+                    messages=logical_messages, inference=inference)
                 if handled:
                     return
                 # Fell back: continue below on this computer, with the new
@@ -645,7 +757,8 @@ class Coordinator:
                 # this request's attachments, then answers or writes from them.
                 messages, prepared, extra = self._document_stage(
                     job_id, chat_id, skill_id, messages,
-                    ocr_model=self.enabled_model_for("documents.ocr"))
+                    ocr_model=self.enabled_model_for("documents.ocr"),
+                    profile=profile)
                 if messages is None:
                     # The skill produced its own answer without the model.
                     if extra.get("conversion"):
@@ -660,7 +773,8 @@ class Coordinator:
                 # file, but the scope is unchanged: this request's attachments
                 # and nothing else on the computer.
                 messages, extra = self._chat_attachments(
-                    job_id, chat_id, messages, selection.included_ids)
+                    job_id, chat_id, messages, selection.included_ids,
+                    profile=profile)
                 prepared = extra.get("prepared")
                 final_selection = extra.get("selection")
                 if final_selection is not None:
@@ -691,14 +805,30 @@ class Coordinator:
             # ceiling. Both travel in `extra`, so this stays one call site;
             # they are passed only when a route actually set them, so an
             # ordinary Chat turn is called exactly as it was before.
-            constrained = {}
-            if (extra or {}).get("response_format"):
-                constrained = {"response_format": extra["response_format"],
-                               "num_predict": extra.get("num_predict")}
+            response_format = (extra or {}).get("response_format")
+            if skill_id in docflow.DOCUMENT_SKILLS:
+                inference = inference_profiles.request(
+                    profile, reasoning=reasoning_mode, decoder="json_schema",
+                    output_allowance=(extra or {}).get(
+                        "num_predict", profile.default_output_tokens),
+                    context_window=profile.qualified_context_tokens,
+                    decoder_schema_sha256=inference_profiles.schema_sha256(
+                        response_format))
+            elif inference is None:
+                inference = inference_profiles.request(
+                    profile, reasoning=reasoning_mode, decoder="text",
+                    output_allowance=selection.output_allowance,
+                    context_window=selection.context_window)
+            db.set_attempt_inference(
+                self.conn, attempt_id, inference.model_dump(),
+                actual_profile=profile.model_dump())
+            if extra is not None:
+                extra["_execution_profile"] = profile
+                extra["_inference_request"] = inference
             for kind, payload in runtime.stream_chat(
-                    messages, model=model_id, think=reasoning,
+                    messages, profile=profile, inference=inference,
                     should_cancel=lambda: self.is_cancelled(job_id)
-                    or self.stopping.is_set(), **constrained):
+                    or self.stopping.is_set(), response_format=response_format):
                 if kind == "thinking":
                     # Progress only. Never collected, never persisted, never
                     # shown as the reply.
@@ -722,6 +852,7 @@ class Coordinator:
                 elif kind == "done":
                     metrics = payload
 
+            metrics["route"] = "local"
             db.set_attempt_state(self.conn, attempt_id, "validating",
                                  runtime_ms=metrics.get("total_ms"), metrics=metrics)
             self._emit(job_id, attempt_id, {"kind": "attempt.state",
@@ -941,7 +1072,8 @@ class Coordinator:
             raise docflow.WorkflowError("source_unavailable", str(exc)) from exc
         return message["message_id"], sources
 
-    def _chat_attachments(self, job_id, chat_id, messages, selected_ids):
+    def _chat_attachments(self, job_id, chat_id, messages, selected_ids,
+                          *, profile: v1.ExecutionProfile):
         """Read the files sent with an ordinary Chat request, if any.
 
         The same extraction the document skills use, and the same scope: only
@@ -977,7 +1109,8 @@ class Coordinator:
             + context.estimate_tokens(messages[-1]["content"])
             + (2 * context.PER_MESSAGE_OVERHEAD))
         attachment_tokens = max(
-            0, context.input_budget(runtime.NUM_CTX, runtime.NUM_PREDICT)
+            0, context.input_budget(profile.qualified_context_tokens,
+                                    profile.default_output_tokens)
             - required_tokens)
         fenced, notes = docflow.chat_context(
             prepared, attachment_tokens * docflow.CHARS_PER_TOKEN_FLOOR)
@@ -1000,8 +1133,8 @@ class Coordinator:
              "text": message["content"]}
             for message_id, message in zip(selected_ids, built[1:]))
         bounded, final_selection = context.select(
-            candidates, window=runtime.NUM_CTX,
-            output_allowance=runtime.NUM_PREDICT)
+            candidates, window=profile.qualified_context_tokens,
+            output_allowance=profile.default_output_tokens)
         if not final_selection.newest_fits:
             raise runtime.RuntimeUnavailable(final_selection.note)
         final_selection.included_ids = [item for item in final_selection.included_ids
@@ -1014,9 +1147,10 @@ class Coordinator:
                        "attachment_note": docflow.attachment_note(prepared, notes)}
 
     @staticmethod
-    def _document_source_budget(base_messages, output_allowance: int) -> int:
+    def _document_source_budget(base_messages, output_allowance: int,
+                                context_window: int = runtime.NUM_CTX) -> int:
         """Characters left for sources after the real fixed prompt is counted."""
-        available = context.input_budget(runtime.NUM_CTX, output_allowance)
+        available = context.input_budget(context_window, output_allowance)
         fixed = context.estimate_messages(base_messages)
         if fixed >= available:
             raise docflow.WorkflowError(
@@ -1025,10 +1159,12 @@ class Coordinator:
                 "Shorten it and try again.")
         return int((available - fixed) * context.CHARS_PER_TOKEN)
 
-    def _fit_document_prompt(self, base_messages, output_allowance: int, build):
+    def _fit_document_prompt(self, base_messages, output_allowance: int, build,
+                             *, context_window: int = runtime.NUM_CTX):
         """Shrink source text until the complete built prompt fits."""
-        budget = self._document_source_budget(base_messages, output_allowance)
-        limit = context.input_budget(runtime.NUM_CTX, output_allowance)
+        budget = self._document_source_budget(
+            base_messages, output_allowance, context_window)
+        limit = context.input_budget(context_window, output_allowance)
         while True:
             messages = build(budget)
             used = context.estimate_messages(messages)
@@ -1041,12 +1177,14 @@ class Coordinator:
                     "The document instructions do not fit this model's "
                     "qualified context window.")
 
-    def _approval_prompt(self, question, report, supporting, passages):
+    def _approval_prompt(self, question, report, supporting, passages, *,
+                         context_window: int = runtime.NUM_CTX):
         """Build one approval prompt whose report and passages share one budget."""
         base = docflow.approval_note_messages(question, [], [])
         source_budget = min(
             docflow.MAX_CONTEXT_CHARS,
-            self._document_source_budget(base, docflow.APPROVAL_NUM_PREDICT))
+            self._document_source_budget(
+                base, docflow.APPROVAL_NUM_PREDICT, context_window))
 
         # Keep room for both the primary report and its references. Retrieval is
         # ranked, so later passages are the first ones left out.
@@ -1060,7 +1198,7 @@ class Coordinator:
 
         report_budget = max(0, source_budget - passage_chars)
         input_limit = context.input_budget(
-            runtime.NUM_CTX, docflow.APPROVAL_NUM_PREDICT)
+            context_window, docflow.APPROVAL_NUM_PREDICT)
         while True:
             pages, _trimmed = docflow.bounded_pages(report, report_budget)
             if not pages:
@@ -1089,7 +1227,8 @@ class Coordinator:
                 "The approval-note instructions do not fit this model's "
                 "qualified context window.")
 
-    def _document_stage(self, job_id, chat_id, skill_id, messages, *, ocr_model):
+    def _document_stage(self, job_id, chat_id, skill_id, messages, *, ocr_model,
+                        profile: v1.ExecutionProfile | None = None):
         """Extract, then either build a prompt or answer without the model."""
         cancel = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
         message_id, attachments = self._request_sources(chat_id, job_id)
@@ -1097,6 +1236,8 @@ class Coordinator:
             "SELECT original_request, output_format, doc_workflow FROM jobs"
             " WHERE job_id=?", (job_id,)).fetchone()
         request_text = job["original_request"]
+        context_window = (profile.qualified_context_tokens
+                          if profile else runtime.NUM_CTX)
         workflow = job["doc_workflow"] or (
             # A job written before the choice existed ran the fixed workflow,
             # so that is what it is reported as. Nothing is relabelled.
@@ -1123,7 +1264,8 @@ class Coordinator:
             built = self._fit_document_prompt(
                 base, docflow.DOCUMENT_NUM_PREDICT,
                 lambda budget: docflow.general_document_messages(
-                    request_text, [], history, budget=budget))
+                    request_text, [], history, budget=budget),
+                context_window=context_window)
             return built, None, {"workflow": docflow.WORKFLOW_GENERAL,
                                  "general": True, **docflow.GENERAL_CALL}
 
@@ -1156,12 +1298,15 @@ class Coordinator:
 
         if skill_id == docflow.READ_SKILL:
             base, _notes, _scope = docflow.read_messages(question, [])
-            budget = self._document_source_budget(base, runtime.NUM_PREDICT)
+            output_allowance = (profile.default_output_tokens
+                                if profile else runtime.NUM_PREDICT)
+            budget = self._document_source_budget(
+                base, output_allowance, context_window)
             while True:
                 built, notes, citation_sources = docflow.read_messages(
                     question, prepared.sources, budget=budget)
                 used = context.estimate_messages(built)
-                limit = context.input_budget(runtime.NUM_CTX, runtime.NUM_PREDICT)
+                limit = context.input_budget(context_window, output_allowance)
                 if used <= limit:
                     break
                 budget -= int((used - limit) * context.CHARS_PER_TOKEN) + 1
@@ -1171,7 +1316,8 @@ class Coordinator:
                         "The document-reading instructions do not fit this "
                         "model's qualified context window.")
             return built, prepared, {"notes": notes, "prepared": prepared,
-                                     "citation_sources": citation_sources}
+                                     "citation_sources": citation_sources,
+                                     **docflow.READ_CALL}
 
         if workflow == docflow.WORKFLOW_GENERAL:
             # A general document written from the attached files. It makes no
@@ -1181,7 +1327,8 @@ class Coordinator:
             built = self._fit_document_prompt(
                 base, docflow.DOCUMENT_NUM_PREDICT,
                 lambda budget: docflow.general_document_messages(
-                    question, prepared.sources, history, budget=budget))
+                    question, prepared.sources, history, budget=budget),
+                context_window=context_window)
             return built, prepared, {"prepared": prepared, "general": True,
                                      "workflow": docflow.WORKFLOW_GENERAL,
                                      **docflow.GENERAL_CALL}
@@ -1200,7 +1347,8 @@ class Coordinator:
                 passages = []          # no passages is a truthful outcome
         (built, passages, pages, report_details,
          open_items, conflicts) = self._approval_prompt(
-             question, report, supporting, passages)
+             question, report, supporting, passages,
+             context_window=context_window)
         allowed_pages = {report["source_id"]: {p["number"] for p in pages}}
         for passage in passages:
             allowed_pages.setdefault(passage.source_id, set()).add(passage.page)
@@ -1280,7 +1428,8 @@ class Coordinator:
 
         repaired, metrics = self._buffered_reply(
             job_id, repair_messages(answer),
-            model_id=model_id, num_predict=extra.get("num_predict"),
+            profile=extra["_execution_profile"],
+            inference=extra["_inference_request"],
             response_format=extra.get("response_format"))
         if metrics.get("done_reason") != "stop":
             raise docflow.WorkflowError(
@@ -1292,7 +1441,7 @@ class Coordinator:
         # answer, and it fails with its own reason rather than a third attempt.
         return parse(repaired)
 
-    def _buffered_reply(self, job_id, messages, *, model_id, num_predict,
+    def _buffered_reply(self, job_id, messages, *, profile, inference,
                         response_format):
         """One model call whose output is collected, not streamed.
 
@@ -1302,8 +1451,8 @@ class Coordinator:
         """
         collected, metrics = [], {}
         for kind, payload in runtime.stream_chat(
-                messages, model=model_id, think=False,
-                num_predict=num_predict, response_format=response_format,
+                messages, profile=profile, inference=inference,
+                response_format=response_format,
                 should_cancel=lambda: self.is_cancelled(job_id)
                 or self.stopping.is_set()):
             if kind == "delta":
@@ -1619,13 +1768,19 @@ class Coordinator:
             return self.worker_client(relationship).health()
         except pairing.IdentityMismatch:
             raise
+        except dispatch.IncompatibleContract:
+            raise
         except (dispatch.DispatchUnavailable, pairing.PairingError):
             return None
 
     def choose_route(self, required: list[str] | None = None,
                      model_id: str | None = None,
                      require_model: bool = True,
-                     runtime_state: dict | None = None) -> dispatch.Route:
+                     runtime_state: dict | None = None,
+                     workflow: str = inference_profiles.CHAT,
+                     reasoning: str = "disabled", decoder: str = "text",
+                     context_window: int | None = None,
+                     output_allowance: int | None = None) -> dispatch.Route:
         """Where one attempt should run, and the sentence explaining why.
 
         `required` names the capabilities the step actually needs, so Code asks
@@ -1640,34 +1795,65 @@ class Coordinator:
         if relationship is None:
             route = dispatch.Route("local", "local coordinator: no paired worker")
             return self._local_route(route, model_id, require_model,
-                                     runtime_state)
+                                     runtime_state, workflow=workflow,
+                                     reasoning=reasoning, decoder=decoder,
+                                     context_window=context_window,
+                                     output_allowance=output_allowance)
         try:
             node = self.preflight(relationship)
         except pairing.IdentityMismatch as exc:
             # Not a fallback. The attempt records the refusal and stops.
             return dispatch.Route("identity-mismatch", f"refused: {exc}")
+        except dispatch.IncompatibleContract as exc:
+            return self._local_route(
+                dispatch.Route(
+                    "local", f"local coordinator: incompatible worker contract ({exc})"),
+                model_id, require_model, runtime_state, workflow=workflow,
+                reasoning=reasoning, decoder=decoder,
+                context_window=context_window, output_allowance=output_allowance)
         route = dispatch.choose_route(
             relationship=relationship, node=node,
             required=required or ["text.generate"], model_id=model_id,
-            require_model=require_model)
+            require_model=require_model, workflow=workflow,
+            reasoning=reasoning, decoder=decoder,
+            context_window=context_window,
+            output_allowance=output_allowance)
         if (route.remote and route.model
                 and not models.digest_eligible(
                     route.model["model_id"], route.model.get("manifest_sha256"))):
             route = dispatch.Route(
                 "local", "local coordinator: the worker's model manifest does "
                          "not match Refinix's recorded catalogue")
-        return self._local_route(route, model_id, require_model, runtime_state)
+        return self._local_route(
+            route, model_id, require_model, runtime_state, workflow=workflow,
+            reasoning=reasoning, decoder=decoder,
+            context_window=context_window, output_allowance=output_allowance)
 
     def _local_route(self, route: dispatch.Route, model_id: str | None,
                      require_model: bool,
-                     runtime_state: dict | None = None) -> dispatch.Route:
+                     runtime_state: dict | None = None, *, workflow: str,
+                     reasoning: str, decoder: str,
+                     context_window: int | None,
+                     output_allowance: int | None) -> dispatch.Route:
         if route.remote or not require_model:
             return route
         model = (self.local_model_ref(model_id, runtime_state)
                  if model_id else None)
-        reason = route.reason if model else route.reason + \
-            "; the selected model is not installed locally"
-        return dispatch.Route("local", reason, node_id=self.node_id, model=model)
+        profile = (self.local_profile(
+            workflow=workflow, model_id=model_id, reasoning=reasoning,
+            decoder=decoder, runtime_state=runtime_state,
+            context_window=context_window, output_allowance=output_allowance)
+                   if model_id and model else None)
+        if model is None:
+            reason = route.reason + "; the selected model is not installed locally"
+        elif profile is None:
+            reason = route.reason + \
+                "; this computer has no compatible qualified execution profile"
+        else:
+            reason = route.reason
+        return dispatch.Route(
+            "local", reason, node_id=self.node_id, model=model,
+            profile=profile.model_dump() if profile else None)
 
     def pair(self, *, address: str, port: int, fingerprint: str,
              certificate_pem: str, pairing_code: str) -> dict:
@@ -1759,7 +1945,8 @@ class Coordinator:
         return {"relationship_id": relationship_id, "worker_notified": reached,
                 "attempts_fenced": len(fenced)}
 
-    def _run_remote(self, job_id, chat_id, attempt_id, route, *, text: str):
+    def _run_remote(self, job_id, chat_id, attempt_id, route, *, text: str,
+                    messages: list[dict], inference: v1.InferenceRequest):
         """Dispatch one attempt and turn the worker's stream into our events.
 
         Returns `(handled, attempt_id)`. `handled` is False only when the worker
@@ -1777,26 +1964,58 @@ class Coordinator:
                                  (attempt_id,)).fetchone()["step_id"]
         relationship = db.get_relationship(self.conn, route.relationship_id,
                                            self.workspace_id)
-        local_model = self.local_model_ref(route.model["model_id"]) \
-            if route.model else None
+        remote_profile = v1.ExecutionProfile.model_validate(route.profile)
+
+        def compatible_local():
+            local_profile = self.local_profile(
+                workflow=inference.workflow_mode,
+                model_id=route.model["model_id"], reasoning=inference.reasoning,
+                decoder=inference.decoder,
+                context_window=inference.context_window_tokens,
+                output_allowance=inference.output_allowance_tokens)
+            if local_profile is None:
+                return None, None
+            local_request = inference_profiles.request(
+                local_profile, reasoning=inference.reasoning,
+                decoder=inference.decoder,
+                context_window=inference.context_window_tokens,
+                output_allowance=inference.output_allowance_tokens,
+                decoder_schema_sha256=inference.decoder_schema_sha256)
+            return local_profile, local_request
+
+        local_profile, local_request = compatible_local()
         if relationship is None or relationship["state"] != "paired":
             # Revoked between choosing the route and dispatching. Fall back
             # rather than dereferencing a row that is no longer there.
-            return False, self._fallback(
+            if local_profile is None:
+                self._stop(job_id, attempt_id, "failed", "running", {
+                    "code": "incompatible_profile",
+                    "message": "the pairing was revoked and no local profile can preserve the requested semantics",
+                    "retryable": True})
+                return True, attempt_id, remote_profile, inference
+            local = self._fallback(
                 job_id, attempt_id, "the pairing was revoked before dispatch",
-                local_model)
+                local_profile, local_request)
+            return False, local, local_profile, local_request
         try:
             envelope = dispatch.build_envelope(
                 job=job, attempt_id=attempt_id, step_id=step, route=route,
                 coordinator_node_id=self.node_id, request_text=text,
-                system_instruction=identity.system_message(
-                    engine=(route.model or {}).get("model_id"), models=None,
-                    location="the paired worker")["content"])
+                messages=messages, inference=inference)
             client = self.worker_client(relationship)
             # One key per attempt, reused by any retry of it. A fresh key on a
             # retry would create a second remote attempt instead of replaying
             # the first, which is the opposite of what idempotency is for.
             client.submit(envelope, dispatch.idempotency_key_for(attempt_id))
+        except dispatch.ProfileMismatch as exc:
+            db.set_attempt_metrics(self.conn, attempt_id, {
+                "requested_profile_id": inference.profile_id,
+                "actual_profile_id": None, "route": "remote",
+                "refusal_reason": str(exc)[:256]})
+            self._stop(job_id, attempt_id, "failed", "running", {
+                "code": "incompatible_profile", "message": str(exc)[:256],
+                "retryable": True})
+            return True, attempt_id, remote_profile, inference
         except dispatch.ReceiptUnknown as exc:
             # The request was sent and no answer came back, so the worker may
             # be running this attempt right now. Running it locally as well
@@ -1808,18 +2027,31 @@ class Coordinator:
                             "running there, so this was not re-run here. "
                             f"{exc}")[:256],
                 "retryable": True})
-            return True, attempt_id
+            return True, attempt_id, remote_profile, inference
         except pairing.IdentityMismatch as exc:
             # No fallback. A changed worker identity is the event pinning
             # exists to surface, and answering locally would bury it.
             self._stop(job_id, attempt_id, "failed", "running", {
                 "code": "permission_denied", "message": str(exc)[:256],
                 "retryable": False})
-            return True, attempt_id
+            return True, attempt_id, remote_profile, inference
         except (dispatch.DispatchUnavailable, pairing.PairingError) as exc:
             # Truthful fallback: the worker could not take the work, so this
             # runs locally and the record says so.
-            return False, self._fallback(job_id, attempt_id, str(exc), local_model)
+            if local_profile is None:
+                db.set_attempt_metrics(self.conn, attempt_id, {
+                    "requested_profile_id": inference.profile_id,
+                    "actual_profile_id": None, "route": "remote",
+                    "refusal_reason": str(exc)[:256]})
+                self._stop(job_id, attempt_id, "failed", "running", {
+                    "code": "unavailable",
+                    "message": ("the worker refused and no local profile can preserve "
+                                f"the requested semantics: {exc}")[:256],
+                    "retryable": True})
+                return True, attempt_id, remote_profile, inference
+            local = self._fallback(
+                job_id, attempt_id, str(exc), local_profile, local_request)
+            return False, local, local_profile, local_request
 
         collected = []
 
@@ -1845,9 +2077,28 @@ class Coordinator:
                                    should_cancel=cancelling)
 
         if outcome.state == "completed":
+            observed = outcome.metrics or {}
+            if (observed.get("requested_profile_id") != inference.profile_id
+                    or observed.get("actual_profile_id") != remote_profile.profile_id
+                    or observed.get("context_window") != inference.context_window_tokens
+                    or observed.get("output_token_limit")
+                    != inference.output_allowance_tokens
+                    or observed.get("reasoning") != inference.reasoning
+                    or observed.get("decoder") != inference.decoder):
+                db.set_attempt_metrics(self.conn, attempt_id, {
+                    **observed, "route": "remote",
+                    "refusal_reason": "worker metrics did not match requested semantics"})
+                self._stop(job_id, attempt_id, "failed", "running", {
+                    "code": "incompatible_profile",
+                    "message": "the worker did not prove the requested inference semantics",
+                    "retryable": True})
+                return True, attempt_id, remote_profile, inference
+            observed["route"] = "remote"
+            db.set_attempt_actual_profile(
+                self.conn, attempt_id, remote_profile.model_dump())
             db.set_attempt_state(self.conn, attempt_id, "validating",
                                  runtime_ms=outcome.runtime_ms,
-                                 queue_ms=outcome.queue_ms)
+                                 queue_ms=outcome.queue_ms, metrics=observed)
             self._emit(job_id, attempt_id, {"kind": "attempt.state",
                                             "previous": "running",
                                             "current": "validating"})
@@ -1859,19 +2110,20 @@ class Coordinator:
                                             "previous": "validating",
                                             "current": "completed"})
             self._advance_job(job_id, "completed", "validating")
-            return True, attempt_id
+            return True, attempt_id, remote_profile, inference
         if outcome.state == "cancelled":
             self._stop(job_id, attempt_id, "cancelled", "running", outcome.failure)
-            return True, attempt_id
+            return True, attempt_id, remote_profile, inference
         # interrupted or failed: the workspace and history stay usable, and the
         # partial text that did arrive is already persisted. This is worker or
         # cluster loss, not a reason to silently re-run the same request.
         self._stop(job_id, attempt_id, "failed" if outcome.state == "failed"
                    else "interrupted", "running", outcome.failure)
-        return True, attempt_id
+        return True, attempt_id, remote_profile, inference
 
     def _fallback(self, job_id, attempt_id, detail: str,
-                  model: dict | None) -> str:
+                  profile: v1.ExecutionProfile,
+                  inference: v1.InferenceRequest) -> str:
         """Record why the worker was not used and open a fresh local attempt.
 
         A new attempt rather than a reused one: the interrupted remote attempt
@@ -1891,7 +2143,10 @@ class Coordinator:
         local = db.create_attempt(
             self.conn, job_id=job_id, node_id=self.node_id,
             route_reason="local coordinator: the paired worker was unavailable, "
-                         "so this ran on this computer", model=model)
+                         "so this ran on this computer with identical requested semantics",
+            model=profile.model.model_dump())
+        db.set_attempt_inference(
+            self.conn, local, inference.model_dump(), profile.model_dump())
         self._emit(job_id, local, {"kind": "attempt.state", "previous": None,
                                    "current": "queued"})
         self._advance_job(job_id, "running", "routing")
@@ -1999,6 +2254,12 @@ class Coordinator:
         for a in attempts:
             raw = a.pop("selection_json", None)
             a["selection"] = json.loads(raw) if raw else None
+            requested = a.pop("requested_inference_json", None)
+            actual = a.pop("actual_profile_json", None)
+            a["requested_inference"] = json.loads(requested) if requested else None
+            a["actual_profile"] = json.loads(actual) if actual else None
+            metrics = a.get("metrics_json")
+            a["metrics"] = json.loads(metrics) if metrics else None
         events = [dict(r) for r in self.conn.execute(
             "SELECT * FROM events WHERE job_id=? ORDER BY sequence", (job_id,))]
         for e in events:
@@ -2113,6 +2374,10 @@ class Coordinator:
         inventory = self.model_inventory(runtime_state)
         chat_model = self.model_for("chat")
         chat_row = next((row for row in inventory if row["id"] == chat_model), None)
+        local_profiles = self.local_profiles(runtime_state)
+        chat_profile = next((p for p in local_profiles
+                             if p.model.model_id == chat_model
+                             and p.workflow_mode == inference_profiles.CHAT), None)
         return {
             "product": {"name": "Refinix", "surface": "local"},
             "desktop": dict(self.desktop),
@@ -2170,14 +2435,24 @@ class Coordinator:
                                     docflow.FORMAT_PDF: pdfgen.probe()["detail"]},
                 "workflow": docflow.WORKFLOW,
             },
-            "bounded": {"num_ctx": runtime.NUM_CTX,
-                        "num_predict": runtime.NUM_PREDICT,
-                        "think": runtime.THINK},
+            "execution_profiles": [profile.model_dump()
+                                   for profile in local_profiles],
+            "bounded": {
+                "profile_id": chat_profile.profile_id if chat_profile else None,
+                "num_ctx": (chat_profile.qualified_context_tokens
+                            if chat_profile else None),
+                "num_predict": (chat_profile.default_output_tokens
+                                if chat_profile else None),
+                "think": (chat_profile.default_reasoning == "enabled"
+                          if chat_profile else None)},
             "context": {
-                "window_tokens": runtime.NUM_CTX,
-                "reply_allowance_tokens": runtime.NUM_PREDICT,
+                "window_tokens": (chat_profile.qualified_context_tokens
+                                  if chat_profile else None),
+                "reply_allowance_tokens": (chat_profile.default_output_tokens
+                                           if chat_profile else None),
                 "conversation_budget_tokens": context.input_budget(
-                    runtime.NUM_CTX, runtime.NUM_PREDICT),
+                    chat_profile.qualified_context_tokens,
+                    chat_profile.default_output_tokens) if chat_profile else None,
                 "counting_method": context.Selection().counting_method,
                 "policy": "Older complete exchanges are left out of a request "
                           "when it will not fit. Saved history is never changed.",
