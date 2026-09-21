@@ -13,13 +13,38 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import code_service, db, models, policy, repo, runtime
+from backend.coordinator import (code_service, codeflow, db, models, policy, repo,
+                                 runtime)
 from backend.coordinator.code_service import (CodeError, TARGET_DISTRIBUTED,
                                               TARGET_LOCAL)
 from backend.coordinator.server import Coordinator
 
 ORIGINAL = "def exceeds(value, limit):\n    return value >= limit\n"
 REPAIRED = "def exceeds(value, limit):\n    return value > limit\n"
+
+
+class TestProposalEnvelope(unittest.TestCase):
+    def selection(self, size):
+        return [{"path": "large.py", "sha256": "a" * 64,
+                 "text": "x" * size}]
+
+    def test_output_scales_when_a_whole_file_replacement_fits(self):
+        selected = self.selection(9_000)
+        messages = codeflow.build_messages("change one line", selected)
+        self.assertGreater(
+            code_service.CodeService._proposal_output_limit(messages, selected),
+            code_service.PROPOSAL_NUM_PREDICT)
+
+    def test_an_impossible_selection_fails_before_generation(self):
+        selected = self.selection(30_000)
+        messages = codeflow.build_messages("change one line", selected)
+        with self.assertRaisesRegex(CodeError, "Select fewer or smaller files"):
+            code_service.CodeService._proposal_output_limit(messages, selected)
+
+    def test_format_repair_does_not_resend_the_selected_source(self):
+        messages = codeflow.repair_messages('{"summary":"wrapped","edits":[]}')
+        self.assertEqual([item["role"] for item in messages], ["system", "user"])
+        self.assertNotIn("--- FILE", "\n".join(item["content"] for item in messages))
 
 
 @unittest.skipUnless(repo.containment_supported(),

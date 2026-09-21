@@ -36,6 +36,12 @@ def estimate_tokens(text: str) -> int:
     return int(len(text) / CHARS_PER_TOKEN) + 1
 
 
+def estimate_messages(messages: list[dict]) -> int:
+    """Estimate one already-built runtime prompt with role overhead."""
+    return sum(estimate_tokens(message.get("content", "")) + PER_MESSAGE_OVERHEAD
+               for message in messages)
+
+
 def input_budget(window: int, output_allowance: int) -> int:
     """Tokens available for the conversation after output and template overhead.
 

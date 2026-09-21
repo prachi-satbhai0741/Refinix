@@ -1742,3 +1742,55 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve the committed baseline and unrelated work. No protected-document edits, installs, downloads, live model calls, remote-worker calls, packaging, deployment, credential changes or Git/GitHub writes. Run existing focused offline checks only and keep source/test evidence separate from device and release acceptance.
 - follow_up_to: [UP-20260920-007](#up-20260920-007)
 - linked_changes: [AC-20260921-001](agentchangelog.md#ac-20260921-001)
+
+<a id="up-20260921-002"></a>
+## UP-20260921-002 — Repair the py2app packaging-module collision
+- date: 2026-09-21
+- status: authorised narrow packaging correction and focused offline verification; packaged acceptance remains pending
+- tags: macos, py2app, setuptools, packaging, module-shadowing
+- aliases: packaging.utils missing, desktop packaging collision, packaging_plan
+- paths: desktop/packaging_plan.py, desktop/setup_py2app.py, desktop/test_packaging.py, agent-memory/
+- summary: Rename the Refinix-owned packaging-boundary module so the macOS build path can import setuptools' third-party `packaging` package.
+- request: Fix the confirmed `desktop/packaging.py` shadowing failure at its root, retain the shared cross-platform packaging boundary, update all live callers, and add a regression reproducing the build-path import order.
+- constraints: No `sys.path` workaround, dependency reinstall/downgrade, setuptools or py2app weakening, unrelated refactor, new dependency, protected-document edit, Git/GitHub write, package acceptance claim or human walkthrough.
+- follow_up_to: [UP-20260921-001](#up-20260921-001)
+- linked_changes: [AC-20260921-002](agentchangelog.md#ac-20260921-002)
+
+<a id="up-20260921-003"></a>
+## UP-20260921-003 — Repair the direct-script setup import and build the macOS package
+- date: 2026-09-21
+- status: authorised packaging repair, focused verification, real macOS build and bundle inspection; human GUI acceptance still pending
+- tags: macos, py2app, packaging, direct-script-import, bundle-inspection
+- aliases: No module named 'desktop', setup_py2app direct execution, sys.path[0] script directory
+- paths: desktop/setup_py2app.py, desktop/test_packaging.py, agent-memory/
+- summary: Fix the `from desktop import packaging_plan` failure that stopped the macOS build after UP-20260921-002, then run `desktop/setup-macos.command` and inspect the resulting bundle.
+- request: Verify the repository state independently, repair the direct-script import defect at its root, add a regression modelling the real production invocation, run focused verification, run the actual macOS setup path, continue through directly related packaging blockers, inspect the built `.app`, and stop before the human GUI acceptance walkthrough.
+- constraints: No `sys.path`/`PYTHONPATH` workaround, dependency or lock change, py2app replacement, recreated `desktop/packaging.py`, weakened staging/content/signature checks, trust-boundary regression, protected-document edit, Git/GitHub write, model download, GUI walkthrough or acceptance claim.
+- follow_up_to: [UP-20260921-002](#up-20260921-002)
+- linked_changes: [AC-20260921-003](agentchangelog.md#ac-20260921-003)
+
+<a id="up-20260921-004"></a>
+## UP-20260921-004 — Repair two macOS human-acceptance failures
+- date: 2026-09-21
+- status: authorised source correction, focused and broad offline verification, and a package rebuild; human GUI acceptance still pending
+- tags: chat, reliability, documents, grounding, cross-source-identity, macos-acceptance
+- aliases: reversed NPSH relation, SOP-MECH-814 vs SOP-MECH-014, governing reference unresolved
+- paths: backend/coordinator/identity.py, backend/coordinator/models.py, backend/coordinator/docflow.py, backend/coordinator/server.py, agent-memory/
+- summary: A packaged acceptance run passed launch, Chat history, cancellation, OCR and DOCX generation, but produced a confident technical answer with its central comparison reversed, and an approval note that used a supplied SOP's limit although the report named a different governing identifier.
+- request: Reproduce both failures, fix each at the shared boundary that owns it rather than by special-casing the observed subject or identifiers, add regressions, run the authorised verification, rebuild the package if safe, and stop before the human GUI walkthrough.
+- constraints: No hardcoded pump or NPSH answer, no string interception, no 814/014 branch, no fuzzy identifier resolution, no fixture or expected.json edit, no always-on second inference pass without reporting it, no new dependency, no schema migration, no model download, no cloud inference, no protected-document edit, no Git/GitHub write.
+- follow_up_to: [UP-20260921-003](#up-20260921-003)
+- linked_changes: [AC-20260921-004](agentchangelog.md#ac-20260921-004)
+
+<a id="up-20260921-005"></a>
+## UP-20260921-005 — Remove inference-envelope bottlenecks
+- date: 2026-09-21
+- status: authorised implementation, offline verification and self-review; no live model/device/package or Git/GitHub work
+- tags: inference, context-budget, code, documents, telemetry, model-quality
+- aliases: strangled models, whole-file output ceiling, shared document budget, actual num_predict
+- paths: backend/coordinator/runtime.py, backend/coordinator/context.py, backend/coordinator/codeflow.py, backend/coordinator/code_service.py, backend/coordinator/docflow.py, backend/coordinator/server.py, related tests, agent-memory/
+- summary: Make qualified local models use the largest safe request envelope the current profile supports instead of silently constraining whole-file Code and overflowing Documents prompts.
+- request: Implement the reviewed fixes, use relevant skills, minimise complexity and token use, run focused and broad offline checks, and self-review the complete result.
+- constraints: Preserve the dirty tree and security boundaries. Do not edit protected documentation, add dependencies, use advertised model maxima without device qualification, call live models/devices, package/deploy, or perform Git/GitHub writes.
+- follow_up_to: [UP-20260921-004](#up-20260921-004)
+- linked_changes: [AC-20260921-005](agentchangelog.md#ac-20260921-005)

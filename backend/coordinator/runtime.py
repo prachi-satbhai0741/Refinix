@@ -359,6 +359,7 @@ def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None 
     returning a plausible-looking empty answer.
     """
     reasoning = THINK if think is None else bool(think)
+    output_limit = NUM_PREDICT if num_predict is None else num_predict
     payload = {
         "model": model or MODEL, "messages": _with_images(messages, images),
         "stream": True,
@@ -366,7 +367,7 @@ def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None 
         # Estimates select history; the runtime must reject real overflow.
         "truncate": False, "shift": False,
         "options": {"num_ctx": NUM_CTX,
-                    "num_predict": NUM_PREDICT if num_predict is None else num_predict},
+                    "num_predict": output_limit},
     }
     if response_format is not None:
         # Ollama structured output. The schema constrains the decoder, so a
@@ -390,7 +391,8 @@ def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None 
                 raise RuntimeUnavailable(f"HTTP {exc.code}: {detail[:200]}") from exc
             with resp:
                 watch.response(resp)
-                yield from _read_stream(resp, watch, should_cancel)
+                yield from _read_stream(resp, watch, should_cancel,
+                                        output_limit=output_limit)
         except (RuntimeUnavailable, OSError, http.client.HTTPException) as exc:
             if watch.fired or (should_cancel is not None and should_cancel()):
                 yield "cancelled", {}
@@ -400,7 +402,7 @@ def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None 
             raise RuntimeUnavailable(f"{HOST} unreachable: {exc}") from exc
 
 
-def _read_stream(resp, watch, should_cancel):
+def _read_stream(resp, watch, should_cancel, *, output_limit=NUM_PREDICT):
     """Yield stream records until the runtime finishes or the watcher aborts."""
     try:
         for raw in resp:
@@ -428,7 +430,7 @@ def _read_stream(resp, watch, should_cancel):
             if chunk:
                 yield "delta", chunk
             if obj.get("done"):
-                yield "done", _metrics(obj)
+                yield "done", _metrics(obj, output_limit=output_limit)
                 return
     except RuntimeUnavailable:
         raise
@@ -447,14 +449,14 @@ def _read_stream(resp, watch, should_cancel):
     raise RuntimeUnavailable("stream ended without a done record")
 
 
-def _metrics(obj: dict) -> dict:
+def _metrics(obj: dict, *, output_limit: int = NUM_PREDICT) -> dict:
     ns = 1_000_000_000
     prompt_count, output_count = obj.get("prompt_eval_count"), obj.get("eval_count")
     limit = None
     if obj.get("done_reason") == "length":
         context_full = (isinstance(prompt_count, int) and isinstance(output_count, int)
                         and prompt_count + output_count >= NUM_CTX)
-        output_full = isinstance(output_count, int) and output_count >= NUM_PREDICT
+        output_full = isinstance(output_count, int) and output_count >= output_limit
         # Counts establish which bounds were reached, not which fired first.
         limit = ("context_and_output" if context_full and output_full else
                  "context" if context_full else "output" if output_full else "unknown")
@@ -462,7 +464,7 @@ def _metrics(obj: dict) -> dict:
         "done_reason": obj.get("done_reason"),
         "limit_reason": limit,
         "context_window": NUM_CTX,
-        "output_token_limit": NUM_PREDICT,
+        "output_token_limit": output_limit,
         "eval_count": obj.get("eval_count"),
         # Runtime-reported counts. These are MEASURED, unlike the
         # coordinator's character-based pre-flight estimate.

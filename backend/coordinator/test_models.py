@@ -17,6 +17,7 @@ step is supplied by the caller, and every test supplies a fake.
     python3 -m unittest backend.coordinator.test_models -v
 """
 
+import inspect
 import tempfile
 import unittest
 import json
@@ -31,7 +32,18 @@ CATALOG_DIGEST = models.CATALOGUE[0].manifest_sha256
 
 
 def chat_reply(_model, _messages, **_options):
-    return "Four."
+    """A model that applies the supplied rule and gets the direction right.
+
+    It used to be "Four.", which passed because the check only asked whether
+    anything came back. The Chat self-test now applies a supplied comparison,
+    so a stand-in for a working model has to hold that comparison.
+    """
+    return (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}")
+
+
+def reversed_chat_reply(_model, _messages, **_options):
+    """Fluent, complete, and with the comparison the wrong way round."""
+    return (f"safe; smaller number: {models.CHAT_CHECK_LARGER}")
 
 
 def document_reply(_model, _messages, **_options):
@@ -127,6 +139,89 @@ class TestSelfTests(unittest.TestCase):
         result = models.run_selftest(models.CHAT, CATALOGUED,
                                      generate=lambda *_args, **_kwargs: "   ")
         self.assertEqual(result["state"], models.FAILED)
+
+    def test_chat_applies_a_supplied_rule_rather_than_asking_for_any_reply(self):
+        """A packaged run answered a pump question fluently with the central
+        comparison reversed, and Chat was self-tested at the time — because the
+        check was "what is 2 + 2?" and only looked for a non-empty reply. The
+        premise lives in the prompt so a failure means the model could not hold
+        a relation, not that it did not know something."""
+        seen = {}
+
+        def generate(_model, messages, **_options):
+            seen["prompt"] = messages[0]["content"]
+            return chat_reply(_model, messages)
+
+        result = models.run_selftest(models.CHAT, CATALOGUED, generate=generate)
+        self.assertEqual(result["state"], models.PASSED)
+        for supplied in (models.CHAT_CHECK_SMALLER, models.CHAT_CHECK_LARGER,
+                         "below"):
+            self.assertIn(supplied, seen["prompt"])
+
+    def test_a_reversed_relation_fails_chat_however_fluent_it_is(self):
+        result = models.run_selftest(models.CHAT, CATALOGUED,
+                                     generate=reversed_chat_reply)
+        self.assertEqual(result["state"], models.FAILED)
+        self.assertIn("safe", result["detail"])
+
+    def test_a_reply_that_never_commits_to_an_ordering_is_not_a_pass(self):
+        """Half the check is a coin flip on its own. A verdict with no
+        comparison behind it has not been checked against anything."""
+        result = models.run_selftest(
+            models.CHAT, CATALOGUED,
+            generate=lambda *_a, **_k: "The operation is unsafe.")
+        self.assertEqual(result["state"], models.FAILED)
+
+    def test_the_exact_line_that_was_asked_for_passes(self):
+        for shape in (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}",
+                      f"Unsafe; Smaller number: {models.CHAT_CHECK_SMALLER}",
+                      f"unsafe ; smaller number : {models.CHAT_CHECK_SMALLER}."):
+            with self.subTest(reply=shape):
+                result = models.run_selftest(
+                    models.CHAT, CATALOGUED,
+                    generate=lambda *_a, _s=shape, **_k: _s)
+                self.assertEqual(result["state"], models.PASSED)
+
+    def test_a_negated_verdict_is_not_read_as_the_verdict(self):
+        """Found in review. Searching for the token `unsafe` anywhere in the
+        reply passed "not unsafe": the negation sits outside the pattern, and
+        the answer it was actually giving was the wrong one."""
+        result = models.run_selftest(
+            models.CHAT, CATALOGUED,
+            generate=lambda *_a, **_k:
+                f"not unsafe; smaller number: {models.CHAT_CHECK_SMALLER}")
+        self.assertEqual(result["state"], models.FAILED)
+
+    def test_a_reply_that_answers_then_contradicts_itself_fails(self):
+        """Found in review. A right answer followed by a reversed one is not a
+        model that holds the relation; it is a model that wrote both."""
+        result = models.run_selftest(
+            models.CHAT, CATALOGUED,
+            generate=lambda *_a, **_k:
+                (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER} — but "
+                 f"actually {models.CHAT_CHECK_SMALLER} exceeds "
+                 f"{models.CHAT_CHECK_LARGER}"))
+        self.assertEqual(result["state"], models.FAILED)
+
+    def test_prose_instead_of_the_asked_form_fails_as_a_shape_not_a_reversal(self):
+        """Both are failures, and they are different failures: a person reading
+        the result should not be told the model reversed a relation when it
+        only ignored the format."""
+        result = models.run_selftest(
+            models.CHAT, CATALOGUED,
+            generate=lambda *_a, **_k:
+                "The operation is unsafe because 2.4 is less than 3.1.")
+        self.assertEqual(result["state"], models.FAILED)
+        self.assertIn("single line", result["detail"])
+        self.assertNotIn("smaller number when", result["detail"])
+
+    def test_no_reply_is_checked_for_a_pump_or_any_other_subject(self):
+        """The fix for the observed failure is a shared reliability boundary,
+        not a fact table. A subject-specific branch here would mean Refinix got
+        one topic right and every neighbouring one still wrong."""
+        source = inspect.getsource(models)
+        for trivia in ("npsh", "cavitat", "centrifugal", "pump"):
+            self.assertNotIn(trivia, source.casefold())
 
     def test_code_requires_a_parseable_proposal_not_any_nonempty_reply(self):
         result = models.run_selftest(
