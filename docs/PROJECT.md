@@ -664,6 +664,12 @@ Ollama is the current adapter/runtime baseline. A pinned upstream `llama.cpp` / 
 is the preferred bundled-engine candidate for supported profiles, pending real parity and packaging
 qualification.
 
+No migration has occurred. Existing Ollama qualification remains the baseline evidence and is not
+llama.cpp evidence. Do not add llama.cpp as a second production runtime merely because it is the
+preferred candidate: first prove same-model Chat/Code/Documents parity, structured-output and
+reasoning behaviour, cancellation, context/resource limits, offline containment, clean-install
+packaging and recovery on supported profiles.
+
 The goal of a bundled engine is to remove manual runtime setup, not to claim superior quality or
 speed without measurement.
 
@@ -1052,6 +1058,16 @@ Current/candidate directions that require qualification rather than blind adopti
 - platform-specific installer/signing/updater mechanisms — qualification choices;
 - standalone sandbox backends/toolchains — per-OS/edition qualification.
 
+`llmfit` is a promising MIT-licensed cross-platform hardware/model-fit tool, but Beta 0.1 does not
+ship or integrate it as a runtime dependency. The preferred Beta posture is internal qualification
+or release-engineering use only. Its observations and recommendations are planning evidence, never
+qualification evidence: Refinix remains authoritative for exact model digests, runtime versions,
+device classes, workflow qualification, capability admission, containment and generated
+qualification artifacts. A later evaluation may choose to ship it, retain it as an internal tool or
+reject it, based on measured benefit versus packaging, provenance, dependency-licence inventory,
+security containment and JSON-compatibility cost. Do not introduce an adapter abstraction until an
+integration is actually justified.
+
 Do **not** introduce React, Go, Rust, a generic plugin platform, external vector database, service
 mesh, second scheduler service or another agent framework merely to change the stack.
 
@@ -1306,6 +1322,7 @@ recommendation and obtain permission before changing those docs.
 | OD-14 | Qualify Beta installer/hosting/signing/manual replacement/recovery before publication; updater/full matrices follow later |
 | OD-15 | Qualify cache reuse/limits/optional engine optimisations per model/backend; no custom PagedAttention requirement |
 | OD-16 | Formalise Refinix data-root migration/instruction precedence; optional adapters require separate training/evaluation qualification |
+| OD-17 | Evaluate `llmfit` as planning-only hardware intelligence; Beta uses it at most internally, and later chooses shipped component, internal tool or rejection from measured integration cost/benefit |
 
 ---
 

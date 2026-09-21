@@ -42,6 +42,8 @@ import stat
 import time
 from pathlib import Path
 
+from backend.contracts import v1
+
 # The prototype ceiling. Small on purpose: C09 sends the handful of files a
 # person selected, not a repository.
 MAX_FILES = 32
@@ -132,6 +134,8 @@ def validate(payload: dict) -> dict:
     """
     if not isinstance(payload, dict):
         raise _reject("the package body must be a JSON object")
+    if payload.get("contract_version") != v1.CONTRACT_VERSION:
+        raise _reject("the package contract version is not supported")
     unknown = set(payload) - {"contract_version", "workspace_id", "relationship_id",
                               "attempt_id", "package_sha256", "files"}
     if unknown:

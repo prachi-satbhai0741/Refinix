@@ -23,12 +23,13 @@ is covered in `test_pdfrender` and `test_ocr`.
 
 from __future__ import annotations
 
+import ast
 import json
 import pathlib
 import unittest
 from unittest.mock import patch
 
-from backend.coordinator import db, docflow, docgen, retrieval, runtime
+from backend.coordinator import context, db, docflow, docgen, retrieval, runtime
 from backend.coordinator.test_document_generation import scripted_stream
 from backend.coordinator.test_execution4a import Harness
 
@@ -63,6 +64,37 @@ def grounded_note(report_id, sop_id=None, *, findings=None, unresolved=None,
                      "Re-inspection is required within 14 days."),
             "citations": cited},
         "unresolved": unresolved if unresolved is not None else [
+            "Suction pressure was not recorded and could not be verified.",
+        ],
+    })
+
+
+def conditioned_note(report_id, sop_id=None, *, report_page=1, sop_page=1):
+    """The same evidence as `grounded_note`, stated the way an unestablished
+    reference allows: the supplied procedure's value is reported as a fact
+    about that file, and nothing is judged settled against it."""
+    cited = [{"source_id": report_id, "page": report_page}]
+    if sop_id:
+        cited.append({"source_id": sop_id, "page": sop_page})
+    return json.dumps({
+        "title": "Approval note — transfer pump P-204",
+        "summary": {
+            "text": ("Routine mechanical inspection NG-2026-0417 of transfer "
+                     "pump P-204 recorded a drive-end vibration of 7.9 mm/s "
+                     "RMS and two loose baseplate anchor bolts."),
+            "citations": cited},
+        "findings": [
+            {"text": ("Drive-end vibration was recorded at 7.9 mm/s RMS. The "
+                      "supplied procedure states a value of 7.1 mm/s RMS."),
+             "citations": cited},
+            {"text": "Two of four baseplate anchor bolts were found loose.",
+             "citations": [{"source_id": report_id, "page": report_page}]},
+        ],
+        "recommendation": {
+            "text": ("The pump remains in service pending corrective action. "
+                     "Re-inspection is required within 14 days."),
+            "citations": cited},
+        "unresolved": [
             "Suction pressure was not recorded and could not be verified.",
         ],
     })
@@ -635,10 +667,20 @@ class ApprovalCallContract(GroundedHarness):
         self.assertEqual(stream.budgets[0], docflow.APPROVAL_NUM_PREDICT)
 
     def test_the_budget_covers_a_maximal_note_inside_the_context(self):
-        self.assertGreater(docflow.APPROVAL_NUM_PREDICT, runtime.NUM_PREDICT)
-        worst_prompt = docflow.MAX_CONTEXT_CHARS // 4
-        self.assertLess(worst_prompt + docflow.APPROVAL_NUM_PREDICT,
-                        runtime.NUM_CTX)
+        report = {"source_id": "report", "filename": "report.txt",
+                  "pages": [{"number": 1, "text": "x" * 100_000}]}
+        passages = [retrieval.Passage(
+            source_id="sop", filename="sop.txt", page=index + 1,
+            text="y" * retrieval.MAX_PASSAGE_CHARS, rank=float(index))
+            for index in range(retrieval.MAX_PASSAGES)]
+        built, selected, pages, *_rest = self.c._approval_prompt(
+            "draft the approval note", report, [], passages)
+        self.assertTrue(selected)
+        self.assertTrue(pages)
+        self.assertLessEqual(
+            context.estimate_messages(built),
+            context.input_budget(runtime.NUM_CTX,
+                                 docflow.APPROVAL_NUM_PREDICT))
 
     def test_the_enforced_schema_matches_what_the_parser_accepts(self):
         schema = docflow.APPROVAL_NOTE_FORMAT
@@ -854,3 +896,455 @@ class WithoutAProcedure(GroundedHarness):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Cross-source reference identity
+# ---------------------------------------------------------------------------
+
+def governing(value, *, filename="inspection-report.pdf"):
+    """The report detail `report_evidence` extracts for the governing standard."""
+    return [{"text": f"{docflow.GOVERNING_DETAIL}: {value}",
+             "citations": [{"source_id": "report", "filename": filename,
+                            "page": 1, "label": f"{filename} p.1"}]}]
+
+
+def reference(text, *, filename="sop-mech-014.txt", page=1):
+    return [{"source_id": "sop", "filename": filename,
+             "pages": [{"number": page, "text": text}]}]
+
+
+class ReferenceIdentity(unittest.TestCase):
+    """Which document governs, when two selected sources disagree about it.
+
+    A packaged run read the scan as citing SOP-MECH-814, the attached procedure
+    calls itself SOP-MECH-014, and the note used the attached procedure's 7.1
+    mm/s limit as the acceptance limit. Every citation in it resolved: the page
+    existed, the document was selected, the number was really on that page.
+    Citation resolution was never the thing that could have caught it, because
+    nothing in it asks whether the cited procedure is the one that applies.
+    """
+
+    def test_two_sources_naming_the_same_document_raise_nothing(self):
+        self.assertEqual(
+            docflow.reference_conflicts(governing("SOP-MECH-014 rev 3"),
+                                        reference("SOP-MECH-014 rev 3\nSCOPE")),
+            [])
+
+    def test_a_different_identifier_is_reported_and_never_reconciled(self):
+        conflicts = docflow.reference_conflicts(
+            governing("SOP-MECH-814 REV 3"),
+            reference("SOP-MECH-014 rev 3\nROUTINE MECHANICAL INSPECTION"))
+        self.assertEqual(len(conflicts), 1)
+        text = conflicts[0]["text"]
+        # Both survive, spelled as each source spelled them.
+        self.assertIn("SOP-MECH-814", text)
+        self.assertIn("SOP-MECH-014", text)
+        self.assertIn("not established", text)
+
+    def test_a_different_revision_of_the_same_document_is_reported(self):
+        conflicts = docflow.reference_conflicts(
+            governing("SOP-MECH-014 rev 2"), reference("SOP-MECH-014 rev 3"))
+        self.assertEqual(len(conflicts), 1)
+        self.assertIn("revision 2", conflicts[0]["text"])
+        self.assertIn("revision 3", conflicts[0]["text"])
+
+    def test_a_revision_only_one_side_states_is_not_a_conflict(self):
+        """A revision the report omits is a silence, not a disagreement."""
+        self.assertEqual(
+            docflow.reference_conflicts(governing("SOP-MECH-014"),
+                                        reference("SOP-MECH-014 rev 3")),
+            [])
+
+    def test_a_report_that_names_no_standard_invents_no_conflict(self):
+        details = [{"text": "Report number: NG-2026-0417", "citations": []}]
+        self.assertEqual(
+            docflow.reference_conflicts(details, reference("SOP-MECH-014 rev 3")),
+            [])
+
+    def test_a_reference_that_names_no_identifier_invents_no_conflict(self):
+        self.assertEqual(
+            docflow.reference_conflicts(
+                governing("SOP-MECH-014 rev 3"),
+                reference("A procedure with no code in its header at all.")),
+            [])
+
+    def test_an_ocr_like_near_match_is_a_conflict_not_an_equivalence(self):
+        """`0` read as `8` is exactly why this cannot resolve itself. The
+        similarity earns a more useful sentence and nothing else: treating two
+        identifiers as one because they look alike is the silent
+        reconciliation this check exists to prevent."""
+        for misread in ("SOP-MECH-814 rev 3", "SOP-MECH-0I4 rev 3",
+                        "SOP-MECH-O14 rev 3"):
+            with self.subTest(read_as=misread):
+                conflicts = docflow.reference_conflicts(
+                    governing(misread), reference("SOP-MECH-014 rev 3"))
+                self.assertEqual(len(conflicts), 1)
+                self.assertIn("may be a misreading", conflicts[0]["text"])
+                self.assertIn("not established", conflicts[0]["text"])
+
+    def test_a_wholly_different_document_is_not_called_a_misreading(self):
+        conflicts = docflow.reference_conflicts(
+            governing("SOP-ELEC-220 rev 1"), reference("SOP-MECH-014 rev 3"))
+        self.assertEqual(len(conflicts), 1)
+        self.assertNotIn("misreading", conflicts[0]["text"])
+
+    def test_the_conflict_cites_both_sources_that_disagree(self):
+        conflicts = docflow.reference_conflicts(
+            governing("SOP-MECH-814 REV 3"), reference("SOP-MECH-014 rev 3"))
+        cited = {(c["filename"], c["page"]) for c in conflicts[0]["citations"]}
+        self.assertEqual(cited, {("inspection-report.pdf", 1),
+                                 ("sop-mech-014.txt", 1)})
+
+    def test_only_the_references_selected_for_this_request_are_compared(self):
+        """Nothing else in the workspace is consulted, so an unrelated
+        procedure sitting in history cannot manufacture a disagreement."""
+        selected = reference("SOP-MECH-014 rev 3")
+        conflicts = docflow.reference_conflicts(
+            governing("SOP-MECH-014 rev 3"), selected)
+        self.assertEqual(conflicts, [])
+
+    def test_an_asset_tag_or_report_number_is_not_read_as_a_procedure(self):
+        """`P-204` and `NG-2026-0417` have an identifier's shape and are not
+        claims about which procedure governs anything."""
+        conflicts = docflow.reference_conflicts(
+            governing("SOP-MECH-014 rev 3"),
+            reference("Transfer pump P-204, report NG-2026-0417.\n"
+                      "SOP-MECH-014 rev 3"))
+        self.assertEqual(conflicts, [],
+                         "the first code in the header is the one that counts")
+
+    def test_the_model_is_told_it_may_quote_but_not_promote_the_limit(self):
+        conflicts = docflow.reference_conflicts(
+            governing("SOP-MECH-814 REV 3"), reference("SOP-MECH-014 rev 3"))
+        messages = docflow.approval_note_messages(
+            "draft the approval note", [], [], [], conflicts)
+        system = messages[0]["content"]
+        self.assertIn(docflow.APPROVAL_CONFLICT_RULE, system)
+        self.assertIn("state what that reference says as a fact", system)
+        self.assertIn("do not call its value the governing", system)
+        self.assertIn("SOP-MECH-814", messages[1]["content"])
+
+    def test_a_note_without_a_conflict_carries_no_such_rule(self):
+        messages = docflow.approval_note_messages(
+            "draft the approval note", [], [], [], [])
+        self.assertNotIn(docflow.APPROVAL_CONFLICT_RULE, messages[0]["content"])
+
+    def test_no_identifier_from_the_observed_failure_is_written_into_the_source(self):
+        """The guard is generic. A branch on these codes would pass the one run
+        that found the problem and nothing else.
+
+        Executable constants only: comments and docstrings name the run this
+        came from, which is worth keeping, and neither can steer a comparison.
+        A hardcoded branch would need a literal the interpreter can see.
+        """
+        tree = ast.parse(pathlib.Path(docflow.__file__).read_text())
+        documented = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                     ast.AsyncFunctionDef)):
+                continue
+            first = node.body[0] if node.body else None
+            if (isinstance(first, ast.Expr)
+                    and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)):
+                documented.add(id(first.value))
+        constants = [node.value for node in ast.walk(tree)
+                     if isinstance(node, ast.Constant)
+                     and id(node) not in documented]
+        for literal in ("SOP-MECH-814", "SOP-MECH-014", "P-204",
+                        "NG-2026-0417", "7.1", 7.1):
+            with self.subTest(literal=literal):
+                self.assertFalse(
+                    [c for c in constants
+                     if c == literal
+                     or (isinstance(c, str) and isinstance(literal, str)
+                         and literal in c)],
+                    f"{literal!r} is reachable by the comparison")
+
+
+class ReferenceConflictInTheArtifact(GroundedHarness):
+    """The conflict has to reach the document, not only the log."""
+
+    # Exactly what the packaged run produced: the scan read with one digit
+    # wrong. The canonical fixture is untouched; this is a variant of its bytes
+    # attached under its own name.
+    MISREAD = REPORT.read_bytes().replace(b"SOP-MECH-014 rev 3",
+                                          b"SOP-MECH-814 REV 3")
+
+    def run_pack(self, report_bytes):
+        report = self.attach("inspection-report.txt", report_bytes)
+        sop = self.attach("sop-mech-014.txt", SOP.read_bytes())
+        job = self.send("draft the approval note", skill_id=docflow.WRITE_SKILL,
+                        doc_workflow=docflow.WORKFLOW_APPROVAL_NOTE)
+        self.bind(job, report)
+        self.bind(job, sop)
+        stream = scripted_stream(
+            conditioned_note(report["attachment_id"], sop["attachment_id"]))
+        with patch.object(runtime, "stream_chat", stream):
+            self.c._run(job, self.chat, docflow.WRITE_SKILL)
+        return job
+
+    def test_the_matching_pack_produces_no_mismatch_section(self):
+        job = self.run_pack(REPORT.read_bytes())
+        self.assertEqual(self.job_state(job), "completed")
+        text, _row = self.artifact_text()
+        self.assertNotIn("Reference identity not established", text)
+
+    def test_the_misread_standard_reaches_the_document(self):
+        job = self.run_pack(self.MISREAD)
+        self.assertEqual(self.job_state(job), "completed")
+        text, _row = self.artifact_text()
+        self.assertIn("Reference identity not established", text)
+        self.assertIn("SOP-MECH-814", text)
+        self.assertIn("SOP-MECH-014", text)
+
+    def test_the_recommendation_carries_the_unresolved_applicability(self):
+        """Attached by the coordinator, so it does not depend on the model
+        having taken the instruction. The scripted note recommends continued
+        service without qualifying it; the artifact still qualifies it."""
+        self.run_pack(self.MISREAD)
+        text, _row = self.artifact_text()
+        self.assertIn(docflow.REFERENCE_QUALIFIER, text)
+        self.assertIn("applies only once that identity is confirmed", text)
+
+    def test_the_conflict_is_recorded_with_the_citations_it_rests_on(self):
+        self.run_pack(self.MISREAD)
+        _text, row = self.artifact_text()
+        cited = json.loads(row["citations_json"])
+        filenames = {c["filename"] for c in cited}
+        self.assertIn("inspection-report.txt", filenames)
+        self.assertIn("sop-mech-014.txt", filenames)
+
+    def test_the_conflict_does_not_cost_the_evidence_already_preserved(self):
+        """Everything the accepted run got right stays right."""
+        self.run_pack(self.MISREAD)
+        text, _row = self.artifact_text()
+        for kept in ("7.9 mm/s RMS",              # the observed reading
+                     "7.1 mm/s RMS",              # the supplied SOP's limit
+                     "Report number: NG-2026-0417",
+                     "Transfer pump P-204",
+                     "anchor bolts",
+                     "Suction pressure",
+                     "A person must check it before it is used."):
+            with self.subTest(kept=kept):
+                self.assertIn(kept, text)
+
+    def test_no_suction_pressure_value_is_invented_under_a_conflict(self):
+        self.run_pack(self.MISREAD)
+        text, _row = self.artifact_text()
+        self.assertNotIn("Suction pressure: 0", text)
+        self.assertRegex(text, r"[Ss]uction pressure[^\n]*"
+                               r"(not recorded|llegible|could not)")
+
+    def test_the_document_still_opens_and_reads_back(self):
+        self.run_pack(self.MISREAD)
+        text, row = self.artifact_text()
+        self.assertEqual(row["workflow"], docflow.WORKFLOW_APPROVAL_NOTE)
+        self.assertTrue(text.strip())
+
+
+class ReferenceIdentityIsCaseInsensitive(unittest.TestCase):
+    """Found in review: matching upper case only made a lowercase header
+    declare no identity at all, which skipped the comparison silently. A missed
+    conflict is the dangerous direction; a noisy one is merely annoying."""
+
+    def test_a_lowercase_header_still_matches_its_upper_case_report(self):
+        self.assertEqual(
+            docflow.reference_conflicts(governing("SOP-MECH-014 rev 3"),
+                                        reference("sop-mech-014 rev 3\nSCOPE")),
+            [])
+
+    def test_a_lowercase_header_that_disagrees_is_still_caught(self):
+        conflicts = docflow.reference_conflicts(
+            governing("SOP-MECH-814 REV 3"), reference("sop-mech-014 rev 3"))
+        self.assertEqual(len(conflicts), 1)
+        self.assertIn("SOP-MECH-814", conflicts[0]["text"])
+        self.assertIn("SOP-MECH-014", conflicts[0]["text"])
+
+    def test_case_differs_but_the_document_does_not(self):
+        for spelling in ("sop-mech-014 Rev 3", "Sop-Mech-014 REV 3",
+                         "SOP-mech-014 rev 3"):
+            with self.subTest(spelling=spelling):
+                self.assertEqual(
+                    docflow.reference_conflicts(governing(spelling),
+                                                reference("SOP-MECH-014 rev 3")),
+                    [])
+
+    def test_an_ordinary_hyphenated_word_is_not_a_document_number(self):
+        """Case-insensitivity without the digit rule would have read
+        `drive-end` at the head of a line as the document's identity."""
+        for prose in ("drive-end vibration readings and limits\n"
+                      "SOP-MECH-014 rev 3",
+                      "re-inspection intervals\nSOP-MECH-014 rev 3",
+                      "non-drive end bearings\nSOP-MECH-014 rev 3"):
+            with self.subTest(head=prose.splitlines()[0]):
+                self.assertEqual(
+                    docflow.reference_conflicts(governing("SOP-MECH-014 rev 3"),
+                                                reference(prose)),
+                    [])
+
+    def test_an_asset_tag_beginning_a_line_is_not_the_documents_identity(self):
+        """A line-start anchor alone was not enough: an asset tag can begin a
+        line too. A document states its own number with its revision, so the
+        line carrying one wins."""
+        self.assertEqual(
+            docflow.declared_identity("P-204 transfer pump\nSOP-MECH-014 rev 3"),
+            ("SOP-MECH-014", "3"))
+        self.assertEqual(
+            docflow.reference_conflicts(
+                governing("SOP-MECH-014 rev 3"),
+                reference("P-204 transfer pump\nSOP-MECH-014 rev 3")),
+            [])
+
+
+class AnUnestablishedReferenceCannotSettleTheOutcome(GroundedHarness):
+    """The conflict has to constrain the note, not sit beside it.
+
+    Found in review: the mismatch was rendered in its own section while the
+    note it accompanied still said "above the alarm limit" and "against an
+    alarm limit of 7.1". A warning elsewhere in the same file does not unmake
+    a sentence that reads as settled, so the model's claim was still the claim
+    the guard existed to prevent.
+    """
+
+    MISREAD = REPORT.read_bytes().replace(b"SOP-MECH-014 rev 3",
+                                          b"SOP-MECH-814 REV 3")
+
+    def sources(self):
+        return [{"source_id": "report", "filename": "report.pdf",
+                 "pages": [{"number": 1}]},
+                {"source_id": "sop", "filename": "sop-mech-014.txt",
+                 "pages": [{"number": 1}]}]
+
+    def conflict(self):
+        return docflow.reference_conflicts(governing("SOP-MECH-814 REV 3"),
+                                           reference("SOP-MECH-014 rev 3"))
+
+    def test_the_noncompliant_note_the_run_produced_is_refused(self):
+        """`grounded_note` is the scripted reply the earlier regressions used:
+        it calls 7.1 an alarm limit outright. Unchanged, it must now fail."""
+        with self.assertRaises(docflow.WorkflowError) as caught:
+            docflow.parse_approval_note(grounded_note("report", "sop"),
+                                        self.sources(), self.conflict())
+        self.assertEqual(caught.exception.code, "unresolved_reference")
+
+    def test_the_same_note_is_accepted_when_identity_is_not_in_doubt(self):
+        note = docflow.parse_approval_note(grounded_note("report", "sop"),
+                                           self.sources(), [])
+        self.assertTrue(note["findings"])
+
+    def test_a_settled_judgement_is_caught_singular_or_plural(self):
+        """Found in probing: `\blimit\b` does not match "limits", so "the
+        reading is within limits" walked straight through the guard."""
+        for settled in ("The reading is within limits.",
+                        "The reading is within the limit.",
+                        "The vibration is above the alarm limits.",
+                        "The asset meets the acceptance criteria.",
+                        "The result is out of specification."):
+            with self.subTest(claim=settled):
+                self.assertTrue(
+                    docflow.reference_applicability_judgement(settled))
+
+    def test_a_fact_about_the_supplied_file_is_not_a_judgement(self):
+        for stated in ("The supplied procedure states a value of 7.1 mm/s RMS.",
+                       "The attached procedure states a 7.1 mm/s RMS limit.",
+                       "Drive-end vibration was recorded at 7.9 mm/s RMS.",
+                       "Two of four anchor bolts were found loose.",
+                       "Re-inspection is required within 14 days."):
+            with self.subTest(claim=stated):
+                self.assertFalse(
+                    docflow.reference_applicability_judgement(stated))
+
+    def test_the_refusal_is_never_repaired_into_shape(self):
+        self.assertNotIn("unresolved_reference", docflow.REPAIRABLE_CODES)
+
+    def test_stating_what_the_reference_says_stays_allowed(self):
+        """The distinction the whole guard turns on: a fact about a file is
+        not a judgement about this inspection."""
+        allowed = json.dumps(json.loads(grounded_note("report", "sop")) | {
+            "summary": {"text": ("Inspection NG-2026-0417 recorded a drive-end "
+                                 "vibration of 7.9 mm/s RMS. The supplied "
+                                 "procedure states a value of 7.1 mm/s RMS."),
+                        "citations": [{"source_id": "report", "page": 1}]},
+            "findings": [{"text": ("Drive-end vibration was recorded at 7.9 "
+                                   "mm/s RMS."),
+                          "citations": [{"source_id": "report", "page": 1}]}],
+            "recommendation": {
+                "text": ("Re-inspection is required within 14 days."),
+                "citations": [{"source_id": "report", "page": 1}]}})
+        note = docflow.parse_approval_note(allowed, self.sources(),
+                                           self.conflict())
+        self.assertIn("7.1", note["summary"]["text"])
+
+    def test_a_condition_does_not_authorise_a_settled_conclusion(self):
+        """A warning and the unsafe conclusion in one claim is still unsafe."""
+        contradictory = json.dumps(
+            json.loads(conditioned_note("report", "sop")) | {
+                "summary": {
+                    "text": ("Applicability is not established. Nevertheless, "
+                             "the asset exceeds the governing limit and is "
+                             "noncompliant."),
+                    "citations": [{"source_id": "report", "page": 1}]}})
+        with self.assertRaises(docflow.WorkflowError) as caught:
+            docflow.parse_approval_note(contradictory, self.sources(),
+                                        self.conflict())
+        self.assertEqual(caught.exception.code, "unresolved_reference")
+
+    def test_every_claim_is_checked_not_only_the_recommendation(self):
+        for field in ("summary", "recommendation"):
+            with self.subTest(field=field):
+                reply = json.loads(grounded_note("report", "sop"))
+                reply["findings"] = [
+                    {"text": "Two anchor bolts were found loose.",
+                     "citations": [{"source_id": "report", "page": 1}]}]
+                reply["summary"] = {
+                    "text": "Two anchor bolts were found loose.",
+                    "citations": [{"source_id": "report", "page": 1}]}
+                reply["recommendation"] = {
+                    "text": "Re-inspection is required within 14 days.",
+                    "citations": [{"source_id": "report", "page": 1}]}
+                reply[field] = {
+                    "text": "The asset is compliant with the governing limit.",
+                    "citations": [{"source_id": "report", "page": 1}]}
+                with self.assertRaises(docflow.WorkflowError) as caught:
+                    docflow.parse_approval_note(json.dumps(reply),
+                                                self.sources(), self.conflict())
+                self.assertEqual(caught.exception.code, "unresolved_reference")
+
+    def test_the_noncompliant_run_writes_no_document_at_all(self):
+        """End to end: refused before the artifact, not annotated after it."""
+        report = self.attach("inspection-report.txt", self.MISREAD)
+        sop = self.attach("sop-mech-014.txt", SOP.read_bytes())
+        job = self.send("draft the approval note", skill_id=docflow.WRITE_SKILL,
+                        doc_workflow=docflow.WORKFLOW_APPROVAL_NOTE)
+        self.bind(job, report)
+        self.bind(job, sop)
+        stream = scripted_stream(
+            grounded_note(report["attachment_id"], sop["attachment_id"]))
+        with patch.object(runtime, "stream_chat", stream):
+            self.c._run(job, self.chat, docflow.WRITE_SKILL)
+        self.assertEqual(self.job_state(job), "failed")
+        self.assertEqual(self.artifacts(), [])
+
+    def test_the_chat_answer_carries_the_conflict_above_the_summary(self):
+        """The person reads this before opening the document, so a summary
+        that arrives without the conflict is the same settled sentence."""
+        note = docflow.parse_approval_note(
+            json.dumps(json.loads(grounded_note("report", "sop")) | {
+                "summary": {"text": "Vibration of 7.9 mm/s RMS was recorded.",
+                            "citations": [{"source_id": "report", "page": 1}]},
+                "findings": [{"text": "Two anchor bolts were loose.",
+                              "citations": [{"source_id": "report", "page": 1}]}],
+                "recommendation": {"text": "Re-inspect within 14 days.",
+                                   "citations": [{"source_id": "report", "page": 1}]}}),
+            self.sources(), self.conflict())
+        note["reference_conflicts"] = self.conflict()
+        answer = docflow.artifact_answer(
+            note, {"validation": {"paragraphs": 9}, "filename": "note.docx",
+                   "byte_size": 1024},
+            docflow.Prepared(), [])
+        self.assertIn("Reference identity not established", answer)
+        self.assertIn("SOP-MECH-814", answer)
+        self.assertLess(answer.index("Reference identity not established"),
+                        answer.index("Vibration of 7.9"))

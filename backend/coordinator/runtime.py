@@ -19,6 +19,9 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
+from backend.contracts import profiles as inference_profiles
+from backend.contracts import v1
+
 HOST = "http://127.0.0.1:11434"
 MODEL = "qwen3.5:4b-q4_K_M"
 
@@ -340,8 +343,8 @@ def _with_images(messages: list[dict], images: list[bytes] | None) -> list[dict]
     raise RuntimeUnavailable("an image request needs a user message to carry it")
 
 
-def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None = None,
-                model: str | None = None, num_predict: int | None = None,
+def stream_chat(messages: list[dict], *, profile: v1.ExecutionProfile,
+                inference: v1.InferenceRequest, should_cancel=None,
                 images: list[bytes] | None = None,
                 response_format: dict | None = None):
     """Yield ('delta', text), optionally ('thinking', text), then ('done', metrics).
@@ -358,15 +361,29 @@ def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None 
     period looks exactly like a stall. Raises RuntimeUnavailable rather than
     returning a plausible-looking empty answer.
     """
-    reasoning = THINK if think is None else bool(think)
+    try:
+        inference_profiles.validate_request(profile, inference, profile.model)
+    except ValueError as exc:
+        raise RuntimeUnavailable(str(exc)) from exc
+    if response_format is None and inference.decoder != "text":
+        raise RuntimeUnavailable("the selected profile requires structured output")
+    if response_format is not None:
+        digest = inference_profiles.schema_sha256(response_format)
+        if inference.decoder != "json_schema" \
+                or inference.decoder_schema_sha256 != digest:
+            raise RuntimeUnavailable("the decoder schema does not match the request")
+    reasoning = inference.reasoning == "enabled"
+    output_limit = inference.output_allowance_tokens
+    context_window = inference.context_window_tokens
     payload = {
-        "model": model or MODEL, "messages": _with_images(messages, images),
+        "model": profile.model.model_id,
+        "messages": _with_images(messages, images),
         "stream": True,
         "think": reasoning, "keep_alive": KEEP_ALIVE,
         # Estimates select history; the runtime must reject real overflow.
         "truncate": False, "shift": False,
-        "options": {"num_ctx": NUM_CTX,
-                    "num_predict": NUM_PREDICT if num_predict is None else num_predict},
+        "options": {"num_ctx": context_window,
+                    "num_predict": output_limit},
     }
     if response_format is not None:
         # Ollama structured output. The schema constrains the decoder, so a
@@ -385,12 +402,15 @@ def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None 
                     detail = exc.read().decode("utf-8", "replace")
                 if "exceed_context_size_error" in detail or "exceeds the available context size" in detail:
                     raise RuntimeUnavailable(
-                        f"Context window exceeded ({NUM_CTX} tokens). Shorten your message "
+                        f"Context window exceeded ({context_window} tokens). Shorten your message "
                         "or start a new chat. The runtime rejected the request without trimming it.") from exc
                 raise RuntimeUnavailable(f"HTTP {exc.code}: {detail[:200]}") from exc
             with resp:
                 watch.response(resp)
-                yield from _read_stream(resp, watch, should_cancel)
+                yield from _read_stream(resp, watch, should_cancel,
+                                        output_limit=output_limit,
+                                        context_window=context_window,
+                                        profile=profile, inference=inference)
         except (RuntimeUnavailable, OSError, http.client.HTTPException) as exc:
             if watch.fired or (should_cancel is not None and should_cancel()):
                 yield "cancelled", {}
@@ -400,7 +420,8 @@ def stream_chat(messages: list[dict], *, should_cancel=None, think: bool | None 
             raise RuntimeUnavailable(f"{HOST} unreachable: {exc}") from exc
 
 
-def _read_stream(resp, watch, should_cancel):
+def _read_stream(resp, watch, should_cancel, *, output_limit=NUM_PREDICT,
+                 context_window=NUM_CTX, profile=None, inference=None):
     """Yield stream records until the runtime finishes or the watcher aborts."""
     try:
         for raw in resp:
@@ -428,7 +449,10 @@ def _read_stream(resp, watch, should_cancel):
             if chunk:
                 yield "delta", chunk
             if obj.get("done"):
-                yield "done", _metrics(obj)
+                yield "done", _metrics(
+                    obj, output_limit=output_limit,
+                    context_window=context_window, profile=profile,
+                    inference=inference)
                 return
     except RuntimeUnavailable:
         raise
@@ -447,23 +471,31 @@ def _read_stream(resp, watch, should_cancel):
     raise RuntimeUnavailable("stream ended without a done record")
 
 
-def _metrics(obj: dict) -> dict:
+def _metrics(obj: dict, *, output_limit: int = NUM_PREDICT,
+             context_window: int = NUM_CTX,
+             profile: v1.ExecutionProfile | None = None,
+             inference: v1.InferenceRequest | None = None) -> dict:
     ns = 1_000_000_000
     prompt_count, output_count = obj.get("prompt_eval_count"), obj.get("eval_count")
     limit = None
     if obj.get("done_reason") == "length":
         context_full = (isinstance(prompt_count, int) and isinstance(output_count, int)
-                        and prompt_count + output_count >= NUM_CTX)
-        output_full = isinstance(output_count, int) and output_count >= NUM_PREDICT
+                        and prompt_count + output_count >= context_window)
+        output_full = isinstance(output_count, int) and output_count >= output_limit
         # Counts establish which bounds were reached, not which fired first.
         limit = ("context_and_output" if context_full and output_full else
                  "context" if context_full else "output" if output_full else "unknown")
     return {
         "done_reason": obj.get("done_reason"),
         "limit_reason": limit,
-        "context_window": NUM_CTX,
-        "output_token_limit": NUM_PREDICT,
+        "requested_profile_id": inference.profile_id if inference else None,
+        "actual_profile_id": profile.profile_id if profile else None,
+        "context_window": context_window,
+        "output_token_limit": output_limit,
+        "reasoning": inference.reasoning if inference else None,
+        "decoder": inference.decoder if inference else None,
         "eval_count": obj.get("eval_count"),
+        "output_tokens": obj.get("eval_count"),
         # Runtime-reported counts. These are MEASURED, unlike the
         # coordinator's character-based pre-flight estimate.
         "prompt_tokens": obj.get("prompt_eval_count"),

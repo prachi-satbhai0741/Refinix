@@ -22,7 +22,7 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.contracts import v1
+from backend.contracts import profiles, v1
 from backend.coordinator import (code_service, codeflow, db, dispatch, models,
                                  repo, runtime)
 from backend.coordinator.server import Coordinator
@@ -86,6 +86,19 @@ class FakeWorker:
             frames.append(("output.delta",
                            {"kind": "output.delta",
                             "text": self.reply[index:index + 512]}))
+        if env.inference is not None:
+            frames.append(("inference.metrics", {
+                "kind": "inference.metrics",
+                "requested_profile_id": env.inference.profile_id,
+                "actual_profile_id": env.inference.profile_id,
+                "context_window": env.inference.context_window_tokens,
+                "output_token_limit": env.inference.output_allowance_tokens,
+                "reasoning": env.inference.reasoning,
+                "decoder": env.inference.decoder,
+                "prompt_tokens": 100,
+                "output_tokens": 50,
+                "runtime_ms": 10,
+            }))
         frames += [
             ("attempt.state", {"kind": "attempt.state", "previous": "running",
                                "current": "validating"}),
@@ -96,7 +109,8 @@ class FakeWorker:
             if sequence <= after:
                 continue
             yield v1.Event(
-                contract_version="1.0", workspace_id=env.workspace_id,
+                contract_version=v1.CONTRACT_VERSION,
+                workspace_id=env.workspace_id,
                 job_id=env.job_id, attempt_id=env.attempt_id,
                 event_id=str(uuid.uuid4()), sequence=sequence,
                 producer_node_id=env.target_node_id, producer="worker",
@@ -130,12 +144,11 @@ class Base(unittest.TestCase):
             fingerprint="AA:BB", certificate_pem="-----BEGIN CERTIFICATE-----")
 
     def route(self):
+        profile = next(p for p in profiles.PROFILES if p.target_profile_id == profiles.MAC_M5_16GB and p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14")
         return dispatch.Route(
             "remote", "paired worker ubuntu-worker: healthy, qwen3.5:4b-q4_K_M",
             node_id=self.worker_node, relationship_id=self.relationship_id,
-            model={"model_id": runtime.MODEL,
-                   "manifest_sha256": models.entry_for(runtime.MODEL).manifest_sha256,
-                   "runtime": "ollama", "runtime_version": "0.33.3"})
+            model=profile.model.model_dump(), profile=profile.model_dump())
 
     def proposal_reply(self, *, path="pumpcheck/limits.py", content=IMPROVED,
                        base=None):
@@ -165,6 +178,11 @@ class TestRemoteGeneration(Base):
         proposal = self.run_remote(worker)
         self.assertEqual(len(proposal["edits"]), 1)
         self.assertIn("float(value)", proposal["edits"][0]["diff"])
+        attempt = self.c.job_detail(proposal["job_id"])["attempts"][-1]
+        self.assertEqual(
+            attempt["requested_inference"]["profile_id"],
+            attempt["actual_profile"]["profile_id"])
+        self.assertEqual(attempt["metrics"]["route"], "remote")
         # THE claim of C09: the canonical repository is untouched.
         self.assertEqual(self.on_disk(), PROJECT)
 

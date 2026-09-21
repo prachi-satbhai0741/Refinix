@@ -17,21 +17,39 @@ step is supplied by the caller, and every test supplies a fake.
     python3 -m unittest backend.coordinator.test_models -v
 """
 
+import inspect
 import tempfile
 import unittest
 import json
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.contracts import profiles, v1
 from backend.coordinator import db, device, docgen, models, runtime
 from backend.coordinator.server import Coordinator
 
 CATALOGUED = models.CATALOGUE[0].id
 CATALOG_DIGEST = models.CATALOGUE[0].manifest_sha256
+WORKER_CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
 
 
 def chat_reply(_model, _messages, **_options):
-    return "Four."
+    """A model that applies the supplied rule and gets the direction right.
+
+    It used to be "Four.", which passed because the check only asked whether
+    anything came back. The Chat self-test now applies a supplied comparison,
+    so a stand-in for a working model has to hold that comparison.
+    """
+    return (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}")
+
+
+def reversed_chat_reply(_model, _messages, **_options):
+    """Fluent, complete, and with the comparison the wrong way round."""
+    return (f"safe; smaller number: {models.CHAT_CHECK_LARGER}")
 
 
 def document_reply(_model, _messages, **_options):
@@ -127,6 +145,89 @@ class TestSelfTests(unittest.TestCase):
         result = models.run_selftest(models.CHAT, CATALOGUED,
                                      generate=lambda *_args, **_kwargs: "   ")
         self.assertEqual(result["state"], models.FAILED)
+
+    def test_chat_applies_a_supplied_rule_rather_than_asking_for_any_reply(self):
+        """A packaged run answered a pump question fluently with the central
+        comparison reversed, and Chat was self-tested at the time — because the
+        check was "what is 2 + 2?" and only looked for a non-empty reply. The
+        premise lives in the prompt so a failure means the model could not hold
+        a relation, not that it did not know something."""
+        seen = {}
+
+        def generate(_model, messages, **_options):
+            seen["prompt"] = messages[0]["content"]
+            return chat_reply(_model, messages)
+
+        result = models.run_selftest(models.CHAT, CATALOGUED, generate=generate)
+        self.assertEqual(result["state"], models.PASSED)
+        for supplied in (models.CHAT_CHECK_SMALLER, models.CHAT_CHECK_LARGER,
+                         "below"):
+            self.assertIn(supplied, seen["prompt"])
+
+    def test_a_reversed_relation_fails_chat_however_fluent_it_is(self):
+        result = models.run_selftest(models.CHAT, CATALOGUED,
+                                     generate=reversed_chat_reply)
+        self.assertEqual(result["state"], models.FAILED)
+        self.assertIn("safe", result["detail"])
+
+    def test_a_reply_that_never_commits_to_an_ordering_is_not_a_pass(self):
+        """Half the check is a coin flip on its own. A verdict with no
+        comparison behind it has not been checked against anything."""
+        result = models.run_selftest(
+            models.CHAT, CATALOGUED,
+            generate=lambda *_a, **_k: "The operation is unsafe.")
+        self.assertEqual(result["state"], models.FAILED)
+
+    def test_the_exact_line_that_was_asked_for_passes(self):
+        for shape in (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}",
+                      f"Unsafe; Smaller number: {models.CHAT_CHECK_SMALLER}",
+                      f"unsafe ; smaller number : {models.CHAT_CHECK_SMALLER}."):
+            with self.subTest(reply=shape):
+                result = models.run_selftest(
+                    models.CHAT, CATALOGUED,
+                    generate=lambda *_a, _s=shape, **_k: _s)
+                self.assertEqual(result["state"], models.PASSED)
+
+    def test_a_negated_verdict_is_not_read_as_the_verdict(self):
+        """Found in review. Searching for the token `unsafe` anywhere in the
+        reply passed "not unsafe": the negation sits outside the pattern, and
+        the answer it was actually giving was the wrong one."""
+        result = models.run_selftest(
+            models.CHAT, CATALOGUED,
+            generate=lambda *_a, **_k:
+                f"not unsafe; smaller number: {models.CHAT_CHECK_SMALLER}")
+        self.assertEqual(result["state"], models.FAILED)
+
+    def test_a_reply_that_answers_then_contradicts_itself_fails(self):
+        """Found in review. A right answer followed by a reversed one is not a
+        model that holds the relation; it is a model that wrote both."""
+        result = models.run_selftest(
+            models.CHAT, CATALOGUED,
+            generate=lambda *_a, **_k:
+                (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER} — but "
+                 f"actually {models.CHAT_CHECK_SMALLER} exceeds "
+                 f"{models.CHAT_CHECK_LARGER}"))
+        self.assertEqual(result["state"], models.FAILED)
+
+    def test_prose_instead_of_the_asked_form_fails_as_a_shape_not_a_reversal(self):
+        """Both are failures, and they are different failures: a person reading
+        the result should not be told the model reversed a relation when it
+        only ignored the format."""
+        result = models.run_selftest(
+            models.CHAT, CATALOGUED,
+            generate=lambda *_a, **_k:
+                "The operation is unsafe because 2.4 is less than 3.1.")
+        self.assertEqual(result["state"], models.FAILED)
+        self.assertIn("single line", result["detail"])
+        self.assertNotIn("smaller number when", result["detail"])
+
+    def test_no_reply_is_checked_for_a_pump_or_any_other_subject(self):
+        """The fix for the observed failure is a shared reliability boundary,
+        not a fact table. A subject-specific branch here would mean Refinix got
+        one topic right and every neighbouring one still wrong."""
+        source = inspect.getsource(models)
+        for trivia in ("npsh", "cavitat", "centrifugal", "pump"):
+            self.assertNotIn(trivia, source.casefold())
 
     def test_code_requires_a_parseable_proposal_not_any_nonempty_reply(self):
         result = models.run_selftest(
@@ -266,7 +367,7 @@ class TestRemovalImpact(unittest.TestCase):
 class CoordinatorBase(unittest.TestCase):
     """The inventory as the interface receives it, against a fake runtime."""
 
-    HEALTH = {"reachable": True, "server_version": "0.33.3",
+    HEALTH = {"reachable": True, "server_version": "0.32.14",
               "models": [CATALOGUED], "digests": {CATALOGUED: CATALOG_DIGEST},
               "loaded": None, "endpoint": runtime.HOST, "error": None}
 
@@ -274,6 +375,7 @@ class CoordinatorBase(unittest.TestCase):
         self.scratch = tempfile.TemporaryDirectory()
         self.addCleanup(self.scratch.cleanup)
         self.c = Coordinator(Path(self.scratch.name) / "state.sqlite3")
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.addCleanup(self.c.conn.close)
         patches = [
             patch.object(runtime, "probe", return_value=dict(self.HEALTH)),
@@ -319,8 +421,9 @@ class TestInventory(CoordinatorBase):
             row = self.row("somebody/random:latest")
         self.assertEqual(row["state"], models.UNLISTED)
         self.assertEqual(row["provenance"]["evidence_state"], models.UNVERIFIED)
-        # Still usable — it is installed — but never presented as verified.
-        self.assertIn("chat", row["eligible_scopes"])
+        # Installed is not qualified: arbitrary bytes cannot inherit another
+        # model's profile merely because the runtime lists them.
+        self.assertEqual(row["eligible_scopes"], [])
 
     def test_a_catalogue_digest_mismatch_is_visible_and_ineligible(self):
         with patch.object(runtime, "probe", return_value={
@@ -334,13 +437,23 @@ class TestInventory(CoordinatorBase):
 
     def test_a_worker_catalogue_mismatch_falls_back_to_verified_local_bytes(self):
         relationship = {"relationship_id": "rel", "state": "paired"}
+        wrong = WORKER_CHAT_PROFILE.model_dump()
+        wrong["model"]["manifest_sha256"] = "f" * 64
+        wrong["profile_id"] = v1.execution_profile_id(wrong)
         node = {
-            "node_id": "worker", "display_name": "worker",
-            "supported_contract_versions": ["1.0"], "health": "healthy",
+            "contract_version": v1.CONTRACT_VERSION,
+            "node_id": "22222222-2222-4222-8222-222222222222",
+            "display_name": "worker", "app_version": "test",
+            "platform": "Linux x86_64",
+            "supported_contract_versions": [v1.CONTRACT_VERSION],
+            "health": "healthy",
             "capabilities": ["text.generate"], "queue_depth": 0,
             "models": [{"model_id": CATALOGUED,
                         "manifest_sha256": "f" * 64,
-                        "runtime": "ollama", "runtime_version": "test"}],
+                        "runtime": "ollama", "runtime_version": "0.33.2"}],
+            "inference_profiles": [wrong],
+            "observed_at": "2026-09-21T00:00:00Z",
+            "available_memory_bytes": None, "loaded_model_id": None,
         }
         with patch.object(self.c, "paired_worker", return_value=relationship), \
                 patch.object(self.c, "preflight", return_value=node):
@@ -420,7 +533,7 @@ class TestSelfTestRoute(CoordinatorBase):
             record = self.c.run_model_selftest(models.CHAT)
         self.assertEqual(record["state"], models.PASSED)
         self.assertEqual(record["digest"], CATALOG_DIGEST)
-        self.assertEqual(record["runtime_version"], "0.33.3")
+        self.assertEqual(record["runtime_version"], "0.32.14")
         self.assertTrue(self.row(CATALOGUED)["selftests"][models.CHAT]["current"])
 
     def test_a_result_is_superseded_when_the_bytes_change_under_the_tag(self):

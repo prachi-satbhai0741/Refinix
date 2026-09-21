@@ -1,13 +1,14 @@
 {
   "Node": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "node_id": "00000000-0000-4000-8000-000000000001",
     "display_name": "Synthetic coordinator; not a hardware observation",
     "app_version": "0.0.0-contract-example",
     "platform": "unavailable",
-    "supported_contract_versions": ["1.0"],
+    "supported_contract_versions": ["1.1"],
     "capabilities": [],
     "models": [],
+    "inference_profiles": [],
     "health": "unknown",
     "observed_at": null,
     "queue_depth": null,
@@ -15,7 +16,7 @@
     "loaded_model_id": null
   },
   "JobEnvelope": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "workspace_id": "00000000-0000-4000-8000-000000000002",
     "workflow_id": "00000000-0000-4000-8000-000000000003",
     "job_id": "00000000-0000-4000-8000-000000000004",
@@ -27,8 +28,26 @@
     "relationship_id": null,
     "original_request": "Synthetic fixture: explain why a local job needs an attempt ID.",
     "system_instruction": null,
+    "messages": [
+      {"role": "system", "content": "Synthetic product instruction."},
+      {"role": "user", "content": "Synthetic fixture: explain why a local job needs an attempt ID."}
+    ],
     "task_type": "chat",
-    "model": null,
+    "model": {
+      "model_id": "qwen3.5:4b-q4_K_M",
+      "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "runtime": "ollama",
+      "runtime_version": "0.32.14"
+    },
+    "inference": {
+      "profile_id": "83dd627a2897e074b8912609889e3f045fc9f34734a23bf24aafb22f10b4ac85",
+      "workflow_mode": "chat",
+      "context_window_tokens": 8192,
+      "output_allowance_tokens": 2048,
+      "reasoning": "disabled",
+      "decoder": "text",
+      "decoder_schema_sha256": null
+    },
     "required_capabilities": ["text.generate"],
     "context": [],
     "attachments": [],
@@ -53,7 +72,7 @@
     "cancel_requested": false
   },
   "Job": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "workspace_id": "00000000-0000-4000-8000-000000000002",
     "workflow_id": "00000000-0000-4000-8000-000000000003",
     "job_id": "00000000-0000-4000-8000-000000000004",
@@ -64,7 +83,7 @@
     "updated_at": "2026-09-02T10:00:00Z"
   },
   "Attempt": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "workspace_id": "00000000-0000-4000-8000-000000000002",
     "job_id": "00000000-0000-4000-8000-000000000004",
     "step_id": "00000000-0000-4000-8000-000000000005",
@@ -83,7 +102,7 @@
     "artifacts": []
   },
   "Event": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "workspace_id": "00000000-0000-4000-8000-000000000002",
     "job_id": "00000000-0000-4000-8000-000000000004",
     "attempt_id": null,
@@ -95,7 +114,7 @@
     "data": {"kind": "job.state", "previous": null, "current": "created"}
   },
   "Approval": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "approval_id": "00000000-0000-4000-8000-000000000009",
     "workspace_id": "00000000-0000-4000-8000-000000000002",
     "workflow_id": "00000000-0000-4000-8000-000000000003",
@@ -112,7 +131,7 @@
     "decided_at": null
   },
   "Proof": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "proof_id": "00000000-0000-4000-8000-000000000010",
     "workspace_id": "00000000-0000-4000-8000-000000000002",
     "job_id": "00000000-0000-4000-8000-000000000004",

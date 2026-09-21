@@ -1742,3 +1742,106 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve the committed baseline and unrelated work. No protected-document edits, installs, downloads, live model calls, remote-worker calls, packaging, deployment, credential changes or Git/GitHub writes. Run existing focused offline checks only and keep source/test evidence separate from device and release acceptance.
 - follow_up_to: [UP-20260920-007](#up-20260920-007)
 - linked_changes: [AC-20260921-001](agentchangelog.md#ac-20260921-001)
+
+<a id="up-20260921-002"></a>
+## UP-20260921-002 — Repair the py2app packaging-module collision
+- date: 2026-09-21
+- status: authorised narrow packaging correction and focused offline verification; packaged acceptance remains pending
+- tags: macos, py2app, setuptools, packaging, module-shadowing
+- aliases: packaging.utils missing, desktop packaging collision, packaging_plan
+- paths: desktop/packaging_plan.py, desktop/setup_py2app.py, desktop/test_packaging.py, agent-memory/
+- summary: Rename the Refinix-owned packaging-boundary module so the macOS build path can import setuptools' third-party `packaging` package.
+- request: Fix the confirmed `desktop/packaging.py` shadowing failure at its root, retain the shared cross-platform packaging boundary, update all live callers, and add a regression reproducing the build-path import order.
+- constraints: No `sys.path` workaround, dependency reinstall/downgrade, setuptools or py2app weakening, unrelated refactor, new dependency, protected-document edit, Git/GitHub write, package acceptance claim or human walkthrough.
+- follow_up_to: [UP-20260921-001](#up-20260921-001)
+- linked_changes: [AC-20260921-002](agentchangelog.md#ac-20260921-002)
+
+<a id="up-20260921-003"></a>
+## UP-20260921-003 — Repair the direct-script setup import and build the macOS package
+- date: 2026-09-21
+- status: authorised packaging repair, focused verification, real macOS build and bundle inspection; human GUI acceptance still pending
+- tags: macos, py2app, packaging, direct-script-import, bundle-inspection
+- aliases: No module named 'desktop', setup_py2app direct execution, sys.path[0] script directory
+- paths: desktop/setup_py2app.py, desktop/test_packaging.py, agent-memory/
+- summary: Fix the `from desktop import packaging_plan` failure that stopped the macOS build after UP-20260921-002, then run `desktop/setup-macos.command` and inspect the resulting bundle.
+- request: Verify the repository state independently, repair the direct-script import defect at its root, add a regression modelling the real production invocation, run focused verification, run the actual macOS setup path, continue through directly related packaging blockers, inspect the built `.app`, and stop before the human GUI acceptance walkthrough.
+- constraints: No `sys.path`/`PYTHONPATH` workaround, dependency or lock change, py2app replacement, recreated `desktop/packaging.py`, weakened staging/content/signature checks, trust-boundary regression, protected-document edit, Git/GitHub write, model download, GUI walkthrough or acceptance claim.
+- follow_up_to: [UP-20260921-002](#up-20260921-002)
+- linked_changes: [AC-20260921-003](agentchangelog.md#ac-20260921-003)
+
+<a id="up-20260921-004"></a>
+## UP-20260921-004 — Repair two macOS human-acceptance failures
+- date: 2026-09-21
+- status: authorised source correction, focused and broad offline verification, and a package rebuild; human GUI acceptance still pending
+- tags: chat, reliability, documents, grounding, cross-source-identity, macos-acceptance
+- aliases: reversed NPSH relation, SOP-MECH-814 vs SOP-MECH-014, governing reference unresolved
+- paths: backend/coordinator/identity.py, backend/coordinator/models.py, backend/coordinator/docflow.py, backend/coordinator/server.py, agent-memory/
+- summary: A packaged acceptance run passed launch, Chat history, cancellation, OCR and DOCX generation, but produced a confident technical answer with its central comparison reversed, and an approval note that used a supplied SOP's limit although the report named a different governing identifier.
+- request: Reproduce both failures, fix each at the shared boundary that owns it rather than by special-casing the observed subject or identifiers, add regressions, run the authorised verification, rebuild the package if safe, and stop before the human GUI walkthrough.
+- constraints: No hardcoded pump or NPSH answer, no string interception, no 814/014 branch, no fuzzy identifier resolution, no fixture or expected.json edit, no always-on second inference pass without reporting it, no new dependency, no schema migration, no model download, no cloud inference, no protected-document edit, no Git/GitHub write.
+- follow_up_to: [UP-20260921-003](#up-20260921-003)
+- linked_changes: [AC-20260921-004](agentchangelog.md#ac-20260921-004)
+
+<a id="up-20260921-005"></a>
+## UP-20260921-005 — Remove inference-envelope bottlenecks
+- date: 2026-09-21
+- status: authorised implementation, offline verification and self-review; no live model/device/package or Git/GitHub work
+- tags: inference, context-budget, code, documents, telemetry, model-quality
+- aliases: strangled models, whole-file output ceiling, shared document budget, actual num_predict
+- paths: backend/coordinator/runtime.py, backend/coordinator/context.py, backend/coordinator/codeflow.py, backend/coordinator/code_service.py, backend/coordinator/docflow.py, backend/coordinator/server.py, related tests, agent-memory/
+- summary: Make qualified local models use the largest safe request envelope the current profile supports instead of silently constraining whole-file Code and overflowing Documents prompts.
+- request: Implement the reviewed fixes, use relevant skills, minimise complexity and token use, run focused and broad offline checks, and self-review the complete result.
+- constraints: Preserve the dirty tree and security boundaries. Do not edit protected documentation, add dependencies, use advertised model maxima without device qualification, call live models/devices, package/deploy, or perform Git/GitHub writes.
+- follow_up_to: [UP-20260921-004](#up-20260921-004)
+- linked_changes: [AC-20260921-005](agentchangelog.md#ac-20260921-005)
+
+<a id="up-20260921-006"></a>
+## UP-20260921-006 — Complete qualified inference profiles and route parity
+- date: 2026-09-21
+- status: authorised continuation, offline verification and self-review; no deployment, live-device or Git/GitHub writes
+- tags: inference-profile, contract-1.1, worker-negotiation, route-parity, takeover
+- aliases: Tasks 2-4, qualified profile, profile advertisement, no silent downgrade
+- paths: backend/contracts/, backend/coordinator/, backend/worker/, related tests, agent-memory/
+- summary: Audit the partially completed Tasks 2-4 implementation inherited from another agent, repair confirmed defects and regressions, and finish qualified local profiles, worker negotiation and parity-or-explicit-refusal semantics.
+- request: Continue from commit 0703511, preserve its work, trace all callers and persistence paths, complete the execution, run the authorised focused and broad offline verification, and leave review and physical-device validation for later.
+- constraints: Keep whole-file Code redesign, UI redesign, model downloads, packaging, deployment, Windows/Linux qualification, LAN acceptance, protected-document edits and Git/GitHub writes out of scope. Preserve unrelated work and do not claim live-device support.
+- follow_up_to: [UP-20260921-005](#up-20260921-005)
+- linked_changes: [AC-20260921-006](agentchangelog.md#ac-20260921-006)
+
+<a id="up-20260921-007"></a>
+## UP-20260921-007 — Qualify current Mac execution workflows
+- date: 2026-09-21
+- status: authorised live local qualification, implementation, focused and broad verification, and self-review; no Git/GitHub writes
+- tags: inference-profile, macos, ollama-0.33.3, chat, code, documents, live-qualification
+- aliases: Mac M5 qualification, durable evidence, immutable profiles, automatic qualification pipeline
+- paths: backend/contracts/profiles.py, profile-dependent tests, agent-memory/
+- summary: Preserve historical profiles, make the completed Mac Chat qualification durable, and admit new Mac Code and Documents profiles for Ollama 0.33.3 only after their actual production workflows pass against the exact installed model bytes.
+- request: Continue autonomously from the supplied execution-qualification handoff, run real local Ollama qualification on synthetic inputs, repair positional registry assumptions, perform the authorised regressions, record durable evidence, and identify the smallest next architecture step toward automated release qualification.
+- constraints: Do not update or start Ollama, install dependencies, use sensitive data, wait for unavailable Ubuntu hardware, weaken exact matching, replace historical qualifications, edit protected documentation, package/deploy, or perform Git/GitHub writes. A failed workflow remains unqualified and fail-closed.
+- follow_up_to: [UP-20260921-006](#up-20260921-006)
+- linked_changes: [AC-20260921-007](agentchangelog.md#ac-20260921-007)
+
+<a id="up-20260921-008"></a>
+## UP-20260921-008 — Preserve the llmfit and runtime-direction decision
+- date: 2026-09-21
+- status: authorised concise protected-document and ledger update only
+- tags: llmfit, hardware-observation, qualification, ollama, llama.cpp, technology-direction
+- paths: docs/PROJECT.md, agent-memory/
+- summary: Preserve `llmfit` as a future/internal qualification-tool candidate without making it a Beta dependency, and clarify that Ollama remains the qualified baseline while llama.cpp remains gated and unadopted.
+- request: Record the evaluated `llmfit` posture and the existing Ollama/llama.cpp boundary in the most appropriate authority, preserve historical decisions and evidence, and make no implementation, profile, dependency, packaging or Git changes.
+- constraints: Planning evidence never becomes qualification evidence. Do not add an integration or speculative abstraction, rewrite OD-03 history, or represent Ollama evidence as llama.cpp evidence.
+- follow_up_to: [UP-20260921-007](#up-20260921-007)
+- linked_changes: [AC-20260921-008](agentchangelog.md#ac-20260921-008)
+
+<a id="up-20260921-009"></a>
+## UP-20260921-009 — Generate exact execution-qualification artifacts
+- date: 2026-09-21
+- status: authorised implementation, live Mac reproduction, offline verification and Windows handoff; no Git/GitHub writes
+- tags: qualification-artifact, execution-profile, macos, windows-handoff, ollama-0.33.3
+- aliases: generated qualification evidence, Windows next, evidence-only profile artifact
+- paths: backend/contracts/qualification.py, backend/contracts/test_qualification.py, scripts/qualify_execution.py, qualification-artifacts/, agent-memory/
+- summary: Add the smallest strict, versioned qualification-artifact path that can reproduce the current Mac evidence and be run next on a real Windows device without turning an artifact into automatic runtime authority.
+- request: Reconcile the supplied handoff with current authorities and dirty work, preserve the llmfit and Ollama/llama.cpp decisions already recorded, generate exact Chat/Code/Documents evidence from real production routes, run focused and broad verification, keep Linux deferred but in Beta scope, and provide the Windows teammate with an exact process.
+- constraints: No profile/envelope widening, automatic artifact loader, signing system, llmfit or llama.cpp integration, dependency install, Linux-specific speculative work, deployment, publication or Git/GitHub write. Failed or unmeasured work remains unqualified, and qualification state remains distinct from release acceptance.
+- follow_up_to: [UP-20260921-008](#up-20260921-008)
+- linked_changes: [AC-20260921-009](agentchangelog.md#ac-20260921-009)

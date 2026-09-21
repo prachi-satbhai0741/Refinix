@@ -22,6 +22,7 @@ import unittest
 import uuid
 from pathlib import Path
 
+from backend.contracts import v1
 from backend.worker import packages
 
 
@@ -44,7 +45,7 @@ def body(entries: list[dict], **overrides) -> dict:
                 "media_type": item["media_type"], "size_bytes": item["size_bytes"],
                 "sha256": item["sha256"]} for item in entries]
     payload = {
-        "contract_version": "1.0",
+        "contract_version": v1.CONTRACT_VERSION,
         "workspace_id": str(uuid.uuid4()),
         "relationship_id": str(uuid.uuid4()),
         "attempt_id": str(uuid.uuid4()),

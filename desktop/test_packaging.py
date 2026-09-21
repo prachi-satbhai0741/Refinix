@@ -13,6 +13,7 @@ here claims the bundle was built.
 
 import plistlib
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -21,7 +22,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.coordinator import paths, server
-from desktop import packaging
+from desktop import packaging_plan
 
 REPO = Path(__file__).resolve().parents[1]
 ICONS = REPO / "desktop" / "icons"
@@ -29,12 +30,23 @@ ASSETS = REPO / "frontend" / "app" / "assets"
 
 
 def setup_module_namespace():
-    """Read setup_py2app.py without importing setuptools, which is not pinned."""
+    """Read setup_py2app.py without importing setuptools, which is not pinned.
+
+    `desktop` goes on the path because the setup command runs the file as a
+    script, so that directory — not the repository root — is what resolves its
+    sibling imports. Reading it from the repository root instead would resolve
+    imports this build never gets; the check that the script's own path really
+    is enough runs out of process, below.
+    """
     source = (REPO / "desktop" / "setup_py2app.py").read_text()
     namespace = {"__name__": "not_main", "__file__": str(REPO / "desktop" / "setup_py2app.py")}
     # The import line is the only part that needs a build dependency.
     source = source.replace("from setuptools import setup", "setup = None")
-    exec(compile(source, "setup_py2app.py", "exec"), namespace)  # noqa: S102
+    sys.path.insert(0, str(REPO / "desktop"))
+    try:
+        exec(compile(source, "setup_py2app.py", "exec"), namespace)  # noqa: S102
+    finally:
+        sys.path.remove(str(REPO / "desktop"))
     return namespace
 
 
@@ -183,20 +195,61 @@ class TestTheSharedBoundary(unittest.TestCase):
     """
 
     def test_the_three_platforms_share_one_module_list(self):
-        modules = packaging.application_module_names()
+        modules = packaging_plan.application_module_names()
         for platform in ("macos", "windows", "linux"):
             with self.subTest(platform=platform):
-                self.assertEqual(set(packaging.plan(platform)["modules"]),
+                self.assertEqual(set(packaging_plan.plan(platform)["modules"]),
                                  modules)
 
+    def test_the_build_path_imports_the_third_party_packaging_package(self):
+        check = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; sys.path.insert(0, 'desktop'); "
+             "import packaging, packaging.utils; print(packaging.__file__)"],
+            cwd=REPO, capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertNotEqual(Path(check.stdout.strip()).resolve(),
+                            REPO / "desktop" / "packaging.py")
+
+    def test_the_setup_entry_imports_the_way_the_setup_command_runs_it(self):
+        """The setup command executes setup_py2app.py; it does not import it.
+
+        Running a file by path puts that file's directory on sys.path and
+        leaves the repository root off it, so a `from desktop import ...` line
+        raises before the build begins — which importing the file as
+        `desktop.setup_py2app` cannot show, because that mode has the
+        repository root on the path and the script never does. `-P` keeps the
+        working directory off sys.path so this is that environment rather than
+        a friendlier one, and setuptools is stubbed for the same reason the
+        helper above replaces it: it is a build dependency, not the subject.
+        """
+        probe = ("import runpy, sys, types\n"
+                 "sys.path.insert(0, 'desktop')\n"
+                 "stub = types.ModuleType('setuptools'); stub.setup = None\n"
+                 "sys.modules['setuptools'] = stub\n"
+                 "ns = runpy.run_path('desktop/setup_py2app.py', run_name='not_main')\n"
+                 "print(ns['packaging_plan'].__file__)\n"
+                 "print(ns['BUNDLE_ID'])\n"
+                 "print(ns['OPTIONS']['iconfile'])\n")
+        check = subprocess.run([sys.executable, "-P", "-c", probe],
+                               cwd=REPO, capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        plan, bundle_id, iconfile = check.stdout.splitlines()
+        # The boundary it resolved is this repository's, and the whole module
+        # body ran: the icon comes from the last statement that consults it.
+        self.assertEqual(Path(plan).resolve(),
+                         REPO / "desktop" / "packaging_plan.py")
+        self.assertEqual(bundle_id, packaging_plan.BUNDLE_ID)
+        self.assertTrue(Path(iconfile).is_file())
+
     def test_no_test_fixture_or_build_module_is_inside_the_boundary(self):
-        for name in packaging.application_module_names():
+        for name in packaging_plan.application_module_names():
             with self.subTest(module=name):
                 self.assertFalse(Path(name).name.startswith(("test_", "setup_")))
                 self.assertNotIn("worker", name)
 
     def test_the_worker_and_the_repository_tooling_are_excluded_by_name(self):
-        excluded = packaging.plan("windows")["excludes"]["packages"]
+        excluded = packaging_plan.plan("windows")["excludes"]["packages"]
         for name in ("backend/worker", "deploy", "fixtures", "scripts", "docs"):
             self.assertIn(name, excluded)
 
@@ -205,28 +258,28 @@ class TestTheSharedBoundary(unittest.TestCase):
         for name in ("models.py", "device.py", "winfs.py", "paths.py"):
             with self.subTest(module=name):
                 self.assertIn(f"backend/coordinator/{name}",
-                              packaging.application_module_names())
+                              packaging_plan.application_module_names())
 
     def test_each_platform_selects_its_own_icon_and_they_all_exist(self):
         for platform in ("macos", "windows", "linux"):
             with self.subTest(platform=platform):
-                for asset in packaging.platform_assets(platform):
+                for asset in packaging_plan.platform_assets(platform):
                     self.assertTrue(asset.is_file(), f"{asset} is missing")
 
     def test_linux_ships_every_launcher_size_not_only_one(self):
-        self.assertEqual(len(packaging.platform_assets("linux")),
-                         len(packaging.LINUX_ICON_SIZES))
+        self.assertEqual(len(packaging_plan.platform_assets("linux")),
+                         len(packaging_plan.LINUX_ICON_SIZES))
 
     def test_an_unpackaged_platform_is_refused_rather_than_guessed(self):
         with self.assertRaises(ValueError):
-            packaging.icon_for("solaris")
+            packaging_plan.icon_for("solaris")
 
     def test_only_macos_claims_it_can_be_built_from_this_checkout(self):
         """A plan that read as a capability would be fabricated readiness."""
-        self.assertTrue(packaging.plan("macos")["buildable"])
+        self.assertTrue(packaging_plan.plan("macos")["buildable"])
         for platform in ("windows", "linux"):
             with self.subTest(platform=platform):
-                plan = packaging.plan(platform)
+                plan = packaging_plan.plan(platform)
                 self.assertFalse(plan["buildable"])
                 self.assertIn("No ", plan["checkpoint"])
                 self.assertIn("remaining step", plan["checkpoint"])
@@ -234,7 +287,7 @@ class TestTheSharedBoundary(unittest.TestCase):
     def test_every_platform_names_the_native_prerequisites_it_imposes(self):
         for platform in ("macos", "windows", "linux"):
             with self.subTest(platform=platform):
-                self.assertTrue(packaging.plan(platform)["native_prerequisites"])
+                self.assertTrue(packaging_plan.plan(platform)["native_prerequisites"])
 
     def test_no_platform_data_root_lands_inside_an_application_package(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -243,34 +296,34 @@ class TestTheSharedBoundary(unittest.TestCase):
                 with self.subTest(platform=platform):
                     root = paths.platform_root(platform=platform, environ={},
                                                home=home)
-                    self.assertTrue(packaging.runtime_data_is_external(root))
+                    self.assertTrue(packaging_plan.runtime_data_is_external(root))
         # The check is real: a root inside a bundle is refused.
-        self.assertFalse(packaging.runtime_data_is_external(
+        self.assertFalse(packaging_plan.runtime_data_is_external(
             Path("/Applications/Refinix.app/Contents/Resources/data")))
 
     def test_the_frontend_group_is_the_same_for_every_platform(self):
         destinations = [destination for destination, _f
-                        in packaging.frontend_data_files()]
+                        in packaging_plan.frontend_data_files()]
         self.assertIn("frontend/app", destinations)
         for platform in ("macos", "windows", "linux"):
-            self.assertEqual(packaging.plan(platform)["frontend"], destinations)
+            self.assertEqual(packaging_plan.plan(platform)["frontend"], destinations)
 
     def test_a_shipped_package_carrying_something_else_is_reported(self):
-        shipped = set(packaging.application_module_names())
-        self.assertEqual(packaging.unexpected_shipped_files(shipped), [])
+        shipped = set(packaging_plan.application_module_names())
+        self.assertEqual(packaging_plan.unexpected_shipped_files(shipped), [])
         shipped.add("backend/worker/app.py")
-        self.assertEqual(packaging.unexpected_shipped_files(shipped),
+        self.assertEqual(packaging_plan.unexpected_shipped_files(shipped),
                          ["backend/worker/app.py"])
 
     def test_a_missing_required_module_is_reported_by_name(self):
         self.assertEqual(
-            packaging.missing_shipped_files({"desktop/shell.pyc"},
-                                            ("desktop/shell.py",
-                                             "backend/coordinator/server.py")),
+            packaging_plan.missing_shipped_files({"desktop/shell.pyc"},
+                                                 ("desktop/shell.py",
+                                                  "backend/coordinator/server.py")),
             ["backend/coordinator/server.py"])
 
     def test_prerequisites_are_probed_rather_than_named_from_the_platform(self):
-        observed = packaging.prerequisites()
+        observed = packaging_plan.prerequisites()
         for key in ("credential_store", "pdf_reading", "word_writing",
                     "code_containment"):
             with self.subTest(key=key):

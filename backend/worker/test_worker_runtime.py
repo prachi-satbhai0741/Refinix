@@ -8,7 +8,25 @@ checked at image build time (`--network=none`) and by the Ubuntu build handoff.
 import unittest
 from unittest.mock import patch
 
+from backend.contracts import profiles
 from backend.worker import runtime
+
+
+PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
+REQUEST = profiles.request(
+    PROFILE, reasoning="disabled", decoder="text",
+    context_window=4096, output_allowance=2048)
+
+
+def run_chat(*, inference=REQUEST, **kwargs):
+    with patch.object(runtime, "resolve_profile", return_value=PROFILE):
+        return list(runtime.stream_chat(
+            [{"role": "user", "content": "x"}], profile=PROFILE,
+            inference=inference, **kwargs))
 
 
 def stream(*objects):
@@ -37,7 +55,7 @@ class TestBoundedSettings(unittest.TestCase):
             return FakeResponse(stream({"message": {"content": "hi"}}, DONE))
 
         with patch.object(runtime, "_post", fake):
-            list(runtime.stream_chat([{"role": "user", "content": "x"}]))
+            run_chat()
         self.assertIs(captured["truncate"], False)
         self.assertIs(captured["shift"], False)
         self.assertIs(captured["think"], False)
@@ -53,7 +71,7 @@ class TestLimitClassification(unittest.TestCase):
                     prompt_eval_count=prompt, eval_count=output)
         with patch.object(runtime, "_post",
                           lambda *a, **k: FakeResponse(stream({"message": {"content": "x"}}, done))):
-            result = list(runtime.stream_chat([{"role": "user", "content": "x"}]))
+            result = run_chat()
         return result[-1][1]["limit_reason"]
 
     # Boundaries are expressed against the worker's own configured window, so
@@ -74,7 +92,7 @@ class TestLimitClassification(unittest.TestCase):
         done = {"done": True, "done_reason": "length"}
         with patch.object(runtime, "_post",
                           lambda *a, **k: FakeResponse(stream({"message": {"content": "x"}}, done))):
-            result = list(runtime.stream_chat([{"role": "user", "content": "x"}]))
+            result = run_chat()
         self.assertEqual(result[-1][1]["limit_reason"], "unknown")
 
 
@@ -83,20 +101,30 @@ class TestFailureHandling(unittest.TestCase):
         with patch.object(runtime, "_post",
                           lambda *a, **k: FakeResponse(stream({"error": "model missing"}))):
             with self.assertRaises(runtime.RuntimeUnavailable):
-                list(runtime.stream_chat([{"role": "user", "content": "x"}]))
+                run_chat()
 
     def test_stream_without_done_is_rejected(self):
         with patch.object(runtime, "_post",
                           lambda *a, **k: FakeResponse(stream({"message": {"content": "x"}}))):
             with self.assertRaises(runtime.RuntimeUnavailable):
-                list(runtime.stream_chat([{"role": "user", "content": "x"}]))
+                run_chat()
 
     def test_cancel_stops_before_the_next_chunk(self):
         with patch.object(runtime, "_post",
                           lambda *a, **k: FakeResponse(stream({"message": {"content": "a"}}, DONE))):
-            kinds = [k for k, _ in runtime.stream_chat(
-                [{"role": "user", "content": "x"}], should_cancel=lambda: True)]
+            kinds = [k for k, _ in run_chat(should_cancel=lambda: True)]
         self.assertEqual(kinds, ["cancelled"])
+
+    def test_stale_or_arbitrary_semantics_fail_before_a_model_call(self):
+        called = []
+        altered = REQUEST.model_copy(update={"context_window_tokens": 8192})
+        with patch.object(runtime, "resolve_profile", return_value=PROFILE), \
+                patch.object(runtime, "_post", side_effect=lambda *a, **k: called.append(a)):
+            with self.assertRaises(runtime.RuntimeUnavailable):
+                list(runtime.stream_chat(
+                    [{"role": "user", "content": "x"}], profile=PROFILE,
+                    inference=altered))
+        self.assertEqual(called, [], "incompatible settings reached the runtime")
 
 
 class TestProbe(unittest.TestCase):

@@ -26,8 +26,11 @@ from unittest.mock import patch
 
 os.environ.setdefault("AEGIS_WORKER_TOKEN", "x" * 40)   # the startup guard
 os.environ.setdefault("AEGIS_NODE_ID", "22222222-2222-4222-8222-222222222222")
+os.environ.setdefault(
+    "AEGIS_TARGET_PROFILE_ID", "hp-victus-i5-13420h-rtx2050-4gb-ubuntu-24.04")
 
-from backend.contracts import v1                        # noqa: E402
+from backend.contracts import profiles, v1              # noqa: E402
+from backend.worker import codegen                       # noqa: E402
 from backend.worker import app as W                     # noqa: E402
 from backend.worker import pairing as pairing_module    # noqa: E402
 from backend.worker import runtime                      # noqa: E402
@@ -38,7 +41,12 @@ from backend.worker.dispatch import DispatchQueue       # noqa: E402
 CONFIRMED = "66666666-6666-4666-8666-666666666666"
 WORKSPACE = "77777777-7777-4777-8777-777777777777"
 CREDENTIAL = "test-relationship-credential-not-a-real-secret"
-MODEL_DIGEST = "a" * 64
+MODEL_DIGEST = profiles.MODEL_DIGEST
+WORKER_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
 
 
 def confirm_relationship(store):
@@ -59,14 +67,19 @@ def envelope(**over):
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     later = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 600))
     fields = dict(
-        contract_version="1.0", workspace_id=nid(), workflow_id=nid(), job_id=nid(),
+        contract_version=v1.CONTRACT_VERSION, workspace_id=nid(),
+        workflow_id=nid(), job_id=nid(),
         step_id=nid(), attempt_id=nid(), chat_id=nid(),
         # A remote dispatch must carry a relationship: the contract enforces it.
         coordinator_node_id=nid(), target_node_id=W.NODE_ID,
         relationship_id=CONFIRMED,
-        original_request="say something", task_type="chat",
-        model=v1.ModelRef(model_id=W.runtime.MODEL, manifest_sha256=MODEL_DIGEST,
-                          runtime="ollama", runtime_version="test"),
+        original_request="say something",
+        messages=[v1.InferenceMessage(role="system", content="You are Refinix."),
+                  v1.InferenceMessage(role="user", content="say something")],
+        task_type="chat", model=WORKER_PROFILE.model,
+        inference=profiles.request(
+            WORKER_PROFILE, reasoning="disabled", decoder="text",
+            context_window=4096, output_allowance=2048),
         required_capabilities=["text.generate"], context=[], attachments=[],
         allowed_tools=[],
         limits=v1.Limits(cpu_millis=2000, memory_bytes=2_147_483_648,
@@ -77,6 +90,30 @@ def envelope(**over):
         approval_policy="coordinator-default-v1", created_at=now,
         deadline_at=later, cancel_requested=False)
     fields.update(over)
+    if fields["task_type"] == "chat" and "messages" not in over:
+        fields["messages"] = [
+            v1.InferenceMessage(role="system", content="You are Refinix."),
+            v1.InferenceMessage(role="user", content=fields["original_request"]),
+        ]
+    elif fields["task_type"] == "documents":
+        profile = next(p for p in profiles.PROFILES if p.workflow_mode == profiles.DOCUMENTS and p.model.runtime_version == "0.32.14")
+        fields["messages"] = []
+        fields["model"] = profile.model
+        fields["inference"] = profiles.request(
+            profile, reasoning="disabled", decoder="json_schema",
+            decoder_schema_sha256="b" * 64)
+    elif fields["task_type"] == "code":
+        fields["messages"] = []
+        if fields["required_capabilities"] == ["code.validate"]:
+            fields["model"] = None
+            fields["inference"] = None
+        else:
+            profile = next(p for p in profiles.PROFILES if p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14")
+            fields["model"] = profile.model
+            fields["inference"] = profiles.request(
+                profile, reasoning="disabled", decoder="json_schema",
+                decoder_schema_sha256=profiles.schema_sha256(
+                    codegen.PROPOSAL_SCHEMA))
     return v1.JobEnvelope(**fields)
 
 
@@ -92,9 +129,16 @@ class Base(unittest.TestCase):
         self._dir = tempfile.TemporaryDirectory()
         self._probe = patch.object(
             runtime, "probe",
-            return_value={"digests": {runtime.MODEL: MODEL_DIGEST}})
+            return_value={"reachable": True, "server_version": "0.33.2",
+                          "models": [runtime.MODEL],
+                          "digests": {runtime.MODEL: MODEL_DIGEST},
+                          "loaded": runtime.MODEL})
         self._probe.start()
         self.addCleanup(self._probe.stop)
+        self._target = patch.object(
+            runtime, "TARGET_PROFILE_ID", profiles.UBUNTU_VICTUS_RTX2050)
+        self._target.start()
+        self.addCleanup(self._target.stop)
         self.store = pairing_module.PairingStore(
             pathlib.Path(self._dir.name) / "pairing.json")
         self.credential = confirm_relationship(self.store)
@@ -160,6 +204,16 @@ class TestAdmission(Base):
     def test_supported_envelope_is_accepted(self):
         self.assertIsNone(W._unsupported(envelope()))
 
+    def test_stale_profile_is_refused_before_inference(self):
+        stale = envelope().model_copy(update={
+            "inference": envelope().inference.model_copy(
+                update={"context_window_tokens": 8192})})
+        called = []
+        with patch.object(runtime, "stream_chat",
+                          side_effect=lambda *a, **k: called.append(a)):
+            self.assertIsNotNone(W._unsupported(stale))
+        self.assertEqual(called, [])
+
 
 class TestIdentityAndGuards(Base):
     def test_node_identity_is_not_the_shared_placeholder(self):
@@ -173,14 +227,30 @@ class TestIdentityAndGuards(Base):
         self.assertEqual(node["models"], [])
 
     def test_missing_credential_is_rejected(self):
-        self.assertIsNotNone(W._guard(None, "1.0"))
-        self.assertIsNotNone(W._guard("Bearer wrong", "1.0"))
+        self.assertIsNotNone(W._guard(None, v1.CONTRACT_VERSION))
+        self.assertIsNotNone(W._guard("Bearer wrong", v1.CONTRACT_VERSION))
 
     def test_contract_header_is_required_and_checked(self):
         good = "Bearer " + os.environ["AEGIS_WORKER_TOKEN"]
         self.assertIsNotNone(W._guard(good, None))
         self.assertIsNotNone(W._guard(good, "9.9"))
         self.assertIsNone(W._guard(good, v1.CONTRACT_VERSION))
+
+    def test_legacy_peer_gets_only_a_safe_profile_free_advertisement(self):
+        node = W._node(observed=True, contract_version="1.0")
+        self.assertEqual(node["contract_version"], "1.0")
+        self.assertNotIn("inference_profiles", node)
+        self.assertIn(v1.CONTRACT_VERSION, node["supported_contract_versions"])
+
+    def test_current_advertisement_contains_only_the_measured_worker_chat_profile(self):
+        node = W._node(observed=True)
+        advertised = node["inference_profiles"]
+        self.assertEqual([item["profile_id"] for item in advertised],
+                         [WORKER_PROFILE.profile_id])
+        self.assertEqual(advertised[0]["model"], node["models"][0])
+        self.assertEqual(advertised[0]["workflow_mode"], "chat")
+        self.assertIn("text.generate", node["capabilities"])
+        self.assertNotIn("code.generate", node["capabilities"])
 
 
 if __name__ == "__main__":
@@ -248,21 +318,25 @@ class TestPairingRoutes(Base):
         """It is mounted for kubelet probes and is visible to anything that can
         read the Secret reference; letting it submit work would make pairing
         decorative."""
-        record, refusal = W._job_guard(f"Bearer {W._CREDENTIAL}", "1.0")
+        record, refusal = W._job_guard(
+            f"Bearer {W._CREDENTIAL}", v1.CONTRACT_VERSION)
         self.assertIsNone(record)
         self.assertEqual(refusal.status_code, 401)
 
     def test_the_bootstrap_token_still_answers_preflight(self):
-        self.assertIsNone(W._guard(f"Bearer {W._CREDENTIAL}", "1.0"))
+        self.assertIsNone(W._guard(
+            f"Bearer {W._CREDENTIAL}", v1.CONTRACT_VERSION))
 
     def test_an_unknown_credential_is_refused_on_both_surfaces(self):
-        self.assertIsNotNone(W._guard("Bearer nope", "1.0"))
-        self.assertIsNotNone(W._job_guard("Bearer nope", "1.0")[1])
+        self.assertIsNotNone(W._guard("Bearer nope", v1.CONTRACT_VERSION))
+        self.assertIsNotNone(W._job_guard(
+            "Bearer nope", v1.CONTRACT_VERSION)[1])
 
     def test_a_revoked_credential_stops_working_immediately(self):
         self.store.revoke(CONFIRMED)
         self.assertIsNone(W._identify(self.credential))
-        self.assertIsNotNone(W._job_guard(f"Bearer {self.credential}", "1.0")[1])
+        self.assertIsNotNone(W._job_guard(
+            f"Bearer {self.credential}", v1.CONTRACT_VERSION)[1])
 
 
 
@@ -279,7 +353,7 @@ class TestDurableReceipt(Base):
 
         return asyncio.run(W.submit(
             Request(), authorization=f"Bearer {credential or self.credential}",
-            x_aegisforge_contract="1.0",
+            x_aegisforge_contract=v1.CONTRACT_VERSION,
             idempotency_key=key or "11111111-1111-4111-8111-111111111111",
             content_type="application/json", content_encoding=None))
 
@@ -386,7 +460,7 @@ class TestRestartRecovery(Base):
 
         return asyncio.run(W.submit(
             Request(), authorization=f"Bearer {self.credential}",
-            x_aegisforge_contract="1.0",
+            x_aegisforge_contract=v1.CONTRACT_VERSION,
             idempotency_key=key or env.attempt_id,
             content_type="application/json", content_encoding=None))
 
@@ -404,7 +478,7 @@ class TestRestartRecovery(Base):
         response = self.call(W.poll(
             env.job_id, attempt_id=env.attempt_id,
             authorization=f"Bearer {self.credential}",
-            x_aegisforge_contract="1.0"))
+            x_aegisforge_contract=v1.CONTRACT_VERSION))
         self.assertEqual(response.status_code, 200)
 
     def test_cancel_reaches_redis_after_a_restart(self):
@@ -414,7 +488,7 @@ class TestRestartRecovery(Base):
         response = self.call(W.cancel(
             env.job_id, attempt_id=env.attempt_id,
             authorization=f"Bearer {self.credential}",
-            x_aegisforge_contract="1.0"))
+            x_aegisforge_contract=v1.CONTRACT_VERSION))
         self.assertEqual(response.status_code, 202)
         self.assertIsNotNone(self.redis.get(
             v1.redis_key("cancel", CONFIRMED, env.attempt_id)))
@@ -425,7 +499,7 @@ class TestRestartRecovery(Base):
         response = self.call(W.poll(
             env.job_id, attempt_id=env.attempt_id,
             authorization=f"Bearer {self.credential}",
-            x_aegisforge_contract="1.0"))
+            x_aegisforge_contract=v1.CONTRACT_VERSION))
         self.assertEqual(response.status_code, 404)
 
     def test_another_relationship_cannot_read_this_attempt(self):
@@ -438,7 +512,8 @@ class TestRestartRecovery(Base):
         self.restart()
         response = self.call(W.poll(
             env.job_id, attempt_id=env.attempt_id,
-            authorization=f"Bearer {second}", x_aegisforge_contract="1.0"))
+            authorization=f"Bearer {second}",
+            x_aegisforge_contract=v1.CONTRACT_VERSION))
         self.assertEqual(response.status_code, 404)
 
     def test_more_than_two_sequential_attempts_are_admitted(self):

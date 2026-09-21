@@ -17,6 +17,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.contracts import profiles
 from backend.coordinator import (code_service, codeflow, db, models, policy,
                                  repo, runtime)
 from backend.coordinator.server import Coordinator
@@ -24,10 +25,10 @@ from backend.coordinator.server import Coordinator
 
 def stub_stream(reply: str, *, thinking: str = "", done_reason: str = "stop"):
     """A runtime stand-in that returns one scripted reply."""
-    def stream(messages, *, should_cancel=None, think=None, model=None,
-               num_predict=None, response_format=None):
+    def stream(messages, *, should_cancel=None, profile=None, inference=None,
+               response_format=None):
         stream.messages = messages
-        stream.think = think
+        stream.think = inference.reasoning == "enabled" if inference else None
         if thinking:
             yield "thinking", thinking
         yield "delta", reply
@@ -52,9 +53,10 @@ class RepoBase(unittest.TestCase):
         self.write("src/main.py", "print('one')\n")
         self.write("notes.md", "# notes\n")
         self.c = Coordinator(self.state)
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.svc = self.c.code
         self.runtime_probe = patch.object(runtime, "probe", return_value={
-            "reachable": True, "server_version": "test",
+            "reachable": True, "server_version": "0.32.14",
             "models": [runtime.MODEL],
             "digests": {runtime.MODEL:
                         models.entry_for(runtime.MODEL).manifest_sha256},
@@ -85,8 +87,14 @@ class RepoBase(unittest.TestCase):
         return record["repo_id"]
 
     def propose(self, *args, **kwargs):
-        """These access tests start after the separate sandbox gate passed."""
+        """Generate locally, then fixture the already-tested sandbox gate."""
+        kwargs.setdefault("execution_target", code_service.TARGET_LOCAL)
         proposal = self.svc.propose(*args, **kwargs)
+        self.c.conn.execute(
+            "UPDATE proposals SET execution_target=? WHERE proposal_id=?",
+            (code_service.TARGET_DISTRIBUTED, proposal["proposal_id"]))
+        self.c.conn.commit()
+        proposal["execution_target"] = code_service.TARGET_DISTRIBUTED
         db.record_validation(
             self.c.conn, workspace_id=self.c.workspace_id,
             proposal_id=proposal["proposal_id"], job_id=proposal["job_id"],
@@ -94,9 +102,9 @@ class RepoBase(unittest.TestCase):
             patch_sha256=proposal["digest"], result={
                 "observed": True, "job_state": "succeeded", "passed": True,
                 "result": {"command": list(code_service.VALIDATION_COMMAND),
-                           "exit_status": 0, "stdout": "", "stderr": "Ran 1 test\nOK",
-                           "tests_run": 1, "passed": True,
-                           "result_sha256": "a" * 64}})
+                           "exit_status": 0, "stdout": "",
+                           "stderr": "Ran 1 test\nOK", "tests_run": 1,
+                           "passed": True, "result_sha256": "a" * 64}})
         return proposal
 
 
@@ -1059,8 +1067,8 @@ class TestSurfaceBoundaries(RepoBase):
         chat = db.create_chat(self.c.conn, self.c.workspace_id, "unrelated")
         seen = {}
 
-        def fake(messages, *, should_cancel=None, think=None, model=None,
-                 num_predict=None, response_format=None):
+        def fake(messages, *, should_cancel=None, profile=None, inference=None,
+                 response_format=None):
             seen["messages"] = messages
             yield "delta", "an answer"
             yield "done", {"done_reason": "stop"}

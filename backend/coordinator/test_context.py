@@ -23,6 +23,13 @@ class TestBudget(unittest.TestCase):
     def test_estimate_is_labelled_an_estimate(self):
         self.assertIn("estimate", context.Selection().counting_method)
 
+    def test_built_messages_include_role_overhead(self):
+        messages = [{"role": "system", "content": "rule"},
+                    {"role": "user", "content": "question"}]
+        expected = sum(context.estimate_tokens(item["content"])
+                       + context.PER_MESSAGE_OVERHEAD for item in messages)
+        self.assertEqual(context.estimate_messages(messages), expected)
+
 
 class TestSelection(unittest.TestCase):
     def test_short_conversation_is_sent_whole(self):

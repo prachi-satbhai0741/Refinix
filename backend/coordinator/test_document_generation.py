@@ -51,14 +51,16 @@ def scripted_stream(*replies, done_reasons=("stop",)):
     queue = list(replies)
     reasons = list(done_reasons)
 
-    def stream(messages, *, should_cancel=None, think=None, model=None,
-               num_predict=None, response_format=None, images=None):
+    def stream(messages, *, should_cancel=None, profile=None, inference=None,
+               response_format=None, images=None):
         index = stream.calls
         stream.calls += 1
         stream.messages.append(messages)
         stream.formats.append(response_format)
-        stream.budgets.append(num_predict)
-        stream.thinking.append(think)
+        stream.budgets.append(inference.output_allowance_tokens
+                              if inference else None)
+        stream.thinking.append(inference.reasoning == "enabled"
+                               if inference else None)
         yield "delta", queue[index] if index < len(queue) else ""
         yield "done", {"done_reason": reasons[index] if index < len(reasons)
                        else reasons[-1]}
@@ -150,11 +152,17 @@ class CallContract(GenerationHarness):
         self.assertGreater(docflow.DOCUMENT_NUM_PREDICT, runtime.NUM_PREDICT)
 
     def test_the_budget_leaves_room_for_the_prompt_inside_the_context(self):
-        """The runtime is called with truncate and shift off, so prompt plus
-        output must fit or the request is refused outright."""
-        worst_prompt = docflow.MAX_CONTEXT_CHARS // 4      # ~4 chars a token
-        self.assertLess(worst_prompt + docflow.DOCUMENT_NUM_PREDICT,
-                        runtime.NUM_CTX)
+        """The real estimator counts fixed instructions as well as sources."""
+        source = {"source_id": "large", "filename": "large.txt",
+                  "pages": [{"number": 1, "text": "x" * 100_000}]}
+        base = docflow.general_document_messages(self.REQUEST, [])
+        messages = self.c._fit_document_prompt(
+            base, docflow.DOCUMENT_NUM_PREDICT,
+            lambda budget: docflow.general_document_messages(
+                self.REQUEST, [source], budget=budget))
+        self.assertLessEqual(
+            context.estimate_messages(messages),
+            context.input_budget(runtime.NUM_CTX, docflow.DOCUMENT_NUM_PREDICT))
 
     def test_the_enforced_schema_matches_what_the_parser_accepts(self):
         """One representation, not two. A schema that allowed a field the
@@ -173,7 +181,7 @@ class CallContract(GenerationHarness):
         with patch.object(runtime, "stream_chat", stream):
             self.c._run(job, self.chat, None)
         self.assertEqual(stream.formats, [None])
-        self.assertEqual(stream.budgets, [None])
+        self.assertEqual(stream.budgets, [runtime.NUM_PREDICT])
 
 
 # ---------------------------------------------------------------------------
@@ -413,8 +421,8 @@ class CancellationDuringRepair(GenerationHarness):
         fenced = "```json\n" + body() + "\n```"
         job = self.send(self.REQUEST, skill_id=docflow.WRITE_SKILL)
 
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None, response_format=None, images=None):
+        def stream(messages, *, should_cancel=None, profile=None, inference=None,
+                   response_format=None, images=None):
             stream.calls += 1
             if stream.calls == 1:
                 yield "delta", fenced
@@ -438,8 +446,8 @@ class RuntimeFailsDuringRepair(GenerationHarness):
         fenced = "```json\n" + body() + "\n```"
         job = self.send(self.REQUEST, skill_id=docflow.WRITE_SKILL)
 
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None, response_format=None, images=None):
+        def stream(messages, *, should_cancel=None, profile=None, inference=None,
+                   response_format=None, images=None):
             stream.calls += 1
             if stream.calls == 1:
                 yield "delta", fenced

@@ -1,4 +1,4 @@
-# AF-001 contract draft — 1.0
+# AF-001 contract draft — 1.1
 
 Status: shared records/constants, examples, exporter and coordinator/worker/UI
 consumers exist. [Current integration and evidence](../../docs/evaluation.md#beta-source-audit)
@@ -11,8 +11,11 @@ This implements the shared boundary in
 [v1.py](v1.py) owns payload shapes and constants; this document owns their
 transport and persistence semantics. All IDs are canonical lowercase UUIDv4
 strings. Timestamps use `YYYY-MM-DDTHH:MM:SSZ`; durations use milliseconds.
-Every top-level record requires `contract_version: "1.0"`. Unknown fields,
-unsupported versions, and coercion such as `"60"` to an integer are rejected.
+Current qualified-inference records use `contract_version: "1.1"`. The worker
+keeps a profile-free 1.0 health advertisement so an older coordinator can
+refuse or fall back cleanly; 1.0 job envelopes cannot claim 1.1 inference
+semantics. Unknown fields, unsupported versions, and coercion such as `"60"`
+to an integer are rejected.
 
 ## One source for consumers
 

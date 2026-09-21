@@ -47,6 +47,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import re
 
 # Workflow scopes a model can be selected for. The same strings `MODEL_DEFAULTS`
 # uses, so a catalogue entry and a selection cannot drift apart.
@@ -162,8 +163,69 @@ class SelfTest:
                    "nothing about the quality of any answer.")
 
 
+# The Chat self-test's premise, and the two numbers it turns on.
+#
+# Every fact it needs is in the prompt. That is the point: a model that fails
+# this failed at holding a relation straight, not at knowing something, and a
+# domain question would leave those two indistinguishable. It replaces "what is
+# 2 + 2?", which a model passed by answering at all — the reply was only
+# checked for being non-empty, so a model that writes fluently and reverses
+# every comparison it is asked about passed Chat qualification.
+CHAT_CHECK_SMALLER = "2.4"
+CHAT_CHECK_LARGER = "3.1"
+CHAT_CHECK_PROMPT = (
+    "Use only the facts in this message.\n"
+    f"Available capacity is {CHAT_CHECK_SMALLER}.\n"
+    f"Required capacity is {CHAT_CHECK_LARGER}.\n"
+    "The operation is unsafe when available capacity is below required "
+    "capacity.\n"
+    "Reply with one line and nothing else, in this form:\n"
+    "<safe or unsafe>; smaller number: <the smaller of the two numbers>")
+
+# The whole reply, or it is not an answer to this question.
+#
+# `fullmatch`, and no prose fallback. Found in review: searching for a verdict
+# token and a number independently passed "not unsafe; smaller number: 2.4" —
+# the negation sits outside both patterns — and passed a reply that gave the
+# right answer and then contradicted itself. Every other capability's self-test
+# already requires an exact shape from the decoder; accepting loose prose here
+# bought tolerance for a model that rambles at the cost of the evidence the
+# check exists to produce.
+#
+# A reply in the wrong shape and a reply with the comparison backwards are
+# reported as different failures, because they are: one model could not follow
+# a one-line instruction, the other could not hold a relation.
+_STRICT_REPLY = re.compile(
+    r"(unsafe|safe)\s*;\s*smaller number\s*:\s*(\d+(?:\.\d+)?)\.?", re.I)
+
+
+def chat_relation_failure(reply: str) -> str | None:
+    """Why a reply to `CHAT_CHECK_PROMPT` fails, or None if it holds up.
+
+    Returns the sentence a person reads in the self-test result, so it says
+    what the model actually did rather than that a check failed.
+    """
+    text = " ".join((reply or "").split())
+    if not text:
+        return "answered with nothing visible"
+    answer = _STRICT_REPLY.fullmatch(text)
+    if answer is None:
+        return ("did not answer in the single line it was asked for, so what "
+                "it concluded could not be read back without guessing")
+    verdict, smaller = answer.group(1).casefold(), answer.group(2)
+    if verdict == "safe":
+        return (f"called the operation safe although the available capacity "
+                f"({CHAT_CHECK_SMALLER}) is below the required capacity "
+                f"({CHAT_CHECK_LARGER})")
+    if smaller != CHAT_CHECK_SMALLER:
+        return (f"named {smaller} as the smaller number when "
+                f"{CHAT_CHECK_SMALLER} is")
+    return None
+
+
 SELFTESTS: dict[str, SelfTest] = {
-    CHAT: SelfTest(CHAT, "Answer one short question", needs_model=True),
+    CHAT: SelfTest(CHAT, "Apply one supplied rule to two numbers",
+                   needs_model=True),
     CODE: SelfTest(CODE, "Propose one small change", needs_model=True),
     DOCUMENTS_GENERATE: SelfTest(
         DOCUMENTS_GENERATE, "Write and reopen a Word document",
@@ -322,12 +384,14 @@ def run_selftest(scope: str, model: str, *, generate=None, artifact=None,
     try:
         if scope == CHAT:
             reply = generate(
-                model, [{"role": "user", "content":
-                         "Answer this short question in one sentence: what is 2 + 2?"}],
-                num_predict=64)
-            if not (reply or "").strip():
-                return failed(f"{model} answered with nothing visible, so this "
-                              "capability is not usable yet.")
+                model, [{"role": "user", "content": CHAT_CHECK_PROMPT}],
+                num_predict=128)
+            wrong = chat_relation_failure(reply)
+            if wrong:
+                return failed(f"{model} {wrong}. A model that reverses a "
+                              "supplied relation can write a fluent technical "
+                              "answer that is backwards, so Chat is not "
+                              "self-tested on this computer.")
         elif scope == CODE:
             from backend.coordinator import codeflow
             before = "before\n"

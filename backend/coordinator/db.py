@@ -24,7 +24,7 @@ from unicodedata import category
 
 from backend.contracts import v1
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # ponytail: one coordinator database; use per-database locks if hosting several.
 LOCK = threading.RLock()
@@ -99,6 +99,8 @@ CREATE TABLE IF NOT EXISTS attempts (
     runtime_ms   INTEGER,
     metrics_json TEXT,
     selection_json TEXT,
+    requested_inference_json TEXT,
+    actual_profile_json TEXT,
     error_json   TEXT,
     output_text  TEXT NOT NULL DEFAULT ''
 );
@@ -489,6 +491,16 @@ def connect(path: Path) -> sqlite3.Connection:
         # The model and reasoning value a request actually ran with. Older
         # attempts keep NULL rather than being back-filled with a guess.
         conn.execute("ALTER TABLE attempts ADD COLUMN reasoning_json TEXT")
+    if "requested_inference_json" not in existing:
+        # The exact requested profile and actual request semantics. Historical
+        # attempts remain NULL rather than being assigned a profile they never
+        # carried.
+        conn.execute(
+            "ALTER TABLE attempts ADD COLUMN requested_inference_json TEXT")
+    if "actual_profile_json" not in existing:
+        # Snapshot the profile actually used; do not resolve a mutable current
+        # registry when auditing an old attempt.
+        conn.execute("ALTER TABLE attempts ADD COLUMN actual_profile_json TEXT")
     proposal_columns = {r["name"] for r in conn.execute("PRAGMA table_info(proposals)")}
     if "execution_target" not in proposal_columns:
         # Where this proposal was generated and where it may be applied. Rows
@@ -557,7 +569,8 @@ def connect(path: Path) -> sqlite3.Connection:
         (str(SCHEMA_VERSION),),
     )
     conn.execute(
-        "INSERT OR IGNORE INTO meta(key, value) VALUES ('contract_version', ?)",
+        "INSERT INTO meta(key, value) VALUES ('contract_version', ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (v1.CONTRACT_VERSION,),
     )
     conn.commit()
@@ -1171,6 +1184,26 @@ def set_attempt_reasoning(conn, attempt_id: str, model: str, enabled: bool) -> N
         conn.execute("UPDATE attempts SET reasoning_json=? WHERE attempt_id=?",
                      (json.dumps({"model": model, "reasoning_enabled": bool(enabled)}),
                       attempt_id))
+
+
+@serialized
+def set_attempt_inference(conn, attempt_id: str, request: dict,
+                          actual_profile: dict | None = None) -> None:
+    """Persist requested semantics and the immutable profile actually used."""
+    with conn:
+        conn.execute(
+            "UPDATE attempts SET requested_inference_json=?, actual_profile_json=?"
+            " WHERE attempt_id=?",
+            (json.dumps(request),
+             json.dumps(actual_profile) if actual_profile is not None else None,
+             attempt_id))
+
+
+@serialized
+def set_attempt_actual_profile(conn, attempt_id: str, profile: dict) -> None:
+    with conn:
+        conn.execute("UPDATE attempts SET actual_profile_json=? WHERE attempt_id=?",
+                     (json.dumps(profile), attempt_id))
 
 
 # ---- repositories ---------------------------------------------------------

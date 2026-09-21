@@ -24,6 +24,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from backend.contracts import profiles as inference_profiles, v1
 from backend.coordinator import db, docflow, identity, models, runtime
 from backend.coordinator.test_document_generation import scripted_stream
 from backend.coordinator.test_execution4a import Harness
@@ -62,6 +63,32 @@ class IdentityBlock(unittest.TestCase):
         content = self.text(engine=BASELINE, models=[BASELINE])
         self.assertIn("not your identity", content)
         self.assertIn("never introduce", content)
+
+    def test_every_chat_turn_carries_the_reversible_relation_check(self):
+        """A packaged run produced a confident engineering paragraph whose
+        central comparison was the wrong way round. The block is the one thing
+        every ordinary Chat turn already pays for, so the instruction that a
+        relation's *direction* has to be checked belongs here rather than in a
+        second path some requests take and others do not."""
+        content = self.text(engine=BASELINE, models=[BASELINE])
+        self.assertIn(identity.TECHNICAL_CARE, content)
+        for reversible in ("larger", "available", "required", "minimum",
+                           "maximum", "cause", "units"):
+            with self.subTest(term=reversible):
+                self.assertIn(reversible, identity.TECHNICAL_CARE)
+
+    def test_uncertainty_is_asked_for_rather_than_a_confident_guess(self):
+        self.assertIn("say that plainly", identity.TECHNICAL_CARE)
+        self.assertIn("uncertainty", identity.TECHNICAL_CARE)
+
+    def test_the_instruction_teaches_no_fact_about_any_subject(self):
+        """A fact written in here would be the one relation Refinix gets right
+        while every neighbouring one stays wrong, and it would go stale. The
+        instruction is about the shape of a claim, not about pumps."""
+        for trivia in ("npsh", "cavitat", "centrifugal", "pump", "suction",
+                       "mm/s"):
+            with self.subTest(term=trivia):
+                self.assertNotIn(trivia, identity.TECHNICAL_CARE.casefold())
 
     def test_one_model_is_counted_as_one(self):
         content = self.text(engine=BASELINE, models=[BASELINE])
@@ -174,16 +201,36 @@ class LinkedModels(unittest.TestCase):
 class ChatCarriesIdentity(Harness):
     """The production path: an ordinary Chat turn, through the coordinator."""
 
+    @staticmethod
+    def profile(engine, digest):
+        """A synthetic qualified Chat profile for this identity-only test."""
+        values = next(
+            profile for profile in inference_profiles.PROFILES
+            if profile.workflow_mode == inference_profiles.CHAT
+            and profile.target_profile_id == inference_profiles.MAC_M5_16GB
+        ).model_dump(exclude={"profile_id"})
+        values["model"] = {
+            "model_id": engine, "manifest_sha256": digest,
+            "runtime": "ollama", "runtime_version": "0.32.14",
+        }
+        values["evidence_ref"] = "test#synthetic-identity-profile"
+        return v1.ExecutionProfile(
+            profile_id=v1.execution_profile_id(values), **values)
+
     def ask(self, text="who are you and what is your name", *, engine=BASELINE,
             inventory=None):
         stream = scripted_stream("an answer")
         job = self.send(text)
         installed = inventory if inventory is not None else [engine]
-        state = {"reachable": True, "models": installed,
+        state = {"reachable": True, "server_version": "0.32.14",
+                 "models": installed,
                  "digests": {model: (BASELINE_DIGEST if model == BASELINE
                                      else "b" * 64)
                              for model in installed}}
+        digest = state["digests"].get(engine, "b" * 64)
         with patch.object(self.c, "model_for", return_value=engine), \
+                patch.object(self.c, "local_profiles",
+                             return_value=[self.profile(engine, digest)]), \
                 patch.object(runtime, "probe", return_value=state), \
                 patch.object(runtime, "stream_chat", stream):
             self.c._run(job, self.chat, None)
@@ -251,7 +298,8 @@ class ChatCarriesIdentity(Harness):
         the answer when the runtime changes between calls."""
         stream = scripted_stream("an answer")
         job = self.send("who are you")
-        state = {"reachable": True, "models": [BASELINE],
+        state = {"reachable": True, "server_version": "0.32.14",
+                 "models": [BASELINE],
                  "digests": {BASELINE: BASELINE_DIGEST}}
         relationship = {"relationship_id": "rel", "state": "paired"}
         with patch.object(self.c, "paired_worker", return_value=relationship), \

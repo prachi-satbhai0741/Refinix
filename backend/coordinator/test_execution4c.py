@@ -13,13 +13,41 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import code_service, db, models, policy, repo, runtime
+from backend.contracts import profiles
+from backend.coordinator import (code_service, codeflow, db, models, policy, repo,
+                                 runtime)
 from backend.coordinator.code_service import (CodeError, TARGET_DISTRIBUTED,
                                               TARGET_LOCAL)
 from backend.coordinator.server import Coordinator
 
 ORIGINAL = "def exceeds(value, limit):\n    return value >= limit\n"
 REPAIRED = "def exceeds(value, limit):\n    return value > limit\n"
+
+
+class TestProposalEnvelope(unittest.TestCase):
+    def selection(self, size):
+        return [{"path": "large.py", "sha256": "a" * 64,
+                 "text": "x" * size}]
+
+    def test_output_scales_when_a_whole_file_replacement_fits(self):
+        selected = self.selection(9_000)
+        messages = codeflow.build_messages("change one line", selected)
+        self.assertGreater(
+            code_service.CodeService._proposal_output_limit(
+                messages, selected, next(p for p in profiles.PROFILES if p.target_profile_id == profiles.MAC_M5_16GB and p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14")),
+            code_service.PROPOSAL_NUM_PREDICT)
+
+    def test_an_impossible_selection_fails_before_generation(self):
+        selected = self.selection(30_000)
+        messages = codeflow.build_messages("change one line", selected)
+        with self.assertRaisesRegex(CodeError, "Select fewer or smaller files"):
+            code_service.CodeService._proposal_output_limit(
+                messages, selected, next(p for p in profiles.PROFILES if p.target_profile_id == profiles.MAC_M5_16GB and p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14"))
+
+    def test_format_repair_does_not_resend_the_selected_source(self):
+        messages = codeflow.repair_messages('{"summary":"wrapped","edits":[]}')
+        self.assertEqual([item["role"] for item in messages], ["system", "user"])
+        self.assertNotIn("--- FILE", "\n".join(item["content"] for item in messages))
 
 
 @unittest.skipUnless(repo.containment_supported(),
@@ -32,7 +60,7 @@ class Base(unittest.TestCase):
         self.state = self.home / "state" / "coordinator.sqlite3"
         self.state.parent.mkdir(parents=True)
         self.runtime_probe = patch.object(runtime, "probe", return_value={
-            "reachable": True, "server_version": "test",
+            "reachable": True, "server_version": "0.32.14",
             "models": [runtime.MODEL],
             "digests": {runtime.MODEL:
                         models.entry_for(runtime.MODEL).manifest_sha256},
@@ -40,6 +68,7 @@ class Base(unittest.TestCase):
         self.runtime_probe.start()
         self.addCleanup(self.runtime_probe.stop)
         self.c = Coordinator(self.state)
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.addCleanup(self.c.conn.close)
         self.project = self.home / "project"
         self.project.mkdir()

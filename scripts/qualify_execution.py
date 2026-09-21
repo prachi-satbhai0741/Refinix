@@ -1,0 +1,372 @@
+#!/usr/bin/env python3
+"""Run isolated Chat/Code/Documents qualification and write strict evidence.
+
+The runner uses temporary coordinator state and temporary source files.  A
+candidate profile is admitted only inside this process so the production paths
+can be exercised; the emitted artifact remains non-admissible evidence and is
+never loaded into the production registry.
+"""
+
+from __future__ import annotations
+
+import argparse
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import hashlib
+import json
+from pathlib import Path
+import sys
+import tempfile
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from backend.contracts import profiles, qualification, v1  # noqa: E402
+from backend.coordinator import db, device, docflow, docgen, models, runtime  # noqa: E402
+from backend.coordinator.server import Coordinator  # noqa: E402
+
+
+WORKFLOWS = (
+    (profiles.CHAT, "text"),
+    (profiles.CODE, "json_schema"),
+    (profiles.DOCUMENTS, "json_schema"),
+)
+
+
+def _sha(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _candidate(profile: v1.ExecutionProfile) -> v1.ExecutionProfile:
+    return v1.ExecutionProfile.model_validate({
+        **profile.model_dump(),
+        "qualification_state": "candidate",
+        "eligible": False,
+        "evidence_kind": "unverified",
+        "evidence_ref": "qualification-run:pending-review",
+    })
+
+
+def _temporary_profile(model: v1.ModelRef, target: str, workflow: str,
+                       context: int, output: int, decoder: str) \
+        -> v1.ExecutionProfile:
+    values = {
+        "model": model.model_dump(),
+        "target_profile_id": target,
+        "workflow_mode": workflow,
+        "qualified_context_tokens": context,
+        "default_output_tokens": output,
+        "max_output_tokens": output,
+        "reasoning_modes": ["disabled", "enabled"],
+        "default_reasoning": "disabled",
+        "decoder_modes": [decoder],
+        "qualified_memory_bytes": None,
+        # Process-local admission only; the artifact converts this back to a
+        # candidate and no product code consumes the artifact.
+        "qualification_state": "qualified",
+        "eligible": True,
+        "evidence_kind": "measured",
+        "evidence_ref": "qualification-run:process-local-candidate",
+    }
+    return v1.ExecutionProfile(
+        profile_id=v1.execution_profile_id(values), **values)
+
+
+def _profiles(model: v1.ModelRef, target: str, context: int,
+              outputs: dict[str, int], allow_candidate: bool) \
+        -> tuple[list[v1.ExecutionProfile], bool]:
+    selected = []
+    for workflow, decoder in WORKFLOWS:
+        match = next((item for item in profiles.PROFILES
+                      if item.model == model
+                      and item.target_profile_id == target
+                      and item.workflow_mode == workflow
+                      and item.qualified_context_tokens == context
+                      and item.max_output_tokens == outputs[workflow]
+                      and set(item.reasoning_modes) == {"disabled", "enabled"}
+                      and item.decoder_modes == [decoder]), None)
+        if match is None:
+            if not allow_candidate:
+                raise RuntimeError(
+                    f"no exact registered {workflow} profile; use --candidate "
+                    "only for an isolated new-device qualification run")
+            match = _temporary_profile(
+                model, target, workflow, context, outputs[workflow], decoder)
+        selected.append(match)
+    transient = any(item not in profiles.PROFILES for item in selected)
+    return selected, transient
+
+
+@contextmanager
+def _observe_stream():
+    original = runtime.stream_chat
+    observed = {"thinking": False, "structured": False, "source_fenced": False}
+
+    def wrapped(messages, **kwargs):
+        observed["structured"] |= kwargs.get("response_format") is not None
+        joined = "\n".join(str(item.get("content", "")) for item in messages)
+        observed["source_fenced"] |= (
+            "--- DOCUMENT id=" in joined and "untrusted data" in joined)
+        for kind, payload in original(messages, **kwargs):
+            if kind == "thinking":
+                observed["thinking"] = True
+            yield kind, payload
+
+    runtime.stream_chat = wrapped
+    try:
+        yield observed
+    finally:
+        runtime.stream_chat = original
+
+
+def _detail(coordinator: Coordinator, job_id: str) -> dict:
+    detail = coordinator.job_detail(job_id)
+    if not detail or detail["job"]["state"] != "completed":
+        state = (detail or {}).get("job", {}).get("state", "missing")
+        attempts = (detail or {}).get("attempts") or []
+        error = attempts[-1].get("error_json") if attempts else None
+        raise RuntimeError(f"workflow did not complete ({state}): {error or 'no detail'}")
+    return detail
+
+
+def _evidence(profile: v1.ExecutionProfile, detail: dict, output_sha256: str,
+              observed: dict, checks: list[str]) -> qualification.RunEvidence:
+    attempt = detail["attempts"][-1]
+    request = attempt.get("requested_inference") or {}
+    actual = attempt.get("actual_profile") or {}
+    metrics = attempt.get("metrics") or {}
+    reasoning = request.get("reasoning")
+    return qualification.RunEvidence(
+        reasoning=reasoning,
+        decoder=request.get("decoder"),
+        requested_profile_id=request.get("profile_id"),
+        actual_profile_id=actual.get("profile_id"),
+        context_window_tokens=request.get("context_window_tokens"),
+        output_allowance_tokens=request.get("output_allowance_tokens"),
+        done_reason=metrics.get("done_reason"),
+        prompt_tokens=metrics.get("prompt_tokens"),
+        output_tokens=metrics.get("output_tokens"),
+        total_ms=metrics.get("total_ms"),
+        output_sha256=output_sha256,
+        thinking_observed=observed["thinking"],
+        verifications=[
+            "runtime.identity", "profile.identity", "workflow.completed",
+            "reasoning.separated" if reasoning == "enabled" else "reasoning.disabled",
+            *checks,
+        ])
+
+
+def _submit(coordinator: Coordinator, chat_id: str, text: str, **kwargs) -> str:
+    # Stop submit from starting its background thread; qualification invokes
+    # the exact same runner synchronously so failures are returned to this CLI.
+    with patch("backend.coordinator.server.threading.Thread.start"):
+        return coordinator.submit(chat_id, text, **kwargs)
+
+
+def _chat(coordinator: Coordinator, profile: v1.ExecutionProfile, reasoning: str) \
+        -> qualification.RunEvidence:
+    db.set_reasoning(coordinator.conn, runtime.MODEL, reasoning == "enabled")
+    chat_id = db.create_chat(coordinator.conn, coordinator.workspace_id,
+                             f"qualification chat {reasoning}")
+    job_id = _submit(
+        coordinator, chat_id,
+        "Calculate 17 multiplied by 23. State the result as 391 in one short sentence.")
+    with _observe_stream() as observed:
+        coordinator._run(job_id, chat_id)
+    detail = _detail(coordinator, job_id)
+    answers = [row["text"] for row in coordinator.chat_messages(chat_id)
+               if row["role"] == "assistant"]
+    if not answers or "391" not in answers[-1]:
+        raise RuntimeError("Chat did not return the required 17 x 23 result")
+    return _evidence(profile, detail, _sha(answers[-1]), observed,
+                     ["answer.nonempty"])
+
+
+def _code(coordinator: Coordinator, profile: v1.ExecutionProfile, reasoning: str,
+          root: Path) -> qualification.RunEvidence:
+    db.set_reasoning(coordinator.conn, runtime.MODEL, reasoning == "enabled")
+    root.mkdir(parents=True)
+    source = root / "maths.py"
+    original = "def add(left, right):\n    return left - right\n"
+    source.write_text(original, encoding="utf-8")
+    repository = coordinator.code.connect(str(root))
+    with _observe_stream() as observed:
+        proposal = coordinator.code.propose(
+            repository["repo_id"],
+            "Fix maths.py so add returns the sum by replacing subtraction with addition.",
+            ["maths.py"], execution_target="this_device")
+    if source.read_text(encoding="utf-8") != original:
+        raise RuntimeError("Code qualification changed the canonical source file")
+    edits = db.proposal_edit_contents(coordinator.conn, proposal["proposal_id"])
+    if len(edits) != 1 or edits[0]["path"] != "maths.py" \
+            or "return left + right" not in edits[0]["content"]:
+        raise RuntimeError("Code did not produce the required validated replacement")
+    if not observed["structured"]:
+        raise RuntimeError("Code did not use structured decoding")
+    payload = json.dumps({"summary": proposal["summary"], "edits": edits},
+                         sort_keys=True, separators=(",", ":"))
+    return _evidence(
+        profile, _detail(coordinator, proposal["job_id"]), _sha(payload), observed,
+        ["structured.decoder", "proposal.schema", "canonical.unchanged"])
+
+
+def _documents(coordinator: Coordinator, profile: v1.ExecutionProfile,
+               reasoning: str) -> qualification.RunEvidence:
+    db.set_reasoning(coordinator.conn, runtime.MODEL, reasoning == "enabled")
+    chat_id = db.create_chat(coordinator.conn, coordinator.workspace_id,
+                             f"qualification documents {reasoning}")
+    source = (b"Qualification observation: shaft velocity was 7.9 mm/s. "
+              b"The follow-up inspection is due within 24 hours.\n")
+    db.add_attachment(
+        coordinator.conn, coordinator.attachments_root,
+        workspace_id=coordinator.workspace_id, chat_id=chat_id,
+        filename="qualification-source.txt", data=source)
+    job_id = _submit(
+        coordinator, chat_id,
+        "Create a concise document. It must preserve these source facts verbatim: "
+        "7.9 mm/s and within 24 hours.",
+        skill_id=docflow.WRITE_SKILL, output_format=docflow.FORMAT_DOCX,
+        doc_workflow=docflow.WORKFLOW_GENERAL)
+    with _observe_stream() as observed:
+        coordinator._run(job_id, chat_id, docflow.WRITE_SKILL)
+    detail = _detail(coordinator, job_id)
+    artifacts = db.artifacts_for_chat(
+        coordinator.conn, coordinator.workspace_id, chat_id)
+    if len(artifacts) != 1 or not artifacts[0]["validation"].get("readable"):
+        raise RuntimeError("Documents did not produce one readable artifact")
+    artifact = artifacts[0]
+    path = db.artifact_path(
+        coordinator.conn, db.artifacts_root(coordinator.state_path),
+        artifact["artifact_id"], coordinator.workspace_id)
+    if path is None or not docgen.validate(path)["readable"]:
+        raise RuntimeError("Documents artifact could not be reopened")
+    text = "\n".join(docgen.read_text(path)).lower()
+    if not all(value in text for value in ("7.9", "mm/s", "24", "hour")):
+        raise RuntimeError("Documents artifact did not preserve the required facts")
+    if not observed["structured"] or not observed["source_fenced"]:
+        raise RuntimeError("Documents did not preserve structured decoding and source fencing")
+    return _evidence(
+        profile, detail, artifact["sha256"], observed,
+        ["structured.decoder", "document.schema", "document.readable",
+         "document.required_facts", "source.fenced"])
+
+
+def qualify(args) -> qualification.QualificationArtifact:
+    state = runtime.probe()
+    if not state.get("reachable"):
+        raise RuntimeError(f"Ollama is unavailable at {runtime.HOST}: {state.get('error')}")
+    if state.get("server_version") != args.expect_runtime_version:
+        raise RuntimeError(
+            f"runtime version drift: expected {args.expect_runtime_version}, "
+            f"observed {state.get('server_version') or 'unknown'}")
+    digest = (state.get("digests") or {}).get(runtime.MODEL)
+    if digest != profiles.MODEL_DIGEST or not models.digest_eligible(runtime.MODEL, digest):
+        raise RuntimeError("the installed model digest does not match the qualified manifest")
+    observed_model = v1.ModelRef(
+        model_id=runtime.MODEL, manifest_sha256=digest,
+        runtime=profiles.RUNTIME, runtime_version=state["server_version"])
+    target = args.target_profile_id or device.qualified_target_profile()
+    if not target:
+        raise RuntimeError("this device has no target identity; pass --target-profile-id")
+    outputs = {
+        profiles.CHAT: args.chat_output_tokens,
+        profiles.CODE: args.code_output_tokens,
+        profiles.DOCUMENTS: args.documents_output_tokens,
+    }
+    selected, transient = _profiles(
+        observed_model, target, args.context_tokens, outputs, args.candidate)
+    original_registry = profiles.PROFILES
+    if transient:
+        profiles.PROFILES = tuple(selected) + original_registry
+    try:
+        with tempfile.TemporaryDirectory(prefix="refinix-qualification-") as directory:
+            temporary = Path(directory)
+            coordinator = Coordinator(temporary / "state" / "coordinator.sqlite3")
+            coordinator.target_profile_id = target
+            coordinator.preflight = lambda relationship=None: None
+            by_workflow = {item.workflow_mode: item for item in selected}
+            results = {workflow: [] for workflow, _decoder in WORKFLOWS}
+            try:
+                for reasoning in ("disabled", "enabled"):
+                    results[profiles.CHAT].append(
+                        _chat(coordinator, by_workflow[profiles.CHAT], reasoning))
+                    results[profiles.CODE].append(
+                        _code(coordinator, by_workflow[profiles.CODE], reasoning,
+                              temporary / f"code-{reasoning}"))
+                    results[profiles.DOCUMENTS].append(
+                        _documents(coordinator, by_workflow[profiles.DOCUMENTS], reasoning))
+            finally:
+                coordinator.conn.close()
+    finally:
+        profiles.PROFILES = original_registry
+
+    observed_device = device.describe()
+    if observed_device["os_family"] not in ("macos", "windows", "linux") \
+            or not observed_device["release"] or not observed_device["machine"]:
+        raise RuntimeError("the OS family, version and architecture must all be observable")
+    workflows = [qualification.WorkflowQualification(
+        profile=_candidate(profile), result="passed",
+        evidence=results[profile.workflow_mode]) for profile in selected]
+    return qualification.QualificationArtifact(
+        artifact_version=qualification.ARTIFACT_VERSION,
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        device=qualification.DeviceObservation(
+            os_family=observed_device["os_family"],
+            os_release=observed_device["release"],
+            architecture=observed_device["machine"],
+            target_profile_id=target),
+        observed_model=observed_model, result="passed", release_accepted=False,
+        workflows=workflows)
+
+
+def parser() -> argparse.ArgumentParser:
+    value = argparse.ArgumentParser(description=__doc__)
+    value.add_argument("--validate", type=Path,
+                       help="validate an existing artifact and exit")
+    value.add_argument("--output", type=Path,
+                       help="new artifact path; an existing file is never replaced")
+    value.add_argument("--target-profile-id")
+    value.add_argument("--expect-runtime-version")
+    value.add_argument("--candidate", action="store_true",
+                       help="admit unregistered profiles only inside this isolated run")
+    value.add_argument("--context-tokens", type=int, default=8192)
+    value.add_argument("--chat-output-tokens", type=int, default=2048)
+    value.add_argument("--code-output-tokens", type=int, default=2048)
+    value.add_argument("--documents-output-tokens", type=int, default=3072)
+    return value
+
+
+def main(argv=None) -> int:
+    args = parser().parse_args(argv)
+    try:
+        if args.validate:
+            artifact = qualification.read(args.validate)
+            print(json.dumps({
+                "artifact": str(args.validate), "result": artifact.result,
+                "release_accepted": artifact.release_accepted,
+                "target_profile_id": artifact.device.target_profile_id,
+                "runtime_version": artifact.observed_model.runtime_version,
+                "workflows": [item.profile.workflow_mode for item in artifact.workflows],
+            }, indent=2))
+            return 0
+        if not args.output or not args.expect_runtime_version:
+            raise RuntimeError(
+                "a qualification run requires --output and --expect-runtime-version")
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        artifact = qualify(args)
+        qualification.write(args.output, artifact)
+        print(json.dumps({
+            "artifact": str(args.output), "result": artifact.result,
+            "release_accepted": artifact.release_accepted,
+            "profile_ids": [item.profile.profile_id for item in artifact.workflows],
+        }, indent=2))
+        return 0
+    except Exception as exc:  # noqa: BLE001 - CLI boundary returns one safe reason.
+        print(f"qualification failed: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

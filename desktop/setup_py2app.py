@@ -6,6 +6,10 @@ desktop requirements are installed:
     python3 desktop/setup_py2app.py py2app          # release bundle
     python3 desktop/setup_py2app.py py2app -A       # alias build, for a quick check
 
+This file is a script, run by path — `desktop/setup-macos.command` runs exactly
+the first line above. It is not imported as `desktop.setup_py2app`, and its
+imports are written for the path a script gets, not the one a package gets.
+
 The alias build (`-A`) symlinks back into this working tree, so it proves the
 window and the launch path but NOT independence from the repository. Only the
 plain `py2app` build produces a bundle that stands on its own; the acceptance
@@ -17,7 +21,7 @@ root, which is always outside the bundle, so an existing database, identity and
 history are picked up unchanged and survive the application being replaced.
 
 The application boundary itself — which modules, which frontend files, which
-icon — lives in `desktop/packaging.py`, shared with the Windows and Linux
+icon — lives in `desktop/packaging_plan.py`, shared with the Windows and Linux
 package steps so the three describe the same application.
 """
 
@@ -31,18 +35,22 @@ from pathlib import Path
 
 from setuptools import setup
 
-from desktop import packaging
+# `desktop/setup-macos.command` executes this file, it does not import it, so
+# sys.path[0] is the directory this file is in and the repository root is not
+# on the path at all: the application boundary resolves as a sibling module.
+# `from desktop import packaging_plan` would fail here before the build starts.
+import packaging_plan
 
-REPO = packaging.REPO
-VERSION = packaging.VERSION
-APPLICATION_PACKAGES = packaging.APPLICATION_PACKAGES
-BUNDLE_ID = packaging.BUNDLE_ID
+REPO = packaging_plan.REPO
+VERSION = packaging_plan.VERSION
+APPLICATION_PACKAGES = packaging_plan.APPLICATION_PACKAGES
+BUNDLE_ID = packaging_plan.BUNDLE_ID
 
 # The application boundary — which modules, which frontend files, which icon —
-# lives in `desktop/packaging.py` so a Windows or Linux packaging step uses the
+# lives in `desktop/packaging_plan.py` so a Windows or Linux packaging step uses the
 # same answers instead of a second hand-maintained list.
-stage_application_sources = packaging.stage_application_sources
-frontend_data_files = packaging.frontend_data_files
+stage_application_sources = packaging_plan.stage_application_sources
+frontend_data_files = packaging_plan.frontend_data_files
 
 
 def verify_application_contents(bundle: Path) -> None:
@@ -57,8 +65,8 @@ def verify_application_contents(bundle: Path) -> None:
         with zipfile.ZipFile(archive) as files:
             shipped.update(name for name in files.namelist()
                            if name.startswith(("backend/", "desktop/")) and not name.endswith("/"))
-    unexpected = packaging.unexpected_shipped_files(shipped)
-    missing = packaging.missing_shipped_files(
+    unexpected = packaging_plan.unexpected_shipped_files(shipped)
+    missing = packaging_plan.missing_shipped_files(
         shipped, ("backend/coordinator/server.py", "backend/contracts/v1.py",
                   "desktop/shell.py"))
     if unexpected or missing:
@@ -89,7 +97,7 @@ PLIST = {
 OPTIONS = {
     "bdist_base": str(REPO / "desktop" / "build"),
     "dist_dir": str(REPO / "desktop" / "dist"),
-    "iconfile": str(packaging.icon_for("macos")),
+    "iconfile": str(packaging_plan.icon_for("macos")),
     "plist": PLIST,
     # pywebview carries JS/native resources, and pypdfium2 ships the PDFium
     # binary as package data (`pypdfium2_raw/libpdfium.dylib`). Both must be

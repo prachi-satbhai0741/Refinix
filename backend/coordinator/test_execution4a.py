@@ -833,7 +833,10 @@ class TestAttachedChatStaysLocal(Harness):
             route.return_value = type("R", (), {
                 "remote": False, "kind": "local", "reason": "local coordinator: test",
                 "node_id": self.c.node_id, "model": None,
-                "relationship_id": None})()
+                "relationship_id": None,
+                "profile": self.c.local_profile(
+                    workflow="chat", model_id=runtime.MODEL,
+                    reasoning="disabled", decoder="text").model_dump()})()
             self.c._run(job, self.chat, None)
         route.assert_called()
 

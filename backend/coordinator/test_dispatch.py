@@ -20,7 +20,7 @@ import time
 import unittest
 import uuid
 
-from backend.contracts import v1
+from backend.contracts import profiles, v1
 from backend.coordinator import db, dispatch, pairing, server
 
 NODE = "22222222-2222-4222-8222-222222222222"
@@ -28,18 +28,38 @@ OTHER_NODE = "33333333-3333-4333-8333-333333333333"
 RELATIONSHIP = "66666666-6666-4666-8666-666666666666"
 WORKSPACE = "77777777-7777-4777-8777-777777777777"
 COORDINATOR = "88888888-8888-4888-8888-888888888888"
+WORKER_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
+MAC_CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.MAC_M5_16GB
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.32.14")
+
+
+def inference():
+    return profiles.request(
+        WORKER_PROFILE, reasoning="disabled", decoder="text",
+        context_window=4096, output_allowance=2048)
 
 
 def node_record(**over) -> dict:
     record = {
-        "contract_version": "1.0", "node_id": NODE, "display_name": "ubuntu-worker",
+        "contract_version": v1.CONTRACT_VERSION, "node_id": NODE,
+        "display_name": "ubuntu-worker",
         "app_version": "0.1.0", "platform": "Linux x86_64",
-        "supported_contract_versions": ["1.0"], "capabilities": ["text.generate"],
-        "models": [{"model_id": "qwen3.5:4b-q4_K_M", "manifest_sha256": "a" * 64,
-                    "runtime": "ollama", "runtime_version": "0.32.14"}],
+        "supported_contract_versions": [v1.CONTRACT_VERSION],
+        "capabilities": ["text.generate"],
+        "models": [WORKER_PROFILE.model.model_dump()],
+        "inference_profiles": [WORKER_PROFILE.model_dump()],
         "health": "healthy", "observed_at": "2026-09-05T00:00:00Z",
         "queue_depth": 0, "available_memory_bytes": None,
         "loaded_model_id": None}
+    if over.get("models") == [] and "inference_profiles" not in over:
+        over["inference_profiles"] = []
     record.update(over)
     return record
 
@@ -203,7 +223,7 @@ class TestRouting(unittest.TestCase):
             relationship=over.pop("relationship", relationship()),
             node=over.pop("node", node_record()),
             required=over.pop("required", ["text.generate"]),
-            model_id=over.pop("model_id", "qwen3.5:4b-q4_K_M"))
+            model_id=over.pop("model_id", "qwen3.5:4b-q4_K_M"), **over)
 
     def test_a_healthy_paired_worker_is_used(self):
         route = self.route()
@@ -247,6 +267,18 @@ class TestRouting(unittest.TestCase):
         self.assertFalse(route.remote)
         self.assertIn("qwen3.5:4b-q4_K_M", route.reason)
 
+    def test_incompatible_semantics_do_not_route_to_the_worker(self):
+        for requirements in (
+            {"reasoning": "enabled"},
+            {"context_window": 8192},
+            {"decoder": "json_schema"},
+            {"workflow": "code.whole_file"},
+        ):
+            with self.subTest(requirements=requirements):
+                route = self.route(**requirements)
+                self.assertFalse(route.remote)
+                self.assertIsNone(route.profile)
+
     def test_every_refusal_carries_a_distinct_reason(self):
         """A single 'unavailable' for four different causes would need four
         different fixes and give the operator no way to tell them apart."""
@@ -265,46 +297,42 @@ class TestEnvelopeConstruction(unittest.TestCase):
         return {"workspace_id": WORKSPACE, "workflow_id": str(uuid.uuid4()),
                 "job_id": str(uuid.uuid4()), "chat_id": str(uuid.uuid4())}
 
-    def test_a_remote_envelope_carries_target_and_relationship(self):
-        route = dispatch.Route("remote", "ok", node_id=NODE,
-                               relationship_id=RELATIONSHIP)
-        env = dispatch.build_envelope(
+    def route(self, relationship_id=RELATIONSHIP):
+        return dispatch.Route(
+            "remote", "ok", node_id=NODE, relationship_id=relationship_id,
+            model=WORKER_PROFILE.model.model_dump(),
+            profile=WORKER_PROFILE.model_dump())
+
+    def build(self, *, relationship_id=RELATIONSHIP, **over):
+        fields = dict(
             job=self.job(), attempt_id=str(uuid.uuid4()),
-            step_id=str(uuid.uuid4()), route=route,
-            coordinator_node_id=COORDINATOR, request_text="hello")
+            step_id=str(uuid.uuid4()), route=self.route(relationship_id),
+            coordinator_node_id=COORDINATOR, request_text="hello",
+            messages=[{"role": "system", "content": "You are Refinix."},
+                      {"role": "user", "content": "hello"}],
+            inference=inference())
+        fields.update(over)
+        return dispatch.build_envelope(**fields)
+
+    def test_a_remote_envelope_carries_target_and_relationship(self):
+        env = self.build()
         self.assertEqual(env.target_node_id, NODE)
         self.assertEqual(env.relationship_id, RELATIONSHIP)
         self.assertEqual(env.limits.tool_network, "disabled")
 
     def test_the_deadline_follows_creation(self):
-        route = dispatch.Route("remote", "ok", node_id=NODE,
-                               relationship_id=RELATIONSHIP)
-        env = dispatch.build_envelope(
-            job=self.job(), attempt_id=str(uuid.uuid4()),
-            step_id=str(uuid.uuid4()), route=route,
-            coordinator_node_id=COORDINATOR, request_text="hello")
+        env = self.build()
         self.assertGreater(env.deadline_at, env.created_at)
 
     def test_chat_identity_is_carried_as_a_system_instruction(self):
-        route = dispatch.Route("remote", "ok", node_id=NODE,
-                               relationship_id=RELATIONSHIP)
-        env = dispatch.build_envelope(
-            job=self.job(), attempt_id=str(uuid.uuid4()),
-            step_id=str(uuid.uuid4()), route=route,
-            coordinator_node_id=COORDINATOR, request_text="hello",
-            system_instruction="You are Refinix.")
+        env = self.build(system_instruction="You are Refinix.")
         self.assertEqual(env.system_instruction, "You are Refinix.")
 
     def test_a_remote_target_without_a_relationship_is_rejected(self):
         """The contract refuses it; this proves the coordinator cannot build
         one by accident."""
-        route = dispatch.Route("remote", "ok", node_id=NODE,
-                               relationship_id=None)
         with self.assertRaises(Exception):
-            dispatch.build_envelope(
-                job=self.job(), attempt_id=str(uuid.uuid4()),
-                step_id=str(uuid.uuid4()), route=route,
-                coordinator_node_id=COORDINATOR, request_text="hello")
+            self.build(relationship_id=None)
 
 
 # ------------------------------------------------------------------- stream ---
@@ -857,7 +885,16 @@ class TestAmbiguityNeverRunsLocally(unittest.TestCase):
         db.set_attempt_state(conn, self.attempt, "running")
         self.route = dispatch.Route("remote", "paired worker: healthy",
                                     node_id=NODE,
-                                    relationship_id=self.relationship)
+                                    relationship_id=self.relationship,
+                                    model=WORKER_PROFILE.model.model_dump(),
+                                    profile=WORKER_PROFILE.model_dump())
+        self.inference = inference()
+        self.messages = [
+            {"role": "system", "content": "You are Refinix."},
+            {"role": "user", "content": "say something"},
+        ]
+        local_profile = MAC_CHAT_PROFILE
+        self.coordinator.local_profile = lambda **_kwargs: local_profile
 
     def tearDown(self):
         self.coordinator.conn.close()
@@ -870,7 +907,8 @@ class TestAmbiguityNeverRunsLocally(unittest.TestCase):
 
         self.coordinator.worker_client = lambda relationship: Client()
         return self.coordinator._run_remote(
-            self.job, self.chat, self.attempt, self.route, text="say something")
+            self.job, self.chat, self.attempt, self.route, text="say something",
+            messages=self.messages, inference=self.inference)
 
     def attempts(self):
         return [dict(row) for row in self.coordinator.conn.execute(
@@ -878,7 +916,7 @@ class TestAmbiguityNeverRunsLocally(unittest.TestCase):
             " WHERE job_id=? ORDER BY created_at", (self.job,))]
 
     def test_receipt_unknown_does_not_open_a_local_attempt(self):
-        handled, _ = self.drive(dispatch.ReceiptUnknown("no answer"))
+        handled, *_ = self.drive(dispatch.ReceiptUnknown("no answer"))
         self.assertTrue(handled, "the job is finished, not continued locally")
         rows = self.attempts()
         self.assertEqual(len(rows), 1, "a second attempt would duplicate work")
@@ -888,7 +926,7 @@ class TestAmbiguityNeverRunsLocally(unittest.TestCase):
 
     def test_a_definite_refusal_does_open_a_local_attempt(self):
         """Truthful fallback is preserved where non-acceptance is proven."""
-        handled, replacement = self.drive(
+        handled, replacement, *_ = self.drive(
             dispatch.DispatchUnavailable("the request never reached the worker"))
         self.assertFalse(handled, "the caller continues locally")
         rows = self.attempts()
@@ -901,7 +939,7 @@ class TestAmbiguityNeverRunsLocally(unittest.TestCase):
             (self.job,))][1]["attempt_id"])
 
     def test_an_identity_mismatch_does_not_open_a_local_attempt(self):
-        handled, _ = self.drive(pairing.IdentityMismatch("identity changed"))
+        handled, *_ = self.drive(pairing.IdentityMismatch("identity changed"))
         self.assertTrue(handled)
         rows = self.attempts()
         self.assertEqual(len(rows), 1)
