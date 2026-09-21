@@ -73,15 +73,30 @@ PROFILES: tuple[v1.ExecutionProfile, ...] = (
         reasoning=("disabled", "enabled"), decoder=("text",),
         evidence_ref="model-catalog#bounded-execution-macos-2026-09-04"),
     _profile(
+        runtime_version="0.33.3", target=MAC_M5_16GB, workflow=CHAT,
+        context=8192, default_output=2048, max_output=2048,
+        reasoning=("disabled", "enabled"), decoder=("text",),
+        evidence_ref="agent-memory/agentchangelog.md#ac-20260921-007"),
+    _profile(
         runtime_version="0.32.14", target=MAC_M5_16GB, workflow=CODE,
         context=8192, default_output=2048, max_output=8128,
         reasoning=("disabled", "enabled"), decoder=("json_schema",),
         evidence_ref="agent-memory#workflow-envelope-2026-09-21"),
     _profile(
+        runtime_version="0.33.3", target=MAC_M5_16GB, workflow=CODE,
+        context=8192, default_output=2048, max_output=2048,
+        reasoning=("disabled", "enabled"), decoder=("json_schema",),
+        evidence_ref="agent-memory/agentchangelog.md#ac-20260921-007"),
+    _profile(
         runtime_version="0.32.14", target=MAC_M5_16GB, workflow=DOCUMENTS,
         context=8192, default_output=3072, max_output=3072,
         reasoning=("disabled", "enabled"), decoder=("json_schema",),
         evidence_ref="agent-memory#documents-envelope-2026-09-21"),
+    _profile(
+        runtime_version="0.33.3", target=MAC_M5_16GB, workflow=DOCUMENTS,
+        context=8192, default_output=3072, max_output=3072,
+        reasoning=("disabled", "enabled"), decoder=("json_schema",),
+        evidence_ref="agent-memory/agentchangelog.md#ac-20260921-007"),
     _profile(
         runtime_version="0.33.2", target=UBUNTU_VICTUS_RTX2050, workflow=CHAT,
         context=4096, default_output=2048, max_output=2048,

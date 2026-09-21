@@ -34,7 +34,7 @@ class TestProposalEnvelope(unittest.TestCase):
         messages = codeflow.build_messages("change one line", selected)
         self.assertGreater(
             code_service.CodeService._proposal_output_limit(
-                messages, selected, profiles.PROFILES[1]),
+                messages, selected, next(p for p in profiles.PROFILES if p.target_profile_id == profiles.MAC_M5_16GB and p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14")),
             code_service.PROPOSAL_NUM_PREDICT)
 
     def test_an_impossible_selection_fails_before_generation(self):
@@ -42,7 +42,7 @@ class TestProposalEnvelope(unittest.TestCase):
         messages = codeflow.build_messages("change one line", selected)
         with self.assertRaisesRegex(CodeError, "Select fewer or smaller files"):
             code_service.CodeService._proposal_output_limit(
-                messages, selected, profiles.PROFILES[1])
+                messages, selected, next(p for p in profiles.PROFILES if p.target_profile_id == profiles.MAC_M5_16GB and p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14"))
 
     def test_format_repair_does_not_resend_the_selected_source(self):
         messages = codeflow.repair_messages('{"summary":"wrapped","edits":[]}')

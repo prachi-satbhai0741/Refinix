@@ -144,7 +144,7 @@ class Base(unittest.TestCase):
             fingerprint="AA:BB", certificate_pem="-----BEGIN CERTIFICATE-----")
 
     def route(self):
-        profile = profiles.PROFILES[1]
+        profile = next(p for p in profiles.PROFILES if p.target_profile_id == profiles.MAC_M5_16GB and p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14")
         return dispatch.Route(
             "remote", "paired worker ubuntu-worker: healthy, qwen3.5:4b-q4_K_M",
             node_id=self.worker_node, relationship_id=self.relationship_id,
@@ -178,6 +178,11 @@ class TestRemoteGeneration(Base):
         proposal = self.run_remote(worker)
         self.assertEqual(len(proposal["edits"]), 1)
         self.assertIn("float(value)", proposal["edits"][0]["diff"])
+        attempt = self.c.job_detail(proposal["job_id"])["attempts"][-1]
+        self.assertEqual(
+            attempt["requested_inference"]["profile_id"],
+            attempt["actual_profile"]["profile_id"])
+        self.assertEqual(attempt["metrics"]["route"], "remote")
         # THE claim of C09: the canonical repository is untouched.
         self.assertEqual(self.on_disk(), PROJECT)
 

@@ -1794,3 +1794,54 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve the dirty tree and security boundaries. Do not edit protected documentation, add dependencies, use advertised model maxima without device qualification, call live models/devices, package/deploy, or perform Git/GitHub writes.
 - follow_up_to: [UP-20260921-004](#up-20260921-004)
 - linked_changes: [AC-20260921-005](agentchangelog.md#ac-20260921-005)
+
+<a id="up-20260921-006"></a>
+## UP-20260921-006 — Complete qualified inference profiles and route parity
+- date: 2026-09-21
+- status: authorised continuation, offline verification and self-review; no deployment, live-device or Git/GitHub writes
+- tags: inference-profile, contract-1.1, worker-negotiation, route-parity, takeover
+- aliases: Tasks 2-4, qualified profile, profile advertisement, no silent downgrade
+- paths: backend/contracts/, backend/coordinator/, backend/worker/, related tests, agent-memory/
+- summary: Audit the partially completed Tasks 2-4 implementation inherited from another agent, repair confirmed defects and regressions, and finish qualified local profiles, worker negotiation and parity-or-explicit-refusal semantics.
+- request: Continue from commit 0703511, preserve its work, trace all callers and persistence paths, complete the execution, run the authorised focused and broad offline verification, and leave review and physical-device validation for later.
+- constraints: Keep whole-file Code redesign, UI redesign, model downloads, packaging, deployment, Windows/Linux qualification, LAN acceptance, protected-document edits and Git/GitHub writes out of scope. Preserve unrelated work and do not claim live-device support.
+- follow_up_to: [UP-20260921-005](#up-20260921-005)
+- linked_changes: [AC-20260921-006](agentchangelog.md#ac-20260921-006)
+
+<a id="up-20260921-007"></a>
+## UP-20260921-007 — Qualify current Mac execution workflows
+- date: 2026-09-21
+- status: authorised live local qualification, implementation, focused and broad verification, and self-review; no Git/GitHub writes
+- tags: inference-profile, macos, ollama-0.33.3, chat, code, documents, live-qualification
+- aliases: Mac M5 qualification, durable evidence, immutable profiles, automatic qualification pipeline
+- paths: backend/contracts/profiles.py, profile-dependent tests, agent-memory/
+- summary: Preserve historical profiles, make the completed Mac Chat qualification durable, and admit new Mac Code and Documents profiles for Ollama 0.33.3 only after their actual production workflows pass against the exact installed model bytes.
+- request: Continue autonomously from the supplied execution-qualification handoff, run real local Ollama qualification on synthetic inputs, repair positional registry assumptions, perform the authorised regressions, record durable evidence, and identify the smallest next architecture step toward automated release qualification.
+- constraints: Do not update or start Ollama, install dependencies, use sensitive data, wait for unavailable Ubuntu hardware, weaken exact matching, replace historical qualifications, edit protected documentation, package/deploy, or perform Git/GitHub writes. A failed workflow remains unqualified and fail-closed.
+- follow_up_to: [UP-20260921-006](#up-20260921-006)
+- linked_changes: [AC-20260921-007](agentchangelog.md#ac-20260921-007)
+
+<a id="up-20260921-008"></a>
+## UP-20260921-008 — Preserve the llmfit and runtime-direction decision
+- date: 2026-09-21
+- status: authorised concise protected-document and ledger update only
+- tags: llmfit, hardware-observation, qualification, ollama, llama.cpp, technology-direction
+- paths: docs/PROJECT.md, agent-memory/
+- summary: Preserve `llmfit` as a future/internal qualification-tool candidate without making it a Beta dependency, and clarify that Ollama remains the qualified baseline while llama.cpp remains gated and unadopted.
+- request: Record the evaluated `llmfit` posture and the existing Ollama/llama.cpp boundary in the most appropriate authority, preserve historical decisions and evidence, and make no implementation, profile, dependency, packaging or Git changes.
+- constraints: Planning evidence never becomes qualification evidence. Do not add an integration or speculative abstraction, rewrite OD-03 history, or represent Ollama evidence as llama.cpp evidence.
+- follow_up_to: [UP-20260921-007](#up-20260921-007)
+- linked_changes: [AC-20260921-008](agentchangelog.md#ac-20260921-008)
+
+<a id="up-20260921-009"></a>
+## UP-20260921-009 — Generate exact execution-qualification artifacts
+- date: 2026-09-21
+- status: authorised implementation, live Mac reproduction, offline verification and Windows handoff; no Git/GitHub writes
+- tags: qualification-artifact, execution-profile, macos, windows-handoff, ollama-0.33.3
+- aliases: generated qualification evidence, Windows next, evidence-only profile artifact
+- paths: backend/contracts/qualification.py, backend/contracts/test_qualification.py, scripts/qualify_execution.py, qualification-artifacts/, agent-memory/
+- summary: Add the smallest strict, versioned qualification-artifact path that can reproduce the current Mac evidence and be run next on a real Windows device without turning an artifact into automatic runtime authority.
+- request: Reconcile the supplied handoff with current authorities and dirty work, preserve the llmfit and Ollama/llama.cpp decisions already recorded, generate exact Chat/Code/Documents evidence from real production routes, run focused and broad verification, keep Linux deferred but in Beta scope, and provide the Windows teammate with an exact process.
+- constraints: No profile/envelope widening, automatic artifact loader, signing system, llmfit or llama.cpp integration, dependency install, Linux-specific speculative work, deployment, publication or Git/GitHub write. Failed or unmeasured work remains unqualified, and qualification state remains distinct from release acceptance.
+- follow_up_to: [UP-20260921-008](#up-20260921-008)
+- linked_changes: [AC-20260921-009](agentchangelog.md#ac-20260921-009)

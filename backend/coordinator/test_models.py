@@ -30,6 +30,11 @@ from backend.coordinator.server import Coordinator
 
 CATALOGUED = models.CATALOGUE[0].id
 CATALOG_DIGEST = models.CATALOGUE[0].manifest_sha256
+WORKER_CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
 
 
 def chat_reply(_model, _messages, **_options):
@@ -432,7 +437,7 @@ class TestInventory(CoordinatorBase):
 
     def test_a_worker_catalogue_mismatch_falls_back_to_verified_local_bytes(self):
         relationship = {"relationship_id": "rel", "state": "paired"}
-        wrong = profiles.PROFILES[-1].model_dump()
+        wrong = WORKER_CHAT_PROFILE.model_dump()
         wrong["model"]["manifest_sha256"] = "f" * 64
         wrong["profile_id"] = v1.execution_profile_id(wrong)
         node = {

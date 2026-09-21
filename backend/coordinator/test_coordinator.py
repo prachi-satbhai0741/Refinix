@@ -26,11 +26,16 @@ from backend.coordinator.server import Coordinator, Handler, RequestError
 from backend.coordinator import runtime
 
 
-READY_RUNTIME = {"reachable": True, "server_version": "0.32.14",
+READY_RUNTIME = {"reachable": True, "server_version": "0.33.3",
                  "models": [runtime.MODEL],
                  "digests": {runtime.MODEL:
                              models.entry_for(runtime.MODEL).manifest_sha256},
                  "loaded": None, "endpoint": runtime.HOST, "error": None}
+CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.MAC_M5_16GB
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.32.14")
 
 
 class Base(unittest.TestCase):
@@ -407,7 +412,7 @@ class TestCompletion(unittest.TestCase):
                           BytesIO(b'{"error":"exceed_context_size_error"}'))
         with patch.object(runtime, '_request', side_effect=error):
             with self.assertRaisesRegex(runtime.RuntimeUnavailable, 'Shorten your message'):
-                profile = profiles.PROFILES[0]
+                profile = CHAT_PROFILE
                 inference = profiles.request(
                     profile, reasoning='disabled', decoder='text')
                 list(runtime.stream_chat(

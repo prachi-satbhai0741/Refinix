@@ -19,9 +19,16 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.contracts import profiles
 from backend.coordinator import db, models, runtime
 from backend.coordinator.server import (MAX_UPLOAD_BYTES, Coordinator, Handler,
                                         RequestError)
+
+CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.MAC_M5_16GB
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.32.14")
 
 
 class Base(unittest.TestCase):
@@ -29,8 +36,9 @@ class Base(unittest.TestCase):
         self.dir = tempfile.TemporaryDirectory()
         self.path = Path(self.dir.name) / "state.sqlite3"
         self.c = Coordinator(self.path)
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.runtime_probe = patch.object(runtime, "probe", return_value={
-            "reachable": True, "server_version": "test",
+            "reachable": True, "server_version": "0.32.14",
             "models": [runtime.MODEL],
             "digests": {runtime.MODEL:
                         models.entry_for(runtime.MODEL).manifest_sha256},
@@ -147,8 +155,8 @@ class TestSelectionTravelsWithTheRequest(Base):
         self.attach("notes.txt", b"THE PUMP RAN AT 7.9 MM/S")
         seen = {}
 
-        def fake_stream(messages, *, should_cancel=None, think=None,
-                        model=None, num_predict=None):
+        def fake_stream(messages, *, should_cancel=None, profile=None,
+                        inference=None, response_format=None):
             seen["messages"] = messages
             yield "delta", "an answer"
             yield "done", {"done_reason": "stop"}
@@ -194,7 +202,8 @@ class TestCapabilities(Base):
 
     def test_execution_three_document_skills_are_available_when_ready(self):
         rows = self.c.capabilities({
-            "reachable": True, "models": [runtime.MODEL],
+            "reachable": True, "server_version": "0.32.14",
+            "models": [runtime.MODEL],
             "digests": {runtime.MODEL:
                         models.entry_for(runtime.MODEL).manifest_sha256}})
         by_id = {r["id"]: r for r in rows}
@@ -208,7 +217,8 @@ class TestCapabilities(Base):
         wording is gone. What replaces it must still be honest about the
         boundary rather than implying a general development platform."""
         rows = self.c.capabilities({
-            "reachable": True, "models": [runtime.MODEL],
+            "reachable": True, "server_version": "0.32.14",
+            "models": [runtime.MODEL],
             "digests": {runtime.MODEL:
                         models.entry_for(runtime.MODEL).manifest_sha256}})
         code = next(r for r in rows if r["id"] == "code")
@@ -226,8 +236,8 @@ class TestStopBehaviour(Base):
     """The Stop path, exercised end to end with a synthetic runtime."""
 
     def _stalling_stream(self, delivered, stalled):
-        def stream(messages, *, should_cancel=None, think=None,
-                   model=None, num_predict=None):
+        def stream(messages, *, should_cancel=None, profile=None,
+                   inference=None, response_format=None):
             yield "delta", "partial answer"
             delivered.set()
             # From here the runtime produces nothing at all, the way a wedged
@@ -429,9 +439,13 @@ class TestCancelAgainstARealStalledSocket(unittest.TestCase):
         finished = threading.Event()
 
         def read():
+            profile = CHAT_PROFILE
+            inference = profiles.request(
+                profile, reasoning="disabled", decoder="text")
             with patch.object(runtime, "HOST", self.host):
                 for kind, payload in runtime.stream_chat(
                         [{"role": "user", "content": "hello"}],
+                        profile=profile, inference=inference,
                         should_cancel=cancel.is_set):
                     collected.append((kind, payload))
             finished.set()
@@ -457,9 +471,10 @@ class TestCancelAgainstARealStalledSocket(unittest.TestCase):
         self.Stalling.before_headers = True
         with tempfile.TemporaryDirectory() as folder:
             c = Coordinator(Path(folder) / "state.sqlite3")
+            c.target_profile_id = profiles.MAC_M5_16GB
             chat = db.create_chat(c.conn, c.workspace_id, "Synthetic stalled headers")
             try:
-                ready = {"reachable": True, "server_version": "test",
+                ready = {"reachable": True, "server_version": "0.32.14",
                          "models": [runtime.MODEL],
                          "digests": {runtime.MODEL:
                                      models.entry_for(runtime.MODEL).manifest_sha256}}

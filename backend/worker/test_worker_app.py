@@ -42,7 +42,11 @@ CONFIRMED = "66666666-6666-4666-8666-666666666666"
 WORKSPACE = "77777777-7777-4777-8777-777777777777"
 CREDENTIAL = "test-relationship-credential-not-a-real-secret"
 MODEL_DIGEST = profiles.MODEL_DIGEST
-WORKER_PROFILE = profiles.PROFILES[-1]
+WORKER_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
 
 
 def confirm_relationship(store):
@@ -92,7 +96,7 @@ def envelope(**over):
             v1.InferenceMessage(role="user", content=fields["original_request"]),
         ]
     elif fields["task_type"] == "documents":
-        profile = profiles.PROFILES[2]
+        profile = next(p for p in profiles.PROFILES if p.workflow_mode == profiles.DOCUMENTS and p.model.runtime_version == "0.32.14")
         fields["messages"] = []
         fields["model"] = profile.model
         fields["inference"] = profiles.request(
@@ -104,7 +108,7 @@ def envelope(**over):
             fields["model"] = None
             fields["inference"] = None
         else:
-            profile = profiles.PROFILES[1]
+            profile = next(p for p in profiles.PROFILES if p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14")
             fields["model"] = profile.model
             fields["inference"] = profiles.request(
                 profile, reasoning="disabled", decoder="json_schema",
@@ -235,7 +239,7 @@ class TestIdentityAndGuards(Base):
     def test_legacy_peer_gets_only_a_safe_profile_free_advertisement(self):
         node = W._node(observed=True, contract_version="1.0")
         self.assertEqual(node["contract_version"], "1.0")
-        self.assertEqual(node["inference_profiles"], [])
+        self.assertNotIn("inference_profiles", node)
         self.assertIn(v1.CONTRACT_VERSION, node["supported_contract_versions"])
 
     def test_current_advertisement_contains_only_the_measured_worker_chat_profile(self):

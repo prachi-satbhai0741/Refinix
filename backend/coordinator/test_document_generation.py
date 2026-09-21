@@ -51,14 +51,16 @@ def scripted_stream(*replies, done_reasons=("stop",)):
     queue = list(replies)
     reasons = list(done_reasons)
 
-    def stream(messages, *, should_cancel=None, think=None, model=None,
-               num_predict=None, response_format=None, images=None):
+    def stream(messages, *, should_cancel=None, profile=None, inference=None,
+               response_format=None, images=None):
         index = stream.calls
         stream.calls += 1
         stream.messages.append(messages)
         stream.formats.append(response_format)
-        stream.budgets.append(num_predict)
-        stream.thinking.append(think)
+        stream.budgets.append(inference.output_allowance_tokens
+                              if inference else None)
+        stream.thinking.append(inference.reasoning == "enabled"
+                               if inference else None)
         yield "delta", queue[index] if index < len(queue) else ""
         yield "done", {"done_reason": reasons[index] if index < len(reasons)
                        else reasons[-1]}
@@ -179,7 +181,7 @@ class CallContract(GenerationHarness):
         with patch.object(runtime, "stream_chat", stream):
             self.c._run(job, self.chat, None)
         self.assertEqual(stream.formats, [None])
-        self.assertEqual(stream.budgets, [None])
+        self.assertEqual(stream.budgets, [runtime.NUM_PREDICT])
 
 
 # ---------------------------------------------------------------------------
@@ -419,8 +421,8 @@ class CancellationDuringRepair(GenerationHarness):
         fenced = "```json\n" + body() + "\n```"
         job = self.send(self.REQUEST, skill_id=docflow.WRITE_SKILL)
 
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None, response_format=None, images=None):
+        def stream(messages, *, should_cancel=None, profile=None, inference=None,
+                   response_format=None, images=None):
             stream.calls += 1
             if stream.calls == 1:
                 yield "delta", fenced
@@ -444,8 +446,8 @@ class RuntimeFailsDuringRepair(GenerationHarness):
         fenced = "```json\n" + body() + "\n```"
         job = self.send(self.REQUEST, skill_id=docflow.WRITE_SKILL)
 
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None, response_format=None, images=None):
+        def stream(messages, *, should_cancel=None, profile=None, inference=None,
+                   response_format=None, images=None):
             stream.calls += 1
             if stream.calls == 1:
                 yield "delta", fenced

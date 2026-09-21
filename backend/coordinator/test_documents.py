@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.contracts import profiles
 from backend.coordinator import (db, docflow, docgen, documents, models,
                                  pdfrender, retrieval, runtime)
 from backend.coordinator.server import Coordinator
@@ -60,10 +61,11 @@ class Base(unittest.TestCase):
                                              "models": [runtime.MODEL],
                                              "digests": {runtime.MODEL:
                                                  models.entry_for(runtime.MODEL).manifest_sha256},
-                                             "server_version": "test"})
+                                             "server_version": "0.32.14"})
         self.runtime_probe.start()
         self.addCleanup(self.runtime_probe.stop)
         self.c = Coordinator(self.state)
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.chat = db.create_chat(self.c.conn, self.c.workspace_id, "documents")
 
     def tearDown(self):
@@ -855,11 +857,12 @@ def fake_stream(reply, thinking="", done_reason="stop"):
     that silently accepted anything could not tell whether the production call
     actually asked for one.
     """
-    def stream(messages, *, should_cancel=None, think=None, model=None,
-               num_predict=None, response_format=None, images=None):
+    def stream(messages, *, should_cancel=None, profile=None, inference=None,
+               response_format=None, images=None):
         stream.messages = messages
         stream.response_format = response_format
-        stream.num_predict = num_predict
+        stream.num_predict = (inference.output_allowance_tokens
+                              if inference else None)
         stream.calls += 1
         if thinking:
             yield "thinking", thinking
@@ -989,6 +992,7 @@ class TestSkillsInsideChat(Base):
                 "reads_pdf": False, "reads_scans": False, "detail": {}, "max_bytes": 1}):
             rows = {r["id"]: r for r in self.c.capabilities(
                 {"reachable": True, "models": [runtime.MODEL],
+                 "server_version": "0.32.14",
                  "digests": {runtime.MODEL:
                              models.entry_for(runtime.MODEL).manifest_sha256}})}
         self.assertEqual(rows["chat"]["state"], "available")

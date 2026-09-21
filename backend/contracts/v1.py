@@ -505,6 +505,9 @@ class Event(Record):
 
     @model_validator(mode="after")
     def coordinator_authority(self):
+        if self.contract_version == LEGACY_CONTRACT_VERSION \
+                and self.data.kind == "inference.metrics":
+            raise ValueError("contract 1.0 cannot carry qualified inference metrics")
         if self.attempt_id is None and self.data.kind != "job.state":
             raise ValueError("attempt output and decisions require an attempt ID")
         if self.producer == "worker" and self.data.kind in {

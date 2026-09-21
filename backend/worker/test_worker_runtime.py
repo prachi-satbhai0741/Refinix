@@ -12,7 +12,11 @@ from backend.contracts import profiles
 from backend.worker import runtime
 
 
-PROFILE = profiles.PROFILES[-1]
+PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
 REQUEST = profiles.request(
     PROFILE, reasoning="disabled", decoder="text",
     context_window=4096, output_allowance=2048)

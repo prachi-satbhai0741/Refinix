@@ -264,7 +264,7 @@ def _seconds_until(stamp: str) -> float:
 
 def _node(observed: bool, *, contract_version: str = v1.CONTRACT_VERSION) -> dict:
     if not observed:
-        return v1.Node(
+        node = v1.Node(
             contract_version=contract_version, node_id=NODE_ID,
             display_name=DISPLAY_NAME, app_version=APP_VERSION,
             platform=f"{platform.system()} {platform.machine()}",
@@ -272,7 +272,10 @@ def _node(observed: bool, *, contract_version: str = v1.CONTRACT_VERSION) -> dic
             capabilities=[], models=[], inference_profiles=[], health="unknown",
             observed_at=None,
             queue_depth=None, available_memory_bytes=None,
-            loaded_model_id=None).model_dump()
+            loaded_model_id=None)
+        return node.model_dump(exclude={"inference_profiles"}
+                               if contract_version == v1.LEGACY_CONTRACT_VERSION
+                               else set())
 
     probe = runtime.probe()
     models, loaded = [], None
@@ -302,7 +305,7 @@ def _node(observed: bool, *, contract_version: str = v1.CONTRACT_VERSION) -> dic
         depths = [_receipt_backend.active_attempts(relationship_id)
                   for relationship_id in _pairing.relationships()]
         active = sum(depths) if depths else 0
-    return v1.Node(
+    node = v1.Node(
         contract_version=contract_version, node_id=NODE_ID,
         display_name=DISPLAY_NAME, app_version=APP_VERSION,
         platform=f"{platform.system()} {platform.machine()}",
@@ -313,7 +316,10 @@ def _node(observed: bool, *, contract_version: str = v1.CONTRACT_VERSION) -> dic
         health=("healthy" if probe["reachable"] and eligible
                 else "degraded" if probe["reachable"] else "unavailable"),
         observed_at=_now(), queue_depth=active,
-        available_memory_bytes=None, loaded_model_id=loaded).model_dump()
+        available_memory_bytes=None, loaded_model_id=loaded)
+    return node.model_dump(exclude={"inference_profiles"}
+                           if contract_version == v1.LEGACY_CONTRACT_VERSION
+                           else set())
 
 
 @app.get("/v1/health")

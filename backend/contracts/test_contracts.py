@@ -15,6 +15,16 @@ from .v1 import (
 
 EXAMPLES = json.loads(Path(__file__).with_name("examples.json").read_text())
 TYPES = {record.__name__: record for record in RECORDS}
+MAC_CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.MAC_M5_16GB
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.32.14")
+WORKER_CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
 
 
 def parse(name, data):
@@ -162,7 +172,7 @@ class ContractChecks(unittest.TestCase):
         envelope["required_capabilities"] = ["document.extract"]
         envelope["messages"] = []
         envelope["inference"] = {
-            "profile_id": profiles.PROFILES[2].profile_id,
+            "profile_id": next(p for p in profiles.PROFILES if p.workflow_mode == profiles.DOCUMENTS and p.model.runtime_version == "0.32.14").profile_id,
             "workflow_mode": "documents.structured",
             "context_window_tokens": 8192,
             "output_allowance_tokens": 3072,
@@ -224,7 +234,7 @@ class ContractChecks(unittest.TestCase):
                 redis_key(*args)
 
     def test_profile_identity_binds_every_material_semantic(self):
-        original = profiles.PROFILES[0].model_dump()
+        original = MAC_CHAT_PROFILE.model_dump()
         for path, value in (
             (("qualified_context_tokens",), 4096),
             (("default_output_tokens",), 1024),
@@ -242,7 +252,7 @@ class ContractChecks(unittest.TestCase):
                 v1.ExecutionProfile.model_validate(changed)
 
     def test_node_profiles_are_qualified_and_bound_to_advertised_models(self):
-        profile = profiles.PROFILES[-1]
+        profile = WORKER_CHAT_PROFILE
         node = deepcopy(EXAMPLES["Node"])
         node["models"] = [profile.model.model_dump()]
         node["inference_profiles"] = [profile.model_dump()]
@@ -260,12 +270,48 @@ class ContractChecks(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse("Node", candidate)
 
+    def test_current_mac_runtime_admits_only_its_three_measured_workflows(self):
+        model = v1.ModelRef(
+            model_id=profiles.MODEL_ID,
+            manifest_sha256=profiles.MODEL_DIGEST,
+            runtime=profiles.RUNTIME,
+            runtime_version="0.33.3")
+        admitted = profiles.for_observation(
+            target_profile_id=profiles.MAC_M5_16GB, models=[model])
+        self.assertEqual(
+            {profile.workflow_mode for profile in admitted},
+            {profiles.CHAT, profiles.CODE, profiles.DOCUMENTS})
+        self.assertEqual(
+            {profile.workflow_mode: profile.max_output_tokens for profile in admitted},
+            {profiles.CHAT: 2048, profiles.CODE: 2048,
+             profiles.DOCUMENTS: 3072})
+        changed = model.model_copy(update={"runtime_version": "0.33.4"})
+        self.assertEqual(profiles.for_observation(
+            target_profile_id=profiles.MAC_M5_16GB, models=[changed]), [])
+
     def test_legacy_contract_cannot_claim_qualified_semantics(self):
         legacy = deepcopy(EXAMPLES["JobEnvelope"])
         legacy["contract_version"] = "1.0"
         legacy["messages"] = []
         legacy["inference"] = None
         self.assertEqual(parse("JobEnvelope", legacy).contract_version, "1.0")
+
+        event = deepcopy(EXAMPLES["Event"])
+        event["contract_version"] = "1.0"
+        event["data"] = {
+            "kind": "inference.metrics",
+            "requested_profile_id": MAC_CHAT_PROFILE.profile_id,
+            "actual_profile_id": MAC_CHAT_PROFILE.profile_id,
+            "context_window": 8192,
+            "output_token_limit": 2048,
+            "reasoning": "disabled",
+            "decoder": "text",
+            "prompt_tokens": 1,
+            "output_tokens": 1,
+            "runtime_ms": 1,
+        }
+        with self.assertRaises(ValueError):
+            parse("Event", event)
 
         legacy["inference"] = deepcopy(EXAMPLES["JobEnvelope"]["inference"])
         with self.assertRaises(ValueError):

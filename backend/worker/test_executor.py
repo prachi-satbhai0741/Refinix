@@ -33,7 +33,11 @@ from backend.worker.redis_client import RedisUnavailable
 NODE = "22222222-2222-4222-8222-222222222222"
 RELATIONSHIP = "66666666-6666-4666-8666-666666666666"
 WORKSPACE = "77777777-7777-4777-8777-777777777777"
-PROFILE = profiles.PROFILES[-1]
+PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
 INFERENCE = profiles.request(
     PROFILE, reasoning="disabled", decoder="text",
     context_window=4096, output_allowance=2048)
@@ -324,6 +328,30 @@ class TestChatIdentity(Base):
         self.assertEqual([message["role"] for message in seen["messages"]],
                          ["system", "user"])
         self.assertIn("Refinix", seen["messages"][0]["content"])
+
+    def test_remote_chat_preserves_selected_history_and_inference_semantics(self):
+        seen = {}
+        logical = [
+            v1.InferenceMessage(role="system", content="You are Refinix."),
+            v1.InferenceMessage(role="user", content="Earlier question"),
+            v1.InferenceMessage(role="assistant", content="Earlier answer"),
+            v1.InferenceMessage(role="user", content="say something"),
+        ]
+        env = envelope(messages=logical)
+
+        def generating(messages, **options):
+            seen["messages"] = messages
+            seen["profile"] = options["profile"]
+            seen["inference"] = options["inference"]
+            yield "delta", "hello"
+            yield DONE_STOP
+
+        self.session.claim(env.attempt_id, 0)
+        with patch.object(runtime, "stream_chat", generating):
+            self.assertEqual(self.executor.execute(env, epoch=0), "completed")
+        self.assertEqual(seen["messages"], [item.model_dump() for item in logical])
+        self.assertEqual(seen["profile"], PROFILE)
+        self.assertEqual(seen["inference"], env.inference)
 
 
 class TestPackageRetention(unittest.TestCase):

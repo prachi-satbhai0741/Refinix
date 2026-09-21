@@ -28,7 +28,16 @@ OTHER_NODE = "33333333-3333-4333-8333-333333333333"
 RELATIONSHIP = "66666666-6666-4666-8666-666666666666"
 WORKSPACE = "77777777-7777-4777-8777-777777777777"
 COORDINATOR = "88888888-8888-4888-8888-888888888888"
-WORKER_PROFILE = profiles.PROFILES[-1]
+WORKER_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
+MAC_CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.MAC_M5_16GB
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.32.14")
 
 
 def inference():
@@ -884,7 +893,7 @@ class TestAmbiguityNeverRunsLocally(unittest.TestCase):
             {"role": "system", "content": "You are Refinix."},
             {"role": "user", "content": "say something"},
         ]
-        local_profile = profiles.PROFILES[0]
+        local_profile = MAC_CHAT_PROFILE
         self.coordinator.local_profile = lambda **_kwargs: local_profile
 
     def tearDown(self):

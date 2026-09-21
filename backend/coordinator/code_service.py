@@ -527,15 +527,17 @@ class CodeService:
             reasoning_mode = "enabled" if reasoning else "disabled"
             generation_messages = codeflow.build_messages(request, selection)
             required_output = self._proposal_required_output(selection)
+            runtime_state = runtime.probe()
             if target == TARGET_LOCAL:
                 # Explicitly this device. No preflight, no route decision and
                 # no worker call: local permission is something the person
                 # chose, never something inferred from the worker failing.
-                local_model = self.c.local_model_ref(model_id)
+                local_model = self.c.local_model_ref(model_id, runtime_state)
                 local_profile = self.c.local_profile(
                     workflow=inference_profiles.CODE, model_id=model_id,
                     reasoning=reasoning_mode, decoder="json_schema",
-                    output_allowance=required_output)
+                    output_allowance=required_output,
+                    runtime_state=runtime_state)
                 route = dispatch.Route(
                     "local", "local coordinator: this device was chosen for "
                              "this request", node_id=self.c.node_id,
@@ -544,6 +546,7 @@ class CodeService:
             else:
                 route = self.c.choose_route(required=["code.generate"],
                                             model_id=model_id,
+                                            runtime_state=runtime_state,
                                             workflow=inference_profiles.CODE,
                                             reasoning=reasoning_mode,
                                             decoder="json_schema",

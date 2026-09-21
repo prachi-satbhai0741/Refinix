@@ -20,6 +20,12 @@ from backend.contracts import profiles
 from backend.coordinator import db, models, runtime
 from backend.coordinator.server import Coordinator, RequestError
 
+CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.MAC_M5_16GB
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.32.14")
+
 
 class FakeOllama(BaseHTTPRequestHandler):
     """Records the request body and replays a scripted NDJSON stream."""
@@ -77,7 +83,7 @@ class RuntimeBase(unittest.TestCase):
     def run_stream(self, **kwargs):
         think = kwargs.pop("think", False)
         output = kwargs.pop("num_predict", 2048)
-        profile = profiles.PROFILES[0]
+        profile = CHAT_PROFILE
         inference = profiles.request(
             profile, reasoning="enabled" if think else "disabled",
             decoder="text", output_allowance=output)
@@ -163,7 +169,7 @@ class TestCancellationWithReasoning(RuntimeBase):
         events, finished = [], threading.Event()
 
         def read():
-            profile = profiles.PROFILES[0]
+            profile = CHAT_PROFILE
             inference = profiles.request(
                 profile, reasoning="enabled", decoder="text")
             with patch.object(runtime, "HOST", self.host):
@@ -196,7 +202,7 @@ class CoordinatorBase(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.runtime_probe = patch.object(runtime, "probe", return_value={
-            "reachable": True, "server_version": "0.32.14",
+            "reachable": True, "server_version": "0.33.3",
             "models": [runtime.MODEL],
             "digests": {runtime.MODEL:
                         models.entry_for(runtime.MODEL).manifest_sha256},
@@ -253,6 +259,12 @@ class TestPersistenceAndSnapshot(CoordinatorBase):
         attempt = self.c.job_detail(job)["attempts"][-1]
         recorded = json.loads(attempt["reasoning_json"])
         self.assertEqual(recorded, {"model": runtime.MODEL, "reasoning_enabled": True})
+        self.assertEqual(attempt["requested_inference"]["reasoning"], "enabled")
+        self.assertEqual(
+            attempt["requested_inference"]["profile_id"],
+            attempt["actual_profile"]["profile_id"])
+        self.assertEqual(attempt["actual_profile"]["target_profile_id"],
+                         profiles.MAC_M5_16GB)
 
     def test_changing_the_switch_mid_request_does_not_change_that_attempt(self):
         db.set_reasoning(self.c.conn, runtime.MODEL, True)

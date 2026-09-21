@@ -24,6 +24,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from backend.contracts import profiles as inference_profiles, v1
 from backend.coordinator import db, docflow, identity, models, runtime
 from backend.coordinator.test_document_generation import scripted_stream
 from backend.coordinator.test_execution4a import Harness
@@ -200,16 +201,36 @@ class LinkedModels(unittest.TestCase):
 class ChatCarriesIdentity(Harness):
     """The production path: an ordinary Chat turn, through the coordinator."""
 
+    @staticmethod
+    def profile(engine, digest):
+        """A synthetic qualified Chat profile for this identity-only test."""
+        values = next(
+            profile for profile in inference_profiles.PROFILES
+            if profile.workflow_mode == inference_profiles.CHAT
+            and profile.target_profile_id == inference_profiles.MAC_M5_16GB
+        ).model_dump(exclude={"profile_id"})
+        values["model"] = {
+            "model_id": engine, "manifest_sha256": digest,
+            "runtime": "ollama", "runtime_version": "0.32.14",
+        }
+        values["evidence_ref"] = "test#synthetic-identity-profile"
+        return v1.ExecutionProfile(
+            profile_id=v1.execution_profile_id(values), **values)
+
     def ask(self, text="who are you and what is your name", *, engine=BASELINE,
             inventory=None):
         stream = scripted_stream("an answer")
         job = self.send(text)
         installed = inventory if inventory is not None else [engine]
-        state = {"reachable": True, "models": installed,
+        state = {"reachable": True, "server_version": "0.32.14",
+                 "models": installed,
                  "digests": {model: (BASELINE_DIGEST if model == BASELINE
                                      else "b" * 64)
                              for model in installed}}
+        digest = state["digests"].get(engine, "b" * 64)
         with patch.object(self.c, "model_for", return_value=engine), \
+                patch.object(self.c, "local_profiles",
+                             return_value=[self.profile(engine, digest)]), \
                 patch.object(runtime, "probe", return_value=state), \
                 patch.object(runtime, "stream_chat", stream):
             self.c._run(job, self.chat, None)
@@ -277,7 +298,8 @@ class ChatCarriesIdentity(Harness):
         the answer when the runtime changes between calls."""
         stream = scripted_stream("an answer")
         job = self.send("who are you")
-        state = {"reachable": True, "models": [BASELINE],
+        state = {"reachable": True, "server_version": "0.32.14",
+                 "models": [BASELINE],
                  "digests": {BASELINE: BASELINE_DIGEST}}
         relationship = {"relationship_id": "rel", "state": "paired"}
         with patch.object(self.c, "paired_worker", return_value=relationship), \
