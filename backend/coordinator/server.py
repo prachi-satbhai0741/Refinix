@@ -1013,6 +1013,82 @@ class Coordinator:
                        "selection": final_selection,
                        "attachment_note": docflow.attachment_note(prepared, notes)}
 
+    @staticmethod
+    def _document_source_budget(base_messages, output_allowance: int) -> int:
+        """Characters left for sources after the real fixed prompt is counted."""
+        available = context.input_budget(runtime.NUM_CTX, output_allowance)
+        fixed = context.estimate_messages(base_messages)
+        if fixed >= available:
+            raise docflow.WorkflowError(
+                "context_too_large",
+                "The request itself does not leave room for document context. "
+                "Shorten it and try again.")
+        return int((available - fixed) * context.CHARS_PER_TOKEN)
+
+    def _fit_document_prompt(self, base_messages, output_allowance: int, build):
+        """Shrink source text until the complete built prompt fits."""
+        budget = self._document_source_budget(base_messages, output_allowance)
+        limit = context.input_budget(runtime.NUM_CTX, output_allowance)
+        while True:
+            messages = build(budget)
+            used = context.estimate_messages(messages)
+            if used <= limit:
+                return messages
+            budget -= int((used - limit) * context.CHARS_PER_TOKEN) + 1
+            if budget < 0:
+                raise docflow.WorkflowError(
+                    "context_too_large",
+                    "The document instructions do not fit this model's "
+                    "qualified context window.")
+
+    def _approval_prompt(self, question, report, supporting, passages):
+        """Build one approval prompt whose report and passages share one budget."""
+        base = docflow.approval_note_messages(question, [], [])
+        source_budget = min(
+            docflow.MAX_CONTEXT_CHARS,
+            self._document_source_budget(base, docflow.APPROVAL_NUM_PREDICT))
+
+        # Keep room for both the primary report and its references. Retrieval is
+        # ranked, so later passages are the first ones left out.
+        passage_budget = source_budget // 2 if passages else 0
+        selected_passages, passage_chars = [], 0
+        for passage in passages:
+            if passage_chars + len(passage.text) > passage_budget:
+                continue
+            selected_passages.append(passage)
+            passage_chars += len(passage.text)
+
+        report_budget = max(0, source_budget - passage_chars)
+        input_limit = context.input_budget(
+            runtime.NUM_CTX, docflow.APPROVAL_NUM_PREDICT)
+        while True:
+            pages, _trimmed = docflow.bounded_pages(report, report_budget)
+            if not pages:
+                raise docflow.WorkflowError(
+                    "context_too_large",
+                    "The approval-note request left no room for the inspection "
+                    "report. Shorten the request or use fewer sources.")
+            report_details, open_items = docflow.report_evidence(report, pages)
+            conflicts = docflow.reference_conflicts(report_details, supporting)
+            built = docflow.approval_note_messages(
+                question, selected_passages, [(report, pages)], open_items, conflicts)
+            used = context.estimate_messages(built)
+            if used <= input_limit:
+                return (built, selected_passages, pages, report_details,
+                        open_items, conflicts)
+            if selected_passages:
+                passage_chars -= len(selected_passages.pop().text)
+                continue
+            excess_chars = int((used - input_limit) * context.CHARS_PER_TOKEN) + 1
+            smaller = report_budget - excess_chars
+            if smaller >= docflow.MIN_PAGE_FRAGMENT:
+                report_budget = smaller
+                continue
+            raise docflow.WorkflowError(
+                "context_too_large",
+                "The approval-note instructions do not fit this model's "
+                "qualified context window.")
+
     def _document_stage(self, job_id, chat_id, skill_id, messages, *, ocr_model):
         """Extract, then either build a prompt or answer without the model."""
         cancel = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
@@ -1042,8 +1118,12 @@ class Coordinator:
                         "ask for it as a file.")
                 return None, None, {"conversion": previous,
                                     "workflow": docflow.WORKFLOW_CONVERSION}
-            built = docflow.general_document_messages(
-                request_text, [], self.chat_messages(chat_id)[:-1])
+            base = docflow.general_document_messages(request_text, [])
+            history = self.chat_messages(chat_id)[:-1]
+            built = self._fit_document_prompt(
+                base, docflow.DOCUMENT_NUM_PREDICT,
+                lambda budget: docflow.general_document_messages(
+                    request_text, [], history, budget=budget))
             return built, None, {"workflow": docflow.WORKFLOW_GENERAL,
                                  "general": True, **docflow.GENERAL_CALL}
 
@@ -1075,16 +1155,33 @@ class Coordinator:
                 question, passages, prepared), "prepared": prepared}
 
         if skill_id == docflow.READ_SKILL:
-            built, notes, citation_sources = docflow.read_messages(
-                question, prepared.sources)
+            base, _notes, _scope = docflow.read_messages(question, [])
+            budget = self._document_source_budget(base, runtime.NUM_PREDICT)
+            while True:
+                built, notes, citation_sources = docflow.read_messages(
+                    question, prepared.sources, budget=budget)
+                used = context.estimate_messages(built)
+                limit = context.input_budget(runtime.NUM_CTX, runtime.NUM_PREDICT)
+                if used <= limit:
+                    break
+                budget -= int((used - limit) * context.CHARS_PER_TOKEN) + 1
+                if budget < 0:
+                    raise docflow.WorkflowError(
+                        "context_too_large",
+                        "The document-reading instructions do not fit this "
+                        "model's qualified context window.")
             return built, prepared, {"notes": notes, "prepared": prepared,
                                      "citation_sources": citation_sources}
 
         if workflow == docflow.WORKFLOW_GENERAL:
             # A general document written from the attached files. It makes no
             # page citations, so nothing is resolved against the sources.
-            built = docflow.general_document_messages(
-                question, prepared.sources, self.chat_messages(chat_id)[:-1])
+            base = docflow.general_document_messages(question, [])
+            history = self.chat_messages(chat_id)[:-1]
+            built = self._fit_document_prompt(
+                base, docflow.DOCUMENT_NUM_PREDICT,
+                lambda budget: docflow.general_document_messages(
+                    question, prepared.sources, history, budget=budget))
             return built, prepared, {"prepared": prepared, "general": True,
                                      "workflow": docflow.WORKFLOW_GENERAL,
                                      **docflow.GENERAL_CALL}
@@ -1101,11 +1198,9 @@ class Coordinator:
                     question=question)
             except retrieval.RetrievalError:
                 passages = []          # no passages is a truthful outcome
-        budget = docflow.MAX_CONTEXT_CHARS
-        pages, _trimmed = docflow.bounded_pages(report, budget)
-        report_details, open_items = docflow.report_evidence(report, pages)
-        built = docflow.approval_note_messages(
-            question, passages, [(report, pages)], open_items)
+        (built, passages, pages, report_details,
+         open_items, conflicts) = self._approval_prompt(
+             question, report, supporting, passages)
         allowed_pages = {report["source_id"]: {p["number"] for p in pages}}
         for passage in passages:
             allowed_pages.setdefault(passage.source_id, set()).add(passage.page)
@@ -1118,6 +1213,7 @@ class Coordinator:
                                  "citation_sources": citation_sources,
                                  "report_details": report_details,
                                  "open_items": open_items,
+                                 "reference_conflicts": conflicts,
                                  **docflow.APPROVAL_CALL}
 
     def _general_document(self, job_id, answer, extra, *, model_id):
@@ -1142,11 +1238,16 @@ class Coordinator:
         sources = extra.get("citation_sources", [])
         note = self._structured_reply(
             job_id, answer, extra, model_id=model_id,
-            parse=lambda reply: docflow.parse_approval_note(reply, sources),
+            parse=lambda reply: docflow.parse_approval_note(
+                reply, sources, extra.get("reference_conflicts")),
             repair_messages=docflow.approval_repair_messages,
             subject="note")
         note["report_details"] = extra.get("report_details", [])
         note["open_items"] = extra.get("open_items", [])
+        # Coordinator-owned, like the two above: the model was told about the
+        # conflict, but whether it mentions one is not what decides whether the
+        # artifact carries it.
+        note["reference_conflicts"] = extra.get("reference_conflicts", [])
         return note
 
     def _structured_reply(self, job_id, answer, extra, *, model_id, parse,

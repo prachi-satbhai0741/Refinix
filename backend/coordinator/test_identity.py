@@ -63,6 +63,32 @@ class IdentityBlock(unittest.TestCase):
         self.assertIn("not your identity", content)
         self.assertIn("never introduce", content)
 
+    def test_every_chat_turn_carries_the_reversible_relation_check(self):
+        """A packaged run produced a confident engineering paragraph whose
+        central comparison was the wrong way round. The block is the one thing
+        every ordinary Chat turn already pays for, so the instruction that a
+        relation's *direction* has to be checked belongs here rather than in a
+        second path some requests take and others do not."""
+        content = self.text(engine=BASELINE, models=[BASELINE])
+        self.assertIn(identity.TECHNICAL_CARE, content)
+        for reversible in ("larger", "available", "required", "minimum",
+                           "maximum", "cause", "units"):
+            with self.subTest(term=reversible):
+                self.assertIn(reversible, identity.TECHNICAL_CARE)
+
+    def test_uncertainty_is_asked_for_rather_than_a_confident_guess(self):
+        self.assertIn("say that plainly", identity.TECHNICAL_CARE)
+        self.assertIn("uncertainty", identity.TECHNICAL_CARE)
+
+    def test_the_instruction_teaches_no_fact_about_any_subject(self):
+        """A fact written in here would be the one relation Refinix gets right
+        while every neighbouring one stays wrong, and it would go stale. The
+        instruction is about the shape of a claim, not about pumps."""
+        for trivia in ("npsh", "cavitat", "centrifugal", "pump", "suction",
+                       "mm/s"):
+            with self.subTest(term=trivia):
+                self.assertNotIn(trivia, identity.TECHNICAL_CARE.casefold())
+
     def test_one_model_is_counted_as_one(self):
         content = self.text(engine=BASELINE, models=[BASELINE])
         self.assertIn("1 model", content)

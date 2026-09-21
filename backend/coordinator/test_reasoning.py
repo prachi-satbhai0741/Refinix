@@ -108,6 +108,15 @@ class TestRequestPayload(RuntimeBase):
         self.assertIs(sent["truncate"], False)
         self.assertIs(sent["shift"], False)
 
+    def test_metrics_report_the_output_limit_actually_sent(self):
+        FakeOllama.script = [{"done": True, "done_reason": "length",
+                              "prompt_eval_count": 100,
+                              "eval_count": 3072}]
+        records = self.run_stream(num_predict=3072)
+        metrics = next(payload for kind, payload in records if kind == "done")
+        self.assertEqual(metrics["output_token_limit"], 3072)
+        self.assertEqual(metrics["limit_reason"], "output")
+
     def test_the_default_matches_the_accepted_execution_one_behaviour(self):
         FakeOllama.script = [{"message": {"content": "hello"}}, DONE]
         self.run_stream()

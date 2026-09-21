@@ -26,8 +26,8 @@ import threading
 import time
 
 from backend.contracts import v1
-from backend.coordinator import (codeflow, db, dispatch, pairing, policy, repo,
-                                 runtime)
+from backend.coordinator import (codeflow, context, db, dispatch, pairing, policy,
+                                 repo, runtime)
 
 # One proposal is one bounded local model call.
 PROPOSAL_DEADLINE_SECONDS = 240
@@ -407,6 +407,34 @@ class CodeService:
                              "sha256": identity.sha256, "bytes": identity.size})
         return selected
 
+    @staticmethod
+    def _proposal_output_limit(messages, selection: list[dict]) -> int:
+        """Output needed for the largest valid whole-file proposal that fits."""
+        # At most MAX_EDITS files can be returned. Size the envelope for the
+        # largest eligible files rather than pretending every selected file can
+        # appear despite the schema's own cap.
+        largest = sorted(selection, key=lambda item: len(item["text"]), reverse=True)[
+            :codeflow.MAX_EDITS]
+        maximal = {
+            "summary": "x" * codeflow.MAX_SUMMARY_CHARS,
+            "edits": [{"path": item["path"], "base_sha256": item["sha256"],
+                       "content": item["text"]} for item in largest],
+        }
+        required = context.estimate_tokens(
+            json.dumps(maximal, ensure_ascii=False, separators=(",", ":")))
+        prompt = context.estimate_messages(messages)
+        available = max(0, int(
+            (runtime.NUM_CTX - prompt - context.TEMPLATE_OVERHEAD)
+            * context.SAFETY_FRACTION))
+        output_limit = max(PROPOSAL_NUM_PREDICT, required)
+        if output_limit > available:
+            raise CodeError(
+                "selection_too_large",
+                "The selected files cannot be returned as a complete reviewable "
+                f"proposal inside this model's {runtime.NUM_CTX}-token qualified "
+                "window. Select fewer or smaller files.")
+        return output_limit
+
     def cancel(self, repo_id: str) -> bool:
         with self._lock:
             event = self._cancels.get(repo_id)
@@ -519,19 +547,27 @@ class CodeService:
                     db.set_job_state(self.conn, job_id, following)
                 db.set_attempt_state(self.conn, attempt_id, "running")
                 model = route.model or {"model_id": model_id}
+                generation_messages = codeflow.build_messages(request, selection)
+                generation_limit = self._proposal_output_limit(
+                    generation_messages, selection)
                 reply, reasoning = self._ask_model(
-                    codeflow.build_messages(request, selection), cancel, model_id,
-                    attempt_id=attempt_id)
+                    generation_messages, cancel, model_id,
+                    num_predict=generation_limit, attempt_id=attempt_id)
                 try:
                     parsed = codeflow.parse_proposal(reply, selection)
                 except codeflow.ProposalError as first:
-                    # Exactly one bounded repair attempt, on the same context.
+                    # Exactly one bounded format repair. The malformed proposal
+                    # is enough; resending every source file would spend the
+                    # context twice and invite a second draft.
                     if first.code not in ("not_json", "not_object", "unknown_fields"):
                         raise
+                    repair_messages = codeflow.repair_messages(reply)
+                    repair_limit = self._proposal_output_limit(
+                        repair_messages, selection)
                     retry, _ = self._ask_model(
-                        codeflow.repair_messages(
-                            codeflow.build_messages(request, selection), reply), cancel,
-                        model_id, attempt_id=attempt_id, stage="repair_generation")
+                        repair_messages, cancel, model_id,
+                        num_predict=repair_limit, attempt_id=attempt_id,
+                        stage="repair_generation")
                     parsed = codeflow.parse_proposal(retry, selection)
         except codeflow.PackageError as exc:
             self._fail_code_job(job_id, attempt_id, exc.code, str(exc))
@@ -948,6 +984,7 @@ class CodeService:
 
     def _ask_model(self, messages, cancel: threading.Event,
                    model_id: str, *, attempt_id: str | None = None,
+                   num_predict: int = PROPOSAL_NUM_PREDICT,
                    stage: str = "generation") -> tuple[str, bool]:
         """One bounded local model call with its setting and diagnostics recorded."""
         reasoning = db.get_reasoning(self.conn, model_id)
@@ -960,7 +997,7 @@ class CodeService:
             for kind, payload in runtime.stream_chat(
                     messages, model=model_id, think=reasoning,
                     response_format=codeflow.PROPOSAL_SCHEMA,
-                    num_predict=PROPOSAL_NUM_PREDICT,
+                    num_predict=num_predict,
                     should_cancel=lambda: cancel.is_set() or time.monotonic() > deadline
                     or self.c.stopping.is_set()):
                 if kind == "delta":

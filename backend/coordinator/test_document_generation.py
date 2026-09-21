@@ -150,11 +150,17 @@ class CallContract(GenerationHarness):
         self.assertGreater(docflow.DOCUMENT_NUM_PREDICT, runtime.NUM_PREDICT)
 
     def test_the_budget_leaves_room_for_the_prompt_inside_the_context(self):
-        """The runtime is called with truncate and shift off, so prompt plus
-        output must fit or the request is refused outright."""
-        worst_prompt = docflow.MAX_CONTEXT_CHARS // 4      # ~4 chars a token
-        self.assertLess(worst_prompt + docflow.DOCUMENT_NUM_PREDICT,
-                        runtime.NUM_CTX)
+        """The real estimator counts fixed instructions as well as sources."""
+        source = {"source_id": "large", "filename": "large.txt",
+                  "pages": [{"number": 1, "text": "x" * 100_000}]}
+        base = docflow.general_document_messages(self.REQUEST, [])
+        messages = self.c._fit_document_prompt(
+            base, docflow.DOCUMENT_NUM_PREDICT,
+            lambda budget: docflow.general_document_messages(
+                self.REQUEST, [source], budget=budget))
+        self.assertLessEqual(
+            context.estimate_messages(messages),
+            context.input_budget(runtime.NUM_CTX, docflow.DOCUMENT_NUM_PREDICT))
 
     def test_the_enforced_schema_matches_what_the_parser_accepts(self):
         """One representation, not two. A schema that allowed a field the
