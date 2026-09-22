@@ -434,6 +434,9 @@ class TestOrdinaryChatAttachments(Harness):
                 self.assertIn(filename, answer)
 
     def test_an_image_in_ordinary_chat_goes_to_the_vision_model(self):
+        # PNG starts with CRLF and a DOS EOF byte. A Windows text-mode file
+        # descriptor corrupts both, so this also guards the byte-for-byte
+        # private-attachment reopen used by native vision.
         record = self.attach("photo.png", PNG)
         stream = fake_stream("an ordinary answer")
         job = self.send("Perform OCR on this image")

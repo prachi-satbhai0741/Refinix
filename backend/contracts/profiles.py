@@ -104,7 +104,7 @@ PROFILES: tuple[v1.ExecutionProfile, ...] = (
         evidence_ref="agent-memory/agentchangelog.md#ac-20260921-007"),
     _profile(
         runtime_version="0.32.14", target=MAC_M5_16GB, workflow=CODE,
-        context=8192, default_output=2048, max_output=8128,
+        context=8192, default_output=2048, max_output=2048,
         reasoning=("disabled", "enabled"), decoder=("json_schema",),
         evidence_ref="agent-memory#workflow-envelope-2026-09-21"),
     _profile(

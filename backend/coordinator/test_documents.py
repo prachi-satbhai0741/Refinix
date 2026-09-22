@@ -84,6 +84,14 @@ class Base(unittest.TestCase):
                                     self.c.workspace_id)
         return self.c.attachments_root / full["stored_name"]
 
+    def symlink_or_skip(self, link: Path, target: Path) -> None:
+        try:
+            link.symlink_to(target)
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows symlink creation privilege is unavailable")
+            raise
+
 
 # --------------------------------------------------------------------------
 # Capability honesty
@@ -203,7 +211,7 @@ class TestExtraction(Base):
         replacement = stored.parent / "replacement.txt"
         replacement.write_bytes(b"original text\n")
         stored.unlink()
-        stored.symlink_to(replacement)
+        self.symlink_or_skip(stored, replacement)
         with self.assertRaises(documents.DocumentError) as caught:
             documents.extract(stored, source_id=record["attachment_id"],
                               filename="notes.txt", media_type="text/plain",
@@ -1300,7 +1308,7 @@ class TestDocumentRetention(Base):
         target = stored.parent / "keep.txt"
         target.write_bytes(b"keep")
         stored.unlink()
-        stored.symlink_to(target)
+        self.symlink_or_skip(stored, target)
         db.delete_chat(self.c.conn, self.chat, self.c.attachments_root)
         self.assertFalse(stored.exists())
         self.assertEqual(target.read_bytes(), b"keep")

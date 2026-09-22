@@ -354,6 +354,28 @@ class TestChatIdentity(Base):
         self.assertEqual(seen["inference"], env.inference)
 
 
+class TestExecutorProfileRevalidation(Base):
+    """Admission evidence is checked again at the last boundary before use."""
+
+    def test_a_profile_that_disappears_after_admission_never_starts_inference(self):
+        env = envelope()
+        self.session.claim(env.attempt_id, 0)
+        with patch.object(runtime, "resolve_profile", return_value=None), \
+                patch.object(runtime, "stream_chat") as inference:
+            self.assertEqual(self.executor.execute(env, epoch=0), "failed")
+        inference.assert_not_called()
+
+    def test_mutated_semantics_after_admission_never_start_inference(self):
+        env = envelope()
+        env = env.model_copy(update={
+            "inference": env.inference.model_copy(
+                update={"context_window_tokens": 8192})})
+        self.session.claim(env.attempt_id, 0)
+        with patch.object(runtime, "stream_chat") as inference:
+            self.assertEqual(self.executor.execute(env, epoch=0), "failed")
+        inference.assert_not_called()
+
+
 class TestPackageRetention(unittest.TestCase):
     def test_an_idle_executor_periodically_reclaims_abandoned_packages(self):
         class Store:
@@ -1209,6 +1231,8 @@ class TestPairingStore(unittest.TestCase):
     def test_the_state_file_is_not_group_or_world_readable(self):
         import os
         import stat
+        if os.name == "nt":
+            self.skipTest("Windows protects this file with ACLs, not mode bits")
         self.pair()
         mode = stat.S_IMODE(os.stat(self.path).st_mode)
         self.assertEqual(mode & 0o077, 0, f"pairing file is mode {mode:o}")

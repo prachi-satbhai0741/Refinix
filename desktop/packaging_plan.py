@@ -211,7 +211,7 @@ def frontend_data_files(root: Path | None = None) -> list[tuple[str, list[str]]]
             continue
         parent = path.relative_to(root).parent
         destination = ("frontend/app" if parent == Path(".")
-                       else str(Path("frontend/app") / parent))
+                       else (Path("frontend/app") / parent).as_posix())
         grouped.setdefault(destination, []).append(str(path))
     return sorted(grouped.items())
 

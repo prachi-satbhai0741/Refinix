@@ -47,7 +47,7 @@ class Base(unittest.TestCase):
         self.project = Path(self.tmp.name) / "project"
         self.project.mkdir()
         for name, text in ORIGINAL.items():
-            (self.project / name).write_text(text)
+            (self.project / name).write_bytes(text.encode("utf-8"))
         self.c = Coordinator(self.state)
         self.addCleanup(self.c.conn.close)
         self.repo = self.c.code.connect(str(self.project))
@@ -212,7 +212,7 @@ class TestApprovalBinding(Base):
         second_project = Path(self.tmp.name) / "second"
         second_project.mkdir()
         for name, text in ORIGINAL.items():
-            (second_project / name).write_text(text)
+            (second_project / name).write_bytes(text.encode("utf-8"))
         other_id = self.c.code.connect(str(second_project))["repo_id"]
 
         first = self.proposal(("alpha.py",))
@@ -338,7 +338,8 @@ class TestWriteRecovery(Base):
     def test_a_crash_after_one_of_several_files_finishes_the_rest(self):
         _proposal, _approval, operation = self.approved_operation()
         # Simulate the first file having been written before the stop.
-        (self.project / "alpha.py").write_text(REPLACEMENT["alpha.py"])
+        (self.project / "alpha.py").write_bytes(
+            REPLACEMENT["alpha.py"].encode("utf-8"))
         db.set_operation_file(self.c.conn, operation["operation_id"],
                               "alpha.py", "applied")
         db.set_operation_state(self.c.conn, operation["operation_id"], "applying")
@@ -349,7 +350,8 @@ class TestWriteRecovery(Base):
     def test_a_file_already_at_its_after_hash_is_not_written_again(self):
         """The idempotence that stops a restart producing a duplicate write."""
         _proposal, _approval, operation = self.approved_operation(("alpha.py",))
-        (self.project / "alpha.py").write_text(REPLACEMENT["alpha.py"])
+        (self.project / "alpha.py").write_bytes(
+            REPLACEMENT["alpha.py"].encode("utf-8"))
         written = []
         real = repo.replace_text_file
 
@@ -366,7 +368,7 @@ class TestWriteRecovery(Base):
 
     def test_a_third_party_edit_during_recovery_stops_that_file(self):
         _proposal, _approval, _operation = self.approved_operation()
-        (self.project / "beta.py").write_text("someone else was here\n")
+        (self.project / "beta.py").write_bytes(b"someone else was here\n")
         resumed = self.restart().resumed_writes
         states = {item["path"]: item["state"] for item in resumed[0]["results"]}
         self.assertEqual(states["beta.py"], "rejected_stale")

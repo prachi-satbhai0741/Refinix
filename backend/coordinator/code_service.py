@@ -353,7 +353,10 @@ class CodeService:
             # missing, a link — because each one is a different thing for the
             # person to do about it.
             raise CodeError(exc.code, str(exc), 409) from exc
-        lines = text.split("\n")
+        # Source files commonly use CRLF on Windows. `splitlines` removes the
+        # line terminator itself, so the UI never receives a stray carriage
+        # return as visible source text.
+        lines = text.splitlines()
         return {
             "repo_id": repo_id, "path": relative,
             "name": relative.rsplit("/", 1)[-1],

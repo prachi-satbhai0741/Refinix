@@ -596,7 +596,12 @@ def _extract_image(data: bytes, filename: str, media_type: str, *,
 
 def verified_bytes(path: Path, *, filename: str, expected_sha256: str) -> bytes:
     """Open one private attachment and prove it is the accepted file."""
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    # The Windows CRT defaults a descriptor opened with only O_RDONLY to text
+    # mode. That translates CRLF and treats 0x1a as EOF, corrupting the digest
+    # check for ordinary PNG/JPEG and Office attachments. Binary is a no-op on
+    # POSIX and mandatory here because these are evidence-bound bytes.
+    flags = (os.O_RDONLY | getattr(os, "O_BINARY", 0)
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     try:
         handle = os.open(path, flags)
         try:

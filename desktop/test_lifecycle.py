@@ -148,14 +148,17 @@ class TestCrossPlatformEngineStart(unittest.TestCase):
 
     def test_an_absolute_candidate_is_used_only_when_it_is_executable(self):
         with tempfile.TemporaryDirectory() as folder:
-            binary = Path(folder) / "ollama"
+            binary = Path(folder) / ("ollama.exe" if sys.platform == "win32"
+                                     else "ollama")
             binary.write_text("#!/bin/sh\n")
             with patch.object(lifecycle, "OLLAMA_BINARIES",
                               {"linux": (str(binary),),
                                sys.platform: (str(binary),)}):
-                self.assertIsNone(lifecycle.find_ollama(which=lambda _n: None),
-                                  "a file nobody can execute is not the engine")
-                binary.chmod(0o700)
+                if sys.platform != "win32":
+                    self.assertIsNone(
+                        lifecycle.find_ollama(which=lambda _n: None),
+                        "a file nobody can execute is not the engine")
+                    binary.chmod(0o700)
                 self.assertEqual(lifecycle.find_ollama(which=lambda _n: None),
                                  str(binary))
 

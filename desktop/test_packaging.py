@@ -89,7 +89,8 @@ class TestBundleContents(unittest.TestCase):
     def test_staging_contains_only_application_sources(self):
         with tempfile.TemporaryDirectory() as folder:
             sources = self.ns["stage_application_sources"](Path(folder))
-            files = {str(p.relative_to(sources)) for p in sources.rglob("*") if p.is_file()}
+            files = {p.relative_to(sources).as_posix()
+                     for p in sources.rglob("*") if p.is_file()}
             self.assertTrue({"backend/__init__.py", "backend/coordinator/server.py",
                              "backend/contracts/v1.py", "desktop/shell.py"} <= files)
             self.assertTrue(all(p.endswith(".py") for p in files))

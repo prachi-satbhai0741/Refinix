@@ -43,12 +43,16 @@ import hashlib
 import json
 import os
 import re
-import resource
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+try:
+    import resource
+except ImportError:  # Windows has no POSIX per-process rlimit surface.
+    resource = None
 
 # The only commands a plan may name. C07 approved exactly one; adding to this
 # table is a reviewed decision, not something a plan or a model can do.
@@ -184,6 +188,10 @@ def _limits(plan: dict):
     and PID limits. Setting them here as well bounds a runaway before the
     kubelet has to, and makes the same runner safe to exercise outside a Pod.
     """
+    if resource is None:
+        raise PlanError(
+            "the qualified POSIX resource-limit sandbox is unavailable on "
+            "this platform")
     cpu = int(plan.get("cpu_seconds") or DEFAULT_CPU_SECONDS)
     address = int(plan.get("address_space_bytes") or DEFAULT_ADDRESS_SPACE)
     processes = int(plan.get("processes") or DEFAULT_PROCESSES)

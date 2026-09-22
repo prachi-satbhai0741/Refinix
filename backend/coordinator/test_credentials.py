@@ -229,10 +229,12 @@ class FakeAdvapi:
     marshalled out of a buffer and read back out of one.
     """
 
-    def __init__(self, *, writable=True, blob_override=None):
+    def __init__(self, *, writable=True, blob_override=None,
+                 max_persist=credentials.CRED_PERSIST_LOCAL_MACHINE):
         self.entries: dict[str, bytes] = {}
         self.writable = writable
         self.blob_override = blob_override
+        self.max_persist = max_persist
         self.freed = 0
         self._alive: list = []
 
@@ -249,6 +251,8 @@ class FakeAdvapi:
 
     def CredReadW(self, target, type_, flags, out):
         if target not in self.entries:
+            if hasattr(ctypes, "set_last_error"):
+                ctypes.set_last_error(credentials.ERROR_NOT_FOUND)
             return 0
         blob = (self.entries[target] if self.blob_override is None
                 else self.blob_override)
@@ -268,6 +272,12 @@ class FakeAdvapi:
     def CredDeleteW(self, target, type_, flags):
         return 1 if self.entries.pop(target, None) is not None else 0
 
+    def CredGetSessionTypes(self, count, out):
+        values = ctypes.cast(out, ctypes.POINTER(ctypes.c_uint32))
+        for index in range(count):
+            values[index] = self.max_persist
+        return 1
+
     def CredFree(self, pointer):
         self.freed += 1
 
@@ -281,6 +291,14 @@ class CredentialManagerBackend(unittest.TestCase):
         store = self.store(advapi)
         store.store(ACCOUNT, SECRET)
         self.assertEqual(store.load(ACCOUNT), SECRET)
+
+    def test_probe_checks_the_logon_session_not_only_the_binding(self):
+        state = self.store(FakeAdvapi()).probe()
+        self.assertTrue(state.available)
+
+        state = self.store(FakeAdvapi(max_persist=1)).probe()
+        self.assertFalse(state.available)
+        self.assertIn("session-only", state.detail)
 
     def test_the_entry_is_generic_and_stays_on_this_computer(self):
         """A credential pinned to one LAN worker must not roam to another
@@ -336,13 +354,20 @@ class CredentialManagerBackend(unittest.TestCase):
         self.assertFalse(store.delete(ACCOUNT))
 
     def test_binding_off_windows_is_unavailable_rather_than_an_exception(self):
-        """This computer is the case: `ctypes.WinDLL` does not exist here."""
-        state = credentials.CredentialManager().probe()
+        with mock.patch.object(
+                credentials, "_windows_api",
+                side_effect=credentials.CredentialUnavailable(
+                    "Windows Credential Manager is unavailable")):
+            state = credentials.CredentialManager().probe()
         self.assertFalse(state.available)
         self.assertIn("Credential Manager", state.detail)
 
     def test_deleting_without_a_binding_is_false_not_an_error(self):
-        self.assertFalse(credentials.CredentialManager().delete(ACCOUNT))
+        with mock.patch.object(
+                credentials, "_windows_api",
+                side_effect=credentials.CredentialUnavailable("unavailable")):
+            self.assertFalse(credentials.delete_credential(
+                ACCOUNT, platform="win32"))
 
 
 # --------------------------------------------------------------------------
@@ -351,8 +376,10 @@ class CredentialManagerBackend(unittest.TestCase):
 
 class InputBounds(unittest.TestCase):
     def store(self, account, secret=SECRET):
-        credentials.store_credential(account, secret, platform="darwin",
-                                     runner=Recorder())
+        with mock.patch.object(credentials.shutil, "which",
+                               return_value="/usr/bin/security"):
+            credentials.store_credential(account, secret, platform="darwin",
+                                         runner=Recorder())
 
     def test_an_empty_relationship_cannot_own_a_credential(self):
         for account in ("", "   ", None):
@@ -386,8 +413,10 @@ class InputBounds(unittest.TestCase):
 
     def test_a_valid_account_and_secret_reach_the_store(self):
         runner = Recorder()
-        credentials.store_credential(ACCOUNT, SECRET, platform="darwin",
-                                     runner=runner)
+        with mock.patch.object(credentials.shutil, "which",
+                               return_value="/usr/bin/security"):
+            credentials.store_credential(ACCOUNT, SECRET, platform="darwin",
+                                         runner=runner)
         self.assertEqual(len(runner.calls), 1)
 
 
