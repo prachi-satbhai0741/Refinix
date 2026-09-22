@@ -26,6 +26,15 @@ UBUNTU_VICTUS_RTX2050 = "hp-victus-i5-13420h-rtx2050-4gb-ubuntu-24.04"
 CHAT = "chat"
 CODE = "code.whole_file"
 DOCUMENTS = "documents.structured"
+# Reading pixels is its own workflow: a different model, a different decoder
+# schema and a different failure mode from `documents.structured`.  It exists
+# here so an OCR request has a workflow mode to be qualified *against*, and so
+# a self-test cannot be admitted under the Documents profile by accident.  No
+# OCR profile is registered below: `docs/model-catalog.md` 3.2 records the
+# installed conversion's licence and provenance as UNRESOLVED and its declared
+# capabilities as `["completion"]`.  Naming the workflow is not qualifying a
+# model for it.
+OCR = "documents.ocr"
 
 
 def schema_sha256(schema: dict) -> str:
@@ -34,17 +43,27 @@ def schema_sha256(schema: dict) -> str:
         ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
+def model_ref(runtime_version: str, *, model_id: str = MODEL_ID,
+              manifest_sha256: str = MODEL_DIGEST) -> dict:
+    """One model identity for a registry entry or a qualification run.
+
+    Parameterised over the model because OCR is a different model from Chat.
+    Defaulting to the Chat model keeps every existing entry unchanged; passing
+    another identity is how a measured OCR profile would eventually be built,
+    and is deliberately not enough on its own to register one.
+    """
+    return {"model_id": model_id, "manifest_sha256": manifest_sha256,
+            "runtime": RUNTIME, "runtime_version": runtime_version}
+
+
 def _profile(*, runtime_version: str, target: str, workflow: str,
              context: int, default_output: int, max_output: int,
              reasoning: tuple[str, ...], decoder: tuple[str, ...],
-             evidence_ref: str) -> v1.ExecutionProfile:
+             evidence_ref: str, model_id: str = MODEL_ID,
+             manifest_sha256: str = MODEL_DIGEST) -> v1.ExecutionProfile:
     values = {
-        "model": {
-            "model_id": MODEL_ID,
-            "manifest_sha256": MODEL_DIGEST,
-            "runtime": RUNTIME,
-            "runtime_version": runtime_version,
-        },
+        "model": model_ref(runtime_version, model_id=model_id,
+                           manifest_sha256=manifest_sha256),
         "target_profile_id": target,
         "workflow_mode": workflow,
         "qualified_context_tokens": context,
@@ -66,6 +85,12 @@ def _profile(*, runtime_version: str, target: str, workflow: str,
 # Exact versions are intentional.  A later runtime or another computer earns a
 # new profile after measurement; an advertised model maximum is never promoted
 # into this registry.
+#
+# There is deliberately NO `OCR` entry.  The only installed vision candidate
+# has an unresolved licence and provenance and did not declare `vision` when it
+# was observed, so every OCR request refuses for want of a qualified profile.
+# That refusal is the correct product state, not a gap to be filled by writing
+# a plausible row here.
 PROFILES: tuple[v1.ExecutionProfile, ...] = (
     _profile(
         runtime_version="0.32.14", target=MAC_M5_16GB, workflow=CHAT,

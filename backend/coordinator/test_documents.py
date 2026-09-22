@@ -19,6 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.contracts import profiles
+from backend.coordinator.test_ocr import test_ocr_profile
 from backend.coordinator import (db, docflow, docgen, documents, models,
                                  pdfrender, retrieval, runtime)
 from backend.coordinator.server import Coordinator
@@ -146,14 +147,14 @@ class TestCapabilityProbe(unittest.TestCase):
     def test_a_present_renderer_alone_does_not_advertise_scan_reading(self):
         """Both halves, or neither. A renderer with no model reads nothing."""
         with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT):
-            capability = documents.probe(UNAVAILABLE_RUNTIME)
+            capability = documents.probe(UNAVAILABLE_RUNTIME, ocr_profile=test_ocr_profile())
         self.assertFalse(capability["pdf"]["available"])
         self.assertFalse(capability["ocr"]["available"])
         self.assertIn("not answering", capability["pdf"]["detail"])
 
     def test_a_present_model_alone_does_not_advertise_scan_reading(self):
         with patch.object(documents.pdfrender, "probe", return_value=RENDERER_ABSENT):
-            capability = documents.probe(INSTALLED_RUNTIME)
+            capability = documents.probe(INSTALLED_RUNTIME, ocr_profile=test_ocr_profile())
         self.assertFalse(capability["pdf"]["available"])
         self.assertFalse(capability["ocr"]["available"])
         # The renderer's own words, not a named framework: the missing
@@ -166,8 +167,9 @@ class TestCapabilityProbe(unittest.TestCase):
         with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT), \
                 patch.object(documents.ocr.runtime, "model_capabilities",
                              return_value=["completion", "vision"]):
-            capability = documents.probe(INSTALLED_RUNTIME)
-            supported = documents.supported_suffixes(INSTALLED_RUNTIME)
+            capability = documents.probe(INSTALLED_RUNTIME, ocr_profile=test_ocr_profile())
+            supported = documents.supported_suffixes(
+                INSTALLED_RUNTIME, ocr_profile=test_ocr_profile())
         self.assertTrue(capability["pdf"]["available"])
         self.assertIn(".pdf", supported)
         # The claim stays bounded: a standalone vision component, not the
@@ -308,7 +310,8 @@ class TestExtraction(Base):
                 documents.extract(self.stored(record),
                                   source_id=record["attachment_id"],
                                   filename="scan.pdf", media_type="application/pdf",
-                                  expected_sha256=record["sha256"])
+                                  expected_sha256=record["sha256"],
+                                  ocr_profile=test_ocr_profile())
         self.assertEqual(caught.exception.code, "no_pdf_parser")
         self.assertIn("render", str(caught.exception))
 
@@ -324,7 +327,8 @@ class TestExtraction(Base):
                 documents.extract(self.stored(record),
                                   source_id=record["attachment_id"],
                                   filename="scan.pdf", media_type="application/pdf",
-                                  expected_sha256=record["sha256"])
+                                  expected_sha256=record["sha256"],
+                                  ocr_profile=test_ocr_profile())
         self.assertEqual(caught.exception.code, "model_cannot_read_images")
 
     def test_a_pdf_is_refused_when_the_model_is_absent_and_nothing_is_pulled(self):
@@ -344,7 +348,8 @@ class TestExtraction(Base):
                 documents.extract(self.stored(record),
                                   source_id=record["attachment_id"],
                                   filename="scan.pdf", media_type="application/pdf",
-                                  expected_sha256=record["sha256"])
+                                  expected_sha256=record["sha256"],
+                                  ocr_profile=test_ocr_profile())
         self.assertEqual(caught.exception.code, "no_ocr_model")
         self.assertIn("does not download models", str(caught.exception))
         self.assertEqual(calls, [])
@@ -860,6 +865,7 @@ def fake_stream(reply, thinking="", done_reason="stop"):
     def stream(messages, *, should_cancel=None, profile=None, inference=None,
                response_format=None, images=None):
         stream.messages = messages
+        stream.images = images
         stream.response_format = response_format
         stream.num_predict = (inference.output_allowance_tokens
                               if inference else None)
@@ -869,6 +875,7 @@ def fake_stream(reply, thinking="", done_reason="stop"):
         yield "delta", reply
         yield "done", {"done_reason": done_reason}
     stream.messages = None
+    stream.images = None
     stream.response_format = None
     stream.num_predict = None
     stream.calls = 0

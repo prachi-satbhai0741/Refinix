@@ -385,7 +385,7 @@ def run_selftest(scope: str, model: str, *, generate=None, artifact=None,
         if scope == CHAT:
             reply = generate(
                 model, [{"role": "user", "content": CHAT_CHECK_PROMPT}],
-                num_predict=128)
+                scope=scope, num_predict=128)
             wrong = chat_relation_failure(reply)
             if wrong:
                 return failed(f"{model} {wrong}. A model that reverses a "
@@ -402,6 +402,7 @@ def run_selftest(scope: str, model: str, *, generate=None, artifact=None,
                 codeflow.build_messages(
                     "Replace the entire file text with the single line: after",
                     selected),
+                scope=scope,
                 response_format=codeflow.PROPOSAL_SCHEMA, num_predict=512)
             try:
                 proposal = codeflow.parse_proposal(reply, selected)
@@ -416,6 +417,7 @@ def run_selftest(scope: str, model: str, *, generate=None, artifact=None,
                 docflow.general_document_messages(
                     "Write a one-section document with one short paragraph about Refinix.",
                     []),
+                scope=scope,
                 response_format=docflow.GENERAL_DOCUMENT_FORMAT,
                 num_predict=512)
             try:
@@ -432,6 +434,7 @@ def run_selftest(scope: str, model: str, *, generate=None, artifact=None,
         elif scope == DOCUMENTS_OCR:
             from backend.coordinator import ocr
             reply = generate(model, ocr.page_messages("image/png"),
+                             scope=scope,
                              images=[ocr.selftest_image()],
                              response_format=ocr.PAGE_SCHEMA,
                              num_predict=ocr.PAGE_NUM_PREDICT)

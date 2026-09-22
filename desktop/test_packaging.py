@@ -159,6 +159,11 @@ class TestBundleContents(unittest.TestCase):
     def test_the_bundle_cannot_enable_host_site_packages(self):
         self.assertFalse(self.ns["OPTIONS"]["site_packages"])
 
+    def test_the_packaged_entry_does_not_modify_the_bundle_on_launch(self):
+        source = (REPO / "desktop" / "refinix.py").read_text()
+        self.assertLess(source.index("sys.dont_write_bytecode = True"),
+                        source.index("from desktop import lifecycle, shell"))
+
 
 class TestBundleMetadata(unittest.TestCase):
     def setUp(self):

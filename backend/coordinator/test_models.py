@@ -25,6 +25,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.contracts import profiles, v1
+from backend.contracts import profiles as inference_profiles
 from backend.coordinator import db, device, docgen, models, runtime
 from backend.coordinator.server import Coordinator
 
@@ -623,6 +624,72 @@ class TestSelfTestRoute(CoordinatorBase):
             self.c.run_model_selftest(models.CHAT)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][0], CATALOGUED)
+
+
+class TestSelfTestWorkflowSelection(CoordinatorBase):
+    """Which qualified workflow each self-test is admitted under.
+
+    The workflow used to be guessed from the response format: anything that
+    was not the Code proposal schema became `documents.structured`. Reading a
+    page and writing a document both decode JSON, so the OCR self-test was
+    admitted under the Documents profile — a different workflow, a different
+    envelope and a different schema from the one it actually sends.
+    """
+
+    def workflow_for(self, scope):
+        """The workflow the coordinator resolves a profile for, per scope."""
+        seen = {}
+
+        def local_profile(*, workflow, **kwargs):
+            seen["workflow"] = workflow
+            seen.update(kwargs)
+            return None                      # refuse: the resolution is the point
+
+        with patch.object(self.c, "local_profile", local_profile), \
+                patch.object(runtime, "model_capabilities",
+                             return_value=["completion", "vision"]), \
+                patch.object(runtime, "probe", return_value={
+                    **self.HEALTH, "models": [CATALOGUED, runtime.OCR_MODEL],
+                    "digests": {CATALOGUED: CATALOG_DIGEST,
+                                runtime.OCR_MODEL: "b" * 64}}):
+            self.c.run_model_selftest(scope)
+        return seen
+
+    def test_the_ocr_self_test_asks_for_the_ocr_workflow(self):
+        seen = self.workflow_for(models.DOCUMENTS_OCR)
+        self.assertEqual(seen["workflow"], inference_profiles.OCR)
+        self.assertEqual(seen["model_id"], runtime.OCR_MODEL)
+
+    def test_the_ocr_self_test_is_not_admitted_as_documents(self):
+        seen = self.workflow_for(models.DOCUMENTS_OCR)
+        self.assertNotEqual(seen["workflow"], inference_profiles.DOCUMENTS)
+
+    def test_each_other_scope_keeps_its_own_workflow(self):
+        for scope, expected in (
+                (models.CHAT, inference_profiles.CHAT),
+                (models.CODE, inference_profiles.CODE),
+                (models.DOCUMENTS_GENERATE, inference_profiles.DOCUMENTS)):
+            with self.subTest(scope=scope):
+                self.assertEqual(self.workflow_for(scope)["workflow"], expected)
+
+    def test_every_self_test_scope_has_a_mapped_workflow(self):
+        """A new scope must not silently inherit another workflow's profile."""
+        self.assertEqual(set(models.SELFTESTS),
+                         set(self.c.SELFTEST_WORKFLOWS))
+
+    def test_the_ocr_self_test_is_unavailable_while_nothing_qualifies_it(self):
+        """The live product state: no OCR profile is registered."""
+        with patch.object(runtime, "model_capabilities",
+                          return_value=["completion", "vision"]), \
+                patch.object(runtime, "probe", return_value={
+                    **self.HEALTH, "models": [CATALOGUED, runtime.OCR_MODEL],
+                    "digests": {CATALOGUED: CATALOG_DIGEST,
+                                runtime.OCR_MODEL: "b" * 64}}), \
+                patch.object(runtime, "stream_chat") as never:
+            record = self.c.run_model_selftest(models.DOCUMENTS_OCR)
+        self.assertEqual(record["state"], "unavailable")
+        self.assertIn("qualified execution profile", record["detail"])
+        never.assert_not_called()
 
 
 class TestStatusTruthfulness(CoordinatorBase):

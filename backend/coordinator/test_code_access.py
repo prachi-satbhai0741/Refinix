@@ -17,8 +17,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.contracts import profiles
-from backend.coordinator import (code_service, codeflow, db, models, policy,
+from backend.contracts import profiles, v1
+from backend.coordinator import (code_service, codeflow, context, db, models, policy,
                                  repo, runtime)
 from backend.coordinator.server import Coordinator
 
@@ -576,6 +576,73 @@ class TestProposalLifecycle(RepoBase):
         self.assertIsNone(db.latest_proposal(self.c.conn, repo_id,
                                               self.c.workspace_id))
 
+    def test_an_output_limit_failure_reaches_the_surface_with_its_measurement(self):
+        """End to end: the measured cause must survive into the stored error.
+
+        The numbers were always recorded in `metrics_json` and used to be
+        dropped from the Code state response.
+        """
+        repo_id = self.connect("partial")
+        reply = proposal_reply([{"path": "notes.md",
+                                 "base_sha256": self.sha("notes.md"),
+                                 "content": "# incomplete\n"}])
+
+        def limited(messages, *, should_cancel=None, profile=None,
+                    inference=None, response_format=None):
+            yield "delta", reply
+            yield "done", {
+                "done_reason": "length", "limit_reason": "output",
+                "output_tokens": inference.output_allowance_tokens,
+                "output_token_limit": inference.output_allowance_tokens,
+                "context_window": inference.context_window_tokens,
+                "total_ms": 4321}
+
+        with patch.object(runtime, "stream_chat", limited):
+            with self.assertRaises(code_service.CodeError) as caught:
+                self.propose(repo_id, "retitle", ["notes.md"])
+        message = str(caught.exception)
+        self.assertIn("reply limit", message)
+        self.assertIn("Nothing was applied", message)
+        self.assertNotIn("did not finish the code proposal cleanly", message)
+
+        row = self.c.conn.execute(
+            "SELECT error_json, metrics_json, runtime_ms FROM attempts "
+            "ORDER BY created_at DESC LIMIT 1").fetchone()
+        stored = json.loads(row["error_json"])
+        # The stored message is truncated to 256 characters, so the measured
+        # cause has to survive that truncation to be of any use.
+        self.assertIn("reply limit", stored["message"])
+        self.assertEqual(json.loads(row["metrics_json"])["limit_reason"], "output")
+        # Measured, therefore persisted: the surface said "not measured" for a
+        # duration the runtime had already reported.
+        self.assertEqual(row["runtime_ms"], 4321)
+        conversation_id = self.c.conn.execute(
+            "SELECT chat_id FROM jobs ORDER BY created_at DESC LIMIT 1").fetchone()[0]
+        attempt = self.svc.state(repo_id, conversation_id)["attempt"]
+        self.assertEqual(attempt["runtime_ms"], 4321)
+        self.assertEqual(attempt["metrics"]["limit_reason"], "output")
+        self.assertIn("reply limit", attempt["error"]["message"])
+
+    def test_a_context_overflow_is_not_reported_as_an_output_limit(self):
+        repo_id = self.connect("partial")
+        reply = proposal_reply([{"path": "notes.md",
+                                 "base_sha256": self.sha("notes.md"),
+                                 "content": "# incomplete\n"}])
+
+        def overflowed(messages, *, should_cancel=None, profile=None,
+                       inference=None, response_format=None):
+            yield "delta", reply
+            yield "done", {"done_reason": "length", "limit_reason": "context",
+                           "output_tokens": 12,
+                           "output_token_limit": inference.output_allowance_tokens,
+                           "total_ms": 10}
+
+        with patch.object(runtime, "stream_chat", overflowed):
+            with self.assertRaises(code_service.CodeError) as caught:
+                self.propose(repo_id, "retitle", ["notes.md"])
+        self.assertIn("context window", str(caught.exception))
+        self.assertNotIn("reply limit", str(caught.exception))
+
 
 class TestUnsupportedPlatform(RepoBase):
     """Where the containment guarantee is unavailable, everything fails closed."""
@@ -1037,6 +1104,12 @@ class TestAtomicWrites(RepoBase):
 # --------------------------------------------------------------------------
 
 class TestSurfaceBoundaries(RepoBase):
+    def test_code_surface_renders_the_attempt_measurements(self):
+        source = Path("frontend/app/app.js").read_text()
+        self.assertIn("function codeAttemptDetails", source)
+        self.assertIn("['runtime ms', attempt?.runtime_ms", source)
+        self.assertIn("['reply limit', metrics.output_token_limit", source)
+
     def test_no_http_route_accepts_a_filesystem_path(self):
         source = (Path(__file__).parent / "server.py").read_text()
         code_routes = [line for line in source.splitlines()
@@ -1143,3 +1216,180 @@ class TestExistingDatabaseUpgrade(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# --------------------------------------------------------------------------
+# Output planning
+# --------------------------------------------------------------------------
+
+def code_profile(max_output: int, *, context: int = 8192):
+    """A qualified Code profile with an explicit maximum, for planning checks."""
+    values = {
+        "model": profiles.model_ref("0.0.0-fake"),
+        "target_profile_id": "test-target",
+        "workflow_mode": profiles.CODE,
+        "qualified_context_tokens": context,
+        "default_output_tokens": min(2048, max_output),
+        "max_output_tokens": max_output,
+        "reasoning_modes": ["disabled", "enabled"],
+        "default_reasoning": "disabled",
+        "decoder_modes": ["json_schema"],
+        "qualified_memory_bytes": None,
+        "qualification_state": "qualified",
+        "eligible": True,
+        "evidence_kind": "measured",
+        "evidence_ref": "test-fixture",
+    }
+    return v1.ExecutionProfile(
+        profile_id=v1.execution_profile_id(values), **values)
+
+
+def selected(size_bytes: int, path: str = "prime_list.c"):
+    text = "x" * size_bytes
+    return [{"path": path, "text": text, "bytes": size_bytes,
+             "sha256": hashlib.sha256(text.encode()).hexdigest()}]
+
+
+class TestProposalOutputPlanning(unittest.TestCase):
+    """How much output a whole-file proposal is allowed to produce.
+
+    The planner used to size the envelope from the bytes already in the
+    selected file, so a request to write a complete program into an EMPTY file
+    was given the bare floor and truncated at it. The size of the file being
+    replaced is a lower bound on the answer, never an estimate of it.
+    """
+
+    def plan(self, profile, size):
+        chosen = selected(size)
+        return code_service.CodeService._proposal_output_limit(
+            codeflow.build_messages("Write a complete C11 program.", chosen),
+            chosen, profile)
+
+    def test_an_empty_file_receives_the_whole_qualified_envelope(self):
+        """The reported defect: an empty `.c` capped at the 2048 floor."""
+        profile = code_profile(8192)
+        allowance = self.plan(profile, 0)
+        self.assertGreater(
+            allowance, code_service.PROPOSAL_NUM_PREDICT,
+            "a generated file must not be budgeted from the empty file it replaces")
+
+    def test_a_small_file_is_not_budgeted_from_its_own_size(self):
+        profile = code_profile(8192)
+        self.assertGreater(self.plan(profile, 400),
+                           code_service.PROPOSAL_NUM_PREDICT)
+
+    def test_the_allowance_never_exceeds_the_qualified_maximum(self):
+        for maximum in (2048, 4096, 8192):
+            with self.subTest(maximum=maximum):
+                self.assertLessEqual(self.plan(code_profile(maximum), 0), maximum)
+
+    def test_a_profile_below_the_whole_file_floor_refuses_rather_than_truncates(self):
+        """A whole-file proposal has an irreducible floor. A profile qualified
+        below it cannot return one, and says so instead of starting."""
+        with self.assertRaises(code_service.CodeError) as caught:
+            self.plan(code_profile(512), 0)
+        self.assertEqual(caught.exception.code, "selection_too_large")
+
+    def test_the_allowance_leaves_room_for_the_prompt_in_the_window(self):
+        """Asking for the profile maximum must not overflow the window."""
+        profile = code_profile(4000, context=4096)
+        chosen = selected(0)
+        messages = codeflow.build_messages("Write a complete C11 program.", chosen)
+        allowance = code_service.CodeService._proposal_output_limit(
+            messages, chosen, profile)
+        prompt = context.estimate_messages(messages)
+        self.assertLess(prompt + allowance, profile.qualified_context_tokens)
+
+    def test_a_mid_sized_file_is_no_longer_refused_under_a_real_envelope(self):
+        """4-6 KB files were refused outright once the maximum fell to 2048."""
+        profile = code_profile(8192)
+        for size in (4096, 5120, 6144):
+            with self.subTest(size=size):
+                self.assertGreater(self.plan(profile, size), 0)
+
+    def test_a_selection_that_cannot_come_back_whole_is_still_refused(self):
+        """Fail closed: never start a request whose complete answer cannot fit."""
+        with self.assertRaises(code_service.CodeError) as caught:
+            self.plan(code_profile(8192), 60_000)
+        self.assertEqual(caught.exception.code, "selection_too_large")
+
+    def test_the_refusal_names_the_output_maximum_when_that_is_the_bound(self):
+        with self.assertRaises(code_service.CodeError) as caught:
+            self.plan(code_profile(512), 6144)
+        message = str(caught.exception)
+        self.assertIn("512", message)
+        self.assertIn("qualified for at most", message)
+
+    def test_the_refusal_names_the_context_window_when_that_is_the_bound(self):
+        with self.assertRaises(code_service.CodeError) as caught:
+            self.plan(code_profile(8000), 12288)
+        message = str(caught.exception)
+        self.assertIn("qualified window", message)
+        self.assertNotIn("qualified for at most", message)
+
+    def test_the_two_refusals_are_not_the_same_sentence(self):
+        """One message for two prerequisites sent people to the wrong fix."""
+        def detail(profile, size):
+            try:
+                self.plan(profile, size)
+            except code_service.CodeError as exc:
+                return str(exc)
+            self.fail("expected a refusal")
+
+        self.assertNotEqual(detail(code_profile(512), 6144),
+                            detail(code_profile(8000), 12288))
+
+
+class TestIncompleteProposalReporting(unittest.TestCase):
+    """What the person is told when generation stops before it finished.
+
+    All of it used to be one sentence — "the runtime did not finish the code
+    proposal cleanly" — which hid the one measured number that explained the
+    failure and made an output ceiling look like a runtime fault.
+    """
+
+    def inference(self, profile, allowance):
+        return profiles.request(profile, reasoning="disabled",
+                                decoder="json_schema",
+                                output_allowance=allowance,
+                                decoder_schema_sha256=profiles.schema_sha256(
+                                    codeflow.PROPOSAL_SCHEMA))
+
+    def test_an_output_ceiling_says_so_and_gives_the_number(self):
+        profile = code_profile(2048)
+        detail = code_service.CodeService._incomplete_detail(
+            {"done_reason": "length", "limit_reason": "output",
+             "output_tokens": 2048, "output_token_limit": 2048},
+            self.inference(profile, 2048))
+        self.assertIn("2048", detail)
+        self.assertIn("reply limit", detail)
+        self.assertIn("Nothing was applied", detail)
+
+    def test_a_context_overflow_is_not_reported_as_an_output_ceiling(self):
+        profile = code_profile(2048)
+        detail = code_service.CodeService._incomplete_detail(
+            {"done_reason": "length", "limit_reason": "context",
+             "output_tokens": 900, "output_token_limit": 2048},
+            self.inference(profile, 2048))
+        self.assertIn("context window", detail)
+        self.assertNotIn("reply limit", detail)
+
+    def test_an_unexplained_stop_is_not_dressed_up_as_a_known_limit(self):
+        profile = code_profile(2048)
+        detail = code_service.CodeService._incomplete_detail(
+            {"done_reason": "load_failed", "limit_reason": None,
+             "output_tokens": 0, "output_token_limit": 2048},
+            self.inference(profile, 2048))
+        self.assertIn("load_failed", detail)
+        self.assertNotIn("reply limit", detail)
+        self.assertNotIn("context window", detail)
+
+    def test_every_incomplete_reason_states_that_nothing_was_applied(self):
+        profile = code_profile(2048)
+        for limit in ("output", "context", "context_and_output", None):
+            with self.subTest(limit=limit):
+                detail = code_service.CodeService._incomplete_detail(
+                    {"done_reason": "length", "limit_reason": limit,
+                     "output_tokens": 10, "output_token_limit": 2048},
+                    self.inference(profile, 2048))
+                self.assertIn("Nothing was applied", detail)

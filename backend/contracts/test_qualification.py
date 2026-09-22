@@ -100,6 +100,23 @@ class QualificationArtifactChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "workflow-specific"):
             qualification.QualificationArtifact.model_validate(payload)
 
+    def test_a_larger_code_maximum_requires_representative_proof(self):
+        values = candidate(CURRENT[profiles.CODE]).model_dump(exclude={"profile_id"})
+        values["max_output_tokens"] = 4096
+        profile = v1.ExecutionProfile(
+            profile_id=v1.execution_profile_id(values), **values)
+        evidence = [run(profile, mode) for mode in profile.reasoning_modes]
+        with self.assertRaisesRegex(ValueError, "workflow-specific"):
+            qualification.WorkflowQualification(
+                profile=profile, result="passed", evidence=evidence)
+        for item in evidence:
+            item.verifications.extend(
+                ["representative.compile", "representative.behavior"])
+        self.assertEqual(
+            qualification.WorkflowQualification(
+                profile=profile, result="passed", evidence=evidence).result,
+            "passed")
+
     def test_incomplete_reasoning_coverage_is_refused(self):
         payload = artifact().model_dump()
         payload["workflows"][0]["evidence"].pop()

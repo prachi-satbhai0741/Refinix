@@ -98,7 +98,8 @@ class DocumentError(ValueError):
 # --------------------------------------------------------------------------
 
 def probe(runtime_state: dict | None = None,
-          ocr_model: str | None = ocr.runtime.OCR_MODEL) -> dict:
+          ocr_model: str | None = ocr.runtime.OCR_MODEL,
+          ocr_profile=None) -> dict:
     """What this module can actually extract, not merely what is importable.
 
     `runtime_state` is an already-observed `runtime.probe()`. Passing it keeps
@@ -113,11 +114,19 @@ def probe(runtime_state: dict | None = None,
                 "model": model, "detail": model["detail"]}
         image = {"available": False, "model": model,
                  "detail": model["detail"]}
+    elif ocr_profile is None:
+        # No qualified profile: the answer is the same whether or not the
+        # runtime was already observed, and it is reached without asking it.
+        model = ocr.profile_state(ocr_model, ocr_profile)
+        scan = {"available": False, "renderer": pdfrender.probe(),
+                "model": model, "detail": model["detail"]}
+        image = {"available": False, "model": model, "detail": model["detail"]}
     else:
-        scan = (ocr.probe(ocr_model) if runtime_state is None
-                else _scan_capability(runtime_state, ocr_model))
-        image = (ocr.image_probe(ocr_model) if runtime_state is None
-                 else _image_capability(runtime_state, ocr_model))
+        scan = (ocr.probe(ocr_model, profile=ocr_profile) if runtime_state is None
+                else _scan_capability(runtime_state, ocr_model, ocr_profile))
+        image = (ocr.image_probe(ocr_model, profile=ocr_profile)
+                 if runtime_state is None
+                 else _image_capability(runtime_state, ocr_model, ocr_profile))
     return {
         "text": {
             "available": True,
@@ -153,9 +162,14 @@ def probe(runtime_state: dict | None = None,
 
 
 def _scan_capability(runtime_state: dict,
-                     ocr_model: str = ocr.runtime.OCR_MODEL) -> dict:
+                     ocr_model: str = ocr.runtime.OCR_MODEL,
+                     ocr_profile=None) -> dict:
     """`ocr.probe()` against a runtime observation someone else already made."""
     render = pdfrender.probe()
+    if ocr_profile is None:
+        model = ocr.profile_state(ocr_model, ocr_profile)
+        return {"available": False, "renderer": render, "model": model,
+                "detail": model["detail"]}
     caps = None
     if runtime_state.get("reachable") and \
             ocr_model in (runtime_state.get("models") or []):
@@ -178,12 +192,16 @@ def _scan_capability(runtime_state: dict,
 
 
 def _image_capability(runtime_state: dict,
-                      ocr_model: str = ocr.runtime.OCR_MODEL) -> dict:
+                      ocr_model: str = ocr.runtime.OCR_MODEL,
+                      ocr_profile=None) -> dict:
     """`ocr.image_probe()` against a runtime observation someone else made.
 
     The renderer is deliberately absent: a supplied image needs the model and
     nothing else, so a missing PyObjC must not hide a capability that works.
     """
+    if ocr_profile is None:
+        model = ocr.profile_state(ocr_model, ocr_profile)
+        return {"available": False, "model": model, "detail": model["detail"]}
     caps = None
     if runtime_state.get("reachable") and \
             ocr_model in (runtime_state.get("models") or []):
@@ -199,9 +217,10 @@ def _image_capability(runtime_state: dict,
 
 
 def supported_suffixes(runtime_state: dict | None = None,
-                       ocr_model: str = ocr.runtime.OCR_MODEL) -> list[str]:
+                       ocr_model: str = ocr.runtime.OCR_MODEL,
+                       ocr_profile=None) -> list[str]:
     """Exactly what `extract` implements on this computer, right now."""
-    capability = probe(runtime_state, ocr_model)
+    capability = probe(runtime_state, ocr_model, ocr_profile)
     suffixes = [*TEXT_SUFFIXES, WORD_SUFFIX, SHEET_SUFFIX]
     if capability["pdf"]["available"]:
         suffixes.append(PDF_SUFFIX)
@@ -211,9 +230,10 @@ def supported_suffixes(runtime_state: dict | None = None,
 
 
 def capability_summary(runtime_state: dict | None = None,
-                       ocr_model: str | None = ocr.runtime.OCR_MODEL) -> dict:
+                       ocr_model: str | None = ocr.runtime.OCR_MODEL,
+                       ocr_profile=None) -> dict:
     """One shape the surfaces and the capability rows both read."""
-    capability = probe(runtime_state, ocr_model)
+    capability = probe(runtime_state, ocr_model, ocr_profile)
     unavailable = [
         {"kind": kind, "detail": entry["detail"]}
         for kind, entry in capability.items() if not entry["available"]
@@ -450,8 +470,40 @@ def _docx_declared_pages(archive: zipfile.ZipFile, filename: str) -> int | None:
     return None
 
 
+#: Every prerequisite the reading path can be missing, and the code each one
+#: is reported as. Kept in one place because the whole point is that they are
+#: different fixes: qualify the model, start the runtime, install the model,
+#: choose another model, or install a renderer.
+_OCR_MODEL_STATE_CODES = {
+    ocr.NO_PROFILE_STATE: "no_ocr_profile",
+    "runtime_unavailable": "runtime_unavailable",
+    "absent": "no_ocr_model",
+    "missing_capability": "model_cannot_read_images",
+    "capability_unknown": "model_capability_unknown",
+}
+
+
+def _reading_failure(exc: Exception, filename: str) -> "DocumentError":
+    """Turn any reading failure into a document refusal a surface can show.
+
+    `OcrError` is the expected shape and keeps its own code. Anything else —
+    most usefully a `TypeError` from a runtime call that no longer matches its
+    caller — is a defect in this build, not something the person did. It
+    becomes a named internal refusal rather than escaping as a raw exception
+    into an interface, which is exactly how a signature mismatch once reached
+    a user as `TypeError: stream_chat() got an unexpected keyword argument`.
+    """
+    if isinstance(exc, ocr.OcrError):
+        return DocumentError(exc.code, str(exc))
+    return DocumentError(
+        "reading_failed",
+        f"{filename} could not be read: this build's reading path failed "
+        "before producing any text. Nothing was transcribed or saved.")
+
+
 def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
-                 ocr_model: str | None = ocr.runtime.OCR_MODEL):
+                 ocr_model: str | None = ocr.runtime.OCR_MODEL,
+                 ocr_profile=None):
     """Render each page and read it with the local vision model.
 
     The capability is re-checked here rather than trusted from an earlier
@@ -463,24 +515,24 @@ def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
     if ocr_model is None:
         raise DocumentError(
             "model_disabled", "The selected OCR model is switched off for new work.")
-    scan = ocr.probe(ocr_model)
+    scan = ocr.probe(ocr_model, profile=ocr_profile)
     if not scan["available"]:
-        # Three prerequisites, three codes. Collapsing them would send someone
-        # to install PyObjC when the model is what is missing.
-        code = ("no_pdf_parser" if not scan["renderer"]["available"] else
-                {"runtime_unavailable": "runtime_unavailable",
-                 "absent": "no_ocr_model",
-                 "missing_capability": "model_cannot_read_images",
-                 "capability_unknown": "model_capability_unknown",
-                 }.get(scan["model"]["state"], "no_ocr_model"))
+        # Several prerequisites, several codes. Collapsing them would send
+        # someone to install PyObjC when the model is what is unqualified.
+        # The unqualified profile is checked first because it is true
+        # regardless of the renderer.
+        state = scan["model"]["state"]
+        code = (_OCR_MODEL_STATE_CODES[state] if state == ocr.NO_PROFILE_STATE
+                else "no_pdf_parser" if not scan["renderer"]["available"]
+                else _OCR_MODEL_STATE_CODES.get(state, "no_ocr_model"))
         raise DocumentError(code, scan["detail"])
     try:
-        read = ocr.extract_pdf(data, filename=filename, should_cancel=should_cancel,
-                               model=ocr_model)
-    except ocr.OcrError as exc:
+        read = ocr.extract_pdf(data, filename=filename, profile=ocr_profile,
+                               should_cancel=should_cancel, model=ocr_model)
+    except Exception as exc:
         # `cancelled` keeps its own code so the workflow can tell a stop from a
         # failure; everything else is a refusal with the extractor's reason.
-        raise DocumentError(exc.code, str(exc)) from exc
+        raise _reading_failure(exc, filename) from exc
     pages = [Page(number=page["number"], text=_clean(page["text"]),
                   # Not measured by this component, so it stays unmeasured.
                   confidence=None, note=page["note"])
@@ -516,7 +568,8 @@ def _extract_xlsx(data: bytes, filename: str) -> tuple[list[Page], str, list[str
 
 def _extract_image(data: bytes, filename: str, media_type: str, *,
                    should_cancel=None,
-                   ocr_model: str | None = ocr.runtime.OCR_MODEL):
+                   ocr_model: str | None = ocr.runtime.OCR_MODEL,
+                   ocr_profile=None):
     """Send one supplied image to the local vision model, as page 1.
 
     No renderer at all: the file already is a page image. The method string says
@@ -525,34 +578,24 @@ def _extract_image(data: bytes, filename: str, media_type: str, *,
     if ocr_model is None:
         raise DocumentError(
             "model_disabled", "The selected OCR model is switched off for new work.")
-    state = ocr.image_probe(ocr_model)
+    state = ocr.image_probe(ocr_model, profile=ocr_profile)
     if not state["available"]:
-        code = {"runtime_unavailable": "runtime_unavailable",
-                "absent": "no_ocr_model",
-                "missing_capability": "model_cannot_read_images",
-                "capability_unknown": "model_capability_unknown",
-                }.get(state["model"]["state"], "no_ocr_model")
+        code = _OCR_MODEL_STATE_CODES.get(state["model"]["state"], "no_ocr_model")
         raise DocumentError(code, state["detail"])
     try:
         read = ocr.extract_image(data, filename=filename, media_type=media_type,
+                                 profile=ocr_profile,
                                  should_cancel=should_cancel, model=ocr_model)
-    except ocr.OcrError as exc:
-        raise DocumentError(exc.code, str(exc)) from exc
+    except Exception as exc:
+        raise _reading_failure(exc, filename) from exc
     pages = [Page(number=page["number"], text=_clean(page["text"]),
                   confidence=None, note=page["note"])
              for page in read["pages"]]
     return pages, read["method"], list(read["uncertain"]), read["page_count"]
 
 
-def extract(path: Path, *, source_id: str, filename: str, media_type: str,
-            expected_sha256: str, should_cancel=None,
-            ocr_model: str | None = ocr.runtime.OCR_MODEL) -> Extraction:
-    """Read one attachment, after proving it is the file that was accepted.
-
-    `expected_sha256` is the digest recorded at intake. Recomputing it here is
-    what makes the rest of the pipeline about a known document rather than
-    whatever happens to be on disk now.
-    """
+def verified_bytes(path: Path, *, filename: str, expected_sha256: str) -> bytes:
+    """Open one private attachment and prove it is the accepted file."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         handle = os.open(path, flags)
@@ -586,6 +629,17 @@ def extract(path: Path, *, source_id: str, filename: str, media_type: str,
             "digest_mismatch",
             f"{filename} is not the file Refinix accepted: its contents changed. "
             "Attach it again.")
+    return data
+
+
+def extract(path: Path, *, source_id: str, filename: str, media_type: str,
+            expected_sha256: str, should_cancel=None,
+            ocr_model: str | None = ocr.runtime.OCR_MODEL,
+            ocr_profile=None) -> Extraction:
+    """Read one attachment, after proving it is the file that was accepted."""
+    data = verified_bytes(path, filename=filename,
+                          expected_sha256=expected_sha256)
+    actual = expected_sha256
 
     suffix = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
     if suffix in NEEDS_OCR:
@@ -609,10 +663,11 @@ def extract(path: Path, *, source_id: str, filename: str, media_type: str,
     elif suffix in IMAGE_SUFFIXES:
         pages, method, uncertain, declared_pages = _extract_image(
             data, filename, media_type, should_cancel=should_cancel,
-            ocr_model=ocr_model)
+            ocr_model=ocr_model, ocr_profile=ocr_profile)
     elif suffix == PDF_SUFFIX:
         pages, method, uncertain, declared_pages = _extract_pdf(
-            data, filename, should_cancel=should_cancel, ocr_model=ocr_model)
+            data, filename, should_cancel=should_cancel, ocr_model=ocr_model,
+            ocr_profile=ocr_profile)
     else:
         readable = sorted([*TEXT_SUFFIXES, WORD_SUFFIX, SHEET_SUFFIX,
                            PDF_SUFFIX, *IMAGE_SUFFIXES])

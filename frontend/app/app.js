@@ -2274,6 +2274,30 @@ async function decideApproval(approval, approved) {
   await proposeChange(approval.approval_id);
 }
 
+function codeAttemptDetails(attempt) {
+  const details = document.createElement('details');
+  details.className = 'quiet';
+  const summary = document.createElement('summary');
+  summary.className = 'lbl';
+  summary.textContent = 'Generation details';
+  const values = document.createElement('dl');
+  values.className = 'kv';
+  const metrics = attempt?.metrics || {};
+  kv(values, [
+    ['state', attempt?.state, 'not recorded'],
+    ['route reason', attempt?.route_reason, 'not recorded'],
+    ['runtime ms', attempt?.runtime_ms, 'not measured'],
+    ['stop reason', metrics.done_reason, 'not recorded'],
+    ['output tokens', metrics.output_tokens ?? metrics.eval_count, 'not measured'],
+    ['reply limit', metrics.output_token_limit, 'not recorded'],
+    ['limit reached', metrics.limit_reason?.replace(/_/g, ' '), 'not reported'],
+    ['detail', attempt?.error?.message || (metrics.done_reason === 'stop'
+      ? 'Model finished normally' : null), 'not recorded'],
+  ]);
+  details.append(summary, values);
+  return details;
+}
+
 function proposalCard(proposal) {
   const card = document.createElement('section');
   card.className = 'card';
@@ -2292,6 +2316,7 @@ function proposalCard(proposal) {
   summary.className = 'card-lead';
   summary.textContent = proposal.summary;    // model text, as a text node only
   card.append(summary);
+  if (codeState?.attempt) card.append(codeAttemptDetails(codeState.attempt));
 
   if (!proposal.edits.length) {
     const none = document.createElement('p');
@@ -2536,6 +2561,11 @@ function renderCode() {
     showCodeResult((article) => article.append(proposalCard(codeState.proposal)),
                    `proposal:${codeState.proposal.proposal_id}:${codeState.proposal.state}:`
                    + `${codeState.validation?.validation_id || 'unvalidated'}`);
+  } else if (codeState.attempt) {
+    const attempt = codeState.attempt;
+    showCodeResult((article) => article.append(codeAttemptDetails(attempt)),
+                   `attempt:${attempt.attempt_id}:${attempt.state}:`
+                   + `${attempt.runtime_ms ?? 'unmeasured'}`);
   }
 }
 
