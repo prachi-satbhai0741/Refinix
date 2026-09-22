@@ -200,19 +200,30 @@ class TestStore(unittest.TestCase):
         base = self.store.files_dir(relationship_id=self.relationship,
                                     workspace_id=self.workspace,
                                     attempt_id=self.attempt)
-        written = sorted(str(path.relative_to(base))
+        written = sorted(path.relative_to(base).as_posix()
                          for path in base.rglob("*") if path.is_file())
         self.assertEqual(written, ["pkg/mod.py"])
         self.assertEqual((base / "pkg/mod.py").read_text(), "value = 1\n")
         self.assertFalse(stored["replayed"])
 
     def test_written_files_are_owner_only(self):
+        if os.name == "nt":
+            self.skipTest("Windows protects this tree with ACLs, not mode bits")
         self.put([entry("a.py")])
         base = self.store.files_dir(relationship_id=self.relationship,
                                     workspace_id=self.workspace,
                                     attempt_id=self.attempt)
         mode = os.stat(base / "a.py").st_mode & 0o777
         self.assertEqual(mode & 0o077, 0, oct(mode))
+
+    def test_windows_text_control_bytes_are_stored_without_translation(self):
+        text = "first\r\n\x1aafter\n"
+        self.put([entry("control.txt", text)])
+        base = self.store.files_dir(relationship_id=self.relationship,
+                                    workspace_id=self.workspace,
+                                    attempt_id=self.attempt)
+        self.assertEqual((base / "control.txt").read_bytes(),
+                         text.encode("utf-8"))
 
     def test_an_identical_retry_is_idempotent(self):
         entries = [entry("a.py", "same\n", resource_id=str(uuid.uuid4()))]

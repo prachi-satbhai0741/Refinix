@@ -179,6 +179,8 @@ class Keychain:
 # --------------------------------------------------------------------------
 
 CRED_TYPE_GENERIC = 1
+CRED_TYPE_MAXIMUM = 7
+ERROR_NOT_FOUND = 1168
 # Persisted for this user on this computer, and never roamed to another machine
 # by a profile service. A credential pinned to one LAN worker has no business
 # following the account somewhere else.
@@ -230,6 +232,9 @@ def _bind_credential_manager(ctypes, wintypes):
     advapi.CredDeleteW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD,
                                    wintypes.DWORD]
     advapi.CredDeleteW.restype = wintypes.BOOL
+    advapi.CredGetSessionTypes.argtypes = [
+        wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    advapi.CredGetSessionTypes.restype = wintypes.BOOL
     advapi.CredFree.argtypes = [ctypes.c_void_p]
     advapi.CredFree.restype = None
     return ctypes, advapi, CREDENTIAL
@@ -258,9 +263,21 @@ class CredentialManager:
 
     def probe(self) -> Backend:
         try:
-            self._bind()
+            ctypes, advapi, CREDENTIAL = self._bind()
         except CredentialUnavailable as exc:
             return Backend(self.name, self.label, False, str(exc))
+        persistence = (ctypes.c_uint32 * CRED_TYPE_MAXIMUM)()
+        if not advapi.CredGetSessionTypes(CRED_TYPE_MAXIMUM, persistence):
+            return Backend(
+                self.name, self.label, False,
+                "Windows Credential Manager could not report the persistence "
+                "available in this logon session.")
+        if int(persistence[CRED_TYPE_GENERIC]) < CRED_PERSIST_LOCAL_MACHINE:
+            return Backend(
+                self.name, self.label, False,
+                "Windows Credential Manager in this logon session supports "
+                "session-only credentials, not the required local-machine "
+                "persistence.")
         return Backend(self.name, self.label, True,
                        "Credentials are held in Windows Credential Manager; the "
                        "operating system protects them at rest for this account.")
@@ -460,14 +477,17 @@ def store_credential(account: str, secret: str, *, platform: str | None = None,
                      runner=None, api=None) -> None:
     """Hand the credential to the OS. Raises rather than storing it anywhere
     Refinix controls."""
+    account = _check_account(account)
+    secret = _check_secret(secret)
     store = _ready(platform, runner, api)
-    store.store(_check_account(account), _check_secret(secret))
+    store.store(account, secret)
 
 
 def load_credential(account: str, *, platform: str | None = None,
                     runner=None, api=None) -> str:
+    account = _check_account(account)
     store = _ready(platform, runner, api)
-    return store.load(_check_account(account))
+    return store.load(account)
 
 
 def delete_credential(account: str, *, platform: str | None = None,
@@ -475,10 +495,11 @@ def delete_credential(account: str, *, platform: str | None = None,
     """True when a credential was removed. A missing store is False, not an
     error: revocation must never be blocked by the store being gone."""
     try:
+        account = _check_account(account)
         store = _ready(platform, runner, api)
     except CredentialUnavailable:
         return False
     try:
-        return store.delete(_check_account(account))
+        return store.delete(account)
     except CredentialError:
         return False

@@ -343,7 +343,8 @@ class PackageStore:
         write loop exists because a short write is silent data loss.
         """
         flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
-                 | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+                 | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+                 | getattr(os, "O_BINARY", 0))
         handle = os.open(path, flags, 0o600)
         try:
             info = os.fstat(handle)

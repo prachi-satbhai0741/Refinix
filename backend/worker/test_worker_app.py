@@ -214,6 +214,54 @@ class TestAdmission(Base):
             self.assertIsNotNone(W._unsupported(stale))
         self.assertEqual(called, [])
 
+    def test_exact_profile_mutations_are_all_refused_before_inference(self):
+        """A coordinator cannot assemble a nearby profile from trusted parts."""
+        mac_profile = next(
+            profile for profile in profiles.PROFILES
+            if profile.target_profile_id == profiles.MAC_M5_16GB
+            and profile.workflow_mode == profiles.CHAT
+            and profile.model.runtime_version == "0.33.3")
+        cases = {}
+
+        request = envelope()
+        cases["wrong profile identity"] = request.model_copy(update={
+            "inference": request.inference.model_copy(
+                update={"profile_id": "0" * 64})})
+
+        request = envelope()
+        cases["wrong device profile"] = request.model_copy(update={
+            "inference": request.inference.model_copy(
+                update={"profile_id": mac_profile.profile_id})})
+
+        request = envelope()
+        cases["wrong runtime version"] = request.model_copy(update={
+            "model": request.model.model_copy(
+                update={"runtime_version": "0.33.999"})})
+
+        request = envelope()
+        cases["wrong model digest"] = request.model_copy(update={
+            "model": request.model.model_copy(
+                update={"manifest_sha256": "f" * 64})})
+
+        for name, change in (
+                ("wrong workflow", {"workflow_mode": profiles.CODE}),
+                ("unsupported decoder", {
+                    "decoder": "json_schema",
+                    "decoder_schema_sha256": "b" * 64,
+                }),
+                ("unsupported reasoning mode", {"reasoning": "unsupported"}),
+                ("excessive context", {"context_window_tokens": 8192}),
+                ("excessive output", {"output_allowance_tokens": 4096})):
+            request = envelope()
+            cases[name] = request.model_copy(update={
+                "inference": request.inference.model_copy(update=change)})
+
+        with patch.object(runtime, "stream_chat") as inference:
+            for name, request in cases.items():
+                with self.subTest(name=name):
+                    self.assertIsNotNone(W._unsupported(request))
+            inference.assert_not_called()
+
 
 class TestIdentityAndGuards(Base):
     def test_node_identity_is_not_the_shared_placeholder(self):

@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 from backend.contracts import profiles, v1
 from backend.coordinator import (code_service, codeflow, context, db, models, policy,
-                                 repo, runtime)
+                                 repo, runtime, winfs)
 from backend.coordinator.server import Coordinator
 
 
@@ -74,8 +74,16 @@ class RepoBase(unittest.TestCase):
     def write(self, relative, text):
         target = self.project / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
+        target.write_text(text, encoding="utf-8", newline="")
         return target
+
+    def symlink(self, target, link, *, directory=False):
+        try:
+            os.symlink(target, link, target_is_directory=directory)
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows symlink privilege is unavailable")
+            raise
 
     def sha(self, relative):
         return hashlib.sha256((self.project / relative).read_bytes()).hexdigest()
@@ -148,11 +156,16 @@ class TestPathValidation(unittest.TestCase):
 
 class TestRootSelection(RepoBase):
     def test_home_system_and_state_folders_are_refused(self):
-        for bad, code in ((str(Path.home()), "home_root"), ("/", "system_root")):
-            with self.subTest(bad=bad):
-                with self.assertRaises(repo.RepositoryError) as caught:
-                    repo.canonical_root(bad, state_dir=self.state.parent)
-                self.assertEqual(caught.exception.code, code)
+        synthetic_home = self.home / "user-profile"
+        synthetic_home.mkdir()
+        with patch.object(Path, "home", return_value=synthetic_home):
+            with self.assertRaises(repo.RepositoryError) as caught:
+                repo.canonical_root(synthetic_home, state_dir=self.state.parent)
+            self.assertEqual(caught.exception.code, "home_root")
+        with self.assertRaises(repo.RepositoryError) as caught:
+            repo.canonical_root(Path(self.project.anchor),
+                                state_dir=self.state.parent)
+        self.assertEqual(caught.exception.code, "system_root")
 
     def test_the_refinix_state_folder_cannot_be_connected(self):
         with self.assertRaises(repo.RepositoryError) as caught:
@@ -172,7 +185,7 @@ class TestRootSelection(RepoBase):
 
     def test_a_symlink_selected_as_the_root_is_refused(self):
         linked = self.home / "linked-project"
-        linked.symlink_to(self.project, target_is_directory=True)
+        self.symlink(self.project, linked, directory=True)
         with self.assertRaises(repo.RepositoryError) as caught:
             repo.canonical_root(linked, state_dir=self.state.parent)
         self.assertEqual(caught.exception.code, "symlinked_root")
@@ -185,7 +198,7 @@ class TestReadContainment(RepoBase):
         self.assertEqual(identity.sha256, self.sha("src/main.py"))
 
     def test_a_symlinked_file_is_never_followed(self):
-        os.symlink(self.home / "outside.txt", self.project / "link.txt")
+        self.symlink(self.home / "outside.txt", self.project / "link.txt")
         (self.home / "outside.txt").write_text("secret\n")
         with self.assertRaises(repo.RepositoryError) as caught:
             repo.read_text_file(self.project, "link.txt")
@@ -194,7 +207,8 @@ class TestReadContainment(RepoBase):
     def test_a_symlinked_parent_directory_is_never_followed(self):
         (self.home / "elsewhere").mkdir()
         (self.home / "elsewhere" / "x.txt").write_text("secret\n")
-        os.symlink(self.home / "elsewhere", self.project / "linked")
+        self.symlink(self.home / "elsewhere", self.project / "linked",
+                     directory=True)
         with self.assertRaises(repo.RepositoryError) as caught:
             repo.read_text_file(self.project, "linked/x.txt")
         self.assertEqual(caught.exception.code, "symlink")
@@ -207,6 +221,8 @@ class TestReadContainment(RepoBase):
         self.assertEqual(caught.exception.code, "hard_link")
 
     def test_a_non_regular_file_is_refused(self):
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("this platform has no FIFO primitive")
         fifo = self.project / "pipe.txt"
         os.mkfifo(fifo)
         with self.assertRaises(repo.RepositoryError) as caught:
@@ -234,13 +250,15 @@ class TestReadContainment(RepoBase):
         (self.project / ".git" / "config").write_text("[core]\n")
         (self.project / "node_modules" / "pkg").mkdir(parents=True)
         (self.project / "node_modules" / "pkg" / "i.js").write_text("x\n")
-        os.symlink(self.home, self.project / "loop")
+        self.symlink(self.home, self.project / "loop", directory=True)
         paths = {f["path"] for f in repo.list_text_files(self.project)}
         self.assertIn("src/main.py", paths)
         self.assertTrue(all(".git" not in p and "node_modules" not in p
                             and not p.startswith("loop") for p in paths))
 
     def test_listing_scans_from_directory_handles_not_resolved_paths(self):
+        if os.name == "nt":
+            self.skipTest("Windows uses pinned Win32 handles, not dir_fd scans")
         seen = []
         real = os.scandir
 
@@ -927,6 +945,8 @@ class TestRepositoryInstructionsAreData(RepoBase):
 
 class TestAtomicWrites(RepoBase):
     def test_a_replacement_preserves_permission_bits(self):
+        if os.name == "nt":
+            self.skipTest("Windows ACLs are not POSIX permission bits")
         target = self.write("perm.py", "one\n")
         os.chmod(target, 0o640)
         repo.replace_text_file(self.project, "perm.py",
@@ -946,17 +966,29 @@ class TestAtomicWrites(RepoBase):
 
     def test_a_change_while_the_replacement_is_prepared_is_refused(self):
         expected = self.sha("notes.md")
-        real = repo._posix_target
-        calls = 0
+        if os.name == "nt":
+            real = winfs.Directory.open_file_locked
 
-        def change_before_final_check(*args):
-            nonlocal calls
-            calls += 1
-            if calls == 2:
+            def change_before_final_check(folder, name):
                 self.write("notes.md", "# edited during preparation\n")
-            return real(*args)
+                return real(folder, name)
 
-        with patch.object(repo, "_posix_target", change_before_final_check):
+            target = "backend.coordinator.winfs.Directory.open_file_locked"
+            replacement = change_before_final_check
+        else:
+            real = repo._posix_target
+            calls = 0
+
+            def change_before_final_check(*args):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    self.write("notes.md", "# edited during preparation\n")
+                return real(*args)
+
+            target = "backend.coordinator.repo._posix_target"
+            replacement = change_before_final_check
+        with patch(target, replacement):
             with self.assertRaises(repo.RepositoryError) as caught:
                 repo.replace_text_file(self.project, "notes.md",
                                        expected_sha256=expected, text="# mine\n")
@@ -1105,13 +1137,14 @@ class TestAtomicWrites(RepoBase):
 
 class TestSurfaceBoundaries(RepoBase):
     def test_code_surface_renders_the_attempt_measurements(self):
-        source = Path("frontend/app/app.js").read_text()
+        source = Path("frontend/app/app.js").read_text(encoding="utf-8")
         self.assertIn("function codeAttemptDetails", source)
         self.assertIn("['runtime ms', attempt?.runtime_ms", source)
         self.assertIn("['reply limit', metrics.output_token_limit", source)
 
     def test_no_http_route_accepts_a_filesystem_path(self):
-        source = (Path(__file__).parent / "server.py").read_text()
+        source = (Path(__file__).parent / "server.py").read_text(
+            encoding="utf-8")
         code_routes = [line for line in source.splitlines()
                        if "/v1/code/" in line and "route ==" in line]
         self.assertTrue(code_routes)

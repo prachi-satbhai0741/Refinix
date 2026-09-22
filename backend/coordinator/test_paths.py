@@ -81,12 +81,15 @@ class PlatformRoots(unittest.TestCase):
 
 class PortableProfile(unittest.TestCase):
     def test_a_chosen_folder_gains_the_refinix_component(self):
-        self.assertEqual(paths.portable_root("/Volumes/Stick"),
-                         Path("/Volumes/Stick/.refinix"))
+        with tempfile.TemporaryDirectory() as directory:
+            chosen = Path(directory) / "Removable drive"
+            self.assertEqual(paths.portable_root(chosen),
+                             chosen / ".refinix")
 
     def test_choosing_the_refinix_folder_itself_is_not_nested_twice(self):
-        self.assertEqual(paths.portable_root("/Volumes/Stick/.refinix"),
-                         Path("/Volumes/Stick/.refinix"))
+        with tempfile.TemporaryDirectory() as directory:
+            chosen = Path(directory) / ".refinix"
+            self.assertEqual(paths.portable_root(chosen), chosen)
 
     def test_a_relative_portable_folder_is_refused(self):
         with self.assertRaises(paths.DataRootError) as caught:
@@ -238,8 +241,9 @@ class Selection(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
+        self.platform = sys.platform
         self.legacy = paths.legacy_root(home=self.home)
-        self.native = paths.platform_root(platform="darwin", environ={},
+        self.native = paths.platform_root(platform=self.platform, environ={},
                                           home=self.home)
 
     def occupy(self, root: Path) -> None:
@@ -247,7 +251,7 @@ class Selection(unittest.TestCase):
         (root / paths.DATABASE_NAME).write_bytes(b"SQLite format 3\x00")
 
     def select(self, **environ):
-        return paths.select_root(platform="darwin", environ=environ,
+        return paths.select_root(platform=self.platform, environ=environ,
                                  home=self.home)
 
     def test_a_new_installation_uses_the_platform_root(self):
@@ -312,7 +316,7 @@ class Selection(unittest.TestCase):
         self.occupy(self.legacy)
         self.occupy(self.native)
         with self.assertRaises(paths.DataRootConflict) as caught:
-            paths.require_root(platform="darwin", environ={}, home=self.home)
+            paths.require_root(platform=self.platform, environ={}, home=self.home)
         self.assertEqual(caught.exception.legacy, self.legacy)
         self.assertEqual(caught.exception.platform, self.native)
 
@@ -360,7 +364,7 @@ class Selection(unittest.TestCase):
         chosen = self.select()
         self.assertEqual(chosen.database, chosen.path / paths.DATABASE_NAME)
         self.assertEqual(
-            paths.state_path(platform="darwin", environ={}, home=self.home),
+            paths.state_path(platform=self.platform, environ={}, home=self.home),
             chosen.database)
 
     def test_the_report_carries_the_reason_and_never_a_path_it_did_not_pick(self):
@@ -369,7 +373,7 @@ class Selection(unittest.TestCase):
         self.assertEqual(payload["source"], "platform")
         self.assertEqual(payload["path"], str(self.native))
         self.assertIsNone(payload["conflict"])
-        self.assertIn("macOS", payload["detail"])
+        self.assertIn(device.os_label(self.platform), payload["detail"])
 
     def test_each_platform_reports_its_own_name(self):
         for platform, label in (("darwin", "macOS"), ("win32", "Windows"),

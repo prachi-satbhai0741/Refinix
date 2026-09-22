@@ -131,7 +131,7 @@ class Base(unittest.TestCase):
         for name, text in PROJECT.items():
             target = self.project / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
+            target.write_text(text, encoding="utf-8", newline="")
         self.c = Coordinator(Path(self.tmp.name) / "state" / "refinix.sqlite3")
         self.addCleanup(self.c.conn.close)
         self.repo_id = self.c.code.connect(str(self.project))["repo_id"]
@@ -165,7 +165,8 @@ class Base(unittest.TestCase):
             return self.c.code.propose(self.repo_id, request, list(paths))
 
     def on_disk(self) -> dict:
-        return {name: (self.project / name).read_text() for name in PROJECT}
+        return {name: (self.project / name).read_text(encoding="utf-8")
+                for name in PROJECT}
 
 
 # --------------------------------------------------------------------------

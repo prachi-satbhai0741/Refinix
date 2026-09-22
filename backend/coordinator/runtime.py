@@ -133,6 +133,22 @@ class _CancelWatch:
                 sock.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
+            # On Windows, shutdown alone does not release a thread blocked in
+            # the buffered chunk reader. `socket.close()` on a detached socket
+            # handle does: the SocketIO wrapper then observes the invalidated
+            # descriptor instead of retaining the handle until its own close.
+            # Detaching also prevents a later response/connection close from
+            # closing a newly reused descriptor.
+            try:
+                detach = getattr(sock, "detach", None)
+                if detach is None:
+                    sock.close()
+                else:
+                    descriptor = detach()
+                    if descriptor >= 0:
+                        socket.close(descriptor)
+            except (AttributeError, OSError):
+                pass
         try:
             self._response.close()
         except Exception:                              # noqa: BLE001

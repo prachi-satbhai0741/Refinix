@@ -208,7 +208,10 @@ def write_docx(target: Path, *, title: str, blocks: list[Block]) -> dict:
             archive.writestr("word/document.xml", _document_xml(blocks))
             archive.writestr("docProps/core.xml", _core_xml(title, created))
             archive.writestr("docProps/app.xml", _app_xml(len(blocks)))
-        with open(temporary, "rb") as handle:
+        # Windows refuses FlushFileBuffers (os.fsync) on a read-only handle.
+        # Reopen the completed package read/write so the same durability gate
+        # works on every target; no bytes are changed through this handle.
+        with open(temporary, "r+b") as handle:
             os.fsync(handle.fileno())
         data = temporary.read_bytes()
         os.replace(temporary, target)
