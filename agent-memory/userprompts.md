@@ -1845,3 +1845,39 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: No profile/envelope widening, automatic artifact loader, signing system, llmfit or llama.cpp integration, dependency install, Linux-specific speculative work, deployment, publication or Git/GitHub write. Failed or unmeasured work remains unqualified, and qualification state remains distinct from release acceptance.
 - follow_up_to: [UP-20260921-008](#up-20260921-008)
 - linked_changes: [AC-20260921-009](agentchangelog.md#ac-20260921-009)
+
+<a id="up-20260922-001"></a>
+## UP-20260922-001 — Repair the Code and OCR workflow regressions without weakening the exact-profile architecture
+- date: 2026-09-22
+- tags: execution-profile, code-envelope, ocr, qualification, regression-repair, ollama-0.33.3
+- aliases: linked-list Code workload, OCR fail-closed, stream_chat contract migration, K3s inference check
+- paths: backend/contracts/profiles.py, backend/contracts/v1.py, backend/coordinator/ocr.py, backend/coordinator/documents.py, backend/coordinator/code_service.py, backend/coordinator/server.py, deploy/k3s/checks/, scripts/qualify_execution.py, agent-memory/
+- summary: Repair the workflow regressions exposed after the exact-profile merge — the unmigrated OCR runtime call, the missing OCR workflow/profile, the Code output envelope and planner, and the collapsed failure reporting — while keeping fail-closed admission intact.
+- request: Treat a complete C11 singly-linked prime-number list program as a representative Beta Code workload that must complete as a valid reviewable proposal on a qualified capable profile. Separate a normal allowance from a qualified maximum, stop budgeting generated files from existing file size, distinguish context exhaustion from output exhaustion, persist measured duration, migrate the OCR path to the current runtime contract, keep the unresolved OCR candidate unqualified and fail closed, and repair the obsolete K3s caller.
+- constraints: No blind restore of 8,128 tokens and no invented envelope without current evidence; no promotion of the OCR candidate even if `/api/show` now reports `vision`; no invented Windows/Linux device profiles; no weakening of strict proposal JSON, path/hash validation, approval, sandbox or canonical-write protection; no partial structured output accepted or applied; no dependency/model install; no host service started or reconfigured; no packaged backend file edited directly; no Git/GitHub write.
+- follow_up_to: [UP-20260921-009](#up-20260921-009)
+- linked_changes: [AC-20260922-001](agentchangelog.md#ac-20260922-001)
+
+<a id="up-20260922-002"></a>
+## UP-20260922-002 — Resolve the audit findings to a source PASS
+- date: 2026-09-22
+- status: authorised implementation and proportionate offline verification; no Git/GitHub write
+- tags: audit-correction, qualification, ocr, code-metrics, fail-closed
+- paths: backend/contracts/, backend/coordinator/, frontend/app/app.js, scripts/qualify_execution.py, agent-memory/
+- summary: Correct every actionable finding from the integrated review without turning failed model-quality evidence into workflow qualification.
+- request: Remove the unsupported 4,096-token production admission, repair the representative qualification checks, enforce exact OCR profile identity at the shared boundary, expose Code attempt measurements in the Code surface, reconcile the evidence ledger, and verify the resulting source.
+- constraints: Preserve unrelated dirty work, protected documentation and Git/GitHub state. Do not execute generated code on the host, weaken the sandbox requirement, fabricate a passing artifact, qualify the failed Qwen representative workload, install dependencies or claim device/release acceptance from source checks.
+- follow_up_to: [UP-20260922-001](#up-20260922-001)
+- linked_changes: [AC-20260922-002](agentchangelog.md#ac-20260922-002)
+
+<a id="up-20260922-003"></a>
+## UP-20260922-003 — Let Qwen use its native vision in ordinary Chat
+- date: 2026-09-22
+- status: authorised implementation and proportionate offline verification; no Git/GitHub write
+- tags: chat, vision, ocr, qwen, attachment-routing, capability-detection
+- paths: backend/coordinator/documents.py, backend/coordinator/server.py, backend/coordinator/test_documents.py, backend/coordinator/test_execution4a.py, agent-memory/
+- summary: Stop routing every ordinary PNG/JPEG Chat attachment through the separately qualified Documents OCR extractor when the selected Chat model natively accepts images.
+- request: On a two-model Mac where the Paddle OCR model is unusable, allow Qwen to receive an attached image for OCR, classification and general visual understanding when the local runtime reports its vision capability, without lowering answer quality or broadly bottlenecking the model.
+- constraints: Preserve intelligent routing, request-scoped file access, digest/type/size checks, exact Chat execution limits, prompt-injection fencing and fail-closed structured document OCR. Do not fabricate an OCR qualification, install dependencies, call the live model, edit protected documentation or perform Git/GitHub writes.
+- follow_up_to: [UP-20260922-002](#up-20260922-002)
+- linked_changes: [AC-20260922-003](agentchangelog.md#ac-20260922-003)

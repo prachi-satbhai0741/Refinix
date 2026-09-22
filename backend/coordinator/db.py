@@ -2515,6 +2515,25 @@ def set_attempt_metrics(conn, attempt_id: str, metrics: dict) -> None:
 
 
 @serialized
+def set_attempt_runtime_ms(conn, attempt_id: str, runtime_ms: int | None) -> None:
+    """Persist a measured generation duration on its own.
+
+    The Chat path records this on a lifecycle transition, but a Code proposal
+    can measure a duration and then fail without one, which left the column
+    empty while `metrics_json` held the number. A surface reading the column
+    then said "not measured" about something the runtime had measured.
+
+    `None` is left alone rather than written: not measuring is a real state
+    and must not be overwritten by a later call that also did not measure.
+    """
+    if runtime_ms is None:
+        return
+    with conn:
+        conn.execute("UPDATE attempts SET runtime_ms=? WHERE attempt_id=?",
+                     (runtime_ms, attempt_id))
+
+
+@serialized
 def append_output(conn, attempt_id: str, text: str) -> None:
     with conn:
         conn.execute(

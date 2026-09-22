@@ -69,7 +69,13 @@ class ModelRef(Object):
 
 ReasoningMode = Literal["disabled", "enabled"]
 DecoderMode = Literal["text", "json_schema"]
-WorkflowMode = Literal["chat", "code.whole_file", "documents.structured"]
+# `documents.ocr` is a workflow a profile may be measured FOR; it is not a
+# distributable task type. The envelope map below deliberately has no entry for
+# it, so a remote job can never claim it: reading pixels is a local-only path
+# and a worker that advertised it would be advertising something the transport
+# has no field to carry.
+WorkflowMode = Literal["chat", "code.whole_file", "documents.structured",
+                       "documents.ocr"]
 
 
 class ExecutionProfile(Object):

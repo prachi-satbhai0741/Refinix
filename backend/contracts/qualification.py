@@ -29,6 +29,8 @@ Verification = Literal[
     "structured.decoder",
     "proposal.schema",
     "canonical.unchanged",
+    "representative.compile",
+    "representative.behavior",
     "document.schema",
     "document.readable",
     "document.required_facts",
@@ -98,7 +100,10 @@ class WorkflowQualification(v1.Object):
         observed = {(item.reasoning, item.decoder) for item in self.evidence}
         if observed != expected or len(observed) != len(self.evidence):
             raise ValueError("every claimed reasoning and decoder combination must be measured once")
-        required = _WORKFLOW[profile.workflow_mode]
+        required = set(_WORKFLOW[profile.workflow_mode])
+        if profile.workflow_mode == "code.whole_file" \
+                and profile.max_output_tokens > profile.default_output_tokens:
+            required |= {"representative.compile", "representative.behavior"}
         for item in self.evidence:
             if item.requested_profile_id != profile.profile_id \
                     or item.actual_profile_id != profile.profile_id:

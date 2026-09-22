@@ -50,15 +50,25 @@ def _candidate(profile: v1.ExecutionProfile) -> v1.ExecutionProfile:
 
 
 def _temporary_profile(model: v1.ModelRef, target: str, workflow: str,
-                       context: int, output: int, decoder: str) \
+                       context: int, output: int, decoder: str,
+                       maximum: int | None = None) \
         -> v1.ExecutionProfile:
+    """A process-local profile for one qualification run.
+
+    `output` is the ordinary allowance and `maximum` is the largest this run
+    claims. They used to be the same value, which quietly turned "the only
+    allowance we probed" into "the maximum this device supports" — the exact
+    step that recorded a 2048-token Code ceiling from a run whose largest
+    observed reply was 140 tokens. They are separate here so the artifact can
+    be checked for evidence AT the maximum before anything is registered.
+    """
     values = {
         "model": model.model_dump(),
         "target_profile_id": target,
         "workflow_mode": workflow,
         "qualified_context_tokens": context,
         "default_output_tokens": output,
-        "max_output_tokens": output,
+        "max_output_tokens": maximum if maximum is not None else output,
         "reasoning_modes": ["disabled", "enabled"],
         "default_reasoning": "disabled",
         "decoder_modes": [decoder],
@@ -75,16 +85,20 @@ def _temporary_profile(model: v1.ModelRef, target: str, workflow: str,
 
 
 def _profiles(model: v1.ModelRef, target: str, context: int,
-              outputs: dict[str, int], allow_candidate: bool) \
+              outputs: dict[str, int], allow_candidate: bool,
+              maxima: dict[str, int] | None = None) \
         -> tuple[list[v1.ExecutionProfile], bool]:
+    maxima = maxima or {}
     selected = []
     for workflow, decoder in WORKFLOWS:
+        maximum = maxima.get(workflow, outputs[workflow])
         match = next((item for item in profiles.PROFILES
                       if item.model == model
                       and item.target_profile_id == target
                       and item.workflow_mode == workflow
                       and item.qualified_context_tokens == context
-                      and item.max_output_tokens == outputs[workflow]
+                      and item.default_output_tokens == outputs[workflow]
+                      and item.max_output_tokens == maximum
                       and set(item.reasoning_modes) == {"disabled", "enabled"}
                       and item.decoder_modes == [decoder]), None)
         if match is None:
@@ -93,7 +107,8 @@ def _profiles(model: v1.ModelRef, target: str, context: int,
                     f"no exact registered {workflow} profile; use --candidate "
                     "only for an isolated new-device qualification run")
             match = _temporary_profile(
-                model, target, workflow, context, outputs[workflow], decoder)
+                model, target, workflow, context, outputs[workflow], decoder,
+                maximum)
         selected.append(match)
     transient = any(item not in profiles.PROFILES for item in selected)
     return selected, transient
@@ -184,6 +199,93 @@ def _chat(coordinator: Coordinator, profile: v1.ExecutionProfile, reasoning: str
                      ["answer.nonempty"])
 
 
+#: The representative Beta Code workload. A complete C11 program written into
+#: an EMPTY file, which is the shape the small `maths.py` edit never exercised:
+#: that one measured 140 output tokens against a 2048 allowance and was then
+#: recorded as the device maximum. A qualified maximum has to come from a run
+#: that actually approaches it.
+REPRESENTATIVE_CODE_FILE = "prime_list.c"
+REPRESENTATIVE_CODE_WORKLOAD_ID = "prime-list-v1"
+REPRESENTATIVE_CODE_REQUEST = (
+    "Create a complete C11 program implementing a singly linked list that "
+    "stores only prime numbers. Include safe node allocation, primality "
+    "checking, insertion at the head and end, deletion of the first matching "
+    "value, printing, deterministic prime population, complete list cleanup, "
+    "robust input handling, and a usable main demonstration. Return complete "
+    "compiling source, not pseudocode.")
+
+
+def _representative_checks(source_text: str, validator=None) -> list[str]:
+    """Require sandbox-bound compile and behaviour proof for generated C."""
+    if validator is None:
+        raise RuntimeError(
+            "the representative Code workload needs compile and behavior "
+            "evidence from the qualified no-network sandbox; host execution "
+            "is deliberately refused")
+    validation = validator(source_text)
+    if not isinstance(validation, dict) \
+            or validation.get("workload_id") != REPRESENTATIVE_CODE_WORKLOAD_ID \
+            or validation.get("source_sha256") != _sha(source_text) \
+            or validation.get("compiler") != [
+                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror"] \
+            or validation.get("sandboxed") is not True \
+            or validation.get("network") != "disabled" \
+            or validation.get("compiled") is not True \
+            or validation.get("behavior_passed") is not True:
+        raise RuntimeError(
+            "the representative Code workload did not pass bound compile and "
+            "behavior checks in the qualified no-network sandbox")
+    return ["representative.compile", "representative.behavior"]
+
+
+def _require_representative_code(default: int, maximum: int,
+                                 candidate: bool, enabled: bool,
+                                 validator=None) -> None:
+    if (candidate or maximum > default) and not enabled:
+        raise RuntimeError(
+            "a new or larger Code profile requires --representative-code and "
+            "bound compile and behavior evidence")
+    if enabled and validator is None:
+        raise RuntimeError(
+            "representative Code qualification is unavailable until a qualified "
+            "no-network sandbox validator is connected")
+
+
+def _representative_code(coordinator: Coordinator, profile: v1.ExecutionProfile,
+                         reasoning: str, root: Path, validator=None) \
+        -> qualification.RunEvidence:
+    """The Beta acceptance workload, run through the real strict Code path.
+
+    Deliberately not a Chat turn and not a direct runtime prompt: it goes
+    through `code.propose`, so the proposal schema, the path and hash checks
+    and the canonical-file protection are all exercised by the same run that
+    produces the envelope evidence.
+    """
+    db.set_reasoning(coordinator.conn, runtime.MODEL, reasoning == "enabled")
+    root.mkdir(parents=True)
+    source = root / REPRESENTATIVE_CODE_FILE
+    source.write_text("", encoding="utf-8")
+    repository = coordinator.code.connect(str(root))
+    with _observe_stream() as observed:
+        proposal = coordinator.code.propose(
+            repository["repo_id"], REPRESENTATIVE_CODE_REQUEST,
+            [REPRESENTATIVE_CODE_FILE], execution_target="this_device")
+    if source.read_text(encoding="utf-8") != "":
+        raise RuntimeError("Code qualification changed the canonical source file")
+    edits = db.proposal_edit_contents(coordinator.conn, proposal["proposal_id"])
+    if len(edits) != 1 or edits[0]["path"] != REPRESENTATIVE_CODE_FILE:
+        raise RuntimeError("the representative workload did not return one whole file")
+    if not observed["structured"]:
+        raise RuntimeError("Code did not use structured decoding")
+    representative_checks = _representative_checks(edits[0]["content"], validator)
+    payload = json.dumps({"summary": proposal["summary"], "edits": edits},
+                         sort_keys=True, separators=(",", ":"))
+    return _evidence(
+        profile, _detail(coordinator, proposal["job_id"]), _sha(payload), observed,
+        ["structured.decoder", "proposal.schema", "canonical.unchanged",
+         *representative_checks])
+
+
 def _code(coordinator: Coordinator, profile: v1.ExecutionProfile, reasoning: str,
           root: Path) -> qualification.RunEvidence:
     db.set_reasoning(coordinator.conn, runtime.MODEL, reasoning == "enabled")
@@ -253,7 +355,8 @@ def _documents(coordinator: Coordinator, profile: v1.ExecutionProfile,
          "document.required_facts", "source.fenced"])
 
 
-def qualify(args) -> qualification.QualificationArtifact:
+def qualify(args, *, representative_validator=None) \
+        -> qualification.QualificationArtifact:
     state = runtime.probe()
     if not state.get("reachable"):
         raise RuntimeError(f"Ollama is unavailable at {runtime.HOST}: {state.get('error')}")
@@ -275,8 +378,21 @@ def qualify(args) -> qualification.QualificationArtifact:
         profiles.CODE: args.code_output_tokens,
         profiles.DOCUMENTS: args.documents_output_tokens,
     }
+    maxima = {
+        profiles.CHAT: args.chat_max_output_tokens or args.chat_output_tokens,
+        profiles.CODE: args.code_max_output_tokens or args.code_output_tokens,
+        profiles.DOCUMENTS: (args.documents_max_output_tokens
+                             or args.documents_output_tokens),
+    }
     selected, transient = _profiles(
-        observed_model, target, args.context_tokens, outputs, args.candidate)
+        observed_model, target, args.context_tokens, outputs, args.candidate,
+        maxima)
+    code_profile = next(
+        item for item in selected if item.workflow_mode == profiles.CODE)
+    _require_representative_code(
+        outputs[profiles.CODE], maxima[profiles.CODE],
+        code_profile not in profiles.PROFILES, args.representative_code,
+        representative_validator)
     original_registry = profiles.PROFILES
     if transient:
         profiles.PROFILES = tuple(selected) + original_registry
@@ -292,9 +408,22 @@ def qualify(args) -> qualification.QualificationArtifact:
                 for reasoning in ("disabled", "enabled"):
                     results[profiles.CHAT].append(
                         _chat(coordinator, by_workflow[profiles.CHAT], reasoning))
-                    results[profiles.CODE].append(
-                        _code(coordinator, by_workflow[profiles.CODE], reasoning,
-                              temporary / f"code-{reasoning}"))
+                    # One Code run per reasoning mode: the artifact contract
+                    # allows exactly one evidence entry per reasoning/decoder
+                    # pair, and requires it to have been taken AT the claimed
+                    # maximum. The representative workload REPLACES the small
+                    # edit rather than joining it, because a claimed maximum
+                    # has to be justified by the run that approaches it.
+                    if args.representative_code:
+                        evidence = _representative_code(
+                            coordinator, by_workflow[profiles.CODE], reasoning,
+                            temporary / f"code-{reasoning}",
+                            validator=representative_validator)
+                    else:
+                        evidence = _code(
+                            coordinator, by_workflow[profiles.CODE], reasoning,
+                            temporary / f"code-{reasoning}")
+                    results[profiles.CODE].append(evidence)
                     results[profiles.DOCUMENTS].append(
                         _documents(coordinator, by_workflow[profiles.DOCUMENTS], reasoning))
             finally:
@@ -335,6 +464,18 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--chat-output-tokens", type=int, default=2048)
     value.add_argument("--code-output-tokens", type=int, default=2048)
     value.add_argument("--documents-output-tokens", type=int, default=3072)
+    # The ordinary allowance and the largest claimed allowance are separate.
+    # Leaving a maximum unset keeps it equal to the allowance, which is the
+    # old behaviour and remains the conservative default.
+    value.add_argument("--chat-max-output-tokens", type=int, default=None)
+    value.add_argument("--code-max-output-tokens", type=int, default=None,
+                       help="largest Code allowance this run claims; must be "
+                            "exercised by a representative workload")
+    value.add_argument("--documents-max-output-tokens", type=int, default=None)
+    value.add_argument("--representative-code", action="store_true",
+                       help="run the complete-program Code workload; evidence "
+                            "is refused unless a qualified no-network sandbox "
+                            "supplies bound compile and behavior results")
     return value
 
 

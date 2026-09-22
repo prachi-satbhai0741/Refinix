@@ -20,6 +20,7 @@ from backend.coordinator import (db, docflow, docgen, documents, pdfgen,
 from backend.coordinator.test_documents import (Base, INSTALLED_RUNTIME,
                                                 RENDERER_PRESENT, fake_stream,
                                                 make_docx)
+from backend.coordinator.test_ocr import test_ocr_profile
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic pixels"
 JPEG = b"\xff\xd8\xff" + b"synthetic pixels" + b"\xff\xd9"
@@ -225,8 +226,29 @@ class TestDirectImage(Harness):
         with patch.object(documents.ocr.runtime, "model_state", return_value=state):
             with self.assertRaises(documents.ocr.OcrError) as caught:
                 documents.ocr.extract_image(PNG, filename="scan.png",
-                                            media_type="image/png", chat=chat)
+                                            media_type="image/png",
+                                            profile=test_ocr_profile(),
+                                            chat=chat)
         self.assertEqual(caught.exception.code, "unavailable")
+        self.assertEqual(sent, [])
+
+    def test_an_unqualified_model_is_refused_before_any_image_is_sent(self):
+        """The prerequisite one step earlier than vision capability.
+
+        A model may be installed, switched on and even declare `vision` and
+        still have nothing measuring it here. That refusal has its own code so
+        it cannot be mistaken for "this model cannot read images", which is a
+        different fact with a different fix."""
+        sent = []
+
+        def chat(*args, **kwargs):
+            sent.append(kwargs.get("images"))
+            yield "done", {"done_reason": "stop"}
+
+        with self.assertRaises(documents.ocr.OcrError) as caught:
+            documents.ocr.extract_image(PNG, filename="scan.png",
+                                        media_type="image/png", chat=chat)
+        self.assertEqual(caught.exception.code, "no_qualified_profile")
         self.assertEqual(sent, [])
 
     def test_bytes_are_checked_against_the_declared_type_before_sending(self):
@@ -251,7 +273,8 @@ class TestDirectImage(Harness):
         with patch.object(documents.ocr, "image_probe", return_value=VISION_READY), \
                 patch.object(documents.ocr, "read_page", return_value="   "):
             read = documents.ocr.extract_image(PNG, filename="scan.png",
-                                               media_type="image/png")
+                                               media_type="image/png",
+                                               profile=test_ocr_profile())
         self.assertTrue(any("nothing has been guessed" in note.lower()
                             for note in read["uncertain"]), read["uncertain"])
         self.assertTrue(any("no document should be written" in note.lower()
@@ -411,19 +434,18 @@ class TestOrdinaryChatAttachments(Harness):
                 self.assertIn(filename, answer)
 
     def test_an_image_in_ordinary_chat_goes_to_the_vision_model(self):
-        reading = {"pages": [{"number": 1, "text": "THE IMAGE MARKER",
-                              "confidence": None, "note": None}],
-                   "method": "image + local vision (test-vision) manifest unavailable",
-                   "uncertain": [], "page_count": 1}
         record = self.attach("photo.png", PNG)
         stream = fake_stream("an ordinary answer")
-        job = self.send("explain this image")
+        job = self.send("Perform OCR on this image")
         self.bind(job, record)
-        with patch.object(documents.ocr, "image_probe", return_value=VISION_READY), \
-                patch.object(documents.ocr, "extract_image", return_value=reading), \
+        with patch.object(runtime, "model_capabilities",
+                          return_value=["completion", "vision"]), \
+                patch.object(documents.ocr, "extract_image") as extracted, \
                 patch.object(runtime, "stream_chat", stream):
             self.c._run(job, self.chat, None)
-        self.assertIn("THE IMAGE MARKER", json.dumps(stream.messages))
+        self.assertEqual(stream.images, [PNG])
+        self.assertIn("untrusted data", json.dumps(stream.messages))
+        extracted.assert_not_called()
 
     def test_only_this_request_s_files_are_read(self):
         earlier = self.attach("earlier.txt", b"AN EARLIER REQUEST FILE")

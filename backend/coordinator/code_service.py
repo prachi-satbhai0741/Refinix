@@ -411,34 +411,79 @@ class CodeService:
     @staticmethod
     def _proposal_output_limit(messages, selection: list[dict],
                                profile: v1.ExecutionProfile) -> int:
-        """Output needed for the largest valid whole-file proposal that fits."""
-        # At most MAX_EDITS files can be returned. Size the envelope for the
-        # largest eligible files rather than pretending every selected file can
-        # appear despite the schema's own cap.
-        largest = sorted(selection, key=lambda item: len(item["text"]), reverse=True)[
-            :codeflow.MAX_EDITS]
-        maximal = {
-            "summary": "x" * codeflow.MAX_SUMMARY_CHARS,
-            "edits": [{"path": item["path"], "base_sha256": item["sha256"],
-                       "content": item["text"]} for item in largest],
-        }
-        required = context.estimate_tokens(
-            json.dumps(maximal, ensure_ascii=False, separators=(",", ":")))
+        """The output allowance one whole-file proposal is given.
+
+        Two different quantities used to be conflated here, and the conflation
+        is what made an empty file unusable.
+
+        * **required** — the floor. A whole-file proposal returns complete file
+          bodies, so replacing the selected files cannot possibly need less
+          than they already contain. This is derived from the selection, and
+          for an existing file it is the real constraint.
+        * **ceiling** — what this request is actually allowed. It is the
+          smallest of the profile's qualified maximum and what remains of the
+          context window after the prompt.
+
+        The request is sent at the **ceiling**, not at the floor. `num_predict`
+        is a cap the runtime may stop short of, not a reservation it charges
+        for, so asking for the whole qualified allowance costs nothing when the
+        answer is short — and it is the only way a *generated* file can exceed
+        the size of the file it replaces. Budgeting a new program from the
+        bytes already in the file is what capped an empty `.c` at the floor.
+
+        It still fails closed: if the floor does not fit under the ceiling, the
+        complete proposal cannot be returned and the request is refused rather
+        than started and truncated.
+        """
+        required = CodeService._proposal_required_output(selection)
         prompt = context.estimate_messages(messages)
         available = max(0, int(
             (profile.qualified_context_tokens - prompt - context.TEMPLATE_OVERHEAD)
             * context.SAFETY_FRACTION))
-        output_limit = max(PROPOSAL_NUM_PREDICT, required)
-        if output_limit > available or output_limit > profile.max_output_tokens:
-            raise CodeError(
-                "selection_too_large",
-                "The selected files cannot be returned as a complete reviewable "
-                f"proposal inside this model's {profile.qualified_context_tokens}-token qualified "
-                "window. Select fewer or smaller files.")
-        return output_limit
+        ceiling = min(profile.max_output_tokens, available)
+        if required > ceiling:
+            raise CodeError("selection_too_large",
+                            CodeService._too_large_detail(
+                                required, available, profile))
+        return ceiling
+
+    @staticmethod
+    def _too_large_detail(required: int, available: int,
+                          profile: v1.ExecutionProfile) -> str:
+        """Name the bound that actually fired, with its measured value.
+
+        Two distinct prerequisites used to share one sentence that always
+        blamed the context window. A qualified output maximum that is too small
+        for this file and a context window with no room left are different
+        problems with different fixes, and a person told the wrong one will
+        shrink a selection that was never the cause.
+        """
+        if profile.max_output_tokens <= available:
+            return (
+                f"This selection needs about {required} output tokens to come "
+                "back as a complete reviewable proposal, and this device, "
+                "model and runtime are qualified for at most "
+                f"{profile.max_output_tokens}. Select fewer or smaller files, "
+                "or qualify a larger measured allowance for this profile.")
+        return (
+            f"This selection needs about {required} output tokens to come back "
+            f"as a complete reviewable proposal, and only about {available} "
+            "remain in the "
+            f"{profile.qualified_context_tokens}-token qualified window once "
+            "the request itself is counted. Select fewer or smaller files.")
 
     @staticmethod
     def _proposal_required_output(selection: list[dict]) -> int:
+        """The floor: what returning the selected files whole cannot go below.
+
+        Deliberately NOT an estimate of the answer. A request may generate far
+        more than the selection contains — a new file starts empty — so this is
+        only ever a lower bound, used to refuse a selection that could not come
+        back complete and to pick a route that can carry it.
+        """
+        # At most MAX_EDITS files can be returned. Size the floor for the
+        # largest eligible files rather than pretending every selected file can
+        # appear despite the schema's own cap.
         largest = sorted(selection, key=lambda item: len(item["text"]), reverse=True)[
             :codeflow.MAX_EDITS]
         maximal = {
@@ -1095,7 +1140,7 @@ class CodeService:
                     metrics["route"] = "local"
             if metrics.get("done_reason") != "stop":
                 raise runtime.RuntimeUnavailable(
-                    "the runtime did not finish the code proposal cleanly")
+                    self._incomplete_detail(metrics, inference))
             completed = True
         finally:
             if attempt_id:
@@ -1103,7 +1148,42 @@ class CodeService:
                 if not completed:
                     metrics["failure_stage"] = stage
                 db.set_attempt_metrics(self.conn, attempt_id, metrics)
+                # Measured on every attempt, including a failed one. Leaving it
+                # unset made the surface report "not measured" for a duration
+                # the runtime had already reported.
+                db.set_attempt_runtime_ms(self.conn, attempt_id,
+                                          metrics.get("total_ms"))
         return "".join(collected), reasoning
+
+    @staticmethod
+    def _incomplete_detail(metrics: dict, inference: v1.InferenceRequest) -> str:
+        """Say which bound stopped the proposal, with what was measured.
+
+        The runtime reports `done_reason` and, when it stopped at a bound,
+        which bound was reached. Collapsing all of that into one sentence made
+        an output ceiling indistinguishable from a context overflow and from a
+        runtime fault, so the one number that would have explained the failure
+        never reached the person who had to act on it.
+        """
+        produced = metrics.get("output_tokens")
+        allowed = metrics.get("output_token_limit") or \
+            inference.output_allowance_tokens
+        limit = metrics.get("limit_reason")
+        if limit == "output":
+            return (f"The model reached its {allowed}-token reply limit for "
+                    "this device, model and runtime before the proposal was "
+                    "complete. Nothing was applied. A larger reply needs a "
+                    "qualified larger allowance for this profile.")
+        if limit in ("context", "context_and_output"):
+            return (f"The request and reply together filled this profile's "
+                    f"{inference.context_window_tokens}-token context window "
+                    f"after {produced} output tokens, so the proposal is "
+                    "incomplete. Nothing was applied. Select fewer or smaller "
+                    "files.")
+        reason = metrics.get("done_reason") or "no reason reported"
+        return (f"The runtime stopped the code proposal before it was complete "
+                f"({reason}) after {produced if produced is not None else 'no'} "
+                "output tokens. Nothing was applied.")
 
     # -- apply ------------------------------------------------------------
 
@@ -1653,6 +1733,32 @@ class CodeService:
         local_proposal = bool(proposal) and target == TARGET_LOCAL
         if local_proposal or target_note:
             validation = None
+        attempt_row = None
+        if proposal and proposal.get("attempt_id"):
+            attempt_row = self.conn.execute(
+                "SELECT attempt_id, state, route_reason, runtime_ms,"
+                " metrics_json, error_json FROM attempts WHERE attempt_id=?",
+                (proposal["attempt_id"],)).fetchone()
+        elif conversation_id:
+            attempt_row = self.conn.execute(
+                "SELECT a.attempt_id, a.state, a.route_reason, a.runtime_ms,"
+                " a.metrics_json, a.error_json FROM attempts a"
+                " JOIN jobs j ON j.job_id=a.job_id"
+                " WHERE j.workspace_id=? AND j.chat_id=?"
+                " ORDER BY a.created_at DESC, a.rowid DESC LIMIT 1",
+                (self.workspace_id, conversation_id)).fetchone()
+        attempt = None
+        if attempt_row:
+            attempt = {
+                "attempt_id": attempt_row["attempt_id"],
+                "state": attempt_row["state"],
+                "route_reason": attempt_row["route_reason"],
+                "runtime_ms": attempt_row["runtime_ms"],
+                "metrics": (json.loads(attempt_row["metrics_json"])
+                            if attempt_row["metrics_json"] else {}),
+                "error": (json.loads(attempt_row["error_json"])
+                          if attempt_row["error_json"] else None),
+            }
         return {
             "repositories": repositories,
             "active": active,
@@ -1662,6 +1768,7 @@ class CodeService:
             "pending_approvals": db.pending_approvals(
                 self.conn, self.workspace_id, active, conversation_id),
             "proposal": proposal,
+            "attempt": attempt,
             "validation": validation,
             # Said in the state, so the surface reports what is true rather
             # than deciding for itself what a missing validation means.

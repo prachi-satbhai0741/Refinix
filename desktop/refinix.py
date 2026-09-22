@@ -6,6 +6,11 @@ does exactly what `python3 -m desktop` does with default arguments.
 
 import sys
 
+# Loose application modules live inside the bundle so the package verifier can
+# compare them with source. Keep a launch from modifying that immutable package
+# with __pycache__ files.
+sys.dont_write_bytecode = True
+
 from desktop import lifecycle, shell
 
 
