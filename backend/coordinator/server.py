@@ -585,6 +585,16 @@ class Coordinator:
         if any(j["state"] not in v1.TERMINAL_JOB_STATES | {"interrupted"}
                for j in self.jobs(chat_id, limit=-1)):
             raise RequestError("wait for this conversation's reply or cancel it first", 409)
+        reuse_source_ids = [] if reuse_source_ids is None else reuse_source_ids
+        if (not isinstance(reuse_source_ids, list) or len(reuse_source_ids) > docflow.MAX_SOURCES
+                or any(not isinstance(i, str) or len(i) != 36 for i in reuse_source_ids)
+                or len(set(reuse_source_ids)) != len(reuse_source_ids)):
+            raise RequestError("invalid earlier source selection")
+        conversion_request = (
+            skill_id == docflow.WRITE_SKILL
+            and not reuse_source_ids
+            and not db.list_attachments(self.conn, chat_id=draft_id or chat_id)
+            and docflow.looks_like_conversion(text, has_attachments=False))
         # The skill is chosen before the request is sent and is stored with the
         # job, so a reopened conversation and an export both say which
         # capability read which files. It is not UI-only state.
@@ -595,6 +605,8 @@ class Coordinator:
                 raise RequestError("that skill is not available on this computer", 400)
             if row["state"] != "available":
                 raise RequestError(row["detail"], 409)
+            if row.get("conversion_only") and not conversion_request:
+                raise RequestError(row["generation_blocker"], 409)
         # The document choices are made against this request and stored with
         # it, so a reopened conversation reports the file and workflow that
         # actually ran rather than whatever the composer shows now.
@@ -606,13 +618,8 @@ class Coordinator:
             raise RequestError(pdfgen.probe()["detail"], 409)
         scope = ("documents.generate" if skill_id in docflow.DOCUMENT_SKILLS
                  else "chat")
-        if skill_id != docflow.SEARCH_SKILL:
+        if skill_id != docflow.SEARCH_SKILL and not conversion_request:
             self.model_for(scope, new_work=True)
-        reuse_source_ids = [] if reuse_source_ids is None else reuse_source_ids
-        if (not isinstance(reuse_source_ids, list) or len(reuse_source_ids) > docflow.MAX_SOURCES
-                or any(not isinstance(i, str) or len(i) != 36 for i in reuse_source_ids)
-                or len(set(reuse_source_ids)) != len(reuse_source_ids)):
-            raise RequestError("invalid earlier source selection")
         for source_id in reuse_source_ids:
             self._reused_source(chat_id, source_id)
         if reuse_source_ids and len(reuse_source_ids) + len(db.list_attachments(
@@ -647,11 +654,7 @@ class Coordinator:
             # AF-006. The route is decided before the attempt is created, so
             # the reason is part of the canonical record from the first write
             # rather than being back-filled once something has already run.
-            uses_model = skill_id != docflow.SEARCH_SKILL
             scope = "documents.generate" if skill_id in docflow.DOCUMENT_SKILLS else "chat"
-            model_id = self.model_for(scope) if uses_model else None
-            reasoning = db.get_reasoning(self.conn, model_id) if uses_model else False
-            reasoning_mode = "enabled" if reasoning else "disabled"
             workflow_mode = (inference_profiles.DOCUMENTS
                              if skill_id in docflow.DOCUMENT_SKILLS
                              else inference_profiles.CHAT)
@@ -667,6 +670,16 @@ class Coordinator:
             request_text = self.conn.execute(
                 "SELECT original_request FROM jobs WHERE job_id=?",
                 (job_id,)).fetchone()["original_request"]
+            conversion_request = (
+                skill_id == docflow.WRITE_SKILL
+                and not request_files
+                and docflow.looks_like_conversion(
+                    request_text, has_attachments=False))
+            uses_model = (skill_id != docflow.SEARCH_SKILL
+                          and not conversion_request)
+            model_id = self.model_for(scope) if uses_model else None
+            reasoning = db.get_reasoning(self.conn, model_id) if uses_model else False
+            reasoning_mode = "enabled" if reasoning else "disabled"
             if (skill_id not in docflow.DOCUMENT_SKILLS and not request_files
                     and docflow.requests_transcription(request_text)):
                 raise docflow.WorkflowError("source_selection_required",
@@ -2378,6 +2391,10 @@ class Coordinator:
         code_model = self.model_for("code")
         document_model = self.model_for("documents.generate")
         ocr_model = self.model_for("documents.ocr")
+        code_profile = next((profile for item in inventory
+                             if item["id"] == code_model
+                             for profile in item["execution_profiles"]["local"]
+                             if profile["workflow_mode"] == inference_profiles.CODE), None)
         # The runtime was already observed above; reuse it rather than probing
         # once more per capability row.
         reading = documents.capability_summary(
@@ -2393,14 +2410,27 @@ class Coordinator:
                 row["detail"] = entry["setup"]
             elif entry.get("kind") == "document":
                 blocked = self._document_blockers(entry, reading, searchable,
-                                                  state,
-                                                  (document_model, "documents.generate")
-                                                  in usable, document_model)
+                                                  self._model_capability_blocker(
+                                                      state, inventory,
+                                                      document_model, "Documents",
+                                                      (document_model,
+                                                       "documents.generate") in usable))
                 row["formats"] = reading["supported"]
                 row["unavailable_reasons"] = reading["unavailable"]
-                row["state"] = "blocked" if blocked else "available"
-                row["detail"] = blocked[0] if blocked else entry["detail_available"]
-                if blocked:
+                conversion_only = (entry["id"] == docflow.WRITE_SKILL
+                                   and blocked and docgen_available())
+                row["state"] = "available" if conversion_only or not blocked else "blocked"
+                if conversion_only:
+                    row["conversion_only"] = True
+                    row["generation_blocker"] = blocked[0]
+                    row["summary"] = ("Save a completed answer as a Word or PDF file. "
+                                      "Creating new documents needs a qualified "
+                                      "Documents profile.")
+                    row["detail"] = ("Ask to save or export the previous answer. "
+                                     "New model-written documents are unavailable.")
+                else:
+                    row["detail"] = blocked[0] if blocked else entry["detail_available"]
+                if blocked and not conversion_only:
                     row["setup"] = blocked[0]
             elif entry.get("kind") == "surface":
                 # Two prerequisites, reported separately because they need
@@ -2413,11 +2443,19 @@ class Coordinator:
                     row["detail"] = repo.PLATFORM_NOTE
                     row["setup"] = repo.PLATFORM_NOTE
                 else:
-                    row["state"] = ("available" if (code_model, "code") in usable
-                                    else "blocked")
-                    row["detail"] = (entry["detail_available"] if row["state"] == "available"
-                                     else "The AI engine or the configured model is not "
-                                          "ready, so Code cannot propose changes yet.")
+                    blocker = self._model_capability_blocker(
+                        state, inventory, code_model, "Code",
+                        (code_model, "code") in usable)
+                    row["state"] = "blocked" if blocker else "available"
+                    if (not blocker and code_profile
+                            and code_profile["evidence_ref"].endswith(
+                                "-code-proposal.json")):
+                        row["experimental"] = True
+                        row["detail"] = ("Experimental: small reviewable existing-file "
+                                         "proposals only. Full-program and sandbox "
+                                         "validation are not qualified.")
+                    else:
+                        row["detail"] = blocker or entry["detail_available"]
             elif (chat_model, "chat") not in usable and not state.get("reachable"):
                 row["state"] = "blocked"
                 row["detail"] = ("The AI engine on this computer did not answer, "
@@ -2445,15 +2483,27 @@ class Coordinator:
         return rows
 
     @staticmethod
-    def _document_blockers(entry, reading, searchable, state, model_installed,
-                           model_id) -> list[str]:
+    def _model_capability_blocker(state, inventory, model_id, workflow,
+                                  qualified) -> str | None:
+        if qualified:
+            return None
+        if not state.get("reachable"):
+            return "The AI engine on this computer did not answer."
+        row = next((item for item in inventory if item["id"] == model_id), None)
+        if row is None or not row["digests"]["local"]:
+            return f"The selected model {model_id} is not installed on this computer."
+        if not row["enabled"]:
+            return f"The selected model {model_id} is switched off for new work."
+        version = state.get("server_version") or "this runtime"
+        return (f"The selected model {model_id} has no qualified {workflow} "
+                f"execution profile for Ollama {version} on this computer.")
+
+    @staticmethod
+    def _document_blockers(entry, reading, searchable, model_blocker) -> list[str]:
         """Every reason this one skill cannot run, in the order to show them."""
         blocked = []
-        if entry.get("needs_runtime") and not state.get("reachable"):
-            blocked.append("The AI engine on this computer did not answer.")
-        elif entry.get("needs_runtime") and not model_installed:
-            blocked.append(f"The selected model {model_id} is not installed "
-                           "on this computer.")
+        if entry.get("needs_runtime") and model_blocker:
+            blocked.append(model_blocker)
         if entry.get("needs_search") and not searchable:
             blocked.append("This computer's SQLite build has no full-text search, "
                            "so documents cannot be searched.")

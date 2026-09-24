@@ -86,11 +86,12 @@ def _temporary_profile(model: v1.ModelRef, target: str, workflow: str,
 
 def _profiles(model: v1.ModelRef, target: str, context: int,
               outputs: dict[str, int], allow_candidate: bool,
-              maxima: dict[str, int] | None = None) \
+              maxima: dict[str, int] | None = None,
+              workflows=WORKFLOWS) \
         -> tuple[list[v1.ExecutionProfile], bool]:
     maxima = maxima or {}
     selected = []
-    for workflow, decoder in WORKFLOWS:
+    for workflow, decoder in workflows:
         maximum = maxima.get(workflow, outputs[workflow])
         match = next((item for item in profiles.PROFILES
                       if item.model == model
@@ -240,11 +241,16 @@ def _representative_checks(source_text: str, validator=None) -> list[str]:
 
 def _require_representative_code(default: int, maximum: int,
                                  candidate: bool, enabled: bool,
-                                 validator=None) -> None:
+                                 validator=None, *, proposal_only=False) -> None:
+    if proposal_only:
+        if maximum != default:
+            raise RuntimeError(
+                "proposal-only Code qualification cannot claim a larger maximum")
+        return
     if (candidate or maximum > default) and not enabled:
         raise RuntimeError(
-            "a new or larger Code profile requires --representative-code and "
-            "bound compile and behavior evidence")
+            "a new Code profile requires --proposal-only-code, or "
+            "--representative-code with bound compile and behavior evidence")
     if enabled and validator is None:
         raise RuntimeError(
             "representative Code qualification is unavailable until a qualified "
@@ -311,7 +317,8 @@ def _code(coordinator: Coordinator, profile: v1.ExecutionProfile, reasoning: str
                          sort_keys=True, separators=(",", ":"))
     return _evidence(
         profile, _detail(coordinator, proposal["job_id"]), _sha(payload), observed,
-        ["structured.decoder", "proposal.schema", "canonical.unchanged"])
+        ["structured.decoder", "proposal.schema", "proposal.small_edit",
+         "canonical.unchanged"])
 
 
 def _documents(coordinator: Coordinator, profile: v1.ExecutionProfile,
@@ -384,15 +391,20 @@ def qualify(args, *, representative_validator=None) \
         profiles.DOCUMENTS: (args.documents_max_output_tokens
                              or args.documents_output_tokens),
     }
+    selected_workflows = tuple(
+        item for item in WORKFLOWS
+        if not args.workflows or item[0] in args.workflows)
     selected, transient = _profiles(
         observed_model, target, args.context_tokens, outputs, args.candidate,
-        maxima)
+        maxima, selected_workflows)
     code_profile = next(
-        item for item in selected if item.workflow_mode == profiles.CODE)
-    _require_representative_code(
-        outputs[profiles.CODE], maxima[profiles.CODE],
-        code_profile not in profiles.PROFILES, args.representative_code,
-        representative_validator)
+        (item for item in selected if item.workflow_mode == profiles.CODE), None)
+    if code_profile is not None:
+        _require_representative_code(
+            outputs[profiles.CODE], maxima[profiles.CODE],
+            code_profile not in profiles.PROFILES, args.representative_code,
+            representative_validator,
+            proposal_only=args.proposal_only_code)
     original_registry = profiles.PROFILES
     if transient:
         profiles.PROFILES = tuple(selected) + original_registry
@@ -403,29 +415,32 @@ def qualify(args, *, representative_validator=None) \
             coordinator.target_profile_id = target
             coordinator.preflight = lambda relationship=None: None
             by_workflow = {item.workflow_mode: item for item in selected}
-            results = {workflow: [] for workflow, _decoder in WORKFLOWS}
+            results = {workflow: [] for workflow, _decoder in selected_workflows}
             try:
                 for reasoning in ("disabled", "enabled"):
-                    results[profiles.CHAT].append(
-                        _chat(coordinator, by_workflow[profiles.CHAT], reasoning))
+                    if profiles.CHAT in by_workflow:
+                        results[profiles.CHAT].append(
+                            _chat(coordinator, by_workflow[profiles.CHAT], reasoning))
                     # One Code run per reasoning mode: the artifact contract
                     # allows exactly one evidence entry per reasoning/decoder
                     # pair, and requires it to have been taken AT the claimed
                     # maximum. The representative workload REPLACES the small
                     # edit rather than joining it, because a claimed maximum
                     # has to be justified by the run that approaches it.
-                    if args.representative_code:
-                        evidence = _representative_code(
-                            coordinator, by_workflow[profiles.CODE], reasoning,
-                            temporary / f"code-{reasoning}",
-                            validator=representative_validator)
-                    else:
-                        evidence = _code(
-                            coordinator, by_workflow[profiles.CODE], reasoning,
-                            temporary / f"code-{reasoning}")
-                    results[profiles.CODE].append(evidence)
-                    results[profiles.DOCUMENTS].append(
-                        _documents(coordinator, by_workflow[profiles.DOCUMENTS], reasoning))
+                    if profiles.CODE in by_workflow:
+                        if args.representative_code:
+                            evidence = _representative_code(
+                                coordinator, by_workflow[profiles.CODE], reasoning,
+                                temporary / f"code-{reasoning}",
+                                validator=representative_validator)
+                        else:
+                            evidence = _code(
+                                coordinator, by_workflow[profiles.CODE], reasoning,
+                                temporary / f"code-{reasoning}")
+                        results[profiles.CODE].append(evidence)
+                    if profiles.DOCUMENTS in by_workflow:
+                        results[profiles.DOCUMENTS].append(
+                            _documents(coordinator, by_workflow[profiles.DOCUMENTS], reasoning))
             finally:
                 coordinator.conn.close()
     finally:
@@ -460,6 +475,9 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--expect-runtime-version")
     value.add_argument("--candidate", action="store_true",
                        help="admit unregistered profiles only inside this isolated run")
+    value.add_argument("--workflow", dest="workflows", action="append",
+                       choices=[workflow for workflow, _decoder in WORKFLOWS],
+                       help="workflow to qualify; repeat to select more than one")
     value.add_argument("--context-tokens", type=int, default=8192)
     value.add_argument("--chat-output-tokens", type=int, default=2048)
     value.add_argument("--code-output-tokens", type=int, default=2048)
@@ -472,10 +490,16 @@ def parser() -> argparse.ArgumentParser:
                        help="largest Code allowance this run claims; must be "
                             "exercised by a representative workload")
     value.add_argument("--documents-max-output-tokens", type=int, default=None)
-    value.add_argument("--representative-code", action="store_true",
-                       help="run the complete-program Code workload; evidence "
-                            "is refused unless a qualified no-network sandbox "
-                            "supplies bound compile and behavior results")
+    code_mode = value.add_mutually_exclusive_group()
+    code_mode.add_argument(
+        "--representative-code", action="store_true",
+        help="run the complete-program Code workload; evidence is refused "
+             "unless a qualified no-network sandbox supplies bound compile "
+             "and behavior results")
+    code_mode.add_argument(
+        "--proposal-only-code", action="store_true",
+        help="qualify only the fixed small-edit proposal at the unchanged "
+             "default limit; this supplies no sandbox or full-program evidence")
     return value
 
 

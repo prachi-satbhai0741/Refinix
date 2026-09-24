@@ -103,6 +103,12 @@ PROFILES: tuple[v1.ExecutionProfile, ...] = (
         reasoning=("disabled", "enabled"), decoder=("text",),
         evidence_ref="agent-memory/agentchangelog.md#ac-20260921-007"),
     _profile(
+        runtime_version="0.34.2", target=MAC_M5_16GB, workflow=CHAT,
+        context=8192, default_output=2048, max_output=2048,
+        reasoning=("disabled", "enabled"), decoder=("text",),
+        evidence_ref=("qualification-artifacts/macos/mac17-3-m5-16gb/"
+                      "ollama-0.34.2-qwen3.5-4b-q4-k-m-chat.json")),
+    _profile(
         runtime_version="0.32.14", target=MAC_M5_16GB, workflow=CODE,
         context=8192, default_output=2048, max_output=8128,
         reasoning=("disabled", "enabled"), decoder=("json_schema",),
@@ -112,6 +118,12 @@ PROFILES: tuple[v1.ExecutionProfile, ...] = (
         context=8192, default_output=2048, max_output=2048,
         reasoning=("disabled", "enabled"), decoder=("json_schema",),
         evidence_ref="agent-memory/agentchangelog.md#ac-20260921-007"),
+    _profile(
+        runtime_version="0.34.2", target=MAC_M5_16GB, workflow=CODE,
+        context=8192, default_output=2048, max_output=2048,
+        reasoning=("disabled", "enabled"), decoder=("json_schema",),
+        evidence_ref=("qualification-artifacts/macos/mac17-3-m5-16gb/"
+                      "ollama-0.34.2-qwen3.5-4b-q4-k-m-code-proposal.json")),
     _profile(
         runtime_version="0.32.14", target=MAC_M5_16GB, workflow=DOCUMENTS,
         context=8192, default_output=3072, max_output=3072,

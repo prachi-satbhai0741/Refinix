@@ -190,7 +190,8 @@ class TestCapabilities(Base):
         self.assertEqual(by_id["chat"]["state"], "blocked")
         self.assertEqual(by_id["code"]["state"], "blocked")
         self.assertEqual(by_id["read-document"]["state"], "blocked")
-        self.assertEqual(by_id["write-document"]["state"], "blocked")
+        self.assertEqual(by_id["write-document"]["state"], "available")
+        self.assertTrue(by_id["write-document"]["conversion_only"])
         self.assertEqual(by_id["search-documents"]["state"], "available")
 
     def test_a_missing_model_directs_the_user_to_the_selector(self):
@@ -225,6 +226,25 @@ class TestCapabilities(Base):
         self.assertEqual(code["state"], "available")
         for missing in ("Creating", "deleting", "renaming", "commands", "Git"):
             self.assertIn(missing, code["detail"])
+
+    def test_ollama_0342_capabilities_match_the_registered_workflows(self):
+        rows = self.c.capabilities({
+            "reachable": True, "server_version": "0.34.2",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256}})
+        by_id = {row["id"]: row for row in rows}
+        self.assertEqual(by_id["chat"]["state"], "available")
+        self.assertEqual(by_id["write-document"]["state"], "available")
+        self.assertTrue(by_id["write-document"]["conversion_only"])
+        self.assertIn("no qualified", by_id["write-document"]["generation_blocker"])
+        self.assertEqual(by_id["code"]["state"], "available")
+        self.assertTrue(by_id["code"]["experimental"])
+        self.assertIn("small reviewable", by_id["code"]["detail"])
+        self.assertIn("not qualified", by_id["code"]["detail"])
+        self.assertEqual(by_id["read-document"]["state"], "blocked")
+        self.assertIn("no qualified", by_id["read-document"]["detail"])
+        self.assertNotIn("not installed", by_id["read-document"]["detail"])
 
     def test_code_is_blocked_rather_than_available_without_the_runtime(self):
         rows = self.c.capabilities({"reachable": False, "models": []})

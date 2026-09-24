@@ -30,7 +30,8 @@ import json
 import unittest
 from unittest.mock import patch
 
-from backend.coordinator import context, db, docflow, docgen, runtime
+from backend.coordinator import context, db, docflow, docgen, models, runtime
+from backend.coordinator.server import RequestError
 from backend.coordinator.test_execution4a import Harness
 
 VALID = {"title": "Machine learning", "sections": [
@@ -499,6 +500,12 @@ class OtherRoutesUnconstrained(Harness):
 
 
 class ConversionUnaffected(GenerationHarness):
+    RUNTIME_0342 = {
+        "reachable": True, "server_version": "0.34.2",
+        "models": [runtime.MODEL],
+        "digests": {runtime.MODEL:
+                    models.entry_for(runtime.MODEL).manifest_sha256}}
+
     def test_the_previous_answer_export_still_calls_no_model(self):
         self.completed_answer("The pump exceeded its vibration limit.")
         stream = scripted_stream(body())
@@ -511,6 +518,24 @@ class ConversionUnaffected(GenerationHarness):
         self.assertIn("The pump exceeded its vibration limit.", self.written())
         self.assertEqual(self.artifacts()[0]["workflow"],
                          docflow.WORKFLOW_CONVERSION)
+
+    def test_chat_only_profile_allows_conversion_but_not_new_generation(self):
+        self.completed_answer("The pump exceeded its vibration limit.")
+        with patch.object(runtime, "probe", return_value=self.RUNTIME_0342):
+            job = self.send("write me a document on your output",
+                            skill_id=docflow.WRITE_SKILL,
+                            output_format=docflow.FORMAT_DOCX)
+            with patch.object(runtime, "stream_chat") as never:
+                self.c._run(job, self.chat, docflow.WRITE_SKILL)
+            never.assert_not_called()
+            self.assertEqual(self.job_state(job), "completed")
+            self.assertIn("The pump exceeded its vibration limit.", self.written())
+
+            with self.assertRaises(RequestError) as refused:
+                self.send("Create a document explaining machine learning",
+                          skill_id=docflow.WRITE_SKILL,
+                          output_format=docflow.FORMAT_DOCX)
+        self.assertIn("no qualified Documents execution profile", str(refused.exception))
 
 
 if __name__ == "__main__":

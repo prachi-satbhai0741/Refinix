@@ -821,7 +821,7 @@ function openModelPopover() {
   note.textContent = model.eligible_scopes?.includes(modelScope())
     ? 'On lets the model work through the problem first. Slower, and it can use '
       + 'the whole reply budget before answering.'
-    : 'This model is not installed on this computer, so reasoning cannot change.';
+    : 'This model is not available for this workflow, so reasoning cannot change.';
   box.append(note);
 
   toggle.addEventListener('click', async () => {

@@ -34,15 +34,27 @@ class QualificationRunnerChecks(unittest.TestCase):
         self.assertEqual(code.default_output_tokens, 1024)
         self.assertEqual(code.max_output_tokens, 2048)
 
+    def test_candidate_can_omit_code_when_no_sandbox_validator_exists(self):
+        model = v1.ModelRef(**profiles.model_ref("0.34.2"))
+        selected, transient = qualify_execution._profiles(
+            model, profiles.MAC_M5_16GB, 8192, self.outputs, True,
+            self.maxima,
+            ((profiles.CHAT, "text"),
+             (profiles.DOCUMENTS, "json_schema")))
+        self.assertTrue(transient)
+        self.assertEqual(
+            [item.workflow_mode for item in selected],
+            [profiles.CHAT, profiles.DOCUMENTS])
+
     def test_representative_workload_refuses_host_execution(self):
         with self.assertRaisesRegex(RuntimeError, "host execution.*refused"):
             qualify_execution._representative_checks("int main(void) { return 0; }")
 
     def test_a_larger_code_maximum_requires_the_representative_workload(self):
-        with self.assertRaisesRegex(RuntimeError, "new or larger Code profile"):
+        with self.assertRaisesRegex(RuntimeError, "new Code profile"):
             qualify_execution._require_representative_code(
                 2048, 4096, False, False, None)
-        with self.assertRaisesRegex(RuntimeError, "new or larger Code profile"):
+        with self.assertRaisesRegex(RuntimeError, "new Code profile"):
             qualify_execution._require_representative_code(
                 4096, 4096, True, False, None)
         with self.assertRaisesRegex(RuntimeError, "sandbox validator"):
@@ -50,6 +62,13 @@ class QualificationRunnerChecks(unittest.TestCase):
                 2048, 4096, False, True, None)
         qualify_execution._require_representative_code(
             2048, 4096, False, True, lambda _source: {})
+
+    def test_proposal_only_admits_a_candidate_without_widening_it(self):
+        qualify_execution._require_representative_code(
+            2048, 2048, True, False, None, proposal_only=True)
+        with self.assertRaisesRegex(RuntimeError, "cannot claim a larger maximum"):
+            qualify_execution._require_representative_code(
+                2048, 4096, True, False, None, proposal_only=True)
 
     def test_representative_proof_is_bound_to_source_and_sandbox(self):
         source = "int main(void) { return 0; }"

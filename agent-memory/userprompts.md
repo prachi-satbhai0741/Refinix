@@ -1881,3 +1881,51 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Preserve intelligent routing, request-scoped file access, digest/type/size checks, exact Chat execution limits, prompt-injection fencing and fail-closed structured document OCR. Do not fabricate an OCR qualification, install dependencies, call the live model, edit protected documentation or perform Git/GitHub writes.
 - follow_up_to: [UP-20260922-002](#up-20260922-002)
 - linked_changes: [AC-20260922-003](agentchangelog.md#ac-20260922-003)
+
+<a id="up-20260924-001"></a>
+## UP-20260924-001 — Qualify Ollama 0.34.2 for the current Mac
+- date: 2026-09-24
+- status: authorised live local qualification, exact profile registration, focused verification and macOS package rebuild; no Git/GitHub write
+- tags: inference-profile, macos, ollama-0.34.2, chat, live-qualification, package
+- paths: scripts/qualify_execution.py, scripts/test_qualify_execution.py, backend/contracts/profiles.py, backend/contracts/test_contracts.py, qualification-artifacts/, desktop/dist/Refinix.app, agent-memory/
+- summary: Qualify the installed Ollama 0.34.2 runtime so Refinix can use the already installed Qwen model without weakening exact runtime/device/workflow admission.
+- request: Qualify Ollama 0.34.2 after the official 0.33.3 macOS artifacts failed signature validation and the restored 0.34.2 runtime left the selected model unavailable for new work.
+- constraints: Admit only workflows that pass the real production path on the exact model digest and current Mac. Keep unmeasured or failed Code and Documents workflows unavailable, preserve unrelated dirty work, do not edit protected documentation, and perform no Git/GitHub writes.
+- follow_up_to: [UP-20260921-009](#up-20260921-009)
+- linked_changes: [AC-20260924-001](agentchangelog.md#ac-20260924-001)
+
+<a id="up-20260924-002"></a>
+## UP-20260924-002 — Correct false missing-model capability messages
+- date: 2026-09-24
+- status: authorised implementation, focused verification and macOS package rebuild; no Git/GitHub write
+- tags: capability-state, qualification, documents, code, ui-truthfulness, ollama-0.34.2
+- paths: backend/coordinator/server.py, backend/coordinator/test_desktop_surface.py, frontend/app/app.js, desktop/dist/Refinix.app, agent-memory/
+- summary: Replace the false claim that the installed Qwen model is missing when Documents or Code is blocked because its exact Ollama 0.34.2 workflow profile is unqualified.
+- request: Implement the recommended wording correction shown by the capability-menu screenshot without force-enabling unqualified workflows.
+- constraints: Preserve Chat availability, distinguish engine-down, model-missing, model-disabled and workflow-unqualified states, keep Documents and Code fail-closed, preserve unrelated dirty work, edit no protected documentation, and perform no Git/GitHub writes.
+- follow_up_to: [UP-20260924-001](#up-20260924-001)
+- linked_changes: [AC-20260924-002](agentchangelog.md#ac-20260924-002)
+
+<a id="up-20260924-003"></a>
+## UP-20260924-003 — Allow model-free previous-answer document conversion
+- date: 2026-09-24
+- status: authorised implementation, focused verification, macOS package rebuild and one live local conversion; no Git/GitHub write
+- tags: documents, conversion, capability-gate, ollama-0.34.2, model-free, package
+- paths: backend/coordinator/server.py, backend/coordinator/test_document_generation.py, backend/coordinator/test_desktop_surface.py, desktop/dist/Refinix.app, agent-memory/
+- summary: Let Write a document save a completed answer on Ollama 0.34.2 without pretending that new model-generated Documents work is qualified.
+- request: Repair the screenshot failure for "write me a document on your output" after Chat completed successfully and the broad Documents profile gate disabled Send.
+- constraints: Reuse the existing deterministic conversion path, call no model, keep new document generation, document reading and Code fail-closed, preserve unrelated dirty work, edit no protected documentation, and perform no Git/GitHub writes.
+- follow_up_to: [UP-20260924-002](#up-20260924-002)
+- linked_changes: [AC-20260924-003](agentchangelog.md#ac-20260924-003)
+
+<a id="up-20260924-004"></a>
+## UP-20260924-004 — Enable proposal-only experimental Code on Ollama 0.34.2
+- date: 2026-09-24
+- status: authorised implementation, live local qualification, focused verification and macOS package rebuild; no Git/GitHub write
+- tags: code, experimental-profile, small-edit, ollama-0.34.2, live-qualification, package
+- paths: backend/contracts/profiles.py, backend/contracts/qualification.py, backend/coordinator/server.py, scripts/qualify_execution.py, qualification-artifacts/, desktop/dist/Refinix.app, agent-memory/
+- summary: Enable Code only for small reviewable existing-file proposals on the exact current Mac profile, without claiming the previously failed complete-program workload or sandbox validation.
+- request: Add an explicitly proposal-only experimental Code profile for Ollama 0.34.2, run live qualification, expose its limited scope honestly in the UI, and rebuild the app.
+- constraints: Keep full-program generation and sandbox execution unqualified, preserve strict structured proposals and canonical-file protection, do not widen the 2,048-token allowance, preserve unrelated dirty work, edit no protected documentation, and perform no Git/GitHub writes.
+- follow_up_to: [UP-20260924-003](#up-20260924-003)
+- linked_changes: [AC-20260924-004](agentchangelog.md#ac-20260924-004)

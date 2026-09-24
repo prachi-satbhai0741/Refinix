@@ -2,8 +2,8 @@
 # Presentation launcher for the paired Mac coordinator and Ubuntu worker.
 set -eu
 
-MAC_IP="10.219.115.113"
-WORKER_IP="10.219.115.160"
+MAC_IP="10.177.11.113"
+WORKER_IP="10.177.11.160"
 WORKER_PORT="30443"
 
 die() {
