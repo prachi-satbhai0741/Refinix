@@ -753,7 +753,11 @@ function renderModelPill() {
   pill.setAttribute('aria-label', model.reasoning
     ? `Model ${model.id}, reasoning on. Change it.`
     : `Model ${model.id}, reasoning off. Change it.`);
-  pill.title = model.eligible_scopes?.includes(modelScope()) ? ''
+  // A document skill running on the Chat-backed route is admitted under the
+  // model's Chat profile, and the capability row says so with `model_scope`.
+  const scope = (modelScope() === 'documents.generate'
+    && selectedSkill()?.model_scope) || modelScope();
+  pill.title = model.eligible_scopes?.includes(scope) ? ''
     : 'This model is not available for this workflow.';
 }
 

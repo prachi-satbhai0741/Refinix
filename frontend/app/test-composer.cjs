@@ -529,6 +529,31 @@ test('model choices fill the three grid columns instead of the tick column', () 
   assert.equal(selected.getAttribute('aria-checked'), 'true');
 });
 
+test('a Chat-backed document skill is not told its model is unavailable', () => {
+  // On the limited route the model selected for Documents runs under its Chat
+  // profile. The capability row says so with model_scope, and the pill must
+  // check that scope rather than documents.generate, which the model rightly
+  // lacks.
+  const p = page();
+  // The Chat surface: there is no Code composer on this page.
+  const byId = p.document.getElementById.bind(p.document);
+  p.document.getElementById = (id) => (id === 'code-composer' ? null : byId(id));
+  const title = (row) => p.run(`
+    models = [{ id: 'qwen3.5:4b-q4_K_M', installed: true, reasoning: false,
+                eligible_scopes: ['chat', 'code'] }];
+    modelSelections = { chat: 'qwen3.5:4b-q4_K_M',
+                        'documents.generate': 'qwen3.5:4b-q4_K_M' };
+    skillByChat.set(currentSlot(), ${JSON.stringify(row)});
+    renderModelPill();
+    document.getElementById('model-pill').title;
+  `);
+  const base = { id: 'read-document', name: 'Read a document', kind: 'document',
+                 state: 'available', icon: 'document' };
+  assert.equal(title({ ...base, model_scope: 'chat' }), '');
+  assert.equal(title(base), 'This model is not available for this workflow.',
+    'without the Chat-backed scope the structured requirement still applies');
+});
+
 test('Write Document offers an explicit Word or PDF choice', () => {
   const p = page();
   p.run(`appendDocumentChoices(document.body);`);

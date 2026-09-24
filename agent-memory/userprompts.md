@@ -1929,3 +1929,17 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Keep full-program generation and sandbox execution unqualified, preserve strict structured proposals and canonical-file protection, do not widen the 2,048-token allowance, preserve unrelated dirty work, edit no protected documentation, and perform no Git/GitHub writes.
 - follow_up_to: [UP-20260924-003](#up-20260924-003)
 - linked_changes: [AC-20260924-004](agentchangelog.md#ac-20260924-004)
+
+<a id="up-20260924-005"></a>
+## UP-20260924-005 — Repair Phase 1 document workflows on the Chat profile
+- date: 2026-09-24
+- status: authorised plan, implementation, offline verification, macOS package rebuild and live local Read/Write acceptance; requester verification pending; no Git/GitHub write
+- tags: documents, chat-backed, docx, pdf-text-layer, page-references, ollama-0.34.2, package
+- aliases: write a document, read a document, fresh prompt document, create a document of deep learning summarised, not available on this computer
+- paths: backend/coordinator/server.py, backend/coordinator/docflow.py, backend/coordinator/documents.py, backend/coordinator/pdfrender.py, frontend/app/app.js, backend/coordinator/test_*.py, frontend/app/test-composer.cjs, desktop/dist/Refinix.app, agent-memory/
+- summary: Make fresh-prompt document writing, DOCX reading and text-layer PDF reading work on Ollama 0.34.2 through the Documents-selected model's exact Chat profile, without claiming structured Documents or OCR qualification.
+- constraints: One bounded Chat call per request; reuse the ordinary Chat attachment path and existing deterministic converter; keep previous-answer conversion model-free; keep scan-only PDFs and pictures unavailable with a named reason; no PaddleOCR or Qwen-vision document reading; no implementation provenance inside generated documents; structured 0.32.14/0.33.3 behaviour unchanged; exact-filename page-reference checks via retrieval.resolve; no new dependency, profile, protected-doc edit or Git/GitHub write.
+- acceptance: Offline focused and broader tests pass; package builds, signs and matches source; live fresh write, conversion, DOCX, text-PDF and mixed-PDF reads complete and scan-only PDF is refused.
+- follow_up_to: [UP-20260924-003](#up-20260924-003)
+- supersedes: none
+- linked_changes: [AC-20260924-005](agentchangelog.md#ac-20260924-005)

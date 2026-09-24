@@ -261,6 +261,35 @@ class Coordinator:
                          output_allowance=output_allowance,
                          context_window=context_window)), None)
 
+    def _document_execution(self, model_id: str,
+                            runtime_state: dict | None = None) \
+            -> tuple[str, str | None, str | None]:
+        """How model-backed document work may run here: (mode, workflow, decoder).
+
+        `structured` when the model selected for Documents has an exact
+        `documents.structured` profile on this computer — the strict JSON
+        workflows, unchanged. `chat_backed` when it has none but has an exact
+        Chat profile: a limited fallback that runs as an ordinary bounded Chat
+        call with the text decoder, and never claims the structured workflow.
+        Otherwise `blocked`. The model identity is never swapped, and the exact
+        reasoning/window/output match is still made by `_local_route` at run
+        time, so this only chooses which qualified workflow is asked for.
+
+        Deliberately request-independent: whether a request is a conversion or
+        a search is decided from the request, not here.
+        """
+        state = runtime_state if runtime_state is not None else runtime.probe()
+        if (not db.get_model_enabled(self.conn, model_id)
+                or self.local_model_ref(model_id, state) is None):
+            return "blocked", None, None
+        workflows = {profile.workflow_mode for profile in self.local_profiles(state)
+                     if profile.model.model_id == model_id}
+        if inference_profiles.DOCUMENTS in workflows:
+            return "structured", inference_profiles.DOCUMENTS, "json_schema"
+        if inference_profiles.CHAT in workflows:
+            return "chat_backed", inference_profiles.CHAT, "text"
+        return "blocked", None, None
+
     def ocr_profile(self, runtime_state: dict | None = None):
         """The qualified profile for reading pixels here, or `None`.
 
@@ -607,6 +636,16 @@ class Coordinator:
                 raise RequestError(row["detail"], 409)
             if row.get("conversion_only") and not conversion_request:
                 raise RequestError(row["generation_blocker"], 409)
+            if (skill_id == docflow.WRITE_SKILL and not conversion_request
+                    and row.get("model_scope") == "chat"
+                    and doc_workflow != docflow.WORKFLOW_GENERAL):
+                # The Chat-backed route writes a general document only. The
+                # approval note is a strict, citation-checked JSON workflow and
+                # is not offered on a profile that cannot decode it.
+                raise RequestError(
+                    "The inspection approval note needs a qualified structured "
+                    "Documents profile, which this computer does not have. "
+                    "Choose General document instead.", 409)
         # The document choices are made against this request and stored with
         # it, so a reopened conversation reports the file and workflow that
         # actually ran rather than whatever the composer shows now.
@@ -689,10 +728,29 @@ class Coordinator:
             # separately — three extra loopback calls on every message for an
             # answer the turn already had.
             runtime_state = runtime.probe() if uses_model else None
+            # A document skill whose model has no structured Documents profile
+            # but an exact Chat profile runs as an ordinary bounded Chat call.
+            # Blocked stays on the Documents workflow, so `_local_route` finds
+            # no profile and the existing refusal below names that.
+            chat_backed = False
+            if skill_id in docflow.DOCUMENT_SKILLS and uses_model:
+                document_mode, mode_workflow, mode_decoder = \
+                    self._document_execution(model_id, runtime_state)
+                if document_mode == "chat_backed":
+                    chat_backed = True
+                    workflow_mode, decoder_mode = mode_workflow, mode_decoder
+            structured_document = (skill_id in docflow.DOCUMENT_SKILLS
+                                   and not chat_backed)
             if skill_id in docflow.DOCUMENT_SKILLS:
                 route = self._local_route(
                     dispatch.Route(
-                        "local", "local coordinator: Documents runs on this computer"),
+                        "local",
+                        "local coordinator: Documents (limited) runs on this "
+                        "computer — files are extracted here and the selected "
+                        "model answers with its qualified Chat profile; the "
+                        "structured Documents workflow is not qualified here"
+                        if chat_backed else
+                        "local coordinator: Documents runs on this computer"),
                     model_id, uses_model, runtime_state,
                     workflow=workflow_mode, reasoning=reasoning_mode,
                     decoder=decoder_mode, context_window=None,
@@ -802,7 +860,7 @@ class Coordinator:
                 db.set_attempt_selection(self.conn, attempt_id,
                                          selection.as_dict())
 
-            if skill_id in docflow.DOCUMENT_SKILLS:
+            if structured_document:
                 # A document skill replaces the ordinary chat turn: it reads
                 # this request's attachments, then answers or writes from them.
                 messages, prepared, extra = self._document_stage(
@@ -821,11 +879,29 @@ class Coordinator:
                 # Ordinary Chat reads the files sent with this one request.
                 # Choosing a skill is no longer the price of asking about a
                 # file, but the scope is unchanged: this request's attachments
-                # and nothing else on the computer.
+                # and nothing else on the computer. A Chat-backed document skill
+                # takes this same path, reading extracted text only.
+                if chat_backed and skill_id == docflow.READ_SKILL \
+                        and not request_files:
+                    raise docflow.WorkflowError("no_attachments",
+                                                docflow.NO_ATTACHMENTS)
                 messages, extra = self._chat_attachments(
                     job_id, chat_id, messages, selection.included_ids,
-                    profile=profile, runtime_state=runtime_state)
+                    profile=profile, runtime_state=runtime_state,
+                    native_images=not chat_backed)
                 prepared = extra.get("prepared")
+                if chat_backed and request_files \
+                        and not (prepared and prepared.usable):
+                    # A document skill does not answer or write without its
+                    # files, as the structured route never did.
+                    reasons = "; ".join(
+                        f"{s['filename']}: {s['reason']}"
+                        for s in (prepared.skipped if prepared else [])) \
+                        or "no readable text was found"
+                    raise docflow.WorkflowError(
+                        "unreadable", f"Nothing could be read — {reasons}.")
+                if chat_backed:
+                    extra["chat_backed"] = True
                 final_selection = extra.get("selection")
                 if final_selection is not None:
                     db.set_attempt_selection(self.conn, attempt_id,
@@ -838,6 +914,11 @@ class Coordinator:
                 # the document routes carry their own strict-JSON instructions
                 # and must not be given a second voice.
                 messages = [self._identity_message(model_id, runtime_state),
+                            *([{"role": "system",
+                                "content": (docflow.CHAT_READ_INSTRUCTION
+                                            if skill_id == docflow.READ_SKILL
+                                            else docflow.CHAT_WRITE_INSTRUCTION)}]
+                              if chat_backed else []),
                             *messages]
 
             collected, metrics = [], {}
@@ -856,7 +937,7 @@ class Coordinator:
             # they are passed only when a route actually set them, so an
             # ordinary Chat turn is called exactly as it was before.
             response_format = (extra or {}).get("response_format")
-            if skill_id in docflow.DOCUMENT_SKILLS:
+            if structured_document:
                 inference = inference_profiles.request(
                     profile, reasoning=reasoning_mode, decoder="json_schema",
                     output_allowance=(extra or {}).get(
@@ -888,8 +969,9 @@ class Coordinator:
                 elif kind == "delta":
                     collected.append(payload)
                     # Document replies use strict JSON internally. Never save
-                    # or publish that implementation format as the answer.
-                    if skill_id not in docflow.DOCUMENT_SKILLS:
+                    # or publish that implementation format as the answer. A
+                    # Chat-backed document reply is ordinary text and streams.
+                    if not structured_document:
                         db.append_output(self.conn, attempt_id, payload)
                         # The contract caps a delta at 2048 characters.
                         for i in range(0, len(payload), 2048):
@@ -982,11 +1064,20 @@ class Coordinator:
                         "code": "validation_failed", "message": message[:256],
                         "retryable": True})
                     return
-                if skill_id in docflow.DOCUMENT_SKILLS:
+                if structured_document:
                     db.append_output(self.conn, attempt_id, answer)
                     for i in range(0, len(answer), 2048):
                         self._emit(job_id, attempt_id,
                                    {"kind": "output.delta", "text": answer[i:i + 2048]})
+                elif (extra or {}).get("_footer"):
+                    # The streamed reply is already saved; only the check that
+                    # followed it is added.
+                    footer = extra["_footer"]
+                    db.append_output(self.conn, attempt_id, footer)
+                    for i in range(0, len(footer), 2048):
+                        self._emit(job_id, attempt_id,
+                                   {"kind": "output.delta", "text": footer[i:i + 2048]})
+                if skill_id in docflow.DOCUMENT_SKILLS:
                     artifact = extra.get("_artifact")
                     if artifact:
                         self._emit(job_id, attempt_id, {
@@ -1126,13 +1217,18 @@ class Coordinator:
 
     def _chat_attachments(self, job_id, chat_id, messages, selected_ids,
                           *, profile: v1.ExecutionProfile,
-                          runtime_state: dict | None = None):
+                          runtime_state: dict | None = None,
+                          native_images: bool = True):
         """Read the files sent with an ordinary Chat request, if any.
 
         The same extraction the document skills use, and the same scope: only
         this request's own attachments. A file that could not be read is
         reported in the reply rather than dropped, so nobody is left thinking
         the model saw something it never received.
+
+        `native_images=False` is how a document skill running on the Chat
+        profile reuses this path without the native-vision branch: those
+        skills read extracted text only, and a picture stays an OCR matter.
         """
         message_id, attachments = self._request_sources(chat_id, job_id)
         if not attachments:
@@ -1145,7 +1241,7 @@ class Coordinator:
         # Ordinary Chat may use the selected model's native vision transport.
         # The exact Chat profile still bounds the run; /api/show decides
         # whether image bytes may be attached at all.
-        if len(attachments) == len(image_attachments) == 1 \
+        if native_images and len(attachments) == len(image_attachments) == 1 \
                 and runtime.VISION_CAPABILITY in (
                 runtime.model_capabilities(profile.model.model_id) or []):
             item = image_attachments[0]
@@ -1218,8 +1314,10 @@ class Coordinator:
             0, context.input_budget(profile.qualified_context_tokens,
                                     profile.default_output_tokens)
             - required_tokens)
+        sent_sources = []
         fenced, notes = docflow.chat_context(
-            prepared, attachment_tokens * docflow.CHARS_PER_TOKEN_FLOOR)
+            prepared, attachment_tokens * docflow.CHARS_PER_TOKEN_FLOOR,
+            sent=sent_sources)
         if not fenced:
             return messages, {**direct,
                 "prepared": prepared,
@@ -1250,6 +1348,7 @@ class Coordinator:
                                        if item != "attachment-system"]
         final_selection.omitted_count = len(final_selection.omitted_ids)
         return bounded, {**direct, "prepared": prepared, "chat_sources": True,
+                       "sent_sources": sent_sources,
                        "selection": final_selection,
                        "attachment_note": direct.get("attachment_note", "")
                        + docflow.attachment_note(prepared, notes)}
@@ -1382,10 +1481,7 @@ class Coordinator:
             attachments=attachments, should_cancel=cancel, ocr_model=ocr_model,
             ocr_profile=self.ocr_profile())
         if not attachments:
-            raise docflow.WorkflowError(
-                "no_attachments",
-                "Attach the files to read with the + button, then send the "
-                "request again. This skill only reads files you send with it.")
+            raise docflow.WorkflowError("no_attachments", docflow.NO_ATTACHMENTS)
         if not prepared.usable:
             reasons = "; ".join(f"{s['filename']}: {s['reason']}"
                                 for s in prepared.skipped) or "no readable text was found"
@@ -1577,6 +1673,10 @@ class Coordinator:
         """Turn the model's reply into the skill's real result."""
         if self.is_cancelled(job_id) or self.stopping.is_set():
             raise docflow.Cancelled()
+        if extra.get("chat_backed"):
+            return self._chat_backed_answer(job_id, chat_id, attempt_id,
+                                            skill_id, answer, extra,
+                                            model_id=model_id)
         if skill_id == docflow.READ_SKILL:
             parsed = docflow.parse_read_answer(
                 answer, extra.get("citation_sources", []))
@@ -1609,6 +1709,31 @@ class Coordinator:
         extra["_artifact"] = artifact
         return docflow.artifact_answer(note, artifact, prepared,
                                        extra.get("passages", []))
+
+    def _chat_backed_answer(self, job_id, chat_id, attempt_id, skill_id,
+                            answer, extra, *, model_id):
+        """Finish a document skill that ran as one ordinary Chat call.
+
+        Reading: the streamed answer is kept exactly as written, and a footer
+        says which of its page references match pages that were supplied.
+        Writing: the model's text — without the note about which files were
+        read — goes through the same converter a previous answer does. The
+        document holds only that content; the model, profile and route are
+        recorded on the attempt, never written into the file.
+        """
+        if skill_id == docflow.READ_SKILL:
+            footer = docflow.reference_footer(
+                answer, extra.get("sent_sources", []), answered_by=model_id)
+            extra["_footer"] = footer
+            return answer + footer
+        note = extra.get("attachment_note") or ""
+        text = answer[len(note):] if answer.startswith(note) else answer
+        artifact = self._write_artifact(
+            job_id, chat_id, attempt_id, title=docflow.conversion_title(text),
+            blocks=docflow.conversion_blocks(text),
+            workflow=docflow.WORKFLOW_CHAT_DOCUMENT)
+        extra["_artifact"] = artifact
+        return answer
 
     def job_output_format(self, job_id: str) -> str:
         """The file this request asked for. A job written before the choice
@@ -2402,6 +2527,8 @@ class Coordinator:
             ocr_profile=self.ocr_profile(state))
         searchable = retrieval.fts_available(self.conn)
         recorded = db.selftests(self.conn)
+        document_mode, _workflow, _decoder = self._document_execution(
+            document_model, state)
         rows = []
         for entry in CAPABILITIES:
             row = dict(entry)
@@ -2409,12 +2536,11 @@ class Coordinator:
                 row["state"] = "unavailable"
                 row["detail"] = entry["setup"]
             elif entry.get("kind") == "document":
-                blocked = self._document_blockers(entry, reading, searchable,
-                                                  self._model_capability_blocker(
-                                                      state, inventory,
-                                                      document_model, "Documents",
-                                                      (document_model,
-                                                       "documents.generate") in usable))
+                blocked = self._document_blockers(
+                    entry, reading, searchable,
+                    self._model_capability_blocker(
+                        state, inventory, document_model, "Documents or Chat",
+                        document_mode != "blocked"))
                 row["formats"] = reading["supported"]
                 row["unavailable_reasons"] = reading["unavailable"]
                 conversion_only = (entry["id"] == docflow.WRITE_SKILL
@@ -2425,9 +2551,18 @@ class Coordinator:
                     row["generation_blocker"] = blocked[0]
                     row["summary"] = ("Save a completed answer as a Word or PDF file. "
                                       "Creating new documents needs a qualified "
-                                      "Documents profile.")
+                                      "Documents or Chat profile for the selected "
+                                      "model.")
                     row["detail"] = ("Ask to save or export the previous answer. "
                                      "New model-written documents are unavailable.")
+                elif (not blocked and entry.get("needs_runtime")
+                      and document_mode == "chat_backed"):
+                    # Available, but only as the limited Chat-backed route. Said
+                    # in the row itself, and the model pill is pointed at the
+                    # Chat scope this route is actually admitted under.
+                    row["model_scope"] = "chat"
+                    row.update(self._chat_backed_text(
+                        entry["id"], document_model, reading))
                 else:
                     row["detail"] = blocked[0] if blocked else entry["detail_available"]
                 if blocked and not conversion_only:
@@ -2473,7 +2608,17 @@ class Coordinator:
             # "This can run" and "this was checked here" are different claims,
             # and `docs/PROJECT.md` 4.5 asks for the second to be visible.
             scope = CAPABILITY_SELFTEST_SCOPE.get(entry["id"])
-            if scope:
+            if scope and row.get("model_scope") == "chat":
+                # The Chat-backed route runs the model selected for Documents
+                # under its Chat profile, so that model's Chat self-test is the
+                # check that describes it — not the Documents or OCR one, and
+                # not whatever model is separately selected for Chat.
+                model = document_model
+                digest = next((r["digests"]["local"] for r in inventory
+                               if r["id"] == model), None)
+                row["selftest"] = models.selftest_view(
+                    recorded, model=model, digest=digest)[models.CHAT]
+            elif scope:
                 model = self.model_for(scope)
                 digest = next((r["digests"]["local"] for r in inventory
                                if r["id"] == model), None)
@@ -2481,6 +2626,31 @@ class Coordinator:
                     recorded, model=model, digest=digest)[scope]
             rows.append(row)
         return rows
+
+    @staticmethod
+    def _chat_backed_text(skill_id: str, model_id: str, reading: dict) -> dict:
+        """What a Chat-backed document row says, so the limit is never implied away."""
+        if skill_id == docflow.READ_SKILL:
+            kinds = "Word, text" + (" and text-layer PDF" if reading.get("reads_pdf_text")
+                                    else "")
+            detail = (f"Limited: {kinds} files are read on this computer and "
+                      f"answered by {model_id} with its qualified Chat profile, "
+                      "not the structured Documents workflow. Page references "
+                      "are checked against the pages supplied.")
+            if not reading.get("reads_scans"):
+                detail += (" Scanned PDFs and pictures cannot be read here: no "
+                           "OCR profile is qualified.")
+            return {"summary": (f"Read the {kinds} files you attach and answer "
+                                "from them, with page references."),
+                    "detail": detail}
+        return {"summary": ("Create a Word or PDF document from your request or "
+                            "attached files, or save a previous answer."),
+                "detail": (f"Limited: new documents are written by {model_id} "
+                           "with its qualified Chat profile and converted on this "
+                           "computer. The structured Documents workflow and the "
+                           "inspection approval note are not qualified here. The "
+                           "result stays on this computer until you approve an "
+                           "export.")}
 
     @staticmethod
     def _model_capability_blocker(state, inventory, model_id, workflow,

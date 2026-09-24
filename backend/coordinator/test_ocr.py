@@ -25,6 +25,7 @@ from unittest.mock import patch
 from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
 from backend.coordinator import documents, ocr, pdfrender, runtime
+from backend.coordinator.test_pdfrender import minimal_pdf
 
 SCAN_FIXTURE = "fixtures/c07/documents/inspection-report-scan.pdf"
 
@@ -695,7 +696,7 @@ class TestThroughDocuments(unittest.TestCase):
         self.assertEqual(rendered, [])
 
     def test_extracted_pages_reach_the_document_record_one_based(self):
-        path, digest = self.write(b"%PDF fixture")
+        path, digest = self.write(minimal_pdf(pages=2))
         reading = {
             "pages": [{"number": 1, "text": "first", "confidence": None, "note": None},
                       {"number": 2, "text": "second", "confidence": None, "note": None}],
@@ -1105,7 +1106,7 @@ class TestSignatureFailuresStayContained(unittest.TestCase):
         with patch.object(ocr, "probe", return_value=SCAN_READY), \
                 patch.object(ocr, "extract_pdf", obsolete):
             with self.assertRaises(documents.DocumentError) as caught:
-                documents._extract_pdf(b"%PDF", "scan.pdf",
+                documents._extract_pdf(minimal_pdf(), "scan.pdf",
                                        ocr_profile=test_ocr_profile())
         self.assertEqual(caught.exception.code, "reading_failed")
         self.assertNotIn("stream_chat", str(caught.exception))

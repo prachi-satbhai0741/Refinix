@@ -235,16 +235,79 @@ class TestCapabilities(Base):
                         models.entry_for(runtime.MODEL).manifest_sha256}})
         by_id = {row["id"]: row for row in rows}
         self.assertEqual(by_id["chat"]["state"], "available")
-        self.assertEqual(by_id["write-document"]["state"], "available")
-        self.assertTrue(by_id["write-document"]["conversion_only"])
-        self.assertIn("no qualified", by_id["write-document"]["generation_blocker"])
         self.assertEqual(by_id["code"]["state"], "available")
         self.assertTrue(by_id["code"]["experimental"])
         self.assertIn("small reviewable", by_id["code"]["detail"])
         self.assertIn("not qualified", by_id["code"]["detail"])
+        # Reading and writing run on the limited Chat-backed route: available,
+        # said to be limited, and never presented as structured Documents.
+        for skill in ("read-document", "write-document"):
+            row = by_id[skill]
+            self.assertEqual(row["state"], "available", skill)
+            self.assertEqual(row["model_scope"], "chat", skill)
+            self.assertNotIn("conversion_only", row, skill)
+            self.assertIn("Limited", row["detail"], skill)
+            self.assertIn("qualified Chat profile", row["detail"], skill)
+            self.assertIn("not", row["detail"], skill)
+        self.assertIn("approval note are not qualified",
+                      by_id["write-document"]["detail"])
+        self.assertIn("docx", by_id["read-document"]["formats"])
+        # Scans stay unavailable, named; nothing claims PaddleOCR ran.
+        self.assertIn("no OCR profile is qualified", by_id["read-document"]["detail"])
+        scan = [item for item in by_id["read-document"]["unavailable_reasons"]
+                if item["kind"] == "pdf_scan"]
+        self.assertEqual(len(scan), 1)
+        self.assertIn("no qualified reading profile", scan[0]["detail"])
+        # The unqualified OCR model may be *named* only inside the refusal that
+        # says nothing is sent to it; no text anywhere claims it read anything.
+        texts = [row.get(key, "") for row in rows for key in ("summary", "detail")]
+        texts += [item["detail"] for row in rows
+                  for item in row.get("unavailable_reasons", [])]
+        for text in texts:
+            if "paddleocr" in text.lower():
+                self.assertIn("will not send a page image to it", text)
+        self.assertNotIn("model_scope", by_id["search-documents"])
+
+    def test_the_chat_backed_rows_show_the_documents_models_chat_selftest(self):
+        """The route runs the model selected for Documents under its Chat
+        profile, so that model's Chat self-test describes it — even when a
+        different model is selected for Chat."""
+        state = {"reachable": True, "server_version": "0.34.2",
+                 "models": [runtime.MODEL, "other:1b"],
+                 "digests": {runtime.MODEL:
+                             models.entry_for(runtime.MODEL).manifest_sha256,
+                             "other:1b": "f" * 64}}
+        db.set_model_selection(self.c.conn, "chat", "other:1b")
+        digest = models.entry_for(runtime.MODEL).manifest_sha256
+        db.record_selftest(conn=self.c.conn, model=runtime.MODEL, scope=models.CHAT,
+                           state="passed", detail="chat ok", digest=digest,
+                           runtime_version="0.34.2")
+        rows = {row["id"]: row for row in self.c.capabilities(state)}
+        for skill in ("read-document", "write-document"):
+            self.assertEqual(rows[skill]["selftest"]["state"], "passed", skill)
+            self.assertEqual(rows[skill]["selftest"]["detail"], "chat ok", skill)
+
+    def test_an_unmeasured_runtime_leaves_reading_blocked_and_writing_conversion_only(self):
+        rows = self.c.capabilities({
+            "reachable": True, "server_version": "0.99.0",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256}})
+        by_id = {row["id"]: row for row in rows}
         self.assertEqual(by_id["read-document"]["state"], "blocked")
-        self.assertIn("no qualified", by_id["read-document"]["detail"])
-        self.assertNotIn("not installed", by_id["read-document"]["detail"])
+        self.assertIn("no qualified Documents or Chat execution profile",
+                      by_id["read-document"]["detail"])
+        self.assertTrue(by_id["write-document"]["conversion_only"])
+        self.assertNotIn("model_scope", by_id["read-document"])
+
+    def test_the_structured_profile_rows_carry_no_chat_scope(self):
+        rows = self.c.capabilities({
+            "reachable": True, "server_version": "0.32.14",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256}})
+        for row in rows:
+            self.assertNotIn("model_scope", row, row["id"])
 
     def test_code_is_blocked_rather_than_available_without_the_runtime(self):
         rows = self.c.capabilities({"reachable": False, "models": []})
