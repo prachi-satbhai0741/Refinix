@@ -37,6 +37,7 @@ import sys
 import time
 import uuid
 
+from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
 from backend.worker import codegen, jobspec, packages as packages_module, runtime
 from backend.worker.dispatch import ExecutorSession
@@ -325,14 +326,29 @@ class Executor:
                 return "", "this attempt's file package could not be resolved"
             messages = codegen.build_messages(envelope.original_request, selection)
         else:
-            messages = [{"role": "user", "content": envelope.original_request}]
+            # Contract 1.1 carries the coordinator's already-bounded complete
+            # logical Chat request. Rebuilding it here would silently discard
+            # selected history or change the system instruction.
+            messages = [message.model_dump() for message in envelope.messages]
+
+        if envelope.inference is None or envelope.model is None:
+            return "", "qualified inference semantics are missing"
+        profile = runtime.resolve_profile(envelope.inference.profile_id)
+        if profile is None:
+            return "", "the requested profile is stale or no longer qualified"
+        try:
+            inference_profiles.validate_request(
+                profile, envelope.inference, envelope.model)
+        except ValueError:
+            return "", "the requested inference semantics are incompatible"
 
         produced, metrics, failed = [], {}, None
         try:
             options = {"should_cancel": should_cancel,
-                       "timeout": max(0.5, deadline - time.monotonic())}
-            if envelope.model:
-                options["model"] = envelope.model.model_id
+                       "timeout": max(0.5, deadline - time.monotonic()),
+                       "profile": profile, "inference": envelope.inference}
+            if envelope.task_type == "code":
+                options["response_format"] = codegen.PROPOSAL_SCHEMA
             for kind, payload in runtime.stream_chat(messages, **options):
                 if kind == "delta":
                     produced.append(payload)
@@ -352,6 +368,19 @@ class Executor:
             failed = "the local model runtime failed"
 
         text = "".join(produced)
+        if metrics:
+            emit({
+                "kind": "inference.metrics",
+                "requested_profile_id": metrics["requested_profile_id"],
+                "actual_profile_id": metrics["actual_profile_id"],
+                "context_window": metrics["context_window"],
+                "output_token_limit": metrics["output_token_limit"],
+                "reasoning": metrics["reasoning"],
+                "decoder": metrics["decoder"],
+                "prompt_tokens": metrics.get("prompt_tokens"),
+                "output_tokens": metrics.get("output_tokens"),
+                "runtime_ms": metrics.get("runtime_ms"),
+            })
         if failed is None and metrics.get("done_reason") != "stop":
             failed = "the reply was incomplete"
         if failed is None and "text.nonempty" in envelope.output.validators \

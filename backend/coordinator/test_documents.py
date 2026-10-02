@@ -14,11 +14,14 @@ import stat
 import tempfile
 import unittest
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import (db, docflow, docgen, documents, retrieval,
-                                 runtime)
+from backend.contracts import profiles
+from backend.coordinator.test_ocr import test_ocr_profile
+from backend.coordinator import (db, docflow, docgen, documents, models,
+                                 pdfrender, retrieval, runtime)
 from backend.coordinator.server import Coordinator
 
 
@@ -56,10 +59,14 @@ class Base(unittest.TestCase):
         self.state.parent.mkdir(parents=True)
         self.runtime_probe = patch.object(
             runtime, "probe", return_value={"reachable": True,
-                                             "models": [runtime.MODEL]})
+                                             "models": [runtime.MODEL],
+                                             "digests": {runtime.MODEL:
+                                                 models.entry_for(runtime.MODEL).manifest_sha256},
+                                             "server_version": "0.32.14"})
         self.runtime_probe.start()
         self.addCleanup(self.runtime_probe.stop)
         self.c = Coordinator(self.state)
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.chat = db.create_chat(self.c.conn, self.c.workspace_id, "documents")
 
     def tearDown(self):
@@ -77,6 +84,14 @@ class Base(unittest.TestCase):
                                     self.c.workspace_id)
         return self.c.attachments_root / full["stored_name"]
 
+    def symlink_or_skip(self, link: Path, target: Path) -> None:
+        try:
+            link.symlink_to(target)
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows symlink creation privilege is unavailable")
+            raise
+
 
 # --------------------------------------------------------------------------
 # Capability honesty
@@ -90,13 +105,23 @@ INSTALLED_RUNTIME = {"reachable": True, "server_version": "0.0.0-fake",
                      "digests": {runtime.OCR_MODEL: "b" * 64},
                      "loaded": None, "endpoint": "http://127.0.0.1:11434",
                      "error": None}
-RENDERER_PRESENT = {"available": True, "module": "Quartz", "detail": "fake renderer"}
-RENDERER_ABSENT = {"available": False, "module": None,
-                   "detail": "PDF rendering needs the macOS Quartz framework "
-                             "(PyObjC), which is not available in this environment."}
+RENDERER_PRESENT = {"available": True, "module": pdfrender.PDFIUM,
+                    "detail": "fake renderer", "backends": [pdfrender.PDFIUM]}
+RENDERER_ABSENT = {"available": False, "module": None, "backends": [],
+                   "detail": "Refinix cannot render PDF pages on this computer. "
+                             "PDF rendering needs the pypdfium2 renderer, which "
+                             "is not installed in this environment."}
 
 
 class TestCapabilityProbe(unittest.TestCase):
+    def test_a_disabled_ocr_model_cannot_receive_a_new_image(self):
+        with patch.object(runtime, "stream_chat") as called:
+            with self.assertRaises(documents.DocumentError) as caught:
+                documents._extract_image(b"pixels", "scan.png", "image/png",
+                                         ocr_model=None)
+        self.assertEqual(caught.exception.code, "model_disabled")
+        called.assert_not_called()
+
     def test_pdf_and_ocr_name_the_prerequisite_that_is_actually_missing(self):
         """An unavailable capability says which of the two halves is missing.
 
@@ -110,7 +135,7 @@ class TestCapabilityProbe(unittest.TestCase):
                 if not entry["available"]:
                     self.assertEqual(entry["formats"], [])
                     self.assertTrue(
-                        "Quartz" in entry["detail"]
+                        "render" in entry["detail"]
                         or runtime.OCR_MODEL in entry["detail"]
                         or "not answering" in entry["detail"],
                         entry["detail"])
@@ -130,24 +155,29 @@ class TestCapabilityProbe(unittest.TestCase):
     def test_a_present_renderer_alone_does_not_advertise_scan_reading(self):
         """Both halves, or neither. A renderer with no model reads nothing."""
         with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT):
-            capability = documents.probe(UNAVAILABLE_RUNTIME)
+            capability = documents.probe(UNAVAILABLE_RUNTIME, ocr_profile=test_ocr_profile())
         self.assertFalse(capability["pdf"]["available"])
         self.assertFalse(capability["ocr"]["available"])
         self.assertIn("not answering", capability["pdf"]["detail"])
 
     def test_a_present_model_alone_does_not_advertise_scan_reading(self):
         with patch.object(documents.pdfrender, "probe", return_value=RENDERER_ABSENT):
-            capability = documents.probe(INSTALLED_RUNTIME)
+            capability = documents.probe(INSTALLED_RUNTIME, ocr_profile=test_ocr_profile())
         self.assertFalse(capability["pdf"]["available"])
         self.assertFalse(capability["ocr"]["available"])
-        self.assertIn("Quartz", capability["pdf"]["detail"])
+        # The renderer's own words, not a named framework: the missing
+        # prerequisite differs per platform now, and the detail has to carry
+        # whichever one this computer is actually short of.
+        self.assertIn("render", capability["pdf"]["detail"])
+        self.assertEqual(capability["pdf"]["detail"], RENDERER_ABSENT["detail"])
 
     def test_both_halves_present_advertises_pdf_and_says_what_it_is_not(self):
         with patch.object(documents.pdfrender, "probe", return_value=RENDERER_PRESENT), \
                 patch.object(documents.ocr.runtime, "model_capabilities",
                              return_value=["completion", "vision"]):
-            capability = documents.probe(INSTALLED_RUNTIME)
-            supported = documents.supported_suffixes(INSTALLED_RUNTIME)
+            capability = documents.probe(INSTALLED_RUNTIME, ocr_profile=test_ocr_profile())
+            supported = documents.supported_suffixes(
+                INSTALLED_RUNTIME, ocr_profile=test_ocr_profile())
         self.assertTrue(capability["pdf"]["available"])
         self.assertIn(".pdf", supported)
         # The claim stays bounded: a standalone vision component, not the
@@ -181,7 +211,7 @@ class TestExtraction(Base):
         replacement = stored.parent / "replacement.txt"
         replacement.write_bytes(b"original text\n")
         stored.unlink()
-        stored.symlink_to(replacement)
+        self.symlink_or_skip(stored, replacement)
         with self.assertRaises(documents.DocumentError) as caught:
             documents.extract(stored, source_id=record["attachment_id"],
                               filename="notes.txt", media_type="text/plain",
@@ -288,9 +318,10 @@ class TestExtraction(Base):
                 documents.extract(self.stored(record),
                                   source_id=record["attachment_id"],
                                   filename="scan.pdf", media_type="application/pdf",
-                                  expected_sha256=record["sha256"])
+                                  expected_sha256=record["sha256"],
+                                  ocr_profile=test_ocr_profile())
         self.assertEqual(caught.exception.code, "no_pdf_parser")
-        self.assertIn("Quartz", str(caught.exception))
+        self.assertIn("render", str(caught.exception))
 
     def test_a_pdf_is_refused_when_the_model_cannot_read_images(self):
         """The observed 2026-09-05 state: installed, and completion-only."""
@@ -304,7 +335,8 @@ class TestExtraction(Base):
                 documents.extract(self.stored(record),
                                   source_id=record["attachment_id"],
                                   filename="scan.pdf", media_type="application/pdf",
-                                  expected_sha256=record["sha256"])
+                                  expected_sha256=record["sha256"],
+                                  ocr_profile=test_ocr_profile())
         self.assertEqual(caught.exception.code, "model_cannot_read_images")
 
     def test_a_pdf_is_refused_when_the_model_is_absent_and_nothing_is_pulled(self):
@@ -324,7 +356,8 @@ class TestExtraction(Base):
                 documents.extract(self.stored(record),
                                   source_id=record["attachment_id"],
                                   filename="scan.pdf", media_type="application/pdf",
-                                  expected_sha256=record["sha256"])
+                                  expected_sha256=record["sha256"],
+                                  ocr_profile=test_ocr_profile())
         self.assertEqual(caught.exception.code, "no_ocr_model")
         self.assertIn("does not download models", str(caught.exception))
         self.assertEqual(calls, [])
@@ -575,9 +608,16 @@ class TestApprovalNoteParsing(unittest.TestCase):
     SOURCES = [{"source_id": "src-1", "filename": "report.docx",
                 "pages": [{"number": 1}, {"number": 2}]}]
 
+    CITE = [{"source_id": "src-1", "page": 1}]
+
     def note(self, **overrides):
-        base = {"title": "Approval note", "summary": "It was inspected.",
-                "findings": [], "recommendation": "Approve.", "unresolved": []}
+        # The summary and the recommendation answer for their own evidence now,
+        # so the base note carries citations on both.
+        base = {"title": "Approval note",
+                "summary": {"text": "It was inspected.", "citations": self.CITE},
+                "findings": [],
+                "recommendation": {"text": "Approve.", "citations": self.CITE},
+                "unresolved": ["The inspector's name is not stated."]}
         base.update(overrides)
         return json.dumps(base)
 
@@ -589,17 +629,42 @@ class TestApprovalNoteParsing(unittest.TestCase):
                 self.assertEqual(caught.exception.code, "not_json")
 
     def test_an_unknown_field_is_refused(self):
-        reply = json.dumps({"title": "t", "summary": "s", "findings": [],
-                            "recommendation": "r", "unresolved": [],
-                            "approved": True})
+        reply = json.dumps({"title": "t",
+                            "summary": {"text": "s", "citations": self.CITE},
+                            "findings": [],
+                            "recommendation": {"text": "r",
+                                               "citations": self.CITE},
+                            "unresolved": [], "approved": True})
         with self.assertRaises(docflow.WorkflowError) as caught:
             docflow.parse_approval_note(reply, self.SOURCES)
         self.assertEqual(caught.exception.code, "unknown_fields")
 
     def test_a_missing_required_field_is_refused(self):
+        """The text inside a claim is still checked as a field: a blank summary
+        is reported as the missing field it is, not as a shape problem."""
+        blank = self.note(summary={"text": "  ", "citations": self.CITE})
         with self.assertRaises(docflow.WorkflowError) as caught:
-            docflow.parse_approval_note(self.note(summary="  "), self.SOURCES)
+            docflow.parse_approval_note(blank, self.SOURCES)
         self.assertEqual(caught.exception.code, "missing_field")
+
+    def test_a_claim_without_its_own_evidence_is_refused(self):
+        """A citation on a finding does not support the summary. Each claim
+        answers for itself."""
+        for field in ("summary", "recommendation"):
+            with self.subTest(field=field):
+                reply = self.note(**{field: {"text": "Approved.",
+                                             "citations": []}})
+                with self.assertRaises(docflow.WorkflowError) as caught:
+                    docflow.parse_approval_note(reply, self.SOURCES)
+                self.assertEqual(caught.exception.code, "bad_citations")
+
+    def test_a_claim_that_is_a_bare_string_is_refused(self):
+        for field in ("summary", "recommendation"):
+            with self.subTest(field=field):
+                with self.assertRaises(docflow.WorkflowError) as caught:
+                    docflow.parse_approval_note(
+                        self.note(**{field: "just prose"}), self.SOURCES)
+                self.assertEqual(caught.exception.code, "bad_claim")
 
     def test_an_invented_citation_refuses_the_note(self):
         reply = self.note(findings=[{"text": "A valve was open.",
@@ -633,9 +698,10 @@ class TestApprovalNoteParsing(unittest.TestCase):
         del missing["unresolved"]
         with self.assertRaises(docflow.WorkflowError):
             docflow.parse_approval_note(json.dumps(missing), self.SOURCES)
+        oversized = self.note(summary={"text": "x" * (docflow.MAX_FIELD_CHARS + 1),
+                                       "citations": self.CITE})
         with self.assertRaises(docflow.WorkflowError) as caught:
-            docflow.parse_approval_note(
-                self.note(summary="x" * (docflow.MAX_FIELD_CHARS + 1)), self.SOURCES)
+            docflow.parse_approval_note(oversized, self.SOURCES)
         self.assertEqual(caught.exception.code, "field_too_long")
 
 
@@ -706,6 +772,38 @@ class TestDocxGeneration(unittest.TestCase):
                          "application/vnd.openxmlformats-officedocument"
                          ".wordprocessingml.document")
 
+    def test_semantic_heading_and_list_styles_are_real_ooxml(self):
+        target = self.root / "structured.docx"
+        docgen.write_docx(target, title="Inspection note", blocks=[
+            docgen.Block("Inspection note", "Title"),
+            docgen.Block("Findings", "Heading1"),
+            docgen.Block("Loose anchor bolts", "ListNumber", "1"),
+            docgen.Block("Torque not recorded", "ListBullet", "•"),
+        ])
+        with zipfile.ZipFile(target) as archive:
+            styles = ET.fromstring(archive.read("word/styles.xml"))
+            document = ET.fromstring(archive.read("word/document.xml"))
+            numbering = ET.fromstring(archive.read("word/numbering.xml"))
+        style_ids = {node.get(f"{docgen.WORD_NS}styleId")
+                     for node in styles.iter(f"{docgen.WORD_NS}style")}
+        self.assertTrue({"Title", "Heading1", "ListNumber", "ListBullet"}
+                        <= style_ids)
+        paragraph_styles, num_ids = [], []
+        for paragraph in document.iter(f"{docgen.WORD_NS}p"):
+            style = paragraph.find(
+                f"{docgen.WORD_NS}pPr/{docgen.WORD_NS}pStyle")
+            number = paragraph.find(
+                f"{docgen.WORD_NS}pPr/{docgen.WORD_NS}numPr/"
+                f"{docgen.WORD_NS}numId")
+            paragraph_styles.append(
+                style.get(f"{docgen.WORD_NS}val") if style is not None else None)
+            if number is not None:
+                num_ids.append(number.get(f"{docgen.WORD_NS}val"))
+        self.assertEqual(paragraph_styles,
+                         ["Title", "Heading1", "ListNumber", "ListBullet"])
+        self.assertEqual(num_ids, ["1", "2"])
+        self.assertEqual(len(list(numbering.iter(f"{docgen.WORD_NS}num"))), 2)
+
     def test_hostile_text_becomes_document_text_not_markup(self):
         target = self.root / "hostile.docx"
         payload = '</w:t></w:r></w:p><w:p><w:r><w:t>injected'
@@ -765,14 +863,30 @@ class TestDocxGeneration(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 def fake_stream(reply, thinking="", done_reason="stop"):
-    def stream(messages, *, should_cancel=None, think=None, model=None,
-               num_predict=None):
+    """A `runtime.stream_chat` stand-in that records how it was called.
+
+    `response_format` and `num_predict` are recorded rather than ignored: a
+    general document is decoded against a runtime-enforced schema, and a double
+    that silently accepted anything could not tell whether the production call
+    actually asked for one.
+    """
+    def stream(messages, *, should_cancel=None, profile=None, inference=None,
+               response_format=None, images=None):
         stream.messages = messages
+        stream.images = images
+        stream.response_format = response_format
+        stream.num_predict = (inference.output_allowance_tokens
+                              if inference else None)
+        stream.calls += 1
         if thinking:
             yield "thinking", thinking
         yield "delta", reply
         yield "done", {"done_reason": done_reason}
     stream.messages = None
+    stream.images = None
+    stream.response_format = None
+    stream.num_predict = None
+    stream.calls = 0
     return stream
 
 
@@ -892,7 +1006,10 @@ class TestSkillsInsideChat(Base):
                 "supported": [], "unavailable": [{"kind": "text", "detail": "none"}],
                 "reads_pdf": False, "reads_scans": False, "detail": {}, "max_bytes": 1}):
             rows = {r["id"]: r for r in self.c.capabilities(
-                {"reachable": True, "models": [runtime.MODEL]})}
+                {"reachable": True, "models": [runtime.MODEL],
+                 "server_version": "0.32.14",
+                 "digests": {runtime.MODEL:
+                             models.entry_for(runtime.MODEL).manifest_sha256}})}
         self.assertEqual(rows["chat"]["state"], "available")
         self.assertEqual(rows["code"]["state"], "available")
         self.assertEqual(rows[docflow.READ_SKILL]["state"], "blocked")
@@ -917,11 +1034,13 @@ class TestGenerationWorkflow(Base):
         return job, record
 
     def good_reply(self, source_id):
+        cite = [{"source_id": source_id, "page": 1}]
         return json.dumps({
-            "title": "Approval note", "summary": "The valve was found open.",
-            "findings": [{"text": "Valve open on line 3.",
-                          "citations": [{"source_id": source_id, "page": 1}]}],
-            "recommendation": "Approve after the valve is closed.",
+            "title": "Approval note",
+            "summary": {"text": "The valve was found open.", "citations": cite},
+            "findings": [{"text": "Valve open on line 3.", "citations": cite}],
+            "recommendation": {"text": "Approve after the valve is closed.",
+                               "citations": cite},
             "unresolved": ["The inspector's name is not stated."]})
 
     def test_a_valid_run_produces_a_readable_artifact_with_its_provenance(self):
@@ -1189,7 +1308,7 @@ class TestDocumentRetention(Base):
         target = stored.parent / "keep.txt"
         target.write_bytes(b"keep")
         stored.unlink()
-        stored.symlink_to(target)
+        self.symlink_or_skip(stored, target)
         db.delete_chat(self.c.conn, self.chat, self.c.attachments_root)
         self.assertFalse(stored.exists())
         self.assertEqual(target.read_bytes(), b"keep")

@@ -97,7 +97,7 @@ function emptyNetwork() {
 
 function localAttempt(over = {}) {
   return Object.assign({
-    where: 'macOS coordinator',
+    where: 'this computer',
     state: 'completed',
     route_reason: 'local coordinator: Documents runs on this Mac',
     validation_detail: null,
@@ -128,7 +128,7 @@ function localAttempt(over = {}) {
 
 function validationAttempt(over = {}) {
   return Object.assign({
-    where: 'Ubuntu worker',
+    where: 'paired worker',
     state: 'completed',
     route_reason: 'paired worker ubuntu-worker: healthy',
     validation_detail: {
@@ -184,7 +184,7 @@ function render(payload) {
 test('a local attempt shows no Pod and says why', () => {
   const p = render(card([localAttempt()]));
   const shown = p.text('c-proof');
-  assert.match(shown, /macOS coordinator/);
+  assert.match(shown, /this computer/);
   assert.match(shown, /ran on the coordinator/);
   assert.doesNotMatch(shown, /pod-uid/);
 });
@@ -240,8 +240,8 @@ test('two attempts render as two separate blocks, not one merged claim', () => {
   const blocks = p.document.getElementById('c-proof').children
     .filter((child) => child.className === 'proof-attempt');
   assert.equal(blocks.length, 2);
-  assert.match(blocks[0].textContent, /macOS coordinator/);
-  assert.match(blocks[1].textContent, /Ubuntu worker/);
+  assert.match(blocks[0].textContent, /this computer/);
+  assert.match(blocks[1].textContent, /paired worker/);
 });
 
 test('the card never invents an approval that is not bound to the attempt', () => {
@@ -276,6 +276,6 @@ test('the card renders exactly the attempts the coordinator returned', async () 
   const pending = p.run('showProof("cccccccc-3333-4333-8333-333333333333")');
   p.requests[0].reply(card([validationAttempt()]));
   await pending;
-  assert.match(p.text('c-proof'), /Ubuntu worker/);
+  assert.match(p.text('c-proof'), /paired worker/);
   assert.match(p.text('c-proof'), /python3 -m unittest → exit 0/);
 });

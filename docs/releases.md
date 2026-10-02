@@ -8,7 +8,7 @@ merely by this document.
 ## 1. Release readiness
 
 Release when the supported product passes acceptance, not on a calendar deadline.
-Beta 0.1 qualifies a narrow install/use/manual-replacement path. In-app updates
+Beta 0.1 qualifies an install/use/manual-replacement path on each of Windows, macOS and Linux, using the bounded profiles in the PRD. In-app updates
 and broader upgrade matrices follow in Bands B and C; they remain production
 requirements, not prerequisites to the first Beta download. A downloadable source archive or a working development
 checkout is not an end-user installer. Publish the tested OS version/edition,
@@ -50,10 +50,11 @@ No profile is accepted as of this review. Before enabling the button:
 
 1. Select and publish an exact OS/edition/architecture/backend/capability matrix,
    minimum measured resources, model/download sizes, prerequisites and limitations.
-   At least one desktop supports useful standalone work; show which Code validation
+   Include at least one qualified desktop profile for each of Windows, macOS and
+   Linux. Each supports useful standalone Chat/Documents/Code; show which Code validation
    route needs an eligible peer. A managed sandbox may be administrator-prepared,
    but ordinary reviewers connect graphically and need no Kubernetes/queue/TLS setup.
-2. Build an immutable package from the designated commit/version. Verify final
+2. Build an immutable package for each selected OS profile from the designated commit/version. Verify final
    shipped source/resources, dependency and model manifests, notices, integrity,
    publisher authentication and platform signing/notarisation where required.
    An ad-hoc prototype signature is insufficient public distribution evidence.
@@ -64,8 +65,11 @@ No profile is accepted as of this review. Before enabling the button:
 4. Test first launch/relaunch, denied OS permissions, missing runtime/model,
    insufficient disk, cancellation, unsupported capabilities and uninstall/data
    preservation. Package/runtime provisioning is complete before offline tests.
+   Shared source-level checks may be reused only when the tested code and inputs
+   are identical; they do not replace platform-specific installer, credential,
+   state-preservation or recovery observations.
 5. Document and rehearse authenticated **manual full-package replacement** using
-   two labelled test builds on the chosen profile: stop/drain work, snapshot affected
+   two labelled test builds on **each published OS/architecture/backend profile**: stop/drain work, snapshot affected
    state, replace the app, reopen offline and verify chats, model references,
    credentials and artifacts. Prove recovery after a failed replacement without
    opening an incompatible newer schema or losing newer user work. No automatic

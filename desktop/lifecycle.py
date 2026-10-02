@@ -30,14 +30,22 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
-from backend.coordinator import runtime
+from backend.coordinator import paths, runtime
 
-# Compatibility-sensitive: existing state, identities and history live here and
-# the directory name does not change with the product name.
-STATE_DIR = Path.home() / ".aegisforge"
-STATE_DB = STATE_DIR / "coordinator.sqlite3"
+# Which root this installation uses is a platform decision, and
+# `backend.coordinator.paths` owns it: the OS-native location, the existing
+# `.aegisforge` store when one is already there, or an explicit portable profile.
+# Resolved once at import because these constants are the defaults every entry
+# point passes down. Resolution only reads directory names — it creates nothing,
+# moves nothing and never raises, so an ambiguous store still yields usable
+# constants and is reported by `run_startup` instead.
+DATA_ROOT = paths.select_root()
+STATE_DIR = DATA_ROOT.path
+STATE_DB = DATA_ROOT.database
+# One lock per store, so two different roots are two different applications
+# rather than one lock silently guarding the wrong data.
 LOCK_FILE = STATE_DIR / "desktop.lock"
 
 DEFAULT_PORT = 8770
@@ -49,21 +57,40 @@ SERVER_PREFIX = "AegisForgeCoordinator/"
 STARTUP_BUDGET_SECONDS = 60.0
 RUNTIME_START_SECONDS = 40.0
 
+
+def _windows_ollama_paths() -> tuple[str, ...]:
+    """Where the Windows installer puts the engine, when that is knowable.
+
+    `LOCALAPPDATA` becomes a candidate only when it is actually set and
+    actually absolute: an unset or relative value would otherwise produce a
+    relative path, which `find_ollama` would then test against whatever
+    directory Refinix happened to be launched from.
+
+    Absoluteness is judged with Windows' rules rather than the host's, for the
+    same reason `backend.coordinator.paths` does — `C:\…` is meaningless to a
+    POSIX `Path`, and these candidates can only be checked from another
+    computer before a Windows device is available.
+    """
+    local = os.environ.get("LOCALAPPDATA", "").strip()
+    per_user = ()
+    if local and PureWindowsPath(local).is_absolute():
+        per_user = (str(PureWindowsPath(local, "Programs", "Ollama",
+                                        "ollama.exe")),)
+    return ("ollama.exe", *per_user, r"C:\Program Files\Ollama\ollama.exe")
+
+
 OLLAMA_BINARIES = {
     "darwin": ("ollama", "/opt/homebrew/bin/ollama", "/usr/local/bin/ollama",
                "/Applications/Ollama.app/Contents/Resources/ollama"),
     "linux": ("ollama", "/usr/local/bin/ollama", "/usr/bin/ollama",
               str(Path.home() / ".local/bin/ollama")),
-    "win32": ("ollama.exe",
-              str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Ollama/ollama.exe"),
-              r"C:\Program Files\Ollama\ollama.exe"),
+    "win32": _windows_ollama_paths(),
 }
 
-INSTALL_HINT = {
-    "darwin": "Install Ollama from https://ollama.com/download, then open Refinix again.",
-    "linux": "Install Ollama from https://ollama.com/download, then open Refinix again.",
-    "win32": "Install Ollama from https://ollama.com/download, then open Refinix again.",
-}
+# One sentence, not three identical ones. The download page covers all three
+# platforms, and Refinix installs nothing on any of them.
+INSTALL_HINT = ("Install Ollama from https://ollama.com/download, then open "
+                "Refinix again.")
 
 
 # --------------------------------------------------------------------------
@@ -245,6 +272,22 @@ def identify_occupant(port: int, timeout: float = 2.0) -> dict | None:
     return body
 
 
+def check_data_root(state_path: Path = STATE_DB,
+                    root: paths.DataRoot | None = None) -> None:
+    """Refuse to start when two roots each hold a canonical store.
+
+    Only when the caller is actually about to use the ambiguous path: a test
+    database or an explicitly chosen root is the user's answer to the question,
+    so it starts normally even while two other stores exist on the computer.
+    """
+    root = DATA_ROOT if root is None else root
+    if root.conflict is None or Path(state_path) != root.database:
+        return
+    raise StartupError(
+        "Refinix found workspace data in two places and will not choose for you.",
+        str(root.conflict))
+
+
 def read_workspace_id(state_path: Path = STATE_DB) -> str | None:
     """Read the saved workspace identity without creating or upgrading a file."""
     if not state_path.is_file():
@@ -302,17 +345,40 @@ def choose_port(preferred: int = DEFAULT_PORT, *, workspace_id: str | None = Non
 # --------------------------------------------------------------------------
 
 def find_ollama(which=None) -> str | None:
+    """The engine binary on this computer, or None. Never installs anything.
+
+    A bare name goes through `PATH`; anything else is used only when it is an
+    absolute path that exists and can be executed. A relative candidate is
+    skipped rather than resolved, because resolving one would test the
+    directory Refinix was launched from.
+    """
     import shutil
     which = which or shutil.which
     for candidate in OLLAMA_BINARIES.get(sys.platform, OLLAMA_BINARIES["linux"]):
-        if os.sep in candidate or (sys.platform == "win32" and ":" in candidate):
+        if os.path.isabs(candidate):
             if Path(candidate).is_file() and os.access(candidate, os.X_OK):
                 return candidate
-        else:
+        elif os.sep not in candidate and (os.altsep or os.sep) not in candidate:
             found = which(candidate)
             if found:
                 return found
     return None
+
+
+def _detached() -> dict:
+    """Start the engine so it outlives the console Refinix was launched from.
+
+    `start_new_session` is POSIX-only; on Windows it is accepted and ignored,
+    which left the engine in Refinix's process group where closing a console
+    would take it down with the application. The Windows equivalent is a
+    detached process in its own group, which also means no console window
+    appears.
+    """
+    if sys.platform == "win32":
+        return {"creationflags": (getattr(subprocess, "DETACHED_PROCESS", 0x8)
+                                  | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP",
+                                            0x200))}
+    return {"start_new_session": True}
 
 
 class EngineSupervisor:
@@ -355,15 +421,14 @@ class EngineSupervisor:
                 "Refinix does not download or install software. Ollama provides the "
                 "local model runtime that ordinary Chat needs.",
                 {"kind": "install", "label": "How to install Ollama",
-                 "command": INSTALL_HINT.get(sys.platform, INSTALL_HINT["linux"])})
+                 "command": INSTALL_HINT})
 
         try:
             _check_cancelled(cancelled)
             self.process = self._spawn(
                 [binary, "serve"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL, start_new_session=True,
-                env=dict(os.environ))
+                stdin=subprocess.DEVNULL, env=dict(os.environ), **_detached())
         except OSError as exc:
             raise StartupError(
                 "The AI engine would not start.", f"{binary}: {exc}",
@@ -464,6 +529,12 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
     # Callers take the SingleInstance lock before reaching here, so arriving at
     # all is the evidence that no other copy holds it.
     progress.set("instance", "ok", "This is the only copy of Refinix running.")
+
+    # Before anything opens the database: two occupied roots have no safe
+    # automatic answer, and `docs/PROJECT.md` 12.5 forbids running both at once.
+    # Refusing here is what keeps a workspace's chats, approvals and artifacts
+    # from being stranded in a store nothing opens again.
+    check_data_root(state_path)
 
     def remaining(minimum=1.0):
         return max(minimum, deadline - clock())

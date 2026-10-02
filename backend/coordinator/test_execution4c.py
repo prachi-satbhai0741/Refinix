@@ -8,12 +8,15 @@ fake model. No live model call, no worker contact, no Kubernetes, no network.
 
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import code_service, db, policy, repo
+from backend.contracts import profiles
+from backend.coordinator import (code_service, codeflow, db, models, policy, repo,
+                                 runtime)
 from backend.coordinator.code_service import (CodeError, TARGET_DISTRIBUTED,
                                               TARGET_LOCAL)
 from backend.coordinator.server import Coordinator
@@ -22,7 +25,38 @@ ORIGINAL = "def exceeds(value, limit):\n    return value >= limit\n"
 REPAIRED = "def exceeds(value, limit):\n    return value > limit\n"
 
 
-@unittest.skipUnless(repo.descriptor_traversal_supported(),
+class TestProposalEnvelope(unittest.TestCase):
+    def selection(self, size):
+        return [{"path": "large.py", "sha256": "a" * 64,
+                 "text": "x" * size}]
+
+    def test_a_fitting_whole_file_uses_the_exact_qualified_ceiling(self):
+        selected = self.selection(3_000)
+        messages = codeflow.build_messages("change one line", selected)
+        profile = next(
+            p for p in profiles.PROFILES
+            if p.target_profile_id == profiles.MAC_M5_16GB
+            and p.workflow_mode == profiles.CODE
+            and p.model.runtime_version == "0.32.14")
+        self.assertEqual(
+            code_service.CodeService._proposal_output_limit(
+                messages, selected, profile),
+            profile.max_output_tokens)
+
+    def test_an_impossible_selection_fails_before_generation(self):
+        selected = self.selection(30_000)
+        messages = codeflow.build_messages("change one line", selected)
+        with self.assertRaisesRegex(CodeError, "Select fewer or smaller files"):
+            code_service.CodeService._proposal_output_limit(
+                messages, selected, next(p for p in profiles.PROFILES if p.target_profile_id == profiles.MAC_M5_16GB and p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14"))
+
+    def test_format_repair_does_not_resend_the_selected_source(self):
+        messages = codeflow.repair_messages('{"summary":"wrapped","edits":[]}')
+        self.assertEqual([item["role"] for item in messages], ["system", "user"])
+        self.assertNotIn("--- FILE", "\n".join(item["content"] for item in messages))
+
+
+@unittest.skipUnless(repo.containment_supported(),
                      "this platform cannot contain repository access")
 class Base(unittest.TestCase):
     def setUp(self):
@@ -31,14 +65,21 @@ class Base(unittest.TestCase):
         self.home = Path(self.dir.name)
         self.state = self.home / "state" / "coordinator.sqlite3"
         self.state.parent.mkdir(parents=True)
-        with patch("backend.coordinator.runtime.probe",
-                   return_value={"reachable": True, "models": []}):
-            self.c = Coordinator(self.state)
+        self.runtime_probe = patch.object(runtime, "probe", return_value={
+            "reachable": True, "server_version": "0.32.14",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256},
+            "loaded": None, "error": None})
+        self.runtime_probe.start()
+        self.addCleanup(self.runtime_probe.stop)
+        self.c = Coordinator(self.state)
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.addCleanup(self.c.conn.close)
         self.project = self.home / "project"
         self.project.mkdir()
-        (self.project / "limits.py").write_text(ORIGINAL)
-        (self.project / "notes.md").write_text("# notes\n")
+        (self.project / "limits.py").write_bytes(ORIGINAL.encode("utf-8"))
+        (self.project / "notes.md").write_bytes(b"# notes\n")
         self.repo_id = self.c.code.connect(str(self.project))["repo_id"]
         self.set_mode("full")
 
@@ -676,13 +717,19 @@ class TestBackupsAreProvedNotAssumed(Base):
             with self.assertRaises(db.BackupError):
                 db.verify_backup(stored.parent, hostile)
         with self.subTest("permissions"):
-            stored.chmod(0o644)
-            with self.assertRaises(db.BackupError):
-                db.verify_backup(stored.parent, row)
-            stored.chmod(0o600)
+            if os.name != "nt":
+                stored.chmod(0o644)
+                with self.assertRaises(db.BackupError):
+                    db.verify_backup(stored.parent, row)
+                stored.chmod(0o600)
         with self.subTest("symlink"):
             stored.unlink()
-            stored.symlink_to(outside)
+            try:
+                stored.symlink_to(outside)
+            except OSError as exc:
+                if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                    self.skipTest("Windows symlink creation privilege is unavailable")
+                raise
             with self.assertRaises(db.BackupError):
                 db.verify_backup(stored.parent, row)
 
@@ -692,7 +739,12 @@ class TestBackupsAreProvedNotAssumed(Base):
         outside = self.home / "outside.bak"
         outside.write_bytes(ORIGINAL.encode())
         stored.unlink()
-        stored.symlink_to(outside)
+        try:
+            stored.symlink_to(outside)
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows symlink creation privilege is unavailable")
+            raise
         result = self.c.code.undo(self.repo_id, proposal["proposal_id"])
         self.assertEqual(result["files"][0]["state"], "failed")
         self.assertEqual(outside.read_bytes(), ORIGINAL.encode())

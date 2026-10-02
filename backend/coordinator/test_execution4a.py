@@ -20,6 +20,7 @@ from backend.coordinator import (db, docflow, docgen, documents, pdfgen,
 from backend.coordinator.test_documents import (Base, INSTALLED_RUNTIME,
                                                 RENDERER_PRESENT, fake_stream,
                                                 make_docx)
+from backend.coordinator.test_ocr import test_ocr_profile
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic pixels"
 JPEG = b"\xff\xd8\xff" + b"synthetic pixels" + b"\xff\xd9"
@@ -225,8 +226,29 @@ class TestDirectImage(Harness):
         with patch.object(documents.ocr.runtime, "model_state", return_value=state):
             with self.assertRaises(documents.ocr.OcrError) as caught:
                 documents.ocr.extract_image(PNG, filename="scan.png",
-                                            media_type="image/png", chat=chat)
+                                            media_type="image/png",
+                                            profile=test_ocr_profile(),
+                                            chat=chat)
         self.assertEqual(caught.exception.code, "unavailable")
+        self.assertEqual(sent, [])
+
+    def test_an_unqualified_model_is_refused_before_any_image_is_sent(self):
+        """The prerequisite one step earlier than vision capability.
+
+        A model may be installed, switched on and even declare `vision` and
+        still have nothing measuring it here. That refusal has its own code so
+        it cannot be mistaken for "this model cannot read images", which is a
+        different fact with a different fix."""
+        sent = []
+
+        def chat(*args, **kwargs):
+            sent.append(kwargs.get("images"))
+            yield "done", {"done_reason": "stop"}
+
+        with self.assertRaises(documents.ocr.OcrError) as caught:
+            documents.ocr.extract_image(PNG, filename="scan.png",
+                                        media_type="image/png", chat=chat)
+        self.assertEqual(caught.exception.code, "no_qualified_profile")
         self.assertEqual(sent, [])
 
     def test_bytes_are_checked_against_the_declared_type_before_sending(self):
@@ -251,7 +273,8 @@ class TestDirectImage(Harness):
         with patch.object(documents.ocr, "image_probe", return_value=VISION_READY), \
                 patch.object(documents.ocr, "read_page", return_value="   "):
             read = documents.ocr.extract_image(PNG, filename="scan.png",
-                                               media_type="image/png")
+                                               media_type="image/png",
+                                               profile=test_ocr_profile())
         self.assertTrue(any("nothing has been guessed" in note.lower()
                             for note in read["uncertain"]), read["uncertain"])
         self.assertTrue(any("no document should be written" in note.lower()
@@ -411,19 +434,21 @@ class TestOrdinaryChatAttachments(Harness):
                 self.assertIn(filename, answer)
 
     def test_an_image_in_ordinary_chat_goes_to_the_vision_model(self):
-        reading = {"pages": [{"number": 1, "text": "THE IMAGE MARKER",
-                              "confidence": None, "note": None}],
-                   "method": "image + local vision (test-vision) manifest unavailable",
-                   "uncertain": [], "page_count": 1}
+        # PNG starts with CRLF and a DOS EOF byte. A Windows text-mode file
+        # descriptor corrupts both, so this also guards the byte-for-byte
+        # private-attachment reopen used by native vision.
         record = self.attach("photo.png", PNG)
         stream = fake_stream("an ordinary answer")
-        job = self.send("explain this image")
+        job = self.send("Perform OCR on this image")
         self.bind(job, record)
-        with patch.object(documents.ocr, "image_probe", return_value=VISION_READY), \
-                patch.object(documents.ocr, "extract_image", return_value=reading), \
+        with patch.object(runtime, "model_capabilities",
+                          return_value=["completion", "vision"]), \
+                patch.object(documents.ocr, "extract_image") as extracted, \
                 patch.object(runtime, "stream_chat", stream):
             self.c._run(job, self.chat, None)
-        self.assertIn("THE IMAGE MARKER", json.dumps(stream.messages))
+        self.assertEqual(stream.images, [PNG])
+        self.assertIn("untrusted data", json.dumps(stream.messages))
+        extracted.assert_not_called()
 
     def test_only_this_request_s_files_are_read(self):
         earlier = self.attach("earlier.txt", b"AN EARLIER REQUEST FILE")
@@ -449,10 +474,21 @@ class TestOrdinaryChatAttachments(Harness):
         # Corrected after review: the rule is now a system instruction, which
         # a document cannot imitate. The injected text still arrives as user
         # content inside a fenced block, never as the system turn.
+        #
+        # Asserted as a property rather than a count. An attachment turn now
+        # carries two coordinator-authored system messages — the product
+        # identity and the untrusted-document rule — and the number may change
+        # again; what must never change is that none of them is written by the
+        # file.
         system = [m for m in stream.messages if m["role"] == "system"]
-        self.assertEqual(len(system), 1)
-        self.assertNotIn("Ignore previous instructions", system[0]["content"])
-        self.assertIn("untrusted data", system[0]["content"])
+        self.assertTrue(system, "the untrusted-document rule is a system turn")
+        for message in system:
+            self.assertNotIn("Ignore previous instructions", message["content"])
+            self.assertNotIn("evil.example", message["content"])
+        # The rule is present on one of them; which position it holds is not
+        # the contract.
+        self.assertTrue(any("untrusted data" in m["content"] for m in system),
+                        "the untrusted-document rule is still a system turn")
         injected = [m for m in stream.messages
                     if "Ignore previous instructions" in (m["content"] or "")]
         self.assertTrue(injected and all(m["role"] == "user" for m in injected))
@@ -529,12 +565,14 @@ class TestArtifactsAndRouting(Harness):
         job = self.send("draft the approval note", skill_id=docflow.WRITE_SKILL,
                         doc_workflow=docflow.WORKFLOW_APPROVAL_NOTE)
         self.bind(job, record)
+        cite = [{"source_id": record["attachment_id"], "page": 1}]
         reply = json.dumps({
-            "title": "Approval note", "summary": "The pump exceeded its limit.",
-            "findings": [{"text": "Vibration 7.9 mm/s.",
-                          "citations": [{"source_id": record["attachment_id"],
-                                         "page": 1}]}],
-            "recommendation": "Re-torque and re-measure.",
+            "title": "Approval note",
+            "summary": {"text": "The pump exceeded its limit.",
+                        "citations": cite},
+            "findings": [{"text": "Vibration 7.9 mm/s.", "citations": cite}],
+            "recommendation": {"text": "Re-torque and re-measure.",
+                               "citations": cite},
             "unresolved": ["Suction pressure was not recorded."]})
         with patch.object(runtime, "stream_chat", fake_stream(reply)):
             self.c._run(job, self.chat, docflow.WRITE_SKILL)
@@ -686,6 +724,14 @@ class TestWorkbookReading(unittest.TestCase):
 
 
 class TestPdfPaginationLogic(unittest.TestCase):
+    def test_list_markers_remain_visible_in_pdf_text(self):
+        self.assertEqual(
+            pdfgen._visible_text(docgen.Block("Finding", "ListNumber", "3")),
+            "3. Finding")
+        self.assertEqual(
+            pdfgen._visible_text(docgen.Block("Open item", "ListBullet", "•")),
+            "• Open item")
+
     def test_pagination_preserves_whitespace_without_native_frameworks(self):
         text = "AA  BBB\nCCCC"
 
@@ -812,7 +858,10 @@ class TestAttachedChatStaysLocal(Harness):
             route.return_value = type("R", (), {
                 "remote": False, "kind": "local", "reason": "local coordinator: test",
                 "node_id": self.c.node_id, "model": None,
-                "relationship_id": None})()
+                "relationship_id": None,
+                "profile": self.c.local_profile(
+                    workflow="chat", model_id=runtime.MODEL,
+                    reasoning="disabled", decoder="text").model_dump()})()
             self.c._run(job, self.chat, None)
         route.assert_called()
 

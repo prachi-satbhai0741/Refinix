@@ -16,8 +16,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import db, runtime
+from backend.contracts import profiles
+from backend.coordinator import db, models, runtime
 from backend.coordinator.server import Coordinator, RequestError
+
+CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.MAC_M5_16GB
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.32.14")
 
 
 class FakeOllama(BaseHTTPRequestHandler):
@@ -74,8 +81,16 @@ class RuntimeBase(unittest.TestCase):
         self.server.server_close()
 
     def run_stream(self, **kwargs):
+        think = kwargs.pop("think", False)
+        output = kwargs.pop("num_predict", 2048)
+        profile = CHAT_PROFILE
+        inference = profiles.request(
+            profile, reasoning="enabled" if think else "disabled",
+            decoder="text", output_allowance=output)
         with patch.object(runtime, "HOST", self.host):
-            return list(runtime.stream_chat([{"role": "user", "content": "hi"}], **kwargs))
+            return list(runtime.stream_chat(
+                [{"role": "user", "content": "hi"}], profile=profile,
+                inference=inference, **kwargs))
 
 
 DONE = {"done": True, "done_reason": "stop", "eval_count": 3}
@@ -107,6 +122,15 @@ class TestRequestPayload(RuntimeBase):
         self.assertEqual(sent["options"]["num_predict"], runtime.NUM_PREDICT)
         self.assertIs(sent["truncate"], False)
         self.assertIs(sent["shift"], False)
+
+    def test_metrics_report_the_output_limit_actually_sent(self):
+        FakeOllama.script = [{"done": True, "done_reason": "length",
+                              "prompt_eval_count": 100,
+                              "eval_count": 3072}]
+        records = self.run_stream(num_predict=1536)
+        metrics = next(payload for kind, payload in records if kind == "done")
+        self.assertEqual(metrics["output_token_limit"], 1536)
+        self.assertEqual(metrics["limit_reason"], "output")
 
     def test_the_default_matches_the_accepted_execution_one_behaviour(self):
         FakeOllama.script = [{"message": {"content": "hello"}}, DONE]
@@ -145,9 +169,14 @@ class TestCancellationWithReasoning(RuntimeBase):
         events, finished = [], threading.Event()
 
         def read():
+            profile = CHAT_PROFILE
+            inference = profiles.request(
+                profile, reasoning="enabled", decoder="text")
             with patch.object(runtime, "HOST", self.host):
                 for item in runtime.stream_chat([{"role": "user", "content": "hi"}],
-                                                think=True, should_cancel=cancel.is_set):
+                                                profile=profile,
+                                                inference=inference,
+                                                should_cancel=cancel.is_set):
                     events.append(item)
             finished.set()
 
@@ -172,7 +201,16 @@ class TestCancellationWithReasoning(RuntimeBase):
 class CoordinatorBase(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
+        self.runtime_probe = patch.object(runtime, "probe", return_value={
+            "reachable": True, "server_version": "0.33.3",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256},
+            "loaded": None, "endpoint": runtime.HOST, "error": None})
+        self.runtime_probe.start()
+        self.addCleanup(self.runtime_probe.stop)
         self.c = Coordinator(Path(self.dir.name) / "state.sqlite3")
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.chat = db.create_chat(self.c.conn, self.c.workspace_id, "check")
 
     def tearDown(self):
@@ -208,9 +246,9 @@ class TestPersistenceAndSnapshot(CoordinatorBase):
         db.set_reasoning(self.c.conn, runtime.MODEL, True)
         seen = {}
 
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None):
-            seen["think"] = think
+        def stream(messages, *, should_cancel=None, profile=None,
+                   inference=None, **_options):
+            seen["think"] = inference.reasoning == "enabled"
             yield "delta", "answer"
             yield "done", {"done_reason": "stop"}
 
@@ -221,15 +259,21 @@ class TestPersistenceAndSnapshot(CoordinatorBase):
         attempt = self.c.job_detail(job)["attempts"][-1]
         recorded = json.loads(attempt["reasoning_json"])
         self.assertEqual(recorded, {"model": runtime.MODEL, "reasoning_enabled": True})
+        self.assertEqual(attempt["requested_inference"]["reasoning"], "enabled")
+        self.assertEqual(
+            attempt["requested_inference"]["profile_id"],
+            attempt["actual_profile"]["profile_id"])
+        self.assertEqual(attempt["actual_profile"]["target_profile_id"],
+                         profiles.MAC_M5_16GB)
 
     def test_changing_the_switch_mid_request_does_not_change_that_attempt(self):
         db.set_reasoning(self.c.conn, runtime.MODEL, True)
         observed = {}
         released = threading.Event()
 
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None):
-            observed["think"] = think
+        def stream(messages, *, should_cancel=None, profile=None,
+                   inference=None, **_options):
+            observed["think"] = inference.reasoning == "enabled"
             # The user flips the switch while this request is running.
             db.set_reasoning(self.c.conn, runtime.MODEL, False)
             released.set()
@@ -251,8 +295,7 @@ class TestThinkingOnlyCompletion(CoordinatorBase):
     def test_reasoning_that_eats_the_budget_fails_with_a_specific_message(self):
         db.set_reasoning(self.c.conn, runtime.MODEL, True)
 
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None):
+        def stream(messages, **_options):
             yield "thinking", "a very long deliberation"
             yield "done", {"done_reason": "length", "limit_reason": "output"}
 
@@ -272,8 +315,7 @@ class TestThinkingOnlyCompletion(CoordinatorBase):
     def test_reasoning_text_is_never_persisted_or_exported(self):
         db.set_reasoning(self.c.conn, runtime.MODEL, True)
 
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None):
+        def stream(messages, **_options):
             yield "thinking", "PRIVATE CHAIN OF THOUGHT"
             yield "delta", "the answer"
             yield "done", {"done_reason": "stop"}
@@ -290,8 +332,7 @@ class TestThinkingOnlyCompletion(CoordinatorBase):
         self.assertIn("the answer", export)
 
     def test_an_empty_answer_without_reasoning_keeps_its_original_message(self):
-        def stream(messages, *, should_cancel=None, think=None, model=None,
-                   num_predict=None):
+        def stream(messages, **_options):
             yield "done", {"done_reason": "stop"}
 
         job = self.submit()
@@ -315,16 +356,15 @@ class TestStatusSurface(CoordinatorBase):
                    if model["id"] == runtime.MODEL)
         self.assertTrue(row["reasoning"])
 
-    def test_any_observed_text_model_can_be_selected_exactly(self):
+    def test_an_unqualified_observed_text_model_cannot_be_selected(self):
         other = "another-model:1b"
         state = {"reachable": True, "server_version": "test",
                  "models": [runtime.MODEL, other],
                  "digests": {runtime.MODEL: "a" * 64, other: "b" * 64},
                  "loaded": None, "endpoint": runtime.HOST, "error": None}
         with patch.object(runtime, "probe", return_value=state):
-            self.assertEqual(self.c.select_model("chat", other),
-                             {"scope": "chat", "model": other})
-            self.assertEqual(self.c.status()["model_selections"]["chat"], other)
+            with self.assertRaises(RequestError):
+                self.c.select_model("chat", other)
 
     def test_only_a_confirmed_vision_model_is_selectable_for_ocr(self):
         vision = "vision-model:1b"
@@ -339,9 +379,9 @@ class TestStatusSurface(CoordinatorBase):
             inventory = {row["id"]: row for row in self.c.model_inventory()}
             self.assertNotIn("documents.ocr",
                              inventory[runtime.MODEL]["eligible_scopes"])
-            self.assertIn("documents.ocr", inventory[vision]["eligible_scopes"])
-            self.assertEqual(self.c.select_model("documents.ocr", vision),
-                             {"scope": "documents.ocr", "model": vision})
+            self.assertNotIn("documents.ocr", inventory[vision]["eligible_scopes"])
+            with self.assertRaises(RequestError):
+                self.c.select_model("documents.ocr", vision)
             with self.assertRaises(RequestError):
                 self.c.select_model("documents.ocr", runtime.MODEL)
 

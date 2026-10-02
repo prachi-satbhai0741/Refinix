@@ -27,6 +27,8 @@ import hashlib
 import json
 import uuid
 
+from backend.contracts import v1
+
 MAX_SUMMARY_CHARS = 2000
 MAX_EDITS = 8
 MAX_RESPONSE_CHARS = 120_000
@@ -111,16 +113,17 @@ def build_messages(request: str, files: list[dict]) -> list[dict]:
             {"role": "user", "content": "\n".join(body)}]
 
 
-REPAIR_INSTRUCTION = (
-    "Your previous reply was not valid JSON in the required shape. Reply again "
-    "with ONE JSON object only, exactly as described. No fences, no prose.")
+REPAIR_SYSTEM = (
+    "You repair the format of an existing code proposal. Preserve its summary, "
+    "paths, base_sha256 values and replacement contents exactly. Do not draft "
+    "new code or add an edit. Reply with ONE JSON object containing only summary "
+    "and edits; every edit contains only path, base_sha256 and content.")
 
 
-def repair_messages(messages: list[dict], bad_reply: str) -> list[dict]:
-    """One bounded second attempt, reusing the same context. Never a loop."""
-    return [*messages,
-            {"role": "assistant", "content": bad_reply[:4000]},
-            {"role": "user", "content": REPAIR_INSTRUCTION}]
+def repair_messages(bad_reply: str) -> list[dict]:
+    """One format-only attempt without resending the full selected files."""
+    return [{"role": "system", "content": REPAIR_SYSTEM},
+            {"role": "user", "content": bad_reply[:MAX_RESPONSE_CHARS]}]
 
 
 def _load_object(reply: str) -> dict:
@@ -347,7 +350,7 @@ def build_package(selected: list[dict], *, workspace_id: str,
                                 "size_bytes": len(content)}
     digest = package_digest(entries)
     return {
-        "body": {"contract_version": "1.0", "workspace_id": workspace_id,
+        "body": {"contract_version": v1.CONTRACT_VERSION, "workspace_id": workspace_id,
                  "relationship_id": relationship_id, "attempt_id": attempt_id,
                  "package_sha256": digest, "files": entries},
         "resources": resources, "mapping": mapping,

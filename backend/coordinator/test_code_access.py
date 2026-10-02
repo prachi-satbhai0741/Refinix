@@ -17,16 +17,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.coordinator import code_service, codeflow, db, policy, repo, runtime
+from backend.contracts import profiles, v1
+from backend.coordinator import (code_service, codeflow, context, db, models, policy,
+                                 repo, runtime, winfs)
 from backend.coordinator.server import Coordinator
 
 
 def stub_stream(reply: str, *, thinking: str = "", done_reason: str = "stop"):
     """A runtime stand-in that returns one scripted reply."""
-    def stream(messages, *, should_cancel=None, think=None, model=None,
-               num_predict=None, response_format=None):
+    def stream(messages, *, should_cancel=None, profile=None, inference=None,
+               response_format=None):
         stream.messages = messages
-        stream.think = think
+        stream.think = inference.reasoning == "enabled" if inference else None
         if thinking:
             yield "thinking", thinking
         yield "delta", reply
@@ -51,7 +53,19 @@ class RepoBase(unittest.TestCase):
         self.write("src/main.py", "print('one')\n")
         self.write("notes.md", "# notes\n")
         self.c = Coordinator(self.state)
+        self.c.target_profile_id = profiles.MAC_M5_16GB
         self.svc = self.c.code
+        self.runtime_probe = patch.object(runtime, "probe", return_value={
+            "reachable": True, "server_version": "0.32.14",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256},
+            "loaded": None, "error": None})
+        self.runtime_probe.start()
+        self.addCleanup(self.runtime_probe.stop)
+        self.worker_probe = patch.object(self.c, "preflight", return_value=None)
+        self.worker_probe.start()
+        self.addCleanup(self.worker_probe.stop)
 
     def tearDown(self):
         self.c.conn.close()
@@ -60,8 +74,16 @@ class RepoBase(unittest.TestCase):
     def write(self, relative, text):
         target = self.project / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
+        target.write_text(text, encoding="utf-8", newline="")
         return target
+
+    def symlink(self, target, link, *, directory=False):
+        try:
+            os.symlink(target, link, target_is_directory=directory)
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows symlink privilege is unavailable")
+            raise
 
     def sha(self, relative):
         return hashlib.sha256((self.project / relative).read_bytes()).hexdigest()
@@ -73,8 +95,14 @@ class RepoBase(unittest.TestCase):
         return record["repo_id"]
 
     def propose(self, *args, **kwargs):
-        """These access tests start after the separate sandbox gate passed."""
+        """Generate locally, then fixture the already-tested sandbox gate."""
+        kwargs.setdefault("execution_target", code_service.TARGET_LOCAL)
         proposal = self.svc.propose(*args, **kwargs)
+        self.c.conn.execute(
+            "UPDATE proposals SET execution_target=? WHERE proposal_id=?",
+            (code_service.TARGET_DISTRIBUTED, proposal["proposal_id"]))
+        self.c.conn.commit()
+        proposal["execution_target"] = code_service.TARGET_DISTRIBUTED
         db.record_validation(
             self.c.conn, workspace_id=self.c.workspace_id,
             proposal_id=proposal["proposal_id"], job_id=proposal["job_id"],
@@ -82,9 +110,9 @@ class RepoBase(unittest.TestCase):
             patch_sha256=proposal["digest"], result={
                 "observed": True, "job_state": "succeeded", "passed": True,
                 "result": {"command": list(code_service.VALIDATION_COMMAND),
-                           "exit_status": 0, "stdout": "", "stderr": "Ran 1 test\nOK",
-                           "tests_run": 1, "passed": True,
-                           "result_sha256": "a" * 64}})
+                           "exit_status": 0, "stdout": "",
+                           "stderr": "Ran 1 test\nOK", "tests_run": 1,
+                           "passed": True, "result_sha256": "a" * 64}})
         return proposal
 
 
@@ -128,11 +156,16 @@ class TestPathValidation(unittest.TestCase):
 
 class TestRootSelection(RepoBase):
     def test_home_system_and_state_folders_are_refused(self):
-        for bad, code in ((str(Path.home()), "home_root"), ("/", "system_root")):
-            with self.subTest(bad=bad):
-                with self.assertRaises(repo.RepositoryError) as caught:
-                    repo.canonical_root(bad, state_dir=self.state.parent)
-                self.assertEqual(caught.exception.code, code)
+        synthetic_home = self.home / "user-profile"
+        synthetic_home.mkdir()
+        with patch.object(Path, "home", return_value=synthetic_home):
+            with self.assertRaises(repo.RepositoryError) as caught:
+                repo.canonical_root(synthetic_home, state_dir=self.state.parent)
+            self.assertEqual(caught.exception.code, "home_root")
+        with self.assertRaises(repo.RepositoryError) as caught:
+            repo.canonical_root(Path(self.project.anchor),
+                                state_dir=self.state.parent)
+        self.assertEqual(caught.exception.code, "system_root")
 
     def test_the_refinix_state_folder_cannot_be_connected(self):
         with self.assertRaises(repo.RepositoryError) as caught:
@@ -152,7 +185,7 @@ class TestRootSelection(RepoBase):
 
     def test_a_symlink_selected_as_the_root_is_refused(self):
         linked = self.home / "linked-project"
-        linked.symlink_to(self.project, target_is_directory=True)
+        self.symlink(self.project, linked, directory=True)
         with self.assertRaises(repo.RepositoryError) as caught:
             repo.canonical_root(linked, state_dir=self.state.parent)
         self.assertEqual(caught.exception.code, "symlinked_root")
@@ -165,7 +198,7 @@ class TestReadContainment(RepoBase):
         self.assertEqual(identity.sha256, self.sha("src/main.py"))
 
     def test_a_symlinked_file_is_never_followed(self):
-        os.symlink(self.home / "outside.txt", self.project / "link.txt")
+        self.symlink(self.home / "outside.txt", self.project / "link.txt")
         (self.home / "outside.txt").write_text("secret\n")
         with self.assertRaises(repo.RepositoryError) as caught:
             repo.read_text_file(self.project, "link.txt")
@@ -174,7 +207,8 @@ class TestReadContainment(RepoBase):
     def test_a_symlinked_parent_directory_is_never_followed(self):
         (self.home / "elsewhere").mkdir()
         (self.home / "elsewhere" / "x.txt").write_text("secret\n")
-        os.symlink(self.home / "elsewhere", self.project / "linked")
+        self.symlink(self.home / "elsewhere", self.project / "linked",
+                     directory=True)
         with self.assertRaises(repo.RepositoryError) as caught:
             repo.read_text_file(self.project, "linked/x.txt")
         self.assertEqual(caught.exception.code, "symlink")
@@ -187,6 +221,8 @@ class TestReadContainment(RepoBase):
         self.assertEqual(caught.exception.code, "hard_link")
 
     def test_a_non_regular_file_is_refused(self):
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("this platform has no FIFO primitive")
         fifo = self.project / "pipe.txt"
         os.mkfifo(fifo)
         with self.assertRaises(repo.RepositoryError) as caught:
@@ -214,13 +250,15 @@ class TestReadContainment(RepoBase):
         (self.project / ".git" / "config").write_text("[core]\n")
         (self.project / "node_modules" / "pkg").mkdir(parents=True)
         (self.project / "node_modules" / "pkg" / "i.js").write_text("x\n")
-        os.symlink(self.home, self.project / "loop")
+        self.symlink(self.home, self.project / "loop", directory=True)
         paths = {f["path"] for f in repo.list_text_files(self.project)}
         self.assertIn("src/main.py", paths)
         self.assertTrue(all(".git" not in p and "node_modules" not in p
                             and not p.startswith("loop") for p in paths))
 
     def test_listing_scans_from_directory_handles_not_resolved_paths(self):
+        if os.name == "nt":
+            self.skipTest("Windows uses pinned Win32 handles, not dir_fd scans")
         seen = []
         real = os.scandir
 
@@ -294,6 +332,16 @@ class TestPolicyMatrix(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 class TestPartialAccess(RepoBase):
+    def test_a_disabled_selected_model_never_reaches_code_generation(self):
+        repo_id = self.connect("partial")
+        db.set_model_enabled(self.c.conn, runtime.MODEL, False)
+        stream = stub_stream(proposal_reply([]))
+        with patch.object(runtime, "stream_chat", stream):
+            with self.assertRaises(code_service.CodeError) as caught:
+                self.svc.propose(repo_id, "change it", ["notes.md"])
+        self.assertEqual(caught.exception.code, "model_disabled")
+        self.assertIsNone(stream.messages)
+
     def test_reads_run_automatically_but_a_write_needs_the_exact_approval(self):
         repo_id = self.connect("partial")
         reply = proposal_reply([{"path": "src/main.py",
@@ -546,12 +594,79 @@ class TestProposalLifecycle(RepoBase):
         self.assertIsNone(db.latest_proposal(self.c.conn, repo_id,
                                               self.c.workspace_id))
 
+    def test_an_output_limit_failure_reaches_the_surface_with_its_measurement(self):
+        """End to end: the measured cause must survive into the stored error.
+
+        The numbers were always recorded in `metrics_json` and used to be
+        dropped from the Code state response.
+        """
+        repo_id = self.connect("partial")
+        reply = proposal_reply([{"path": "notes.md",
+                                 "base_sha256": self.sha("notes.md"),
+                                 "content": "# incomplete\n"}])
+
+        def limited(messages, *, should_cancel=None, profile=None,
+                    inference=None, response_format=None):
+            yield "delta", reply
+            yield "done", {
+                "done_reason": "length", "limit_reason": "output",
+                "output_tokens": inference.output_allowance_tokens,
+                "output_token_limit": inference.output_allowance_tokens,
+                "context_window": inference.context_window_tokens,
+                "total_ms": 4321}
+
+        with patch.object(runtime, "stream_chat", limited):
+            with self.assertRaises(code_service.CodeError) as caught:
+                self.propose(repo_id, "retitle", ["notes.md"])
+        message = str(caught.exception)
+        self.assertIn("reply limit", message)
+        self.assertIn("Nothing was applied", message)
+        self.assertNotIn("did not finish the code proposal cleanly", message)
+
+        row = self.c.conn.execute(
+            "SELECT error_json, metrics_json, runtime_ms FROM attempts "
+            "ORDER BY created_at DESC LIMIT 1").fetchone()
+        stored = json.loads(row["error_json"])
+        # The stored message is truncated to 256 characters, so the measured
+        # cause has to survive that truncation to be of any use.
+        self.assertIn("reply limit", stored["message"])
+        self.assertEqual(json.loads(row["metrics_json"])["limit_reason"], "output")
+        # Measured, therefore persisted: the surface said "not measured" for a
+        # duration the runtime had already reported.
+        self.assertEqual(row["runtime_ms"], 4321)
+        conversation_id = self.c.conn.execute(
+            "SELECT chat_id FROM jobs ORDER BY created_at DESC LIMIT 1").fetchone()[0]
+        attempt = self.svc.state(repo_id, conversation_id)["attempt"]
+        self.assertEqual(attempt["runtime_ms"], 4321)
+        self.assertEqual(attempt["metrics"]["limit_reason"], "output")
+        self.assertIn("reply limit", attempt["error"]["message"])
+
+    def test_a_context_overflow_is_not_reported_as_an_output_limit(self):
+        repo_id = self.connect("partial")
+        reply = proposal_reply([{"path": "notes.md",
+                                 "base_sha256": self.sha("notes.md"),
+                                 "content": "# incomplete\n"}])
+
+        def overflowed(messages, *, should_cancel=None, profile=None,
+                       inference=None, response_format=None):
+            yield "delta", reply
+            yield "done", {"done_reason": "length", "limit_reason": "context",
+                           "output_tokens": 12,
+                           "output_token_limit": inference.output_allowance_tokens,
+                           "total_ms": 10}
+
+        with patch.object(runtime, "stream_chat", overflowed):
+            with self.assertRaises(code_service.CodeError) as caught:
+                self.propose(repo_id, "retitle", ["notes.md"])
+        self.assertIn("context window", str(caught.exception))
+        self.assertNotIn("reply limit", str(caught.exception))
+
 
 class TestUnsupportedPlatform(RepoBase):
     """Where the containment guarantee is unavailable, everything fails closed."""
 
     def test_listing_reading_and_writing_all_refuse_together(self):
-        with patch.object(repo, "descriptor_traversal_supported", return_value=False):
+        with patch.object(repo, "containment_backend", return_value=None):
             for call in (lambda: repo.list_text_files(self.project),
                          lambda: repo.read_text_file(self.project, "notes.md"),
                          lambda: repo.replace_text_file(
@@ -567,7 +682,7 @@ class TestUnsupportedPlatform(RepoBase):
 
     def test_the_surface_reports_code_as_unsupported(self):
         repo_id = self.connect("partial")
-        with patch.object(repo, "descriptor_traversal_supported", return_value=False):
+        with patch.object(repo, "containment_backend", return_value=None):
             state = self.svc.state(repo_id)
             self.assertFalse(state["writes_supported"])
             self.assertEqual(state["platform_note"], repo.PLATFORM_NOTE)
@@ -830,6 +945,8 @@ class TestRepositoryInstructionsAreData(RepoBase):
 
 class TestAtomicWrites(RepoBase):
     def test_a_replacement_preserves_permission_bits(self):
+        if os.name == "nt":
+            self.skipTest("Windows ACLs are not POSIX permission bits")
         target = self.write("perm.py", "one\n")
         os.chmod(target, 0o640)
         repo.replace_text_file(self.project, "perm.py",
@@ -846,6 +963,38 @@ class TestAtomicWrites(RepoBase):
         self.assertEqual(caught.exception.code, "stale")
         self.assertEqual((self.project / "notes.md").read_text(),
                          "# edited elsewhere\n")
+
+    def test_a_change_while_the_replacement_is_prepared_is_refused(self):
+        expected = self.sha("notes.md")
+        if os.name == "nt":
+            real = winfs.Directory.open_file_locked
+
+            def change_before_final_check(folder, name):
+                self.write("notes.md", "# edited during preparation\n")
+                return real(folder, name)
+
+            target = "backend.coordinator.winfs.Directory.open_file_locked"
+            replacement = change_before_final_check
+        else:
+            real = repo._posix_target
+            calls = 0
+
+            def change_before_final_check(*args):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    self.write("notes.md", "# edited during preparation\n")
+                return real(*args)
+
+            target = "backend.coordinator.repo._posix_target"
+            replacement = change_before_final_check
+        with patch(target, replacement):
+            with self.assertRaises(repo.RepositoryError) as caught:
+                repo.replace_text_file(self.project, "notes.md",
+                                       expected_sha256=expected, text="# mine\n")
+        self.assertEqual(caught.exception.code, "stale")
+        self.assertEqual((self.project / "notes.md").read_text(),
+                         "# edited during preparation\n")
 
     def test_a_failed_write_leaves_the_original_and_no_temporary_file(self):
         before = (self.project / "notes.md").read_text()
@@ -987,8 +1136,15 @@ class TestAtomicWrites(RepoBase):
 # --------------------------------------------------------------------------
 
 class TestSurfaceBoundaries(RepoBase):
+    def test_code_surface_renders_the_attempt_measurements(self):
+        source = Path("frontend/app/app.js").read_text(encoding="utf-8")
+        self.assertIn("function codeAttemptDetails", source)
+        self.assertIn("['runtime ms', attempt?.runtime_ms", source)
+        self.assertIn("['reply limit', metrics.output_token_limit", source)
+
     def test_no_http_route_accepts_a_filesystem_path(self):
-        source = (Path(__file__).parent / "server.py").read_text()
+        source = (Path(__file__).parent / "server.py").read_text(
+            encoding="utf-8")
         code_routes = [line for line in source.splitlines()
                        if "/v1/code/" in line and "route ==" in line]
         self.assertTrue(code_routes)
@@ -1017,8 +1173,8 @@ class TestSurfaceBoundaries(RepoBase):
         chat = db.create_chat(self.c.conn, self.c.workspace_id, "unrelated")
         seen = {}
 
-        def fake(messages, *, should_cancel=None, think=None, model=None,
-                 num_predict=None, response_format=None):
+        def fake(messages, *, should_cancel=None, profile=None, inference=None,
+                 response_format=None):
             seen["messages"] = messages
             yield "delta", "an answer"
             yield "done", {"done_reason": "stop"}
@@ -1093,3 +1249,180 @@ class TestExistingDatabaseUpgrade(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# --------------------------------------------------------------------------
+# Output planning
+# --------------------------------------------------------------------------
+
+def code_profile(max_output: int, *, context: int = 8192):
+    """A qualified Code profile with an explicit maximum, for planning checks."""
+    values = {
+        "model": profiles.model_ref("0.0.0-fake"),
+        "target_profile_id": "test-target",
+        "workflow_mode": profiles.CODE,
+        "qualified_context_tokens": context,
+        "default_output_tokens": min(2048, max_output),
+        "max_output_tokens": max_output,
+        "reasoning_modes": ["disabled", "enabled"],
+        "default_reasoning": "disabled",
+        "decoder_modes": ["json_schema"],
+        "qualified_memory_bytes": None,
+        "qualification_state": "qualified",
+        "eligible": True,
+        "evidence_kind": "measured",
+        "evidence_ref": "test-fixture",
+    }
+    return v1.ExecutionProfile(
+        profile_id=v1.execution_profile_id(values), **values)
+
+
+def selected(size_bytes: int, path: str = "prime_list.c"):
+    text = "x" * size_bytes
+    return [{"path": path, "text": text, "bytes": size_bytes,
+             "sha256": hashlib.sha256(text.encode()).hexdigest()}]
+
+
+class TestProposalOutputPlanning(unittest.TestCase):
+    """How much output a whole-file proposal is allowed to produce.
+
+    The planner used to size the envelope from the bytes already in the
+    selected file, so a request to write a complete program into an EMPTY file
+    was given the bare floor and truncated at it. The size of the file being
+    replaced is a lower bound on the answer, never an estimate of it.
+    """
+
+    def plan(self, profile, size):
+        chosen = selected(size)
+        return code_service.CodeService._proposal_output_limit(
+            codeflow.build_messages("Write a complete C11 program.", chosen),
+            chosen, profile)
+
+    def test_an_empty_file_receives_the_whole_qualified_envelope(self):
+        """The reported defect: an empty `.c` capped at the 2048 floor."""
+        profile = code_profile(8192)
+        allowance = self.plan(profile, 0)
+        self.assertGreater(
+            allowance, code_service.PROPOSAL_NUM_PREDICT,
+            "a generated file must not be budgeted from the empty file it replaces")
+
+    def test_a_small_file_is_not_budgeted_from_its_own_size(self):
+        profile = code_profile(8192)
+        self.assertGreater(self.plan(profile, 400),
+                           code_service.PROPOSAL_NUM_PREDICT)
+
+    def test_the_allowance_never_exceeds_the_qualified_maximum(self):
+        for maximum in (2048, 4096, 8192):
+            with self.subTest(maximum=maximum):
+                self.assertLessEqual(self.plan(code_profile(maximum), 0), maximum)
+
+    def test_a_profile_below_the_whole_file_floor_refuses_rather_than_truncates(self):
+        """A whole-file proposal has an irreducible floor. A profile qualified
+        below it cannot return one, and says so instead of starting."""
+        with self.assertRaises(code_service.CodeError) as caught:
+            self.plan(code_profile(512), 0)
+        self.assertEqual(caught.exception.code, "selection_too_large")
+
+    def test_the_allowance_leaves_room_for_the_prompt_in_the_window(self):
+        """Asking for the profile maximum must not overflow the window."""
+        profile = code_profile(4000, context=4096)
+        chosen = selected(0)
+        messages = codeflow.build_messages("Write a complete C11 program.", chosen)
+        allowance = code_service.CodeService._proposal_output_limit(
+            messages, chosen, profile)
+        prompt = context.estimate_messages(messages)
+        self.assertLess(prompt + allowance, profile.qualified_context_tokens)
+
+    def test_a_mid_sized_file_is_no_longer_refused_under_a_real_envelope(self):
+        """4-6 KB files were refused outright once the maximum fell to 2048."""
+        profile = code_profile(8192)
+        for size in (4096, 5120, 6144):
+            with self.subTest(size=size):
+                self.assertGreater(self.plan(profile, size), 0)
+
+    def test_a_selection_that_cannot_come_back_whole_is_still_refused(self):
+        """Fail closed: never start a request whose complete answer cannot fit."""
+        with self.assertRaises(code_service.CodeError) as caught:
+            self.plan(code_profile(8192), 60_000)
+        self.assertEqual(caught.exception.code, "selection_too_large")
+
+    def test_the_refusal_names_the_output_maximum_when_that_is_the_bound(self):
+        with self.assertRaises(code_service.CodeError) as caught:
+            self.plan(code_profile(512), 6144)
+        message = str(caught.exception)
+        self.assertIn("512", message)
+        self.assertIn("qualified for at most", message)
+
+    def test_the_refusal_names_the_context_window_when_that_is_the_bound(self):
+        with self.assertRaises(code_service.CodeError) as caught:
+            self.plan(code_profile(8000), 12288)
+        message = str(caught.exception)
+        self.assertIn("qualified window", message)
+        self.assertNotIn("qualified for at most", message)
+
+    def test_the_two_refusals_are_not_the_same_sentence(self):
+        """One message for two prerequisites sent people to the wrong fix."""
+        def detail(profile, size):
+            try:
+                self.plan(profile, size)
+            except code_service.CodeError as exc:
+                return str(exc)
+            self.fail("expected a refusal")
+
+        self.assertNotEqual(detail(code_profile(512), 6144),
+                            detail(code_profile(8000), 12288))
+
+
+class TestIncompleteProposalReporting(unittest.TestCase):
+    """What the person is told when generation stops before it finished.
+
+    All of it used to be one sentence — "the runtime did not finish the code
+    proposal cleanly" — which hid the one measured number that explained the
+    failure and made an output ceiling look like a runtime fault.
+    """
+
+    def inference(self, profile, allowance):
+        return profiles.request(profile, reasoning="disabled",
+                                decoder="json_schema",
+                                output_allowance=allowance,
+                                decoder_schema_sha256=profiles.schema_sha256(
+                                    codeflow.PROPOSAL_SCHEMA))
+
+    def test_an_output_ceiling_says_so_and_gives_the_number(self):
+        profile = code_profile(2048)
+        detail = code_service.CodeService._incomplete_detail(
+            {"done_reason": "length", "limit_reason": "output",
+             "output_tokens": 2048, "output_token_limit": 2048},
+            self.inference(profile, 2048))
+        self.assertIn("2048", detail)
+        self.assertIn("reply limit", detail)
+        self.assertIn("Nothing was applied", detail)
+
+    def test_a_context_overflow_is_not_reported_as_an_output_ceiling(self):
+        profile = code_profile(2048)
+        detail = code_service.CodeService._incomplete_detail(
+            {"done_reason": "length", "limit_reason": "context",
+             "output_tokens": 900, "output_token_limit": 2048},
+            self.inference(profile, 2048))
+        self.assertIn("context window", detail)
+        self.assertNotIn("reply limit", detail)
+
+    def test_an_unexplained_stop_is_not_dressed_up_as_a_known_limit(self):
+        profile = code_profile(2048)
+        detail = code_service.CodeService._incomplete_detail(
+            {"done_reason": "load_failed", "limit_reason": None,
+             "output_tokens": 0, "output_token_limit": 2048},
+            self.inference(profile, 2048))
+        self.assertIn("load_failed", detail)
+        self.assertNotIn("reply limit", detail)
+        self.assertNotIn("context window", detail)
+
+    def test_every_incomplete_reason_states_that_nothing_was_applied(self):
+        profile = code_profile(2048)
+        for limit in ("output", "context", "context_and_output", None):
+            with self.subTest(limit=limit):
+                detail = code_service.CodeService._incomplete_detail(
+                    {"done_reason": "length", "limit_reason": limit,
+                     "output_tokens": 10, "output_token_limit": 2048},
+                    self.inference(profile, 2048))
+                self.assertIn("Nothing was applied", detail)

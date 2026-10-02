@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import unittest
 
+from . import profiles, v1
 from .v1 import (
     CONTRACT_VERSION, MAX_EVENT_BYTES, MAX_REQUEST_BYTES, RECORDS,
     TERMINAL_ATTEMPT_STATES, TERMINAL_JOB_STATES,
@@ -14,6 +15,16 @@ from .v1 import (
 
 EXAMPLES = json.loads(Path(__file__).with_name("examples.json").read_text())
 TYPES = {record.__name__: record for record in RECORDS}
+MAC_CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.MAC_M5_16GB
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.32.14")
+WORKER_CHAT_PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
 
 
 def parse(name, data):
@@ -39,6 +50,7 @@ class ContractChecks(unittest.TestCase):
             ("JobEnvelope", ("extra",), "not-allowed"),
             ("JobEnvelope", ("job_id",), "../../canonical"),
             ("JobEnvelope", ("original_request",), "   "),
+            ("JobEnvelope", ("system_instruction",), "   "),
             ("JobEnvelope", ("required_capabilities",), []),
             ("JobEnvelope", ("limits", "cpu_millis"), True),
             ("JobEnvelope", ("limits", "runtime_seconds"), "60"),
@@ -158,6 +170,16 @@ class ContractChecks(unittest.TestCase):
         envelope = deepcopy(EXAMPLES["JobEnvelope"])
         envelope["task_type"] = "documents"
         envelope["required_capabilities"] = ["document.extract"]
+        envelope["messages"] = []
+        envelope["inference"] = {
+            "profile_id": next(p for p in profiles.PROFILES if p.workflow_mode == profiles.DOCUMENTS and p.model.runtime_version == "0.32.14").profile_id,
+            "workflow_mode": "documents.structured",
+            "context_window_tokens": 8192,
+            "output_allowance_tokens": 3072,
+            "reasoning": "disabled",
+            "decoder": "json_schema",
+            "decoder_schema_sha256": "b" * 64,
+        }
         envelope["context"] = [{
             "resource_id": EXAMPLES["Proof"]["citations"][0]["resource_id"],
             "sha256": "a" * 64, "size_bytes": 4096, "media_type": "application/pdf",
@@ -203,13 +225,107 @@ class ContractChecks(unittest.TestCase):
         retry["attempt_id"] = "00000000-0000-4000-8000-000000000011"
         self.assertNotEqual(payload_sha256(original), payload_sha256(parse("JobEnvelope", retry)))
         relationship = "00000000-0000-4000-8000-000000000012"
-        self.assertEqual(redis_key("dispatch", relationship), f"af:1.0:{relationship}:dispatch")
+        self.assertEqual(redis_key("dispatch", relationship), f"af:1.1:{relationship}:dispatch")
         self.assertEqual(redis_key("lease", relationship, original.attempt_id),
-                         f"af:1.0:{relationship}:lease:{original.attempt_id}")
+                         f"af:1.1:{relationship}:lease:{original.attempt_id}")
         for args in (("dispatch", "../escape"), ("lease", relationship),
                      ("arbitrary", relationship), ("dispatch", relationship, original.attempt_id)):
             with self.assertRaises(ValueError):
                 redis_key(*args)
+
+    def test_profile_identity_binds_every_material_semantic(self):
+        original = MAC_CHAT_PROFILE.model_dump()
+        for path, value in (
+            (("qualified_context_tokens",), 4096),
+            (("default_output_tokens",), 1024),
+            (("reasoning_modes",), ["disabled"]),
+            (("decoder_modes",), ["json_schema"]),
+            (("model", "runtime_version"), "0.32.15"),
+            (("target_profile_id",), "another-device"),
+        ):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                changed = deepcopy(original)
+                target = changed
+                for part in path[:-1]:
+                    target = target[part]
+                target[path[-1]] = value
+                v1.ExecutionProfile.model_validate(changed)
+
+    def test_node_profiles_are_qualified_and_bound_to_advertised_models(self):
+        profile = WORKER_CHAT_PROFILE
+        node = deepcopy(EXAMPLES["Node"])
+        node["models"] = [profile.model.model_dump()]
+        node["inference_profiles"] = [profile.model_dump()]
+        parsed = parse("Node", node)
+        self.assertEqual(parsed.inference_profiles[0].profile_id, profile.profile_id)
+
+        stale = deepcopy(node)
+        stale["models"][0]["runtime_version"] = "0.33.3"
+        with self.assertRaises(ValueError):
+            parse("Node", stale)
+
+        candidate = deepcopy(node)
+        candidate["inference_profiles"][0]["qualification_state"] = "candidate"
+        candidate["inference_profiles"][0]["eligible"] = False
+        with self.assertRaises(ValueError):
+            parse("Node", candidate)
+
+    def test_current_mac_runtime_admits_only_its_three_measured_workflows(self):
+        model = v1.ModelRef(
+            model_id=profiles.MODEL_ID,
+            manifest_sha256=profiles.MODEL_DIGEST,
+            runtime=profiles.RUNTIME,
+            runtime_version="0.33.3")
+        admitted = profiles.for_observation(
+            target_profile_id=profiles.MAC_M5_16GB, models=[model])
+        self.assertEqual(
+            {profile.workflow_mode for profile in admitted},
+            {profiles.CHAT, profiles.CODE, profiles.DOCUMENTS})
+        self.assertEqual(
+            {profile.workflow_mode: profile.max_output_tokens for profile in admitted},
+            {profiles.CHAT: 2048, profiles.CODE: 2048,
+             profiles.DOCUMENTS: 3072})
+        changed = model.model_copy(update={"runtime_version": "0.33.4"})
+        self.assertEqual(profiles.for_observation(
+            target_profile_id=profiles.MAC_M5_16GB, models=[changed]), [])
+
+    def test_no_registered_mac_code_profile_exceeds_the_accepted_envelope(self):
+        code_profiles = [
+            profile for profile in profiles.PROFILES
+            if profile.target_profile_id == profiles.MAC_M5_16GB
+            and profile.workflow_mode == profiles.CODE
+        ]
+        self.assertTrue(code_profiles)
+        self.assertEqual(
+            {profile.max_output_tokens for profile in code_profiles}, {2048})
+
+    def test_legacy_contract_cannot_claim_qualified_semantics(self):
+        legacy = deepcopy(EXAMPLES["JobEnvelope"])
+        legacy["contract_version"] = "1.0"
+        legacy["messages"] = []
+        legacy["inference"] = None
+        self.assertEqual(parse("JobEnvelope", legacy).contract_version, "1.0")
+
+        event = deepcopy(EXAMPLES["Event"])
+        event["contract_version"] = "1.0"
+        event["data"] = {
+            "kind": "inference.metrics",
+            "requested_profile_id": MAC_CHAT_PROFILE.profile_id,
+            "actual_profile_id": MAC_CHAT_PROFILE.profile_id,
+            "context_window": 8192,
+            "output_token_limit": 2048,
+            "reasoning": "disabled",
+            "decoder": "text",
+            "prompt_tokens": 1,
+            "output_tokens": 1,
+            "runtime_ms": 1,
+        }
+        with self.assertRaises(ValueError):
+            parse("Event", event)
+
+        legacy["inference"] = deepcopy(EXAMPLES["JobEnvelope"]["inference"])
+        with self.assertRaises(ValueError):
+            parse("JobEnvelope", legacy)
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ import unittest
 import uuid
 from unittest.mock import patch
 
-from backend.contracts import v1
+from backend.contracts import profiles, v1
 from backend.worker import executor as executor_module
 from backend.worker import pairing as pairing_module
 from backend.worker import runtime
@@ -33,6 +33,14 @@ from backend.worker.redis_client import RedisUnavailable
 NODE = "22222222-2222-4222-8222-222222222222"
 RELATIONSHIP = "66666666-6666-4666-8666-666666666666"
 WORKSPACE = "77777777-7777-4777-8777-777777777777"
+PROFILE = next(
+    profile for profile in profiles.PROFILES
+    if profile.target_profile_id == profiles.UBUNTU_VICTUS_RTX2050
+    and profile.workflow_mode == profiles.CHAT
+    and profile.model.runtime_version == "0.33.2")
+INFERENCE = profiles.request(
+    PROFILE, reasoning="disabled", decoder="text",
+    context_window=4096, output_allowance=2048)
 
 
 # --------------------------------------------------------------- the fake ---
@@ -213,11 +221,15 @@ def envelope(**over) -> v1.JobEnvelope:
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     later = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 600))
     fields = dict(
-        contract_version="1.0", workspace_id=WORKSPACE, workflow_id=nid(),
+        contract_version=v1.CONTRACT_VERSION, workspace_id=WORKSPACE,
+        workflow_id=nid(),
         job_id=nid(), step_id=nid(), attempt_id=nid(), chat_id=nid(),
         coordinator_node_id=nid(), target_node_id=NODE,
         relationship_id=RELATIONSHIP, original_request="say something",
+        messages=[v1.InferenceMessage(role="system", content="You are Refinix."),
+                  v1.InferenceMessage(role="user", content="say something")],
         task_type="chat", required_capabilities=["text.generate"], context=[],
+        model=PROFILE.model, inference=INFERENCE,
         attachments=[], allowed_tools=[],
         limits=v1.Limits(cpu_millis=2000, memory_bytes=2_147_483_648,
                          runtime_seconds=300, processes=8,
@@ -228,17 +240,32 @@ def envelope(**over) -> v1.JobEnvelope:
         approval_policy="coordinator-default-v1", created_at=now,
         deadline_at=later, cancel_requested=False)
     fields.update(over)
+    if "messages" not in over and fields["task_type"] == "chat":
+        fields["messages"] = [
+            v1.InferenceMessage(role="system", content="You are Refinix."),
+            v1.InferenceMessage(role="user", content=fields["original_request"]),
+        ]
     return v1.JobEnvelope(**fields)
 
 
-DONE_STOP = ("done", {"done_reason": "stop", "limit_reason": None,
-                      "runtime_ms": 10})
-DONE_LENGTH = ("done", {"done_reason": "length", "limit_reason": "output",
-                        "runtime_ms": 10})
+METRICS = {
+    "requested_profile_id": PROFILE.profile_id,
+    "actual_profile_id": PROFILE.profile_id,
+    "context_window": 4096,
+    "output_token_limit": 2048,
+    "reasoning": "disabled",
+    "decoder": "text",
+    "prompt_tokens": 10,
+    "output_tokens": 5,
+    "runtime_ms": 10,
+}
+DONE_STOP = ("done", {**METRICS, "done_reason": "stop", "limit_reason": None})
+DONE_LENGTH = ("done", {**METRICS, "done_reason": "length",
+                        "limit_reason": "output"})
 
 
 def fake_stream(items):
-    def stream(messages, should_cancel=None, timeout=None):
+    def stream(messages, should_cancel=None, timeout=None, **_options):
         for item in items:
             if isinstance(item, Exception):
                 raise item
@@ -255,6 +282,12 @@ class Base(unittest.TestCase):
         self.session = ExecutorSession(self.redis, RELATIONSHIP, "consumer-a")
         self.executor = executor_module.Executor(self.session, node_id=NODE)
         self.queue = DispatchQueue(self.redis)
+        self._profile = patch.object(
+            runtime, "resolve_profile",
+            side_effect=lambda profile_id: PROFILE
+            if profile_id == PROFILE.profile_id else None)
+        self._profile.start()
+        self.addCleanup(self._profile.stop)
 
     def events(self, attempt_id) -> list:
         return self.queue.read_events(RELATIONSHIP, attempt_id)
@@ -277,6 +310,70 @@ class Base(unittest.TestCase):
             self.session.claim(env.attempt_id, 0)
         with patch.object(runtime, "stream_chat", fake_stream(items)):
             return self.executor.execute(env, epoch=0)
+
+
+class TestChatIdentity(Base):
+    def test_remote_chat_keeps_the_coordinator_system_instruction(self):
+        seen = {}
+
+        def generating(messages, **_options):
+            seen["messages"] = messages
+            yield "delta", "hello"
+            yield DONE_STOP
+
+        env = envelope(system_instruction="You are Refinix, not the model engine.")
+        self.session.claim(env.attempt_id, 0)
+        with patch.object(runtime, "stream_chat", generating):
+            self.assertEqual(self.executor.execute(env, epoch=0), "completed")
+        self.assertEqual([message["role"] for message in seen["messages"]],
+                         ["system", "user"])
+        self.assertIn("Refinix", seen["messages"][0]["content"])
+
+    def test_remote_chat_preserves_selected_history_and_inference_semantics(self):
+        seen = {}
+        logical = [
+            v1.InferenceMessage(role="system", content="You are Refinix."),
+            v1.InferenceMessage(role="user", content="Earlier question"),
+            v1.InferenceMessage(role="assistant", content="Earlier answer"),
+            v1.InferenceMessage(role="user", content="say something"),
+        ]
+        env = envelope(messages=logical)
+
+        def generating(messages, **options):
+            seen["messages"] = messages
+            seen["profile"] = options["profile"]
+            seen["inference"] = options["inference"]
+            yield "delta", "hello"
+            yield DONE_STOP
+
+        self.session.claim(env.attempt_id, 0)
+        with patch.object(runtime, "stream_chat", generating):
+            self.assertEqual(self.executor.execute(env, epoch=0), "completed")
+        self.assertEqual(seen["messages"], [item.model_dump() for item in logical])
+        self.assertEqual(seen["profile"], PROFILE)
+        self.assertEqual(seen["inference"], env.inference)
+
+
+class TestExecutorProfileRevalidation(Base):
+    """Admission evidence is checked again at the last boundary before use."""
+
+    def test_a_profile_that_disappears_after_admission_never_starts_inference(self):
+        env = envelope()
+        self.session.claim(env.attempt_id, 0)
+        with patch.object(runtime, "resolve_profile", return_value=None), \
+                patch.object(runtime, "stream_chat") as inference:
+            self.assertEqual(self.executor.execute(env, epoch=0), "failed")
+        inference.assert_not_called()
+
+    def test_mutated_semantics_after_admission_never_start_inference(self):
+        env = envelope()
+        env = env.model_copy(update={
+            "inference": env.inference.model_copy(
+                update={"context_window_tokens": 8192})})
+        self.session.claim(env.attempt_id, 0)
+        with patch.object(runtime, "stream_chat") as inference:
+            self.assertEqual(self.executor.execute(env, epoch=0), "failed")
+        inference.assert_not_called()
 
 
 class TestPackageRetention(unittest.TestCase):
@@ -560,7 +657,7 @@ class TestCancellationAndFencing(Base):
         env = envelope()
         queue = self.queue
 
-        def cancelling(messages, should_cancel=None, timeout=None):
+        def cancelling(messages, should_cancel=None, timeout=None, **_options):
             yield "delta", "first"
             queue.request_cancel(RELATIONSHIP, env.attempt_id)
             # The executor polls at most once a second; move the fake clock so
@@ -591,7 +688,7 @@ class TestCancellationAndFencing(Base):
         self.redis.set(v1.redis_key("lease", RELATIONSHIP, env.attempt_id),
                        "consumer-b:0")
 
-        def generating(messages, should_cancel=None, timeout=None):
+        def generating(messages, should_cancel=None, timeout=None, **_options):
             yield "delta", "first"
             time.sleep(executor_module.CANCEL_POLL_SECONDS + 0.05)
             if should_cancel():
@@ -678,7 +775,7 @@ class TestRedisLoss(Base):
         env = envelope()
         redis = self.redis
 
-        def generating(messages, should_cancel=None, timeout=None):
+        def generating(messages, should_cancel=None, timeout=None, **_options):
             yield "delta", "first"
             redis.reachable = False
             time.sleep(executor_module.CANCEL_POLL_SECONDS + 0.05)
@@ -1020,7 +1117,7 @@ class TestDuplicateAndPending(Base):
         self.deliver(env, "1-1")
         redis = self.redis
 
-        def dying(messages, should_cancel=None, timeout=None):
+        def dying(messages, should_cancel=None, timeout=None, **_options):
             yield "delta", "partial"
             redis.reachable = False
             time.sleep(executor_module.CANCEL_POLL_SECONDS + 0.05)
@@ -1072,7 +1169,7 @@ class TestDuplicateAndPending(Base):
                 # what makes the naive "is Redis up?" check wrong.
                 redis.reachable = True
 
-        def dying(messages, should_cancel=None, timeout=None):
+        def dying(messages, should_cancel=None, timeout=None, **_options):
             yield "delta", "partial"
             redis.reachable = False
             raise RuntimeError("the runtime died while redis was down")
@@ -1134,6 +1231,8 @@ class TestPairingStore(unittest.TestCase):
     def test_the_state_file_is_not_group_or_world_readable(self):
         import os
         import stat
+        if os.name == "nt":
+            self.skipTest("Windows protects this file with ACLs, not mode bits")
         self.pair()
         mode = stat.S_IMODE(os.stat(self.path).st_mode)
         self.assertEqual(mode & 0o077, 0, f"pairing file is mode {mode:o}")

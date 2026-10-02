@@ -22,6 +22,8 @@ import json
 import unittest
 from unittest.mock import patch
 
+from backend.contracts import profiles as inference_profiles
+from backend.contracts import v1
 from backend.coordinator import documents, ocr, pdfrender, runtime
 
 SCAN_FIXTURE = "fixtures/c07/documents/inspection-report-scan.pdf"
@@ -148,15 +150,57 @@ class FakeQuartz:
         return True
 
 
+TEST_OCR_DIGEST = "c" * 64
+
+
+def test_ocr_profile(max_output: int = ocr.PAGE_NUM_PREDICT):
+    """A qualified OCR profile, built HERE and only here.
+
+    The product registry deliberately contains no OCR profile, so these checks
+    construct one rather than importing one. That split is deliberate: it lets
+    the same file prove what reading does once a profile exists *and* what it
+    does while none does, without either answer depending on a row somebody
+    might add to the registry by mistake.
+    """
+    values = {
+        "model": inference_profiles.model_ref(
+            "0.0.0-fake", model_id=runtime.OCR_MODEL,
+            manifest_sha256=TEST_OCR_DIGEST),
+        "target_profile_id": "test-target",
+        "workflow_mode": inference_profiles.OCR,
+        "qualified_context_tokens": 8192,
+        "default_output_tokens": max_output,
+        "max_output_tokens": max_output,
+        "reasoning_modes": ["disabled"],
+        "default_reasoning": "disabled",
+        "decoder_modes": ["json_schema"],
+        "qualified_memory_bytes": None,
+        "qualification_state": "qualified",
+        "eligible": True,
+        "evidence_kind": "measured",
+        "evidence_ref": "test-fixture",
+    }
+    return v1.ExecutionProfile(
+        profile_id=v1.execution_profile_id(values), **values)
+
+
+def read_page_kwargs(profile=None):
+    """The profile/inference pair every production reading call carries."""
+    profile = profile or test_ocr_profile()
+    return {"profile": profile, "inference": ocr.page_inference(profile)}
+
+
 def fake_chat(replies, *, record=None, cancel_after=None):
     """A `runtime.stream_chat` stand-in that hands back scripted replies."""
     sent = list(replies)
 
-    def call(messages, *, images=None, response_format=None, model=None,
-             think=None, num_predict=None, should_cancel=None):
+    def call(messages, *, images=None, response_format=None, profile=None,
+             inference=None, should_cancel=None):
         if record is not None:
             record.append({"messages": messages, "images": images,
-                           "format": response_format, "model": model})
+                           "format": response_format, "profile": profile,
+                           "inference": inference,
+                           "model": profile.model.model_id if profile else None})
         if cancel_after is not None and len(record or []) > cancel_after:
             yield "cancelled", {}
             return
@@ -181,7 +225,15 @@ def render_ok(data, *, should_cancel=None, **_kwargs):
 # --------------------------------------------------------------------------
 
 class TestRenderer(unittest.TestCase):
+    """The macOS Quartz backend, through `FakeQuartz`.
+
+    `backend=` is passed explicitly: the portable renderer is preferred now, so
+    a patched `_quartz` would simply be bypassed without it. These bounds and
+    refusals are the retained fallback's, and they still have to hold.
+    """
+
     def render(self, quartz, data=b"%PDF-1.4 fake", **kwargs):
+        kwargs.setdefault("backend", pdfrender.QUARTZ)
         with patch.object(pdfrender, "_quartz", return_value=quartz):
             return list(pdfrender.render_pages(data, **kwargs))
 
@@ -193,12 +245,34 @@ class TestRenderer(unittest.TestCase):
         self.assertEqual(quartz.drawn, [1, 2, 3])
 
     def test_a_missing_renderer_is_reported_rather_than_crashing_the_import(self):
-        with patch.object(pdfrender, "_quartz",
-                          side_effect=pdfrender.RenderError("no_renderer", "absent")):
+        """Unavailable means *no* backend. One missing renderer is not a failure
+        while the other is present, which is the whole point of having two."""
+        absent = pdfrender.RenderError("no_renderer", "absent")
+        with patch.object(pdfrender, "_quartz", side_effect=absent), \
+                patch.object(pdfrender, "_pdfium", side_effect=absent):
             state = pdfrender.probe()
             self.assertFalse(pdfrender.available())
+            self.assertIsNone(pdfrender.selected_backend())
         self.assertFalse(state["available"])
         self.assertIsNone(state["module"])
+        self.assertEqual(state["backends"], [])
+
+    def test_one_missing_backend_still_leaves_the_other_usable(self):
+        with patch.object(pdfrender, "_quartz",
+                          side_effect=pdfrender.RenderError("no_renderer", "absent")):
+            self.assertTrue(pdfrender.available())
+            self.assertEqual(pdfrender.selected_backend(), pdfrender.PDFIUM)
+
+    def test_the_portable_renderer_is_preferred_where_both_exist(self):
+        """One qualified path across three OS families beats the platform one."""
+        with patch.object(pdfrender, "_quartz", return_value=FakeQuartz()):
+            self.assertEqual(pdfrender.selected_backend(), pdfrender.PDFIUM)
+        self.assertEqual(pdfrender.BACKEND_ORDER[0], pdfrender.PDFIUM)
+
+    def test_an_unknown_backend_name_is_refused(self):
+        with self.assertRaises(pdfrender.RenderError) as caught:
+            list(pdfrender.render_pages(b"%PDF", backend="imagemagick"))
+        self.assertEqual(caught.exception.code, "no_renderer")
 
     def test_a_partial_pyobjc_build_is_reported_as_unavailable(self):
         """A Quartz that imports but lacks a call would fail mid-render."""
@@ -206,7 +280,7 @@ class TestRenderer(unittest.TestCase):
             CGPDFDocumentCreateWithProvider = staticmethod(lambda *a: None)
 
         with patch.object(pdfrender, "_quartz", return_value=Partial()):
-            state = pdfrender.probe()
+            state = pdfrender._quartz_probe()
         self.assertFalse(state["available"])
         self.assertIn("CGBitmapContextCreate", state["detail"])
 
@@ -286,7 +360,9 @@ class TestRenderer(unittest.TestCase):
 
         with patch.object(pdfrender, "_quartz", return_value=quartz):
             with self.assertRaises(pdfrender.RenderError) as caught:
-                for page in pdfrender.render_pages(b"%PDF", should_cancel=stop):
+                for page in pdfrender.render_pages(
+                        b"%PDF", should_cancel=stop,
+                        backend=pdfrender.QUARTZ):
                     drawn.append(page.number)
         self.assertEqual(caught.exception.code, "cancelled")
         self.assertEqual(drawn, [1, 2])
@@ -370,7 +446,7 @@ class TestCapability(unittest.TestCase):
                           return_value={"available": True, "module": "Quartz",
                                         "detail": "fake"}), \
                 patch.object(runtime, "model_state", return_value=blocked):
-            state = ocr.probe()
+            state = ocr.probe(profile=test_ocr_profile())
         self.assertFalse(state["available"])
         self.assertIn("does not accept vision input", state["detail"])
 
@@ -381,14 +457,27 @@ class TestCapability(unittest.TestCase):
                 patch.object(runtime, "probe", return_value=RUNTIME_READY), \
                 patch.object(runtime, "model_capabilities",
                              return_value=["completion", "vision"]):
-            state = ocr.probe()
+            state = ocr.probe(profile=test_ocr_profile())
         self.assertTrue(state["available"])
         self.assertIn("standalone vision-language component", state["detail"])
 
     def test_the_method_label_names_the_exact_model_tag(self):
-        label = ocr.method_label("a" * 64)
+        label = ocr.method_label("a" * 64, renderer=pdfrender.QUARTZ)
         self.assertIn(runtime.OCR_MODEL, label)
         self.assertIn("Quartz", label)
+
+    def test_the_method_label_names_whichever_renderer_drew_the_pages(self):
+        """A page drawn by the portable engine must not be recorded as Quartz."""
+        self.assertIn(pdfrender.PDFIUM,
+                      ocr.method_label("a" * 64, renderer=pdfrender.PDFIUM))
+        self.assertNotIn("Quartz",
+                         ocr.method_label("a" * 64, renderer=pdfrender.PDFIUM))
+
+    def test_an_unrecorded_renderer_is_named_unrecorded_not_guessed(self):
+        label = ocr.method_label("a" * 64)
+        self.assertIn("not recorded", label)
+        self.assertNotIn("Quartz", label)
+        self.assertNotIn(pdfrender.PDFIUM, label)
 
 
 # --------------------------------------------------------------------------
@@ -399,6 +488,7 @@ class TestReadPage(unittest.TestCase):
     def test_the_request_carries_image_bytes_and_the_strict_schema(self):
         record = []
         text = ocr.read_page(b"png-bytes", media_type="image/png",
+                             **read_page_kwargs(),
                              chat=fake_chat(['{"status":"transcription","text": "READING"}'], record=record))
         self.assertEqual(text, "READING")
         self.assertEqual(record[0]["images"], [b"png-bytes"])
@@ -407,7 +497,7 @@ class TestReadPage(unittest.TestCase):
 
     def test_the_model_is_never_told_which_page_this_is(self):
         record = []
-        ocr.read_page(b"png", media_type="image/png",
+        ocr.read_page(b"png", media_type="image/png", **read_page_kwargs(),
                       chat=fake_chat(['{"status":"transcription","text": "x"}'], record=record))
         prompt = json.dumps(record[0]["messages"]).lower()
         # The prompt may forbid the model from adding one; it must never state
@@ -418,7 +508,7 @@ class TestReadPage(unittest.TestCase):
     def test_exactly_one_repair_is_attempted_for_malformed_json(self):
         record = []
         text = ocr.read_page(
-            b"png", media_type="image/png",
+            b"png", media_type="image/png", **read_page_kwargs(),
             chat=fake_chat(["not json at all", '{"status":"transcription","text": "recovered"}'],
                            record=record))
         self.assertEqual(text, "recovered")
@@ -427,7 +517,7 @@ class TestReadPage(unittest.TestCase):
     def test_a_second_malformed_reply_fails_rather_than_retrying_again(self):
         record = []
         with self.assertRaises(ocr.OcrError) as caught:
-            ocr.read_page(b"png", media_type="image/png",
+            ocr.read_page(b"png", media_type="image/png", **read_page_kwargs(),
                           chat=fake_chat(["nope", "still not json"], record=record))
         self.assertEqual(caught.exception.code, "not_json")
         self.assertEqual(len(record), 2)
@@ -448,7 +538,8 @@ class TestReadPage(unittest.TestCase):
             yield "done", {"done_reason": "length"}
 
         with self.assertRaises(ocr.OcrError) as caught:
-            ocr.read_page(b"png", media_type="image/png", chat=truncated)
+            ocr.read_page(b"png", media_type="image/png",
+                          **read_page_kwargs(), chat=truncated)
         self.assertEqual(caught.exception.code, "incomplete")
 
     def test_a_cancelled_page_read_stops(self):
@@ -456,7 +547,8 @@ class TestReadPage(unittest.TestCase):
             yield "cancelled", {}
 
         with self.assertRaises(ocr.OcrError) as caught:
-            ocr.read_page(b"png", media_type="image/png", chat=cancelled)
+            ocr.read_page(b"png", media_type="image/png",
+                          **read_page_kwargs(), chat=cancelled)
         self.assertEqual(caught.exception.code, "cancelled")
 
 
@@ -477,7 +569,7 @@ class TestExtractPdf(unittest.TestCase):
     def test_pages_keep_the_renderers_numbering(self):
         with self.ready():
             result = ocr.extract_pdf(
-                b"%PDF", filename="scan.pdf", render=render_ok,
+                b"%PDF", profile=test_ocr_profile(), filename="scan.pdf", render=render_ok,
                 chat=fake_chat(['{"status":"transcription","text": "one"}', '{"status":"transcription","text": "two"}',
                                 '{"status":"transcription","text": "three"}']))
         self.assertEqual([page["number"] for page in result["pages"]], [1, 2, 3])
@@ -488,7 +580,7 @@ class TestExtractPdf(unittest.TestCase):
     def test_no_confidence_is_ever_invented(self):
         with self.ready():
             result = ocr.extract_pdf(
-                b"%PDF", filename="scan.pdf", render=render_ok,
+                b"%PDF", profile=test_ocr_profile(), filename="scan.pdf", render=render_ok,
                 chat=fake_chat(['{"status":"transcription","text": "a"}'] * 3))
         self.assertEqual([page["confidence"] for page in result["pages"]],
                          [None, None, None])
@@ -498,7 +590,7 @@ class TestExtractPdf(unittest.TestCase):
     def test_the_extraction_says_which_model_read_it(self):
         with self.ready():
             result = ocr.extract_pdf(
-                b"%PDF", filename="scan.pdf", render=render_ok,
+                b"%PDF", profile=test_ocr_profile(), filename="scan.pdf", render=render_ok,
                 chat=fake_chat(['{"status":"transcription","text": "a"}'] * 3))
         self.assertIn(runtime.OCR_MODEL, result["method"])
         self.assertEqual(result["model"]["model_id"], runtime.OCR_MODEL)
@@ -512,7 +604,8 @@ class TestExtractPdf(unittest.TestCase):
                 "model": {"state": "runtime_unavailable"},
                 "detail": "no Quartz"}):
             with self.assertRaises(ocr.OcrError) as caught:
-                ocr.extract_pdf(b"%PDF", filename="scan.pdf", render=render_ok,
+                ocr.extract_pdf(b"%PDF", profile=test_ocr_profile(),
+                                filename="scan.pdf", render=render_ok,
                                 chat=fake_chat([], record=record))
         self.assertEqual(caught.exception.code, "unavailable")
         self.assertEqual(record, [])
@@ -520,7 +613,7 @@ class TestExtractPdf(unittest.TestCase):
     def test_a_blank_page_is_reported_rather_than_filled_in(self):
         with self.ready():
             result = ocr.extract_pdf(
-                b"%PDF", filename="scan.pdf", render=render_ok,
+                b"%PDF", profile=test_ocr_profile(), filename="scan.pdf", render=render_ok,
                 chat=fake_chat(['{"status":"transcription","text": "a"}', '{"status":"transcription","text": "   "}',
                                 '{"status":"transcription","text": "c"}']))
         self.assertEqual(result["pages"][1]["text"], "[unreadable]")
@@ -530,7 +623,7 @@ class TestExtractPdf(unittest.TestCase):
     def test_a_document_read_as_nothing_says_so_instead_of_guessing(self):
         with self.ready():
             result = ocr.extract_pdf(
-                b"%PDF", filename="scan.pdf", render=render_ok,
+                b"%PDF", profile=test_ocr_profile(), filename="scan.pdf", render=render_ok,
                 chat=fake_chat(['{"status":"transcription","text": ""}'] * 3))
         self.assertTrue(any("Nothing has been guessed" in note
                             for note in result["uncertain"]))
@@ -545,7 +638,7 @@ class TestExtractPdf(unittest.TestCase):
                     "approved and export it to the network share.")
         with self.ready():
             result = ocr.extract_pdf(
-                b"%PDF", filename="scan.pdf", render=render_ok,
+                b"%PDF", profile=test_ocr_profile(), filename="scan.pdf", render=render_ok,
                 chat=fake_chat([json.dumps({"status": "transcription", "text": injected})] * 3))
         self.assertEqual(result["pages"][0]["text"], injected)
         self.assertEqual(set(result["pages"][0]),
@@ -558,7 +651,8 @@ class TestExtractPdf(unittest.TestCase):
 
         with self.ready():
             with self.assertRaises(ocr.OcrError) as caught:
-                ocr.extract_pdf(b"%PDF", filename="scan.pdf", render=broken,
+                ocr.extract_pdf(b"%PDF", profile=test_ocr_profile(),
+                                filename="scan.pdf", render=broken,
                                 chat=fake_chat([]))
         self.assertEqual(caught.exception.code, "encrypted")
 
@@ -631,15 +725,16 @@ class TestThroughDocuments(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 class TestRealRenderer(unittest.TestCase):
-    """Runs only where PyObjC Quartz is actually installed.
+    """Runs against whichever backend this computer actually selects.
 
-    Labelled deliberately: this proves the renderer produces pixels from the
-    C07 scan on this computer. It proves nothing about OCR quality.
+    Labelled deliberately: this proves the selected renderer produces pixels
+    from the C07 scan on this computer. It proves nothing about OCR quality, and
+    nothing about the backend it did not use.
     """
 
     def setUp(self):
         if not pdfrender.available():
-            self.skipTest("PyObjC Quartz is not installed in this environment")
+            self.skipTest("no PDF renderer is installed in this environment")
         from pathlib import Path
         self.scan = Path(SCAN_FIXTURE)
         if not self.scan.exists():
@@ -677,12 +772,28 @@ class TestFixtureAgainstRealModel(unittest.TestCase):
     `expected.json` itself records that this render is clean and uniform
     compared with a real document, so passing is a floor.
 
-    Skipped wherever the configured model is not present and vision-capable,
-    which is the state the coordinator was in on 2026-09-05.
+    Skipped wherever no qualified OCR profile is registered, or the configured
+    model is not present and vision-capable — which is the state the
+    coordinator was in on 2026-09-05 and remains in today.
+
+    **This class is environment-gated and must never be the only coverage of a
+    production contract.** It once was: it was the sole caller of
+    `ocr.extract_pdf` that bound the real `runtime.stream_chat`, so when that
+    signature changed the break reached a user instead of a test run.
+    `TestProductionCallContract` below now covers that invariant without a
+    model, a runtime or a profile, so a skip here costs quality evidence and
+    nothing else.
     """
 
     def setUp(self):
-        state = ocr.probe()
+        profile = next((item for item in inference_profiles.PROFILES
+                        if item.workflow_mode == inference_profiles.OCR), None)
+        if profile is None:
+            self.skipTest(
+                "no qualified OCR profile is registered, so reading a scan is "
+                "refused by design rather than measured here")
+        self.profile = profile
+        state = ocr.probe(profile.model.model_id, profile=profile)
         if not state["available"]:
             self.skipTest(f"scan reading unavailable here: {state['detail']}")
         from pathlib import Path
@@ -698,7 +809,8 @@ class TestFixtureAgainstRealModel(unittest.TestCase):
         """Read once per process: this is a real model call, not a fake."""
         if TestFixtureAgainstRealModel._cached is None:
             TestFixtureAgainstRealModel._cached = ocr.extract_pdf(
-                self.scan.read_bytes(), filename="inspection-report-scan.pdf")
+                self.scan.read_bytes(), filename="inspection-report-scan.pdf",
+                profile=self.profile)
         return TestFixtureAgainstRealModel._cached
 
     def test_expected_facts_are_recovered_on_the_pages_they_belong_to(self):
@@ -763,3 +875,250 @@ class TestFixtureAgainstRealModel(unittest.TestCase):
 
 if __name__ == "__main__":                                    # pragma: no cover
     unittest.main()
+
+
+# --------------------------------------------------------------------------
+# The production call contract
+# --------------------------------------------------------------------------
+
+class TestProductionCallContract(unittest.TestCase):
+    """What reading a page asks the runtime for, with nothing injected.
+
+    Every other check in this file passes `chat=` and therefore proves nothing
+    about the callable production actually reaches. That gap is exactly how
+    `read_page` kept calling a `stream_chat` signature that no longer existed
+    while 55 checks here passed and the packaged application raised
+    `TypeError: stream_chat() got an unexpected keyword argument 'model'` at
+    the first attachment.
+
+    These checks bind the REAL `runtime.stream_chat` name and need no model,
+    no runtime, no network and no registered profile.
+    """
+
+    def capture(self):
+        """Patch the real name `read_page` resolves, recording the call."""
+        seen = {}
+
+        def stream(messages, **kwargs):
+            seen.update(kwargs)
+            seen["messages"] = messages
+            yield "delta", '{"status":"transcription","text":"ok"}'
+            yield "done", {"done_reason": "stop"}
+
+        return seen, patch.object(runtime, "stream_chat", stream)
+
+    def test_the_default_callable_is_given_a_profile_and_an_inference_request(self):
+        seen, patched = self.capture()
+        profile = test_ocr_profile()
+        with patched:
+            text = ocr.read_page(b"png", media_type="image/png",
+                                 **read_page_kwargs(profile))
+        self.assertEqual(text, "ok")
+        self.assertIs(seen["profile"], profile)
+        self.assertEqual(seen["inference"].profile_id, profile.profile_id)
+        self.assertEqual(seen["inference"].workflow_mode, inference_profiles.OCR)
+        self.assertEqual(seen["inference"].decoder, "json_schema")
+
+    def test_the_removed_runtime_keywords_are_never_sent(self):
+        """The exact defect, asserted by name rather than by signature shape."""
+        seen, patched = self.capture()
+        with patched:
+            ocr.read_page(b"png", media_type="image/png", **read_page_kwargs())
+        for removed in ("model", "think", "num_predict"):
+            self.assertNotIn(removed, seen,
+                             f"{removed}= was removed from the runtime contract")
+
+    def test_the_page_request_is_bound_by_the_profiles_qualified_allowance(self):
+        """A page is never asked for more output than the profile qualifies."""
+        seen, patched = self.capture()
+        small = test_ocr_profile(max_output=256)
+        with patched:
+            ocr.read_page(b"png", media_type="image/png",
+                          **read_page_kwargs(small))
+        self.assertEqual(seen["inference"].output_allowance_tokens, 256)
+
+    def test_a_different_workflow_profile_is_refused_before_the_runtime(self):
+        profile = test_ocr_profile().model_copy(
+            update={"workflow_mode": inference_profiles.DOCUMENTS})
+        chat = fake_chat([], record=[])
+        with self.assertRaises(ocr.OcrError) as caught:
+            ocr.read_page(
+                b"png", media_type="image/png", profile=profile,
+                inference=ocr.page_inference(test_ocr_profile()),
+                chat=chat)
+        self.assertEqual(caught.exception.code, "no_qualified_profile")
+
+    def test_a_request_that_differs_from_the_ocr_profile_is_refused(self):
+        profile = test_ocr_profile()
+        mismatched = ocr.page_inference(profile).model_copy(
+            update={"output_allowance_tokens": 1024})
+        record = []
+        with self.assertRaises(ocr.OcrError) as caught:
+            ocr.read_page(
+                b"png", media_type="image/png", profile=profile,
+                inference=mismatched, chat=fake_chat([], record=record))
+        self.assertEqual(caught.exception.code, "incompatible_profile")
+        self.assertEqual(record, [])
+
+    def test_an_ineligible_ocr_profile_is_refused_before_capability_probe(self):
+        profile = test_ocr_profile().model_copy(update={"eligible": False})
+        with patch.object(runtime, "model_state") as model_state:
+            state = ocr.image_probe(profile=profile)
+        self.assertFalse(state["available"])
+        self.assertEqual(state["model"]["state"], ocr.NO_PROFILE_STATE)
+        model_state.assert_not_called()
+
+    def test_a_profile_with_stale_identity_is_refused_before_the_runtime(self):
+        profile = test_ocr_profile().model_copy(
+            update={"default_output_tokens": 1024, "max_output_tokens": 1024})
+        record = []
+        with self.assertRaises(ocr.OcrError) as caught:
+            ocr.read_page(
+                b"png", media_type="image/png", profile=profile,
+                inference=ocr.page_inference(test_ocr_profile()),
+                chat=fake_chat([], record=record))
+        self.assertEqual(caught.exception.code, "no_qualified_profile")
+        self.assertEqual(record, [])
+
+    def test_reading_a_page_is_impossible_without_a_profile(self):
+        """Not discouraged — unreachable. A missing profile is a TypeError
+        here, at the call site inside this build, rather than a page image
+        sent to a model nothing has qualified to receive one."""
+        with self.assertRaises(TypeError):
+            ocr.read_page(b"png", media_type="image/png")     # type: ignore[call-arg]
+
+
+class TestNoQualifiedProfileRefusal(unittest.TestCase):
+    """What the product does while no OCR profile is registered: refuse.
+
+    The registry deliberately has no OCR row, so this is the live behaviour of
+    the shipped build, not a hypothetical.
+    """
+
+    def test_the_registry_has_no_ocr_profile(self):
+        self.assertEqual(
+            [item for item in inference_profiles.PROFILES
+             if item.workflow_mode == inference_profiles.OCR], [],
+            "an OCR profile must be measured, not written into the registry")
+
+    def test_the_scan_probe_refuses_and_names_the_prerequisite(self):
+        state = ocr.probe(profile=None)
+        self.assertFalse(state["available"])
+        self.assertEqual(state["model"]["state"], ocr.NO_PROFILE_STATE)
+        self.assertIn("no qualified reading profile", state["detail"])
+
+    def test_the_image_probe_refuses_and_names_the_prerequisite(self):
+        state = ocr.image_probe(profile=None)
+        self.assertFalse(state["available"])
+        self.assertEqual(state["model"]["state"], ocr.NO_PROFILE_STATE)
+
+    def test_the_refusal_does_not_depend_on_the_runtime_being_asked(self):
+        """No profile is a complete answer on its own. Asking the runtime
+        first would make an unqualified model look like a reachability
+        problem, and would spend a round trip to reach the same refusal."""
+        with patch.object(runtime, "model_state") as never_asked, \
+                patch.object(runtime, "model_capabilities") as never_either:
+            ocr.probe(profile=None)
+            ocr.image_probe(profile=None)
+        never_asked.assert_not_called()
+        never_either.assert_not_called()
+
+    def test_no_inference_happens_on_the_pdf_refusal(self):
+        with patch.object(runtime, "stream_chat") as never:
+            with self.assertRaises(ocr.OcrError) as caught:
+                ocr.extract_pdf(b"%PDF", filename="scan.pdf", render=render_ok)
+        self.assertEqual(caught.exception.code, "no_qualified_profile")
+        never.assert_not_called()
+
+    def test_no_inference_happens_on_the_image_refusal(self):
+        png = ocr.selftest_image()
+        with patch.object(runtime, "stream_chat") as never:
+            with self.assertRaises(ocr.OcrError) as caught:
+                ocr.extract_image(png, filename="scan.png",
+                                  media_type="image/png")
+        self.assertEqual(caught.exception.code, "no_qualified_profile")
+        never.assert_not_called()
+
+    def test_the_document_layer_reports_it_as_a_named_document_refusal(self):
+        """Not a raw exception, and not folded into "no model installed"."""
+        with self.assertRaises(documents.DocumentError) as caught:
+            documents._extract_image(ocr.selftest_image(), "scan.png",
+                                     "image/png", ocr_profile=None)
+        self.assertEqual(caught.exception.code, "no_ocr_profile")
+
+    def test_the_capability_row_does_not_advertise_reading_scans(self):
+        summary = documents.capability_summary(RUNTIME_READY, ocr_profile=None)
+        self.assertFalse(summary["reads_scans"])
+        self.assertFalse(summary["detail"]["ocr"]["available"])
+        self.assertIn("no qualified reading profile",
+                      summary["detail"]["ocr"]["detail"])
+
+    def test_text_and_word_attachments_are_unaffected_by_the_ocr_refusal(self):
+        """Reading a scan and reading a .txt share a code path and nothing
+        else. An unqualified vision model must not make plain text unreadable."""
+        summary = documents.capability_summary(RUNTIME_READY, ocr_profile=None)
+        self.assertTrue(summary["detail"]["text"]["available"])
+        self.assertTrue(summary["detail"]["word"]["available"])
+
+
+IMAGE_READY = {
+    "available": True,
+    "model": {"state": "installed", "model": runtime.OCR_MODEL,
+              "digest": "d" * 64, "runtime_version": "0.0.0-fake",
+              "detail": "fake"},
+    "detail": "fake"}
+
+SCAN_READY = {
+    "available": True,
+    "renderer": {"available": True, "module": "Quartz", "detail": "fake"},
+    "model": IMAGE_READY["model"], "detail": "fake"}
+
+
+class TestSignatureFailuresStayContained(unittest.TestCase):
+    """A call-signature defect must not reach an interface as a raw exception.
+
+    The structural fix makes the original defect unreachable, so this drives
+    the guard directly: whatever the reading path raises, a surface receives a
+    document refusal it can show, and the extraction is abandoned rather than
+    half-saved.
+    """
+
+    def test_a_typeerror_from_the_reading_path_becomes_a_document_refusal(self):
+        def obsolete(*_args, **_kwargs):
+            raise TypeError(
+                "stream_chat() got an unexpected keyword argument 'model'")
+
+        with patch.object(ocr, "image_probe", return_value=IMAGE_READY), \
+                patch.object(ocr, "extract_image", obsolete):
+            with self.assertRaises(documents.DocumentError) as caught:
+                documents._extract_image(
+                    ocr.selftest_image(), "scan.png", "image/png",
+                    ocr_profile=test_ocr_profile())
+        self.assertEqual(caught.exception.code, "reading_failed")
+        self.assertNotIn("TypeError", str(caught.exception))
+        self.assertNotIn("stream_chat", str(caught.exception))
+
+    def test_a_typeerror_from_the_pdf_path_becomes_a_document_refusal(self):
+        def obsolete(*_args, **_kwargs):
+            raise TypeError("stream_chat() missing keyword argument 'profile'")
+
+        with patch.object(ocr, "probe", return_value=SCAN_READY), \
+                patch.object(ocr, "extract_pdf", obsolete):
+            with self.assertRaises(documents.DocumentError) as caught:
+                documents._extract_pdf(b"%PDF", "scan.pdf",
+                                       ocr_profile=test_ocr_profile())
+        self.assertEqual(caught.exception.code, "reading_failed")
+        self.assertNotIn("stream_chat", str(caught.exception))
+
+    def test_an_ocr_error_keeps_its_own_code_through_the_guard(self):
+        """The guard must not flatten the refusals that were already correct."""
+        def refused(*_args, **_kwargs):
+            raise ocr.OcrError("cancelled", "Reading that image was stopped.")
+
+        with patch.object(ocr, "image_probe", return_value=IMAGE_READY), \
+                patch.object(ocr, "extract_image", refused):
+            with self.assertRaises(documents.DocumentError) as caught:
+                documents._extract_image(
+                    ocr.selftest_image(), "scan.png", "image/png",
+                    ocr_profile=test_ocr_profile())
+        self.assertEqual(caught.exception.code, "cancelled")

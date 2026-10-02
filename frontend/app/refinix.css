@@ -157,21 +157,52 @@
    request share one baseline and one left edge, so zeroing the textarea's own
    padding (below) and insetting the row is what keeps them aligned — without
    the padding here the request runs into the rounded edge of the box. */
+/* Configuration first, in its own row, wrapping when there is more of it
+   than fits. It never competes with the prompt for width. */
+.composer-task {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4) 0;
+  min-width: 0;
+}
+
 .composer-line {
   display: flex;
   align-items: flex-start;
   gap: var(--sp-2);
-  flex-wrap: wrap;
   padding: var(--sp-3) var(--sp-4);
 }
 
+/* The prompt owns the row it is on, at every width. */
 .composer-line .composer-input {
-  flex: 1 1 16rem;
-  min-width: 12rem;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   border: 0;
   background: transparent;
   padding: 0;
   color: var(--text);
+}
+
+/* Secondary guidance: how the request will be read, in the muted tier.
+   Deliberately not `skill-status`, which is the caution colour and belongs to
+   a capability that is unavailable. */
+.composer-hint {
+  margin: 0;
+  padding: 0 var(--sp-4) var(--sp-2);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.composer-hint::before {
+  /* Decorative. The `/ ""` alternative text keeps it out of the accessibility
+     tree where that syntax is supported — generated content is announced by
+     default, which would prefix the guidance with the name of a glyph. */
+  content: "\24D8" / "";
+  margin-right: 6px;
 }
 
 .skill-chip {
@@ -187,6 +218,38 @@
 }
 
 .skill-chip[data-available="false"] { border-color: var(--st-caution); }
+
+/* The document workflow, styled as a sibling of the skill chip so the two
+   read as one row of choices about the request being composed. */
+.workflow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--veil);
+  max-width: 100%;
+}
+
+.workflow-label {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.workflow-select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  max-width: 100%;
+}
+
+.workflow-select:focus-visible { background: var(--veil); }
 
 .skill-icon {
   width: 14px; height: 14px;
@@ -501,6 +564,43 @@
   color: var(--text-faint);
   font-size: 11.5px;
   margin-top: 2px;
+}
+
+/* Settings -> Models. One row per model, and each row states which of the
+   four things is true of it here: installed, supported and not installed,
+   installed without recorded provenance, or unknown because the engine did
+   not answer. A row never implies more than was observed. */
+.model-list { list-style: none; margin: var(--sp-3) 0 0; padding: 0;
+              display: grid; gap: var(--sp-2); }
+
+.model-list li {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+
+.model-list li[data-state="absent"] { border-style: dashed; }
+
+.model-head { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3);
+              align-items: center; }
+.model-id { color: var(--text); font-weight: 600; word-break: break-word; }
+.model-where { display: block; color: var(--text-faint); font-size: 11.5px;
+               margin-top: 2px; }
+.model-facts { margin: 0; display: grid; gap: 2px; }
+.model-facts div { display: grid; grid-template-columns: 8.5rem 1fr;
+                   gap: var(--sp-2); }
+.model-facts dt { color: var(--text-faint); font-size: 11.5px; }
+.model-facts dd { margin: 0; color: var(--text-dim); font-size: 11.5px;
+                  word-break: break-word; }
+.model-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2);
+                 align-items: center; }
+.model-actions .setup-command { margin: 0; }
+
+@media (max-width: 640px) {
+  .model-facts div { grid-template-columns: 1fr; }
 }
 
 .mode-list li {

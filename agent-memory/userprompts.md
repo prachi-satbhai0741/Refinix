@@ -1535,3 +1535,444 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - verification_scope: Proportionate existing-dependency offline checks for relocated documentation and affected tests; no live devices, downloads, deployment or publication.
 - follow_up_to: [UP-20260916-001](#up-20260916-001)
 - linked_changes: [AC-20260916-003](agentchangelog.md#ac-20260916-003)
+
+<a id="up-20260918-001"></a>
+## UP-20260918-001 — Draft the P01 Beta support contract for requester acceptance
+- date: 2026-09-18
+- status: authorised documentation draft; parallel P11/P10 coding discussed but not yet started
+- tags: p01, beta, support-matrix, baseline, windows
+- aliases: P01 proposed matrix, Beta support contract draft, Windows contributor
+- paths: docs/evaluation.md, agent-memory/
+- summary: Draft the narrow P01 Beta support matrix and acceptance thresholds while the macOS runtime checkpoint is run separately by its device holder.
+- request: Start P01 completion from a Windows 11 contributor device; the macOS arm64 device remains with a teammate for the runtime checkpoint.
+- constraints: Proposal only; no requester acceptance, runtime checks, installs, downloads or Git writes.
+- follow_up_to: [UP-20260916-002](#up-20260916-002)
+- linked_changes: [AC-20260918-001](agentchangelog.md#ac-20260918-001)
+
+<a id="up-20260918-002"></a>
+## UP-20260918-002 — Require all three desktop OSes in Beta and record manual findings
+- date: 2026-09-18
+- status: authorised canonical documentation correction
+- tags: beta, portability, p01, documents, code, manual-evidence
+- aliases: not macOS only, M5 Tahoe 26.7, unsupported approval note
+- paths: TechStack.md, tasks.md, docs/prd.md, docs/architecture.md, docs/workflows.md, docs/releases.md, docs/evaluation.md, docs/devicespecifications.md, agent-memory/
+- summary: Make Windows, macOS and Linux first-Beta requirements and record the supplied Mac walkthrough failures without changing runtime code.
+- request: Update the docs immediately, include document and Code issues, and keep execution focused on portability of the existing app.
+- constraints: Preserve working behaviour; no runtime execution, installs, downloads, Git writes or public-presentation rewrite.
+- supersedes: Mac-only Beta proposal in [UP-20260918-001](#up-20260918-001) and OS deferral in [UP-20260916-001](#up-20260916-001).
+- linked_changes: [AC-20260918-002](agentchangelog.md#ac-20260918-002)
+
+<a id="up-20260919-001"></a>
+## UP-20260919-001 — Reconcile seven residual documentation conflicts
+- date: 2026-09-19
+- status: authorised focused documentation and diagram correction
+- tags: beta, portability, evidence, model-ranking, diagram, documentation
+- aliases: seven residual findings, retired AF mappings, OD-08 chronology
+- paths: docs/evaluation.md, docs/devicespecifications.md, docs/releases.md, docs/model-catalog.md, docs/workflows.md, docs/architecture.md, docs/workflow-diagram.html, agent-memory/
+- summary: Close the remaining OS scope, recovery, ranking, historical coverage and diagram claim/network conflicts.
+- constraints: Preserve prior dirty edits, historical evidence and runtime behaviour; no installs, live tests, model calls or Git writes.
+- follow_up_to: [UP-20260918-002](#up-20260918-002)
+- linked_changes: [AC-20260919-001](agentchangelog.md#ac-20260919-001)
+
+<a id="up-20260919-002"></a>
+## UP-20260919-002 — Recheck the revised plan and begin Phase 1 execution
+- date: 2026-09-19
+- status: authorised implementation of a named Phase 1 slice on the macOS device
+- tags: phase-1, portability, platform-paths, credentials, execution
+- aliases: P plan retired, all-OS setup, move to execution, first Phase 1 batch
+- paths: backend/coordinator/, desktop/, frontend/app/, fixtures/c07/, docs/evaluation.md, agent-memory/
+- summary: Re-read the revised plan and product contract, then execute the first coherent Phase 1 slice on the available macOS device.
+- request: Recheck tasks.md, docs/PROJECT.md and AGENTS.md after the P01-P26 retirement and the shift from a compulsory Mac device to all-OS support, then move to execution.
+- decisions: Requester selected the platform data-root abstraction, portable protected credential storage and the fixture portability fix as the first batch; authorised resolving the docs/evaluation.md merge-conflict markers only; authorised adding pypdfium2 for portable PDF rendering when Phase 1 item E is executed.
+- constraints: Repository edits limited to the selected batch; no other protected documentation edited; no installs, downloads, model or live runtime calls, deployments or Git/GitHub writes.
+- follow_up_to: [UP-20260919-001](#up-20260919-001)
+- linked_changes: [AC-20260919-002](agentchangelog.md#ac-20260919-002)
+
+<a id="up-20260919-003"></a>
+## UP-20260919-003 — Apply external review repairs before committing the Phase 1 batch
+- date: 2026-09-19
+- status: authorised focused repair of the uncommitted Phase 1 batch
+- tags: phase-1, review, data-root, credentials, documentation
+- aliases: codex review, occupancy too narrow, secret-tool prerequisite, keychain_available deprecation
+- paths: backend/coordinator/paths.py, backend/coordinator/test_paths.py, backend/coordinator/credentials.py, backend/coordinator/server.py, agent-memory/
+- summary: Repair the data-root occupancy rule and two documentation overstatements raised by an external review of the report, before the batch is committed.
+- request: Relayed a review that had read the project documents and this session's report but not the source; asked for the flagged issues to be addressed.
+- constraints: Repair only; no scope expansion, no new dependency, no protected documentation beyond the already-authorised file, no Git writes.
+- follow_up_to: [UP-20260919-002](#up-20260919-002)
+- linked_changes: [AC-20260919-003](agentchangelog.md#ac-20260919-003)
+
+<a id="up-20260919-004"></a>
+## UP-20260919-004 — Record live data-root acceptance and execute Phase 1 E
+- date: 2026-09-19
+- status: acceptance recorded; portable PDF rendering authorised
+- tags: phase-1, data-root, acceptance, documents, pdf, portability
+- aliases: restart persistence passed, pypdfium2 authorised, remove Quartz-only read path
+- paths: agent-memory/, backend/coordinator/
+- summary: Record the requester's restart-persistence observations, then remove the Quartz-only dependency from the Beta-critical PDF reading path.
+- request: Requester reported both live checks passed — completed-task persistence after restart and cancelled-task persistence after restart — then authorised Phase 1 E with the already-approved pypdfium2.
+- constraints: Preserve current document behaviour; add portability and failure tests; keep PDF writing separate unless the Phase 1 contract requires it; run the relevant suites and report source-tested and device-observed evidence separately.
+- follow_up_to: [UP-20260919-003](#up-20260919-003)
+- linked_changes: [AC-20260919-004](agentchangelog.md#ac-20260919-004)
+
+<a id="up-20260919-005"></a>
+## UP-20260919-005 — Repair the Documents routing and history defects (Batch 1)
+- date: 2026-09-19
+- status: authorised focused repair; generation-robustness hardening deferred to a separate batch
+- tags: documents, routing, classifier, history, regression, phase-1
+- aliases: create a document for your entire output, conversion vs general, text vs content, batch 1
+- paths: backend/coordinator/docflow.py, backend/coordinator/test_document_intent.py, agent-memory/
+- summary: Fix the confirmed conversion/general misrouting in both directions and the history binding that emptied every general document prompt.
+- request: Execute the audited repair only; add the intent matrix and coordinator-level regression coverage; preserve the existing generation architecture.
+- decisions: Reviewer rejected a bare verb-list addition because it would deepen the inverse-routing defect; the classifier must decide from source reference. Batch 2 (structured-output enforcement, output sizing, repair retries, truncation detection, parser tolerance) is explicitly NOT authorised yet.
+- constraints: No protected-document edits, Git/GitHub writes, installs, model downloads, schema/API/frontend changes, or changes to `response_format`, `num_predict`, retry or JSON-parse tolerance.
+- follow_up_to: [UP-20260919-004](#up-20260919-004)
+- linked_changes: [AC-20260919-006](agentchangelog.md#ac-20260919-006)
+
+<a id="up-20260919-006"></a>
+## UP-20260919-006 — General document generation robustness (Batch 2)
+- date: 2026-09-19
+- status: authorised narrow robustness repair; Batch 1 accepted and not reopened
+- tags: documents, generation, structured-output, repair, truncation, phase-1
+- aliases: response_format, num_predict, MAX_ANSWER_TOKENS, one repair round, batch 2
+- paths: backend/coordinator/docflow.py, backend/coordinator/server.py, backend/coordinator/test_document_generation.py, backend/coordinator/test_documents.py, agent-memory/
+- summary: Make the general-document path dependable once a request has correctly reached it, using the runtime's existing structured-output support.
+- request: Enforce a schema on the document call, give it a document-sized output budget, allow at most one bounded repair, reject truncated generation, and decide parser tolerance deliberately.
+- constraints: No Documents redesign, no source-mode work, no schema/API/frontend change, no protected-document edits, no Git/GitHub writes, no installs or model downloads. Do not reopen the Batch 1 classifier without direct evidence of a regression.
+- follow_up_to: [UP-20260919-005](#up-20260919-005)
+- linked_changes: [AC-20260919-007](agentchangelog.md#ac-20260919-007)
+
+<a id="up-20260920-001"></a>
+## UP-20260920-001 — Grounded approval-note workflow hardening (Batch 3)
+- date: 2026-09-20
+- status: authorised hardening of the fixed Documents workflow; Batches 1 and 2 accepted and not reopened
+- tags: documents, approval-note, grounding, citations, structured-output, phase-1
+- aliases: inspection report plus SOP, C07 hero path, citation resolution, no-SOP honesty, batch 3
+- paths: backend/coordinator/docflow.py, backend/coordinator/server.py, backend/coordinator/test_approval_note.py, backend/coordinator/test_document_generation.py, agent-memory/
+- summary: Make the inspection-report plus SOP approval note dependable and traceable, reusing the proven Batch 2 mechanisms rather than building a second framework.
+- request: Enforce a schema on the note call, size its output, allow one conservative format-only repair, verify retrieval scope and citation grounding, decide no-SOP behaviour from the contract, and add C07 regressions.
+- constraints: No Documents redesign, no schema migration, no embeddings, no renderer or writer rewrite, no protected-document edits, no Git/GitHub writes, no installs or model downloads.
+- follow_up_to: [UP-20260919-006](#up-20260919-006)
+- linked_changes: [AC-20260920-001](agentchangelog.md#ac-20260920-001)
+
+<a id="up-20260920-002"></a>
+## UP-20260920-002 — Claim-level citations and product identity (Batch 4)
+- date: 2026-09-20
+- status: authorised final narrow hardening before manual C07 acceptance
+- tags: documents, approval-note, citations, identity, chat, phase-1
+- aliases: uncited recommendation, summary citations, I am Qwen, powered by, linked models, batch 4
+- paths: backend/coordinator/docflow.py, backend/coordinator/identity.py, backend/coordinator/server.py, backend/coordinator/test_approval_note.py, backend/coordinator/test_identity.py, backend/coordinator/test_documents.py, backend/coordinator/test_execution4a.py, backend/coordinator/test_document_generation.py, agent-memory/
+- summary: Close the remaining approval-note citation gap and make Chat identify as Refinix rather than as the underlying model.
+- request: Two issues only — a consequential summary or recommendation must carry its own evidence, and the assistant must present itself as Refinix with the actual selected engine and a truthful model count.
+- constraints: No semantic entailment work, no model-family hard-coding, no phrase interception, no schema migration, no protected-document edits, no Git/GitHub writes, no installs. Stop after this batch; the requester rebuilds and runs manual C07 acceptance next.
+- follow_up_to: [UP-20260920-001](#up-20260920-001)
+- linked_changes: [AC-20260920-002](agentchangelog.md#ac-20260920-002)
+
+<a id="up-20260920-003"></a>
+## UP-20260920-003 — Expose the approval-note workflow in the composer (Batch 5)
+- date: 2026-09-20
+- status: authorised narrow frontend wiring; requester rebuilds and reruns C07 next
+- tags: documents, frontend, composer, approval-note, workflow, phase-1
+- aliases: workflow chooser missing, general route taken, no page citations, batch 5
+- paths: frontend/app/index.html, frontend/app/app.js, frontend/app/refinix.css, frontend/app/test-composer.cjs, backend/coordinator/test_approval_note.py, agent-memory/
+- summary: Make the fixed grounded workflow selectable from Chat and prove the chosen value reaches the backend branch.
+- request: A real C07 attempt attached the scan and the SOP, selected Write a document and asked in plain English for a grounded approval note; the job took the general route because no workflow chooser appeared.
+- constraints: No new Documents implementation, no prompt classifiers, no phrase inference, no schema or API change, no Code or model work, no fixing the generic run's date or SOP wording in this batch.
+- follow_up_to: [UP-20260920-002](#up-20260920-002)
+- linked_changes: [AC-20260920-003](agentchangelog.md#ac-20260920-003)
+
+<a id="up-20260920-004"></a>
+## UP-20260920-004 — Composer hierarchy for Write a document (Batch 6)
+- date: 2026-09-20
+- status: authorised frontend layout refinement; requester rebuilds and verifies the packaged UI next
+- tags: frontend, composer, layout, accessibility, documents, phase-1
+- aliases: congested composer, prompt squeezed, amber helper row, batch 6
+- paths: frontend/app/index.html, frontend/app/app.js, frontend/app/refinix.css, frontend/app/test-composer.cjs, agent-memory/
+- summary: Give the prompt visual priority and demote the attachment-order helper from warning styling to guidance.
+- request: The workflow is discoverable now, but the composer is congested and the prompt has lost priority; restructure the layout without changing Documents routing or behaviour.
+- constraints: Layout only. No routing, payload, OCR, retrieval, model, citation or artifact change. No second workflow state. No custom dropdown replacing the native select. Verify CSS tokens exist before use.
+- follow_up_to: [UP-20260920-003](#up-20260920-003)
+- linked_changes: [AC-20260920-004](agentchangelog.md#ac-20260920-004)
+
+<a id="up-20260920-005"></a>
+## UP-20260920-005 — Consolidated takeover after parallel Chat and agent work
+- date: 2026-09-20
+- status: authorised reconciliation, review, focused fixes and offline verification; no Git/GitHub writes
+- tags: takeover, review, phase-1, documents, identity, data-root, frontend
+- aliases: master handover, parallel-agent reconciliation, unreadable-root, duplicate-listener, runtime-probe
+- paths: docs/PROJECT.md, tasks.md, backend/coordinator/paths.py, backend/coordinator/server.py, backend/coordinator/test_paths.py, backend/coordinator/test_identity.py, frontend/app/app.js, frontend/app/test-composer.cjs, agent-memory/
+- summary: Reconcile the detailed handover with current authority, source, dirty-tree changes and evidence; correct review findings; then continue the largest safe Phase 1 slice without weakening offline or containment boundaries.
+- constraints: Preserve all inherited dirty work. Do not edit protected documentation, install or download dependencies, call a live model or remote worker, deploy, or perform Git/GitHub writes. Run focused offline checks only.
+- linked_changes: [AC-20260920-005](agentchangelog.md#ac-20260920-005)
+
+<a id="up-20260920-006"></a>
+## UP-20260920-006 — Close approval-note evidence and document-structure gaps
+- date: 2026-09-20
+- status: authorised source fix and focused offline verification; packaged-app rerun pending
+- tags: documents, approval-note, evidence-coverage, docx, accessibility, phase-1
+- aliases: countersignature omitted, report metadata omitted, normal-only styles, semantic headings
+- paths: backend/coordinator/docflow.py, backend/coordinator/docgen.py, backend/coordinator/pdfgen.py, backend/coordinator/server.py, backend/coordinator/test_approval_note.py, backend/coordinator/test_documents.py, backend/coordinator/test_execution4a.py, agent-memory/
+- summary: Preserve labelled report identity and explicit missing values independently of model output, and generate semantically structured DOCX lists and headings.
+- request: Fix the reviewed P-204 approval-note artifact after it omitted the report's countersignature gap and traceability metadata and encoded every paragraph as Normal style.
+- constraints: Preserve inherited dirty work; no protected-document edits, installs, live model or remote-worker calls, deployments, or Git/GitHub writes. Run focused offline tests and render verification only.
+- follow_up_to: [UP-20260920-005](#up-20260920-005)
+- linked_changes: [AC-20260920-006](agentchangelog.md#ac-20260920-006)
+
+<a id="up-20260920-007"></a>
+## UP-20260920-007 — Standalone reviewer candidate across Windows, macOS and Linux
+- date: 2026-09-20
+- status: authorised independent implementation, offline verification and self-review; no Git/GitHub writes
+- tags: phase-1, phase-2, standalone, windows, containment, model-lifecycle, packaging, capability-truth
+- aliases: reviewer journey, pinned-handle backend, Settings -> Models, self-test, device roles, packaging boundary
+- paths: backend/coordinator/winfs.py, backend/coordinator/repo.py, backend/coordinator/models.py, backend/coordinator/device.py, backend/coordinator/server.py, backend/coordinator/db.py, backend/coordinator/docgen.py, backend/coordinator/proof.py, backend/coordinator/code_service.py, backend/coordinator/dispatch.py, backend/coordinator/paths.py, desktop/packaging.py, desktop/lifecycle.py, desktop/setup_py2app.py, frontend/app/, agent-memory/
+- summary: Move the repository materially closer to a dependable standalone Refinix reviewer candidate on the selected Windows, macOS and Linux profiles, in one integrated batch, ending at source and offline evidence rather than a device or release claim.
+- request: Independently inspect the repository, decide the smallest coherent implementation for the standalone reviewer journey (install/open, detect environment, explain capabilities, set up or select a local model, self-test, use Chat/Documents/Code, persist and reopen), execute it, verify it and self-review the integrated result.
+- constraints: Preserve the inherited dirty tree and the existing trusted-peer, worker, Redis and Kubernetes work. Keep the Ollama runtime adapter; no second inference runtime. Offline-first: no telemetry, background update check, silent download, cloud inference or non-loopback local service. Do not weaken repository containment to make Windows appear supported, and never substitute ordinary path resolution followed by an unrestricted open. No protected-document edits, installs, downloads, model downloads, live model calls, remote-worker access, deployment, credential changes, host-service changes or Git/GitHub writes. Do not publish Beta 0.1.
+- follow_up_to: [UP-20260920-006](#up-20260920-006)
+- linked_changes: [AC-20260920-007](agentchangelog.md#ac-20260920-007)
+
+<a id="up-20260921-001"></a>
+## UP-20260921-001 — Close the standalone reviewer correction batch
+- date: 2026-09-21
+- status: authorised implementation, focused offline verification and self-review; no Git/GitHub writes
+- tags: model-lifecycle, selftest, provenance, remote-chat, containment, frontend, takeover
+- aliases: disabled model still runs, representative self-test, manifest mismatch, stale replace window, worker identity, worker-only count
+- paths: backend/contracts/, backend/coordinator/, backend/worker/, frontend/app/, agent-memory/
+- summary: Take over after the other agent reached its limit and close the six reviewed standalone-reviewer defects with the smallest coherent reuse-first patch.
+- request: Fix the reviewed issues directly, independently inspect and self-review the result, reuse existing code instead of introducing parallel machinery, and minimise back-and-forth before human verification.
+- constraints: Preserve the committed baseline and unrelated work. No protected-document edits, installs, downloads, live model calls, remote-worker calls, packaging, deployment, credential changes or Git/GitHub writes. Run existing focused offline checks only and keep source/test evidence separate from device and release acceptance.
+- follow_up_to: [UP-20260920-007](#up-20260920-007)
+- linked_changes: [AC-20260921-001](agentchangelog.md#ac-20260921-001)
+
+<a id="up-20260921-002"></a>
+## UP-20260921-002 — Repair the py2app packaging-module collision
+- date: 2026-09-21
+- status: authorised narrow packaging correction and focused offline verification; packaged acceptance remains pending
+- tags: macos, py2app, setuptools, packaging, module-shadowing
+- aliases: packaging.utils missing, desktop packaging collision, packaging_plan
+- paths: desktop/packaging_plan.py, desktop/setup_py2app.py, desktop/test_packaging.py, agent-memory/
+- summary: Rename the Refinix-owned packaging-boundary module so the macOS build path can import setuptools' third-party `packaging` package.
+- request: Fix the confirmed `desktop/packaging.py` shadowing failure at its root, retain the shared cross-platform packaging boundary, update all live callers, and add a regression reproducing the build-path import order.
+- constraints: No `sys.path` workaround, dependency reinstall/downgrade, setuptools or py2app weakening, unrelated refactor, new dependency, protected-document edit, Git/GitHub write, package acceptance claim or human walkthrough.
+- follow_up_to: [UP-20260921-001](#up-20260921-001)
+- linked_changes: [AC-20260921-002](agentchangelog.md#ac-20260921-002)
+
+<a id="up-20260921-003"></a>
+## UP-20260921-003 — Repair the direct-script setup import and build the macOS package
+- date: 2026-09-21
+- status: authorised packaging repair, focused verification, real macOS build and bundle inspection; human GUI acceptance still pending
+- tags: macos, py2app, packaging, direct-script-import, bundle-inspection
+- aliases: No module named 'desktop', setup_py2app direct execution, sys.path[0] script directory
+- paths: desktop/setup_py2app.py, desktop/test_packaging.py, agent-memory/
+- summary: Fix the `from desktop import packaging_plan` failure that stopped the macOS build after UP-20260921-002, then run `desktop/setup-macos.command` and inspect the resulting bundle.
+- request: Verify the repository state independently, repair the direct-script import defect at its root, add a regression modelling the real production invocation, run focused verification, run the actual macOS setup path, continue through directly related packaging blockers, inspect the built `.app`, and stop before the human GUI acceptance walkthrough.
+- constraints: No `sys.path`/`PYTHONPATH` workaround, dependency or lock change, py2app replacement, recreated `desktop/packaging.py`, weakened staging/content/signature checks, trust-boundary regression, protected-document edit, Git/GitHub write, model download, GUI walkthrough or acceptance claim.
+- follow_up_to: [UP-20260921-002](#up-20260921-002)
+- linked_changes: [AC-20260921-003](agentchangelog.md#ac-20260921-003)
+
+<a id="up-20260921-004"></a>
+## UP-20260921-004 — Repair two macOS human-acceptance failures
+- date: 2026-09-21
+- status: authorised source correction, focused and broad offline verification, and a package rebuild; human GUI acceptance still pending
+- tags: chat, reliability, documents, grounding, cross-source-identity, macos-acceptance
+- aliases: reversed NPSH relation, SOP-MECH-814 vs SOP-MECH-014, governing reference unresolved
+- paths: backend/coordinator/identity.py, backend/coordinator/models.py, backend/coordinator/docflow.py, backend/coordinator/server.py, agent-memory/
+- summary: A packaged acceptance run passed launch, Chat history, cancellation, OCR and DOCX generation, but produced a confident technical answer with its central comparison reversed, and an approval note that used a supplied SOP's limit although the report named a different governing identifier.
+- request: Reproduce both failures, fix each at the shared boundary that owns it rather than by special-casing the observed subject or identifiers, add regressions, run the authorised verification, rebuild the package if safe, and stop before the human GUI walkthrough.
+- constraints: No hardcoded pump or NPSH answer, no string interception, no 814/014 branch, no fuzzy identifier resolution, no fixture or expected.json edit, no always-on second inference pass without reporting it, no new dependency, no schema migration, no model download, no cloud inference, no protected-document edit, no Git/GitHub write.
+- follow_up_to: [UP-20260921-003](#up-20260921-003)
+- linked_changes: [AC-20260921-004](agentchangelog.md#ac-20260921-004)
+
+<a id="up-20260921-005"></a>
+## UP-20260921-005 — Remove inference-envelope bottlenecks
+- date: 2026-09-21
+- status: authorised implementation, offline verification and self-review; no live model/device/package or Git/GitHub work
+- tags: inference, context-budget, code, documents, telemetry, model-quality
+- aliases: strangled models, whole-file output ceiling, shared document budget, actual num_predict
+- paths: backend/coordinator/runtime.py, backend/coordinator/context.py, backend/coordinator/codeflow.py, backend/coordinator/code_service.py, backend/coordinator/docflow.py, backend/coordinator/server.py, related tests, agent-memory/
+- summary: Make qualified local models use the largest safe request envelope the current profile supports instead of silently constraining whole-file Code and overflowing Documents prompts.
+- request: Implement the reviewed fixes, use relevant skills, minimise complexity and token use, run focused and broad offline checks, and self-review the complete result.
+- constraints: Preserve the dirty tree and security boundaries. Do not edit protected documentation, add dependencies, use advertised model maxima without device qualification, call live models/devices, package/deploy, or perform Git/GitHub writes.
+- follow_up_to: [UP-20260921-004](#up-20260921-004)
+- linked_changes: [AC-20260921-005](agentchangelog.md#ac-20260921-005)
+
+<a id="up-20260921-006"></a>
+## UP-20260921-006 — Complete qualified inference profiles and route parity
+- date: 2026-09-21
+- status: authorised continuation, offline verification and self-review; no deployment, live-device or Git/GitHub writes
+- tags: inference-profile, contract-1.1, worker-negotiation, route-parity, takeover
+- aliases: Tasks 2-4, qualified profile, profile advertisement, no silent downgrade
+- paths: backend/contracts/, backend/coordinator/, backend/worker/, related tests, agent-memory/
+- summary: Audit the partially completed Tasks 2-4 implementation inherited from another agent, repair confirmed defects and regressions, and finish qualified local profiles, worker negotiation and parity-or-explicit-refusal semantics.
+- request: Continue from commit 0703511, preserve its work, trace all callers and persistence paths, complete the execution, run the authorised focused and broad offline verification, and leave review and physical-device validation for later.
+- constraints: Keep whole-file Code redesign, UI redesign, model downloads, packaging, deployment, Windows/Linux qualification, LAN acceptance, protected-document edits and Git/GitHub writes out of scope. Preserve unrelated work and do not claim live-device support.
+- follow_up_to: [UP-20260921-005](#up-20260921-005)
+- linked_changes: [AC-20260921-006](agentchangelog.md#ac-20260921-006)
+
+<a id="up-20260921-007"></a>
+## UP-20260921-007 — Qualify current Mac execution workflows
+- date: 2026-09-21
+- status: authorised live local qualification, implementation, focused and broad verification, and self-review; no Git/GitHub writes
+- tags: inference-profile, macos, ollama-0.33.3, chat, code, documents, live-qualification
+- aliases: Mac M5 qualification, durable evidence, immutable profiles, automatic qualification pipeline
+- paths: backend/contracts/profiles.py, profile-dependent tests, agent-memory/
+- summary: Preserve historical profiles, make the completed Mac Chat qualification durable, and admit new Mac Code and Documents profiles for Ollama 0.33.3 only after their actual production workflows pass against the exact installed model bytes.
+- request: Continue autonomously from the supplied execution-qualification handoff, run real local Ollama qualification on synthetic inputs, repair positional registry assumptions, perform the authorised regressions, record durable evidence, and identify the smallest next architecture step toward automated release qualification.
+- constraints: Do not update or start Ollama, install dependencies, use sensitive data, wait for unavailable Ubuntu hardware, weaken exact matching, replace historical qualifications, edit protected documentation, package/deploy, or perform Git/GitHub writes. A failed workflow remains unqualified and fail-closed.
+- follow_up_to: [UP-20260921-006](#up-20260921-006)
+- linked_changes: [AC-20260921-007](agentchangelog.md#ac-20260921-007)
+
+<a id="up-20260921-008"></a>
+## UP-20260921-008 — Preserve the llmfit and runtime-direction decision
+- date: 2026-09-21
+- status: authorised concise protected-document and ledger update only
+- tags: llmfit, hardware-observation, qualification, ollama, llama.cpp, technology-direction
+- paths: docs/PROJECT.md, agent-memory/
+- summary: Preserve `llmfit` as a future/internal qualification-tool candidate without making it a Beta dependency, and clarify that Ollama remains the qualified baseline while llama.cpp remains gated and unadopted.
+- request: Record the evaluated `llmfit` posture and the existing Ollama/llama.cpp boundary in the most appropriate authority, preserve historical decisions and evidence, and make no implementation, profile, dependency, packaging or Git changes.
+- constraints: Planning evidence never becomes qualification evidence. Do not add an integration or speculative abstraction, rewrite OD-03 history, or represent Ollama evidence as llama.cpp evidence.
+- follow_up_to: [UP-20260921-007](#up-20260921-007)
+- linked_changes: [AC-20260921-008](agentchangelog.md#ac-20260921-008)
+
+<a id="up-20260921-009"></a>
+## UP-20260921-009 — Generate exact execution-qualification artifacts
+- date: 2026-09-21
+- status: authorised implementation, live Mac reproduction, offline verification and Windows handoff; no Git/GitHub writes
+- tags: qualification-artifact, execution-profile, macos, windows-handoff, ollama-0.33.3
+- aliases: generated qualification evidence, Windows next, evidence-only profile artifact
+- paths: backend/contracts/qualification.py, backend/contracts/test_qualification.py, scripts/qualify_execution.py, qualification-artifacts/, agent-memory/
+- summary: Add the smallest strict, versioned qualification-artifact path that can reproduce the current Mac evidence and be run next on a real Windows device without turning an artifact into automatic runtime authority.
+- request: Reconcile the supplied handoff with current authorities and dirty work, preserve the llmfit and Ollama/llama.cpp decisions already recorded, generate exact Chat/Code/Documents evidence from real production routes, run focused and broad verification, keep Linux deferred but in Beta scope, and provide the Windows teammate with an exact process.
+- constraints: No profile/envelope widening, automatic artifact loader, signing system, llmfit or llama.cpp integration, dependency install, Linux-specific speculative work, deployment, publication or Git/GitHub write. Failed or unmeasured work remains unqualified, and qualification state remains distinct from release acceptance.
+- follow_up_to: [UP-20260921-008](#up-20260921-008)
+- linked_changes: [AC-20260921-009](agentchangelog.md#ac-20260921-009)
+
+<a id="up-20260922-001"></a>
+## UP-20260922-001 — Repair the Code and OCR workflow regressions without weakening the exact-profile architecture
+- date: 2026-09-22
+- tags: execution-profile, code-envelope, ocr, qualification, regression-repair, ollama-0.33.3
+- aliases: linked-list Code workload, OCR fail-closed, stream_chat contract migration, K3s inference check
+- paths: backend/contracts/profiles.py, backend/contracts/v1.py, backend/coordinator/ocr.py, backend/coordinator/documents.py, backend/coordinator/code_service.py, backend/coordinator/server.py, deploy/k3s/checks/, scripts/qualify_execution.py, agent-memory/
+- summary: Repair the workflow regressions exposed after the exact-profile merge — the unmigrated OCR runtime call, the missing OCR workflow/profile, the Code output envelope and planner, and the collapsed failure reporting — while keeping fail-closed admission intact.
+- request: Treat a complete C11 singly-linked prime-number list program as a representative Beta Code workload that must complete as a valid reviewable proposal on a qualified capable profile. Separate a normal allowance from a qualified maximum, stop budgeting generated files from existing file size, distinguish context exhaustion from output exhaustion, persist measured duration, migrate the OCR path to the current runtime contract, keep the unresolved OCR candidate unqualified and fail closed, and repair the obsolete K3s caller.
+- constraints: No blind restore of 8,128 tokens and no invented envelope without current evidence; no promotion of the OCR candidate even if `/api/show` now reports `vision`; no invented Windows/Linux device profiles; no weakening of strict proposal JSON, path/hash validation, approval, sandbox or canonical-write protection; no partial structured output accepted or applied; no dependency/model install; no host service started or reconfigured; no packaged backend file edited directly; no Git/GitHub write.
+- follow_up_to: [UP-20260921-009](#up-20260921-009)
+- linked_changes: [AC-20260922-001](agentchangelog.md#ac-20260922-001)
+
+<a id="up-20260922-002"></a>
+## UP-20260922-002 — Resolve the audit findings to a source PASS
+- date: 2026-09-22
+- status: authorised implementation and proportionate offline verification; no Git/GitHub write
+- tags: audit-correction, qualification, ocr, code-metrics, fail-closed
+- paths: backend/contracts/, backend/coordinator/, frontend/app/app.js, scripts/qualify_execution.py, agent-memory/
+- summary: Correct every actionable finding from the integrated review without turning failed model-quality evidence into workflow qualification.
+- request: Remove the unsupported 4,096-token production admission, repair the representative qualification checks, enforce exact OCR profile identity at the shared boundary, expose Code attempt measurements in the Code surface, reconcile the evidence ledger, and verify the resulting source.
+- constraints: Preserve unrelated dirty work, protected documentation and Git/GitHub state. Do not execute generated code on the host, weaken the sandbox requirement, fabricate a passing artifact, qualify the failed Qwen representative workload, install dependencies or claim device/release acceptance from source checks.
+- follow_up_to: [UP-20260922-001](#up-20260922-001)
+- linked_changes: [AC-20260922-002](agentchangelog.md#ac-20260922-002)
+
+<a id="up-20260922-003"></a>
+## UP-20260922-003 — Let Qwen use its native vision in ordinary Chat
+- date: 2026-09-22
+- status: authorised implementation and proportionate offline verification; no Git/GitHub write
+- tags: chat, vision, ocr, qwen, attachment-routing, capability-detection
+- paths: backend/coordinator/documents.py, backend/coordinator/server.py, backend/coordinator/test_documents.py, backend/coordinator/test_execution4a.py, agent-memory/
+- summary: Stop routing every ordinary PNG/JPEG Chat attachment through the separately qualified Documents OCR extractor when the selected Chat model natively accepts images.
+- request: On a two-model Mac where the Paddle OCR model is unusable, allow Qwen to receive an attached image for OCR, classification and general visual understanding when the local runtime reports its vision capability, without lowering answer quality or broadly bottlenecking the model.
+- constraints: Preserve intelligent routing, request-scoped file access, digest/type/size checks, exact Chat execution limits, prompt-injection fencing and fail-closed structured document OCR. Do not fabricate an OCR qualification, install dependencies, call the live model, edit protected documentation or perform Git/GitHub writes.
+- follow_up_to: [UP-20260922-002](#up-20260922-002)
+- linked_changes: [AC-20260922-003](agentchangelog.md#ac-20260922-003)
+
+<a id="up-20260922-004"></a>
+## UP-20260922-004 — Qualify and harden the exact-profile architecture on Windows
+- date: 2026-09-22
+- status: authorised Windows implementation, offline and live local verification, narrow PROJECT update and ledgers; no Git/GitHub write
+- tags: windows, qualification, execution-profile, worker-negotiation, route-parity, portability, native-vision
+- paths: backend/contracts/, backend/coordinator/, backend/worker/, desktop/, docs/PROJECT.md, agent-memory/
+- summary: Reconcile the completed macOS/exact-profile handoff against the live tree, harden confirmed Windows defects, run the real qualification boundary and local runtime/model observations, and prove distributed refusal semantics without fabricating a Windows profile.
+- request: Establish a non-secret Windows device identity, verify exact loopback Ollama/model identity, exercise Chat, Code, Documents and native vision through production paths, validate Windows filesystem/data-root/credential/document behaviour, adversarially test worker advertisement/admission/revalidation and route parity, generate evidence only if every required case passes, and provide a no-commit Git handoff.
+- constraints: Representative Code requires a qualified no-network sandbox; do not omit it, run generated code on the host, widen an envelope, install/download dependencies or models, expose the runtime to LAN, invent Windows/Linux/distributed evidence, auto-admit an artifact, rewrite historical evidence, claim release acceptance or perform Git/GitHub writes. Synthetic credentials and temporary workspaces must be removed.
+- follow_up_to: [UP-20260922-003](#up-20260922-003)
+- linked_changes: [AC-20260922-004](agentchangelog.md#ac-20260922-004)
+
+<a id="up-20261002-001"></a>
+## UP-20261002-001 — Website: product video, pillar image, About us and Download Beta
+- date: 2026-10-02
+- status: plan agreed through review (v3), requester-approved execution; preview verification authorised; no Git/GitHub write or deployment
+- tags: website, site.html, docs.html, video, about-us, navigation, design-reference
+- aliases: replace design approach with video, pillar png, about us in docs, download beta glow, mobile nav anchor offset
+- paths: frontend/design/site.html, frontend/design/site.css, frontend/design/docs.html, frontend/design/docs.css, frontend/design/assets/intro-video-poster.jpg, agent-memory/
+- summary: Replace the homepage Design approach heading and cards with the supplied looping product video over the four preserved points, swap the drawn temple for the supplied pillar.png, add an About us section to Docs with homepage top/bottom links, rename visible Beta launch CTAs to Download Beta with a scoped nav glow, and keep anchors clear of the wrapping header.
+- constraints: Four point titles/descriptions verbatim; supplied video/pillar/team-photo bytes unchanged; no compression without an available encoder; no purple in new elements; existing theme tokens only; countdown, destinations and private-source labels unchanged; no app/backend/protected-doc changes.
+- follow_up_to: none
+- linked_changes: [AC-20261002-001](agentchangelog.md#ac-20261002-001)
+
+<a id="up-20261002-002"></a>
+## UP-20261002-002 — Website consolidated repair (TOC, theme, motion, intro, docs copy, copy, links)
+- date: 2026-10-02
+- status: plan v3 agreed through review, requester-approved execution and verification; no Git/GitHub write or deployment
+- tags: website, site.html, docs.html, accessibility, reduced-motion, toc, theme, design-reference
+- aliases: docs toc highlight about, saved theme both pages, reduced motion intro, no-script intro, copy failed, link unavailable
+- paths: frontend/design/site.html, frontend/design/site.css, frontend/design/docs.html, agent-memory/
+- summary: Repair inherited website defects F1-F7 from the 2 October review: Docs TOC by reading position, one validated saved theme, reduced-motion and script-failure handling for the intro and clips, intro focus isolation, five Docs copy corrections, truthful Copy state, and plain-text unavailable destinations.
+- constraints: Media, artwork, section order, four points, About copy, colours/fonts (Michroma added to Docs only), countdown endpoints, private-source wording and Download Beta destinations frozen; no app/backend/protected-doc changes; requester notes refinix.run deploys from dev.
+- follow_up_to: [UP-20261002-001](#up-20261002-001)
+- linked_changes: [AC-20261002-002](agentchangelog.md#ac-20261002-002)
+
+<a id="up-20261002-003"></a>
+## UP-20261002-003 — Website launch countdown as its own block
+- date: 2026-10-02
+- status: requester-directed execution of a countdown-only adjustment, then a full website audit; no Git/GitHub write or deployment
+- tags: website, site.html, countdown, launch, design-reference
+- aliases: countdown block, days hours minutes seconds, 2x2 countdown phone
+- paths: frontend/design/site.html, frontend/design/site.css, agent-memory/
+- summary: Move the launch timer out of the paragraph into a centred block between the paragraph and the three options, with Days/Hours/Minutes/Seconds digits comparable to the launch heading, four across on desktop and 2x2 on narrow phones, and no per-second screen-reader announcements; then audit the website.
+- constraints: Paragraph, heading, deadline, IST timing, one-second ticks and zero stop preserved; nav glow, four points, media sizes, images and all other content unchanged; the earlier glow/points/media plan was not executed.
+- follow_up_to: [UP-20261002-002](#up-20261002-002)
+- linked_changes: [AC-20261002-003](agentchangelog.md#ac-20261002-003)
+
+<a id="up-20261002-004"></a>
+## UP-20261002-004 — Countdown side by side, larger, with digit animation
+- date: 2026-10-02
+- status: requester-directed execution; no Git/GitHub write or deployment
+- tags: website, site.html, countdown, animation, cache
+- aliases: countdown side by side, bigger countdown, rolling digits
+- paths: frontend/design/site.html, frontend/design/site.css, agent-memory/
+- summary: Requester's Safari showed the countdown stacked as plain "8Days/08Hours" text; asked for side-by-side units, bold larger digits and a more interesting digit-change animation.
+- constraints: Deadline, IST timing, one-second ticks, zero stop and no per-second announcements preserved; other content unchanged.
+- follow_up_to: [UP-20261002-003](#up-20261002-003)
+- linked_changes: [AC-20261002-004](agentchangelog.md#ac-20261002-004)
+
+<a id="up-20261002-005"></a>
+## UP-20261002-005 — Final scoped website repair: entry scroll, prose dashes, stylesheet versions
+- date: 2026-10-02
+- status: requester-relayed Codex /execute instruction; executed; no Git/GitHub write or deployment
+- tags: website, site.html, docs.html, scroll-restoration, punctuation, cache, ci
+- aliases: get started lands on evidence, reload scroll position, remove em dashes, docs css version
+- paths: frontend/design/site.html, frontend/design/docs.html, agent-memory/
+- summary: Option A entry scroll (no restored mid-page position behind the intro; hash targets honoured), dash separators removed from reader-facing prose with commas/periods/colons, Docs references the homepage site.css version plus a versioned docs.css; run the full CI test set and website checks.
+- constraints: Points, media sizes, glow, assets, countdown look/animation/timing, other copy, CSS, app/backend, protected docs and CI configuration frozen; R2-R4 dropped (requester accepts current presentation); isolated environment for dependencies; local results are not GitHub CI results.
+- follow_up_to: [UP-20261002-004](#up-20261002-004)
+- linked_changes: [AC-20261002-005](agentchangelog.md#ac-20261002-005)
+
+<a id="up-20261002-006"></a>
+## UP-20261002-006 — Verify actual website deployment and prepare publication
+- date: 2026-10-02
+- status: local deployment preparation authorised; four focused offline exporter tests explicitly authorised; no Git/GitHub write or live publication
+- tags: website, deployment, github-pages, static-export
+- paths: scripts/build-site.sh, scripts/test_build_site.py, frontend/design/, agent-memory/
+- summary: Inspect how the public website deploys before deciding how to commit/push; user supplied the actual URL https://refinix.runs-on.dev.
+- constraints: Preserve accepted website and media, unrelated dirty work and protected docs; prepare locally without changing hosting settings or publishing.
+- follow_up_to: [UP-20261002-005](#up-20261002-005)
+- linked_changes: [AC-20261002-006](agentchangelog.md#ac-20261002-006)
+
+<a id="up-20261002-007"></a>
+## UP-20261002-007 — Restore the published poster and WebM clips in the website source
+- date: 2026-10-02
+- status: plan v1.1 approved by requester (edits A-C and checks 1-6); executed; no Git/GitHub write, publish or deployment
+- tags: website, site.html, media, performance, pages, exporter
+- aliases: hero-poster preload, webm first, restore published optimisation, media regression before publishing
+- paths: frontend/design/site.html, frontend/design/assets/hero-poster.jpg, frontend/design/assets/hero-loop.webm, frontend/design/assets/evidence-loop.webm, agent-memory/
+- summary: Import hero-poster.jpg, hero-loop.webm and evidence-loop.webm byte-for-byte from refinix-site commit 072bb2586d02632a66e8c84664f88632041ad422; add the poster preload and intro poster and prefer WebM before the existing MP4 fallbacks; keep the exporter; verify parity, bundle references and playback.
+- constraints: Every existing media file, design, text and countdown preserved; URL, CNAME, DNS and Pages settings untouched; publication via a clean-checkout dry-run procedure; HTTPS checked for validity not certificate identity; Git actions need separate explicit approval.
+- follow_up_to: [UP-20261002-006](#up-20261002-006)
+- linked_changes: [AC-20261002-007](agentchangelog.md#ac-20261002-007)

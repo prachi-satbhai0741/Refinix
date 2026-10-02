@@ -19,6 +19,24 @@ Standard library only.
 from __future__ import annotations
 
 MAX_REQUEST_CHARS = 16_384
+MAX_EDITS = 8
+
+# Kept beside the worker prompt because the worker image intentionally does not
+# ship coordinator modules.  The hash is compared through the shared inference
+# request, so a drift between this schema and the coordinator's is refused
+# before inference rather than silently changing decoder semantics.
+PROPOSAL_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["summary", "edits"],
+    "properties": {
+        "summary": {"type": "string"},
+        "edits": {"type": "array", "maxItems": MAX_EDITS, "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["path", "base_sha256", "content"],
+            "properties": {key: {"type": "string"} for key in
+                           ("path", "base_sha256", "content")}}},
+    },
+}
 
 SYSTEM_INSTRUCTION = """You are a code editing assistant running entirely on this computer.
 

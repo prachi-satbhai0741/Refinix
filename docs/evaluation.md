@@ -30,7 +30,7 @@ Test existence and recorded past results are separate from fresh runtime proof.
 | Documents and source reuse | `server._request_sources`, `_document_stage`, `docflow.py`, `documents.py`, `retrieval.py`; `test_reliability.py`, `test_documents.py`, `test_execution4a.py` | Local attached-file reading, explicit same-chat reuse/revalidation, FTS5 passages and citation checks, Word/PDF/XLSX writers exist. Documents remain local; native PDF/image rendering uses Quartz/AppKit. Real scan→SOP→artifact quality/layout is P06; hybrid retrieval P16 |
 | Recent OCR repairs | `ocr.parse_page_reply`/`read_page`, `docflow.requests_transcription`; `test_ocr.py`, `test_reliability.py` | Old `{text}`-only claim is obsolete: schema now has transcription/unreadable/refusal outcomes, refusal raises an error, and unreadable text remains literal. Source-less transcription stops before routing; the intent heuristic is conservative English. This is implemented guard logic, not broad OCR quality evidence |
 | Recent UI/artifact repairs | `server.chat_messages`, `docflow.py`, `frontend/app/app.js`, `markdown.js`; `test-composer.cjs`, `test-rendering.cjs` | Assistant-only artifact ownership, one-submission skills, ordered-list structure and explicit source reuse exist; latest first-chat skill race correction is in source. Package parity and real document depth remain unverified |
-| Code proposals and writes | `code_service.py` → `codeflow.py`/`repo.py`/`policy.py`; `test_code_access.py`, `test_remote_code.py`, `test_reliability.py` | Structured proposal schema and bounded completion/failure metrics now exist; the old generic-diagnostics gap is obsolete. Local Apply/Undo uses approvals/backups and says not sandbox tested; remote Apply requires matching passing validation. Descriptor-relative access is required even for reads, a platform gap for P18 |
+| Code proposals and writes | `code_service.py` → `codeflow.py`/`repo.py`/`policy.py`; `test_code_access.py`, `test_remote_code.py`, `test_reliability.py` | Structured proposal schema and bounded completion/failure metrics now exist; the old generic-diagnostics gap is obsolete. Local Apply/Undo uses approvals/backups and says not sandbox tested; remote Apply requires matching passing validation. Descriptor-relative access is required even for reads, a Beta portability gap for P06 |
 | Worker transport/recovery | `worker/app.py`, `pairing.py`, `dispatch.py`, `executor.py`, `packages.py`; worker API/executor/package tests | Pairing/revocation, Redis-backed receipts/leases/replay/cancellation and bounded Code packages exist; component READMEs claiming absent/501-only routes were stale. Deployment/current target acceptance remains open; portable packaged receiver is P08 |
 | Sandbox | `worker/validate.py`, `jobspec.py`, `kube.py`, `deploy/k3s/50-validation.yaml`; `test_validation.py`, `test_manifests.py` | Restricted Python/unittest validation Job exists; limits and policies in source do not prove runtime enforcement. No universal native desktop sandbox. Qualify an actual eligible profile in P07 and its integrated use in P11 |
 | Trust, status and Proof Cards | Coordinator/worker `pairing.py`, `proof.py`, frontend Settings/status; `test_c10.py`, `test-proof-card.cjs` | Pinning/revocation and per-attempt Proof Cards exist; coordinator secrets use macOS Keychain, discovery/guided portable trust missing. `_empty_network()` returns unavailable evidence: no live zero-egress collector is proven. P09/P12 must close these gaps |
@@ -57,8 +57,8 @@ older 28-module package/source parity result predates these repairs.
 
 | Finding | Resolution / remaining gap |
 |---|---|
-| Full N→N+1 updater and all three OSes required before any public release | Superseded by accepted [release bands](prd.md#release-bands): narrow authenticated Beta package and manual replacement/recovery first; P19/P23 own updater maturity |
-| P01 waited on every candidate device before P02 | P01 now accepts a narrow Beta matrix; additional OS readiness belongs to P18/P22. No untested device is silently marked supported |
+| Mac-first Beta inferred from a narrow support matrix | Superseded by requester correction: Windows, macOS and Linux are Band A requirements. Full in-app updater remains P19/P23; authenticated manual replacement/recovery is sufficient for Beta |
+| P01 waited on every candidate device before P02 | P01 selects profiles in all three OS families; implementation gaps belong to P02–P13, expanded qualification to P18/P22. No untested device is silently marked supported |
 | Old P02/P07 both owned packaging/update acceptance; C/E/AF/F boards competed with production sequencing | [Task mapping](../tasks.md#previous-production-gate-mapping) assigns feasibility, implementation, integration and release acceptance once; historical boards remain evidence only |
 | Backend/worker/contracts/frontend READMEs said consumers, pairing, workflows or UI were absent, and recommended a React migration | Corrected entry points to current source and canonical authorities; no runtime rewrite. Older handoffs retain their dated reproduction content under an explicit historical banner |
 | First-run recommendations implied complete model management | FR-015 and [one catalogue lifecycle](model-catalog.md#persistent-model-management) explicitly cover later operations; current inventory/selector are only a partial base |
@@ -103,7 +103,7 @@ original dated paths. Do not recreate missing old filenames as placeholder docs.
 
 Status: **in progress**. The dated baseline below is retained; the 2026-09-16
 source audit above supersedes its implementation-gap statements. Current P01
-closes on an accepted narrow Beta support boundary, not all future platforms.
+closes on accepted target profiles across all three desktop OS families, not every future OS version or hardware/backend combination.
 Historical baseline source commit:
 `3bcf479043fc56ca980a8313869c93ebb023ab4c`, clean `aditya` before this documentation
 change. No workflow, dependency, runtime or packaging implementation was changed.
@@ -126,8 +126,8 @@ The public minimum support matrix is currently **unqualified**, including the
 minimum RAM/storage and supported toolchains for each enabled capability. The
 macOS bundle's `LSMinimumSystemVersion: 12.0` is packaging metadata, not proof of
 macOS 12 compatibility. A Windows Home profile cannot be qualified solely with
-Windows Sandbox. Homogeneous Windows and macOS peer groups must be checked later
-without a Linux dependency. Remote-only requester support is distinct from local
+Windows Sandbox. Homogeneous Windows and macOS peer operation belongs to P08/P09 Beta
+qualification without a Linux inference dependency. Remote-only requester support is distinct from local
 inference and safe code execution.
 
 <a id="workflow-baseline-and-gaps"></a>
@@ -211,9 +211,55 @@ Additional image formats, multilingual/degraded scans, large corpora, languages,
 memory limits and concurrent workloads need their own fixed representative
 thresholds before P03/P04/P06 results are judged.
 
+<a id="p01-proposed-contract"></a>
+### Beta support contract — requester correction, 2026-09-18
+
+Windows, macOS and Linux are required for the first downloadable Beta under the
+[PRD](prd.md#release-bands). This supersedes the unaccepted Mac-requester/Mac-peer
+proposal; no second Mac is a product prerequisite. P01 records baseline and exact
+target profiles; P02–P13 implement and qualify them. P18/P22 expand coverage.
+
+| OS family | Candidate / evidence | Required ownership |
+|---|---|---|
+| macOS | Requester reports Tahoe 26.7, M5, 16 GB unified memory; walkthrough below | Preserve working paths, qualify package/runtime and peer participation: P02–P13 |
+| Windows | Windows 11 x86_64 inventory; current device/build readiness not re-observed | Portable document processing, safe Code access, credentials, runtime/receiver and installer: P02/P03/P06/P08/P09/P13 |
+| Linux | Ubuntu 24.04.4 LTS x86_64 historical candidate; worker history is not desktop acceptance | Desktop document processing, credentials, runtime/receiver and installer: P02/P03/P06/P08/P09/P13 |
+
+Exact Windows/Linux edition/build/hardware and minimum measured resources remain
+qualification inputs. Supported sandbox capability is separate: P07 qualifies
+one safe execution profile and P11 integrates its use. No unrestricted host
+execution fallback. Missing implementation must not silently remove an OS.
+P01 remains in progress until target profiles, representative thresholds and
+gap ownership are accepted; it does not wait for every future feature to work.
+
+<a id="p01-manual-20260918"></a>
+### Manual Mac walkthrough — supplied 2026-09-18
+
+Requester-reported device: macOS Tahoe 26.7, Apple M5, 16 GB unified memory.
+Requester reports rebuilding with `./desktop/setup-macos.command` and testing
+inside the app. Screenshots show `qwen3.5:4b-q4_K_M`; exact installed build/model
+hash and current package/source parity were not independently established.
+These are supplied observations, not an agent rerun or full platform acceptance.
+
+| Check | Observed / reported result | Remaining action |
+|---|---|---|
+| Chat, cancellation, persistence | Requester reports accurate Chat, working Stop and retained history after reopening | Retain as reported baseline; no need to repeat solely for this documentation change |
+| Scan to cited approval note | Screenshot shows refusal of a synthetic approval-note request, mentioning unreadable text and missing countersignature | P04/P06: qualify scan reading and legitimate draft generation; preserve uncertainty without refusing solely because the fixture is synthetic |
+| Write Document follow-up | Screenshot labels an uncited model draft. Supplied DOCX text asserts reviewed/approved status, matching specifications and no further corrections; it lacks requested findings/citations | P06: fix explicit source reuse/grounding and unsupported approval claims. File creation is not task success; layout not verified here |
+| Source selection | First screenshot visibly includes the scan only; SOP not shown. Follow-up shows no attachments | Two-source acceptance is incomplete. Check new attachments and explicit prior-source reuse; never silently read all historical files. General drafting without sources must not invent approval or imply source verification |
+| Code modes / repeated selection | Requester reports only “Approve for me” works satisfactorily, repeated file selection in all modes and “Ask for approval” failing expectations | P06: reproduce exact interaction and correct shared selection/approval flow. Current source requires selected paths in every mode and resets on project/conversation changes; repeated reset within one conversation is not yet reproduced |
+| Code Apply/Undo | Screenshot shows an Undo control and “Not sandbox tested — local device mode” | Exact diff, unchanged tests, six-test result and byte-for-byte Undo are unverified; do not mark Code acceptance passed |
+
+The DOCX and screenshots are supplied review evidence, not committed fixtures or
+application logs. No live app, model, sandbox or network verification ran during
+this review. Embeddings/vector search (P16) improve retrieval; they cannot replace
+Quartz/AppKit or fix unsupported claims by themselves. P06 must solve portable
+PDF/image processing and grounded drafting independently of that upgrade.
+
 ### Next human checkpoint — current runtime evidence
 
-**macOS requester, macOS 26.6.2 / arm64 / zsh**, directory
+For a necessary follow-up only; successful reported checks above need not be repeated.
+**macOS requester, reported Tahoe 26.7 / M5 arm64 / zsh**, directory
 `/Users/adityatadge/Documents/GitHub/AegisForge`. Quit any running Refinix first.
 Use existing dependencies only and an isolated test database/code copy:
 
@@ -252,7 +298,7 @@ paths or worker state. No old TLS/IP/Kubernetes setup is implicitly resumed.
 For the revised plan, P01 needs current baseline observations/gaps and requester
 acceptance of the selected Beta profiles and fixture thresholds. Missing runtime
 acceptance is then assigned explicitly to P03–P13, not represented as passed.
-Other Windows/Ubuntu candidate readiness can follow in P18/P22; if a retained
+Basic Windows/Linux readiness is required in Band A; additional profiles follow in P18/P22; if a retained
 worker is selected for Beta, its actual sandbox and integrated execution remain
 P07/P11 blockers. This historical checkpoint does not authorise running it now.
 
@@ -260,7 +306,7 @@ P07/P11 blockers. This historical checkpoint does not authorise running it now.
 ## Beta 0.1 acceptance
 
 These are **required future observations**, not results of this documentation
-review. Test the real packaged candidate on the exact proposed support matrix.
+review. Test the real packaged candidates on the exact Windows, macOS and Linux support matrix.
 Use [C07 fixtures](../fixtures/c07/provenance.json), the baseline criteria above
 and proportionate existing checks. Freeze quality/latency/resource pass criteria
 for each supported profile in P01/P04 before judging its results.
@@ -281,8 +327,9 @@ for each supported profile in P01/P04 before judging its results.
 No clean profile is accepted yet. A failed exposed workflow blocks that profile's
 release until repaired or explicitly removed from the advertised profile without
 losing the minimum Beta identity. Reviewers must see any required sandbox-peer
-prerequisite before download. A smaller matrix is allowed; silently weaker safety
-or substituted mock/model evidence is not.
+prerequisite before download. A narrow matrix is allowed within each required OS family; Windows, macOS and
+Linux may not be dropped from Beta 0.1. Silently weaker safety or substituted
+mock/model evidence is not allowed.
 
 ## Production acceptance
 
@@ -963,50 +1010,52 @@ claims completion.
 
 ## 11. Problem-statement coverage
 
-The authoritative SIH26117 text is retained in [README.md](README.md) pending
-[OD-01](prd.md#11-open-decisions). This table records which of its lines the
-current scope answers, so that a deferral is a recorded decision rather than an
-oversight. Status values follow the evidence labels in section 1.
+The SIH26117 transcription is retained in [README.md](README.md). Current scope
+comes from the [PRD](prd.md#release-bands), sequencing from
+[P01–P26](../tasks.md#numbered-execution-tasks), and evidence from the
+[source audit](#beta-source-audit) and [manual baseline](#p01-manual-20260918).
+Archived AF/C IDs are not active task owners.
+
+**Implemented** describes source/prototype capability. **Runtime-qualified**
+requires observed representative behaviour on the named build/profile.
+**Release-accepted** requires the integrated package and requester release gate.
+None implies the next; historical component checks remain valid only for their
+recorded scope. No row below is release-accepted yet.
 
 ### Expected Solution
 
-| Problem-statement line | Scope | Status |
+| Requirement | Current implementation | Runtime qualification | Release acceptance / task owner |
+|---|---|---|---|
+| Local workstation deployment | Desktop shell, local adapter and Mac bundle exist; Windows/Linux portability incomplete | Mac Chat/Stop/persistence reported; clean-device installer/runtime profiles unqualified | Pending P02/P03/P13/P14 on Windows, macOS and Linux |
+| Automatic model selection across two task types | Per-workflow model selection exists; Auto and qualified routing remain gaps | Two distinct models/task types and actual scheduling not qualified | Pending P04/P05/P10/P14 |
+| Scan plus SOP to cited Word approval note | OCR, retrieval and document writers exist | Supplied Mac run failed useful grounded output; full two-source fixture not demonstrated | Pending P04/P06/P14; refusal, source reuse and fabricated approval claims must be resolved |
+| Code run and verified in a sandbox | Bounded proposals, Apply/Undo and remote validation Job paths exist | Local screenshot says not sandbox tested; current real isolation and integrated validation remain unqualified | Pending P06/P07/P11/P14 |
+| Image/scanned document understanding | Vision/OCR path exists, including typed transcription/unreadable/refusal handling | Broad OCR quality unqualified; synthetic scan attempt is not a passing benchmark | Pending P04/P06/P14 for advertised inputs |
+| Logs/monitor showing no external calls | Network policies and Proof Card schema/UI exist | Live per-job collector not proven; unavailable network fields are not zero egress | Pending P12/P14 with named observer, interface, interval and allowed LAN traffic |
+
+### Additional description coverage and later scope
+
+| Requirement | Current implementation / limit | Qualification and active owner |
 |---|---|---|
-| Local deployment on a single workstation with a mid-range GPU | FR-001 | Planned |
-| Model auto-selection across at least two task types | FR-006, AF-006 | Planned |
-| Agentic task end to end: scanned report to Word approval note | FR-011, AF-008, AF-009 | Planned |
-| Coding task run and verified in a sandbox | FR-012, AF-010, AF-011 | Planned |
-| Multimodal task: image or scanned document understanding | FR-011 | Partial — OCR extraction is planned; no step yet exercises a vision model on an image |
-| Logs or network monitor showing no external calls | FR-010, AF-015 | Planned |
-
-### Description lines deferred beyond the alpha
-
-Each of these is named in the problem statement and intentionally excluded from
-the alpha under
-[deliberately excluded](archive/prototype-task-record.md#outside-the-alpha-scope).
-None is claimed as working.
-
-| Problem-statement line | Decision |
-|---|---|
-| Engineering drawings, photographs, P&IDs | Deferred. Trained symbol detection needs annotated data the project does not have; the main engine's vision capability is an untested cheaper path |
-| Handwritten notes | Deferred. Accuracy is uncertain and no fixture exists |
-| Spreadsheet work and Excel output | Deferred until both signature workflows are stable |
-| PowerPoint output | Deferred until both signature workflows are stable |
-| Calculations with steps shown | Deferred. Closest cheap path is a computed value inside the approval note |
-| Plan out multi-step work | Partial. Workflows are fixed contracts with one bounded repair attempt, not a general planner |
-| Multiple open-weight models, addable without redesign | Answered by the manifest-driven catalogue gate on AF-001 |
-| Grounding in manuals, SOPs, and correspondence | Answered by local retrieval in AF-009 |
-| Multilingual industrial interaction | FR-019, P1 finals scope |
+| Drawings, photographs, P&IDs and handwriting | Image/OCR path is a prototype base, not qualified industrial interpretation or symbol detection | P04/P06 only for explicitly supported fixtures; specialised coverage P17/P25 |
+| Spreadsheet work and Excel output | XLSX reading/writing exists; cached formula values are not a calculation engine | Existing advertised artifact paths P06; new calculation/tool capability requires explicit scope and evidence under P25 |
+| PowerPoint output | No qualified presentation-generation workflow established | Conditional capability work P25; do not advertise as working |
+| Calculations with steps | No general verified calculation engine established by document generation | P06 must not fabricate results; additional executable calculation capability P25 |
+| Multi-step work | Bounded document/Code workflows and repair paths exist | P06/P11 qualify real end-to-end behaviour; no claim of unrestricted autonomous planning |
+| Multiple models, addable later | Inventory and per-workflow selection exist; complete catalogue lifecycle missing | P04/P05 minimum Beta set; P17 broader models and calibrated ranking |
+| Grounding in manuals/SOPs/correspondence | Selected-source extraction, FTS5 retrieval and citation checks exist | P06 qualifies grounded output; P16 hybrid retrieval/personal context; P21 governed shared corpus |
+| Multilingual industrial interaction | No broad language quality qualification established | P17/P25 named language fixtures, supported models and acceptance evidence |
 
 ## 12. Mentor implementation-direction coverage
 
-These are implementation requirements from the mentor, not claims from the
-problem statement. They remain Planned until the named acceptance evidence is
-observed.
+These directions describe the **retained managed backend**, not dependencies
+ordinary desktop users must administer. Preserve the implemented backend while
+qualifying portable peers. Current operations are in [worker operations](worker-operations.md).
+Implementation, runtime qualification and release acceptance remain separate.
 
-| Mentor direction | Repository interpretation | Acceptance evidence | Status |
+| Direction | Implemented / prototyped | Runtime qualification | Release acceptance / task owner |
 |---|---|---|---|
-| Use Kubernetes and Docker | Docker builds pinned OCI worker/sandbox images; single-node K3s runs them | AF-002, AF-003: image digest plus Ready Deployment/Pod | Planned |
-| Create Pods | Deployments own long-running API/executor Pods; Jobs create short-lived validation Pods | AF-002, AF-011: Pod readiness, limits, termination, and cleanup | Planned |
-| Use Service API | Kubernetes Service provides a stable endpoint for the versioned FastAPI worker contract | AF-006: authenticated Mac-to-Service job completes | Planned |
-| Use Redis | Redis Streams and expiring keys coordinate dispatch, leases, heartbeats, cache, cancellation, and events | AF-005: acknowledge, pending-work recovery, restart, and retention fixtures pass | Planned |
+| Kubernetes and Docker | Pinned Dockerfile, OCI image/build history and K3s manifests exist | Historical build evidence is retained; current deployed candidate and isolation require fresh evidence | Pending P02/P07/P13/P14; organisation administration P21 |
+| Create Pods | API/executor Deployments and bounded validation Job builder exist | Current readiness, resource/egress enforcement, termination and cleanup unqualified | Pending P07/P11/P12/P14 |
+| Service API | Versioned authenticated worker API and Service manifests exist | Current requester-to-worker integrated run unqualified; source or a Ready Pod alone is insufficient | Pending P08/P09/P11/P14 |
+| Redis | Streams, receipts, leases, cancellation/replay and executor paths exist | Component/mock and historical results do not prove current restart, retention or failure recovery | Pending P08/P11/P12/P14; fleet improvements P15 |

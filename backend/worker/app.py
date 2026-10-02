@@ -46,8 +46,10 @@ from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import TypeAdapter
 
+from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
 from backend.worker import dispatch as dispatch_module
+from backend.worker import codegen
 from backend.worker import packages as packages_module
 from backend.worker import pairing as pairing_module
 from backend.worker import runtime
@@ -170,16 +172,18 @@ def _bearer(authorization: str | None) -> str:
     return (authorization or "").removeprefix("Bearer ").strip()
 
 
-def _contract_guard(contract: str | None) -> JSONResponse | None:
+def _contract_guard(contract: str | None, *, allow_legacy: bool = False) -> JSONResponse | None:
     if contract is None:
         return _failure("invalid_request", f"{VERSION_HEADER} is required", False, 400)
-    if contract != v1.CONTRACT_VERSION:
+    if contract != v1.CONTRACT_VERSION and not (
+            allow_legacy and contract == v1.LEGACY_CONTRACT_VERSION):
         return _failure("incompatible_contract",
                         "contract version is not supported by this worker", False, 409)
     return None
 
 
-def _guard(authorization: str | None, contract: str | None) -> JSONResponse | None:
+def _guard(authorization: str | None, contract: str | None,
+           *, allow_legacy: bool = False) -> JSONResponse | None:
     """Preflight authority: the bootstrap token OR any relationship credential.
 
     `/v1/health` is what the kubelet probes call with `AEGIS_WORKER_TOKEN`, and
@@ -193,7 +197,7 @@ def _guard(authorization: str | None, contract: str | None) -> JSONResponse | No
     if not hmac.compare_digest(supplied, _CREDENTIAL) and _identify(supplied) is None:
         return _failure("permission_denied", "unknown or missing worker credential",
                         False, 401)
-    return _contract_guard(contract)
+    return _contract_guard(contract, allow_legacy=allow_legacy)
 
 
 def _identify(credential: str) -> dict | None:
@@ -258,16 +262,20 @@ def _seconds_until(stamp: str) -> float:
 
 # ------------------------------------------------------------------- node ---
 
-def _node(observed: bool) -> dict:
+def _node(observed: bool, *, contract_version: str = v1.CONTRACT_VERSION) -> dict:
     if not observed:
-        return v1.Node(
-            contract_version=v1.CONTRACT_VERSION, node_id=NODE_ID,
+        node = v1.Node(
+            contract_version=contract_version, node_id=NODE_ID,
             display_name=DISPLAY_NAME, app_version=APP_VERSION,
             platform=f"{platform.system()} {platform.machine()}",
             supported_contract_versions=[v1.CONTRACT_VERSION],
-            capabilities=[], models=[], health="unknown", observed_at=None,
+            capabilities=[], models=[], inference_profiles=[], health="unknown",
+            observed_at=None,
             queue_depth=None, available_memory_bytes=None,
-            loaded_model_id=None).model_dump()
+            loaded_model_id=None)
+        return node.model_dump(exclude={"inference_profiles"}
+                               if contract_version == v1.LEGACY_CONTRACT_VERSION
+                               else set())
 
     probe = runtime.probe()
     models, loaded = [], None
@@ -280,8 +288,15 @@ def _node(observed: bool) -> dict:
         # Installed is not loaded: only an /api/ps residency observation sets this.
         if probe.get("loaded") in {item.model_id for item in models}:
             loaded = probe["loaded"]
+    qualified = inference_profiles.for_observation(
+        target_profile_id=runtime.TARGET_PROFILE_ID, models=models)
     # Capability is advertised only when this worker could actually accept work.
-    eligible = bool(models) and not missing_prerequisites()
+    eligible = bool(qualified) and not missing_prerequisites()
+    capabilities = {"code.validate"}
+    if any(item.workflow_mode == inference_profiles.CHAT for item in qualified):
+        capabilities.add("text.generate")
+    if any(item.workflow_mode == inference_profiles.CODE for item in qualified):
+        capabilities.add("code.generate")
     # Queue depth is an observation of Redis, and stays `None` when it cannot be
     # observed. A restarted API reporting 0 while work runs would be a
     # measurement the coordinator routes on and that was never true.
@@ -290,32 +305,42 @@ def _node(observed: bool) -> dict:
         depths = [_receipt_backend.active_attempts(relationship_id)
                   for relationship_id in _pairing.relationships()]
         active = sum(depths) if depths else 0
-    return v1.Node(
-        contract_version=v1.CONTRACT_VERSION, node_id=NODE_ID,
+    node = v1.Node(
+        contract_version=contract_version, node_id=NODE_ID,
         display_name=DISPLAY_NAME, app_version=APP_VERSION,
         platform=f"{platform.system()} {platform.machine()}",
         supported_contract_versions=[v1.CONTRACT_VERSION],
-        capabilities=sorted(SUPPORTED_CAPABILITIES) if eligible else [],
+        capabilities=sorted(capabilities) if eligible else [],
         models=models,
+        inference_profiles=(qualified if contract_version == v1.CONTRACT_VERSION else []),
         health=("healthy" if probe["reachable"] and eligible
                 else "degraded" if probe["reachable"] else "unavailable"),
         observed_at=_now(), queue_depth=active,
-        available_memory_bytes=None, loaded_model_id=loaded).model_dump()
+        available_memory_bytes=None, loaded_model_id=loaded)
+    return node.model_dump(exclude={"inference_profiles"}
+                           if contract_version == v1.LEGACY_CONTRACT_VERSION
+                           else set())
 
 
 @app.get("/v1/health")
 async def health(authorization: str | None = Header(None),
                  x_aegisforge_contract: str | None = Header(None)):
-    denied = _guard(authorization, x_aegisforge_contract)
-    return denied or JSONResponse(_node(observed=True),
+    denied = _guard(authorization, x_aegisforge_contract, allow_legacy=True)
+    version = (v1.LEGACY_CONTRACT_VERSION
+               if x_aegisforge_contract == v1.LEGACY_CONTRACT_VERSION
+               else v1.CONTRACT_VERSION)
+    return denied or JSONResponse(_node(observed=True, contract_version=version),
                                   headers={VERSION_HEADER: v1.CONTRACT_VERSION})
 
 
 @app.get("/v1/capabilities")
 async def capabilities(authorization: str | None = Header(None),
                        x_aegisforge_contract: str | None = Header(None)):
-    denied = _guard(authorization, x_aegisforge_contract)
-    return denied or JSONResponse(_node(observed=True),
+    denied = _guard(authorization, x_aegisforge_contract, allow_legacy=True)
+    version = (v1.LEGACY_CONTRACT_VERSION
+               if x_aegisforge_contract == v1.LEGACY_CONTRACT_VERSION
+               else v1.CONTRACT_VERSION)
+    return denied or JSONResponse(_node(observed=True, contract_version=version),
                                   headers={VERSION_HEADER: v1.CONTRACT_VERSION})
 
 
@@ -438,6 +463,29 @@ def _unsupported(envelope: v1.JobEnvelope) -> str | None:
         digest = (observed.get("digests") or {}).get(envelope.model.model_id)
         if digest != envelope.model.manifest_sha256:
             return "the selected model is not installed with the advertised digest"
+        if envelope.inference is None:
+            return "generation requires qualified inference semantics"
+        qualified = runtime.resolve_profile(envelope.inference.profile_id, observed)
+        if qualified is None:
+            return "the requested inference profile is stale or not qualified here"
+        try:
+            inference_profiles.validate_request(
+                qualified, envelope.inference, envelope.model)
+        except ValueError:
+            return "the requested inference semantics are incompatible"
+        expected_workflow = (inference_profiles.CHAT if envelope.task_type == "chat"
+                             else inference_profiles.CODE)
+        if envelope.inference.workflow_mode != expected_workflow:
+            return "the requested workflow mode does not match this task"
+        if envelope.task_type == "chat":
+            if envelope.inference.decoder != "text" or \
+                    envelope.inference.decoder_schema_sha256 is not None:
+                return "chat requires the qualified text decoder"
+        else:
+            schema_hash = inference_profiles.schema_sha256(codegen.PROPOSAL_SCHEMA)
+            if envelope.inference.decoder != "json_schema" or \
+                    envelope.inference.decoder_schema_sha256 != schema_hash:
+                return "code requires the qualified whole-file JSON decoder"
     if profile["resources"]:
         # The envelope may only reference what was actually uploaded for THIS
         # attempt. A submission whose package is missing, belongs to another
@@ -613,7 +661,11 @@ async def submit(request: Request,
                         "Idempotency-Key must be a UUIDv4", False, 400)
 
     if (reason := _unsupported(envelope)) is not None:
-        return _failure("invalid_request", reason, False, 422)
+        semantic_terms = ("profile", "inference", "reasoning", "decoder",
+                          "context", "workflow mode")
+        code = ("incompatible_profile" if any(term in reason for term in semantic_terms)
+                else "invalid_request")
+        return _failure(code, reason, False, 422)
     if envelope.relationship_id != relationship["relationship_id"]:
         # The credential that authenticated is the one whose work this must be.
         # Without this, any paired coordinator could dispatch into another
@@ -711,7 +763,7 @@ def _attempt_record(envelope: v1.JobEnvelope, state: str) -> v1.Attempt:
         contract_version=v1.CONTRACT_VERSION, workspace_id=envelope.workspace_id,
         job_id=envelope.job_id, step_id=envelope.step_id,
         attempt_id=envelope.attempt_id, retry_of=None, node_id=NODE_ID,
-        model=None, state=state,
+        model=envelope.model, state=state,
         route_reason="worker: enqueued for executor dispatch",
         created_at=envelope.created_at, started_at=started,
         finished_at=finished, queue_ms=None, runtime_ms=None,

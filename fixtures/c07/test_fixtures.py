@@ -30,6 +30,14 @@ import unittest
 HERE = pathlib.Path(__file__).resolve().parent
 APPARATUS = {"provenance.json", "__init__.py", "test_fixtures.py", "rehash.py",
              "make_scan.py"}
+
+# Desktop metadata each OS writes into any folder a file manager has displayed.
+# None of it is committed — `.gitignore` covers them — so counting them as
+# unrecorded fixture content fails this check on the developer's own computer
+# rather than on a real drift. Named per OS so the exclusion stays as narrow as
+# the problem: one file manager's droppings, not a pattern that could hide a
+# fixture someone forgot to record.
+DESKTOP_METADATA = {".DS_Store", "Thumbs.db", "desktop.ini", "ehthumbs.db"}
 DOCUMENTS = HERE / "documents"
 CODE = HERE / "code"
 REPO = CODE / "pumpcheck"
@@ -67,6 +75,7 @@ class TestProvenance(unittest.TestCase):
         # markers INSIDE the code fixture are still recorded.
         found = {str(p.relative_to(HERE)) for p in HERE.rglob("*")
                  if p.is_file() and "__pycache__" not in p.parts
+                 and p.name not in DESKTOP_METADATA
                  and str(p.relative_to(HERE)) not in APPARATUS}
         self.assertEqual(found - listed, set(), "unrecorded fixture files")
 

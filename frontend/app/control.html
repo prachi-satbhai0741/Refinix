@@ -189,6 +189,19 @@
           <div class="card-actions" id="c-work-actions"></div>
         </section>
 
+        <!-- Settings -> Models. The catalogue lifecycle stays available for
+             the installation's lifetime, not only during first setup. -->
+        <section class="card span-2" id="models">
+          <div class="card-head">
+            <h2>Models</h2>
+            <span class="chip chip-unknown" id="c-models-chip">checking</span>
+          </div>
+          <p class="card-lead" id="c-models-lead">Reading what is installed on
+             this computer…</p>
+          <ul class="model-list" id="c-model-list"></ul>
+          <p class="card-note" id="c-models-note"></p>
+        </section>
+
         <!-- Off the UI, not out of the build: renderCapabilityCard() still
              fills this from /v1/status, so nothing downstream changes. -->
         <section class="card span-2" id="capabilities" hidden>

@@ -25,9 +25,10 @@ import json
 import threading
 import time
 
+from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
-from backend.coordinator import (codeflow, db, dispatch, pairing, policy, repo,
-                                 runtime)
+from backend.coordinator import (codeflow, context, db, dispatch, pairing, policy,
+                                 repo, runtime)
 
 # One proposal is one bounded local model call.
 PROPOSAL_DEADLINE_SECONDS = 240
@@ -131,7 +132,7 @@ class CodeService:
         Checked before the policy gate, so an unsupported computer never even
         creates an approval for work it could not carry out safely.
         """
-        if repo.descriptor_traversal_supported():
+        if repo.containment_supported():
             return
         db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
                         action="repo.platform", outcome="denied",
@@ -352,7 +353,10 @@ class CodeService:
             # missing, a link — because each one is a different thing for the
             # person to do about it.
             raise CodeError(exc.code, str(exc), 409) from exc
-        lines = text.split("\n")
+        # Source files commonly use CRLF on Windows. `splitlines` removes the
+        # line terminator itself, so the UI never receives a stray carriage
+        # return as visible source text.
+        lines = text.splitlines()
         return {
             "repo_id": repo_id, "path": relative,
             "name": relative.rsplit("/", 1)[-1],
@@ -406,6 +410,92 @@ class CodeService:
             selected.append({"path": relative, "text": text,
                              "sha256": identity.sha256, "bytes": identity.size})
         return selected
+
+    @staticmethod
+    def _proposal_output_limit(messages, selection: list[dict],
+                               profile: v1.ExecutionProfile) -> int:
+        """The output allowance one whole-file proposal is given.
+
+        Two different quantities used to be conflated here, and the conflation
+        is what made an empty file unusable.
+
+        * **required** — the floor. A whole-file proposal returns complete file
+          bodies, so replacing the selected files cannot possibly need less
+          than they already contain. This is derived from the selection, and
+          for an existing file it is the real constraint.
+        * **ceiling** — what this request is actually allowed. It is the
+          smallest of the profile's qualified maximum and what remains of the
+          context window after the prompt.
+
+        The request is sent at the **ceiling**, not at the floor. `num_predict`
+        is a cap the runtime may stop short of, not a reservation it charges
+        for, so asking for the whole qualified allowance costs nothing when the
+        answer is short — and it is the only way a *generated* file can exceed
+        the size of the file it replaces. Budgeting a new program from the
+        bytes already in the file is what capped an empty `.c` at the floor.
+
+        It still fails closed: if the floor does not fit under the ceiling, the
+        complete proposal cannot be returned and the request is refused rather
+        than started and truncated.
+        """
+        required = CodeService._proposal_required_output(selection)
+        prompt = context.estimate_messages(messages)
+        available = max(0, int(
+            (profile.qualified_context_tokens - prompt - context.TEMPLATE_OVERHEAD)
+            * context.SAFETY_FRACTION))
+        ceiling = min(profile.max_output_tokens, available)
+        if required > ceiling:
+            raise CodeError("selection_too_large",
+                            CodeService._too_large_detail(
+                                required, available, profile))
+        return ceiling
+
+    @staticmethod
+    def _too_large_detail(required: int, available: int,
+                          profile: v1.ExecutionProfile) -> str:
+        """Name the bound that actually fired, with its measured value.
+
+        Two distinct prerequisites used to share one sentence that always
+        blamed the context window. A qualified output maximum that is too small
+        for this file and a context window with no room left are different
+        problems with different fixes, and a person told the wrong one will
+        shrink a selection that was never the cause.
+        """
+        if profile.max_output_tokens <= available:
+            return (
+                f"This selection needs about {required} output tokens to come "
+                "back as a complete reviewable proposal, and this device, "
+                "model and runtime are qualified for at most "
+                f"{profile.max_output_tokens}. Select fewer or smaller files, "
+                "or qualify a larger measured allowance for this profile.")
+        return (
+            f"This selection needs about {required} output tokens to come back "
+            f"as a complete reviewable proposal, and only about {available} "
+            "remain in the "
+            f"{profile.qualified_context_tokens}-token qualified window once "
+            "the request itself is counted. Select fewer or smaller files.")
+
+    @staticmethod
+    def _proposal_required_output(selection: list[dict]) -> int:
+        """The floor: what returning the selected files whole cannot go below.
+
+        Deliberately NOT an estimate of the answer. A request may generate far
+        more than the selection contains — a new file starts empty — so this is
+        only ever a lower bound, used to refuse a selection that could not come
+        back complete and to pick a route that can carry it.
+        """
+        # At most MAX_EDITS files can be returned. Size the floor for the
+        # largest eligible files rather than pretending every selected file can
+        # appear despite the schema's own cap.
+        largest = sorted(selection, key=lambda item: len(item["text"]), reverse=True)[
+            :codeflow.MAX_EDITS]
+        maximal = {
+            "summary": "x" * codeflow.MAX_SUMMARY_CHARS,
+            "edits": [{"path": item["path"], "base_sha256": item["sha256"],
+                       "content": item["text"]} for item in largest],
+        }
+        return max(PROPOSAL_NUM_PREDICT, context.estimate_tokens(
+            json.dumps(maximal, ensure_ascii=False, separators=(",", ":"))))
 
     def cancel(self, repo_id: str) -> bool:
         with self._lock:
@@ -476,21 +566,63 @@ class CodeService:
             # healthy and advertises `code.generate`; otherwise it runs here,
             # and the attempt records which and why.
             model_id = self.c.model_for("code")
+            if not db.get_model_enabled(self.conn, model_id):
+                raise CodeError(
+                    "model_disabled",
+                    f"The selected model {model_id} is switched off for new work.",
+                    409)
+            reasoning = db.get_reasoning(self.conn, model_id)
+            reasoning_mode = "enabled" if reasoning else "disabled"
+            generation_messages = codeflow.build_messages(request, selection)
+            required_output = self._proposal_required_output(selection)
+            runtime_state = runtime.probe()
             if target == TARGET_LOCAL:
                 # Explicitly this device. No preflight, no route decision and
                 # no worker call: local permission is something the person
                 # chose, never something inferred from the worker failing.
+                local_model = self.c.local_model_ref(model_id, runtime_state)
+                local_profile = self.c.local_profile(
+                    workflow=inference_profiles.CODE, model_id=model_id,
+                    reasoning=reasoning_mode, decoder="json_schema",
+                    output_allowance=required_output,
+                    runtime_state=runtime_state)
                 route = dispatch.Route(
                     "local", "local coordinator: this device was chosen for "
                              "this request", node_id=self.c.node_id,
-                    model=self.c.local_model_ref(model_id))
+                    model=local_model,
+                    profile=(local_profile.model_dump() if local_profile else None))
             else:
                 route = self.c.choose_route(required=["code.generate"],
-                                            model_id=model_id)
+                                            model_id=model_id,
+                                            runtime_state=runtime_state,
+                                            workflow=inference_profiles.CODE,
+                                            reasoning=reasoning_mode,
+                                            decoder="json_schema",
+                                            output_allowance=required_output)
+            if route.kind == "identity-mismatch":
+                raise CodeError("permission_denied", route.reason, 403)
+            if target == TARGET_DISTRIBUTED and not route.remote:
+                raise CodeError(
+                    "incompatible_profile",
+                    "The selected paired target cannot preserve this Code "
+                    f"request's qualified semantics: {route.reason}", 409)
+            if route.model is None or route.profile is None:
+                raise CodeError(
+                    "model_unavailable",
+                    f"The selected model {model_id} has no compatible qualified profile "
+                    "at this execution target.", 409)
+            profile = v1.ExecutionProfile.model_validate(route.profile)
+            generation_limit = self._proposal_output_limit(
+                generation_messages, selection, profile)
+            inference = inference_profiles.request(
+                profile, reasoning=reasoning_mode, decoder="json_schema",
+                output_allowance=generation_limit,
+                decoder_schema_sha256=inference_profiles.schema_sha256(
+                    codeflow.PROPOSAL_SCHEMA))
             if route.remote:
                 parsed, job_id, attempt_id, model = self._propose_remote(
-                    repo_id, request, selection, route, cancel, conversation_id)
-                reasoning = False
+                    repo_id, request, selection, route, inference, cancel,
+                    conversation_id)
             else:
                 # A local proposal opens a real job and attempt in the chosen
                 # conversation, exactly as the remote path does. Without this
@@ -508,18 +640,28 @@ class CodeService:
                 db.set_attempt_state(self.conn, attempt_id, "running")
                 model = route.model or {"model_id": model_id}
                 reply, reasoning = self._ask_model(
-                    codeflow.build_messages(request, selection), cancel, model_id,
+                    generation_messages, cancel, profile, inference,
                     attempt_id=attempt_id)
                 try:
                     parsed = codeflow.parse_proposal(reply, selection)
                 except codeflow.ProposalError as first:
-                    # Exactly one bounded repair attempt, on the same context.
+                    # Exactly one bounded format repair. The malformed proposal
+                    # is enough; resending every source file would spend the
+                    # context twice and invite a second draft.
                     if first.code not in ("not_json", "not_object", "unknown_fields"):
                         raise
+                    repair_messages = codeflow.repair_messages(reply)
+                    repair_limit = self._proposal_output_limit(
+                        repair_messages, selection, profile)
+                    repair_inference = inference_profiles.request(
+                        profile, reasoning=reasoning_mode,
+                        decoder="json_schema", output_allowance=repair_limit,
+                        decoder_schema_sha256=inference_profiles.schema_sha256(
+                            codeflow.PROPOSAL_SCHEMA))
                     retry, _ = self._ask_model(
-                        codeflow.repair_messages(
-                            codeflow.build_messages(request, selection), reply), cancel,
-                        model_id, attempt_id=attempt_id, stage="repair_generation")
+                        repair_messages, cancel, profile, repair_inference,
+                        attempt_id=attempt_id,
+                        stage="repair_generation")
                     parsed = codeflow.parse_proposal(retry, selection)
         except codeflow.PackageError as exc:
             self._fail_code_job(job_id, attempt_id, exc.code, str(exc))
@@ -596,7 +738,8 @@ class CodeService:
         return proposal
 
     def _propose_remote(self, repo_id: str, request: str, selection: list[dict],
-                        route, cancel: threading.Event,
+                        route, inference: v1.InferenceRequest,
+                        cancel: threading.Event,
                         conversation_id: str | None = None):
         """Generate the proposal on the paired worker.
 
@@ -611,7 +754,7 @@ class CodeService:
             package=lambda attempt_id: codeflow.build_package(
                 selection, workspace_id=self.workspace_id,
                 relationship_id=route.relationship_id, attempt_id=attempt_id),
-            capability="code.generate", cancel=cancel)
+            capability="code.generate", cancel=cancel, inference=inference)
         # Parsed against exactly the selection that was packaged, on this side.
         # A reply naming an unselected path, a wrong base hash or an unknown
         # field is refused here, where the repository is.
@@ -696,7 +839,8 @@ class CodeService:
         return {"proposal_id": proposal_id, "state": "rejected"}
 
     def _remote_step(self, *, job_id: str, route, request: str, package: dict,
-                     capability: str, cancel: threading.Event):
+                     capability: str, cancel: threading.Event,
+                     inference: v1.InferenceRequest | None = None):
         """Upload the package, dispatch one attempt, and read it back.
 
         The order is load-bearing. The package is uploaded first, because the
@@ -718,6 +862,9 @@ class CodeService:
             self.conn, job_id=job_id, node_id=route.node_id,
             route_reason=route.reason, model=route.model)
         db.set_attempt_relationship(self.conn, attempt_id, route.relationship_id)
+        if inference is not None:
+            db.set_attempt_inference(
+                self.conn, attempt_id, inference.model_dump())
         job = dict(self.conn.execute("SELECT * FROM jobs WHERE job_id=?",
                                      (job_id,)).fetchone())
         step = self.conn.execute("SELECT step_id FROM attempts WHERE attempt_id=?",
@@ -742,7 +889,8 @@ class CodeService:
                 runtime_seconds=(VALIDATION_DEADLINE_SECONDS
                                  if capability == "code.validate"
                                  else PROPOSAL_DEADLINE_SECONDS),
-                output_bytes=REMOTE_OUTPUT_BYTES)
+                output_bytes=REMOTE_OUTPUT_BYTES,
+                inference=inference)
             client.submit(envelope, dispatch.idempotency_key_for(attempt_id))
         except dispatch.ReceiptUnknown as exc:
             db.set_attempt_state(self.conn, attempt_id, "running")
@@ -792,6 +940,27 @@ class CodeService:
                             (outcome.failure or {}).get("message",
                                                         "the worker did not finish"),
                             409)
+        if inference is not None:
+            profile = v1.ExecutionProfile.model_validate(route.profile)
+            observed = outcome.metrics or {}
+            if (observed.get("requested_profile_id") != inference.profile_id
+                    or observed.get("actual_profile_id") != profile.profile_id
+                    or observed.get("context_window") != inference.context_window_tokens
+                    or observed.get("output_token_limit")
+                    != inference.output_allowance_tokens
+                    or observed.get("reasoning") != inference.reasoning
+                    or observed.get("decoder") != inference.decoder):
+                db.set_attempt_state(self.conn, attempt_id, "failed", error={
+                    "code": "incompatible_profile",
+                    "message": "the worker did not prove the requested inference semantics",
+                    "retryable": True})
+                raise CodeError(
+                    "incompatible_profile",
+                    "The worker did not prove the requested inference semantics.", 409)
+            observed["route"] = "remote"
+            db.set_attempt_metrics(self.conn, attempt_id, observed)
+            db.set_attempt_actual_profile(
+                self.conn, attempt_id, profile.model_dump())
         db.set_attempt_state(self.conn, attempt_id, "validating")
         db.set_attempt_state(self.conn, attempt_id, "completed")
         return {"attempt_id": attempt_id, "step_id": step, "text": outcome.text,
@@ -935,20 +1104,25 @@ class CodeService:
                 db.set_job_state(self.conn, job_id, job_state)
 
     def _ask_model(self, messages, cancel: threading.Event,
-                   model_id: str, *, attempt_id: str | None = None,
+                   profile: v1.ExecutionProfile,
+                   inference: v1.InferenceRequest, *,
+                   attempt_id: str | None = None,
                    stage: str = "generation") -> tuple[str, bool]:
         """One bounded local model call with its setting and diagnostics recorded."""
-        reasoning = db.get_reasoning(self.conn, model_id)
+        reasoning = inference.reasoning == "enabled"
         if attempt_id:
-            db.set_attempt_reasoning(self.conn, attempt_id, model_id, reasoning)
+            db.set_attempt_reasoning(
+                self.conn, attempt_id, profile.model.model_id, reasoning)
+            db.set_attempt_inference(
+                self.conn, attempt_id, inference.model_dump(),
+                actual_profile=profile.model_dump())
         deadline = time.monotonic() + PROPOSAL_DEADLINE_SECONDS
         collected, metrics = [], {}
         completed = False
         try:
             for kind, payload in runtime.stream_chat(
-                    messages, model=model_id, think=reasoning,
+                    messages, profile=profile, inference=inference,
                     response_format=codeflow.PROPOSAL_SCHEMA,
-                    num_predict=PROPOSAL_NUM_PREDICT,
                     should_cancel=lambda: cancel.is_set() or time.monotonic() > deadline
                     or self.c.stopping.is_set()):
                 if kind == "delta":
@@ -959,13 +1133,17 @@ class CodeService:
                     raise CodeError("cancelled", "That request was stopped.", 409)
                 elif kind == "done":
                     metrics = {key: value for key, value in payload.items() if key in (
-                        "done_reason", "limit_reason", "context_window",
+                        "done_reason", "limit_reason", "requested_profile_id",
+                        "actual_profile_id", "reasoning", "decoder",
+                        "context_window",
                         "output_token_limit", "eval_count", "prompt_tokens",
+                        "output_tokens",
                         "prompt_eval_ms", "eval_ms", "load_ms", "total_ms",
                         "tokens_per_s")}
+                    metrics["route"] = "local"
             if metrics.get("done_reason") != "stop":
                 raise runtime.RuntimeUnavailable(
-                    "the runtime did not finish the code proposal cleanly")
+                    self._incomplete_detail(metrics, inference))
             completed = True
         finally:
             if attempt_id:
@@ -973,7 +1151,42 @@ class CodeService:
                 if not completed:
                     metrics["failure_stage"] = stage
                 db.set_attempt_metrics(self.conn, attempt_id, metrics)
+                # Measured on every attempt, including a failed one. Leaving it
+                # unset made the surface report "not measured" for a duration
+                # the runtime had already reported.
+                db.set_attempt_runtime_ms(self.conn, attempt_id,
+                                          metrics.get("total_ms"))
         return "".join(collected), reasoning
+
+    @staticmethod
+    def _incomplete_detail(metrics: dict, inference: v1.InferenceRequest) -> str:
+        """Say which bound stopped the proposal, with what was measured.
+
+        The runtime reports `done_reason` and, when it stopped at a bound,
+        which bound was reached. Collapsing all of that into one sentence made
+        an output ceiling indistinguishable from a context overflow and from a
+        runtime fault, so the one number that would have explained the failure
+        never reached the person who had to act on it.
+        """
+        produced = metrics.get("output_tokens")
+        allowed = metrics.get("output_token_limit") or \
+            inference.output_allowance_tokens
+        limit = metrics.get("limit_reason")
+        if limit == "output":
+            return (f"The model reached its {allowed}-token reply limit for "
+                    "this device, model and runtime before the proposal was "
+                    "complete. Nothing was applied. A larger reply needs a "
+                    "qualified larger allowance for this profile.")
+        if limit in ("context", "context_and_output"):
+            return (f"The request and reply together filled this profile's "
+                    f"{inference.context_window_tokens}-token context window "
+                    f"after {produced} output tokens, so the proposal is "
+                    "incomplete. Nothing was applied. Select fewer or smaller "
+                    "files.")
+        reason = metrics.get("done_reason") or "no reason reported"
+        return (f"The runtime stopped the code proposal before it was complete "
+                f"({reason}) after {produced if produced is not None else 'no'} "
+                "output tokens. Nothing was applied.")
 
     # -- apply ------------------------------------------------------------
 
@@ -1523,6 +1736,32 @@ class CodeService:
         local_proposal = bool(proposal) and target == TARGET_LOCAL
         if local_proposal or target_note:
             validation = None
+        attempt_row = None
+        if proposal and proposal.get("attempt_id"):
+            attempt_row = self.conn.execute(
+                "SELECT attempt_id, state, route_reason, runtime_ms,"
+                " metrics_json, error_json FROM attempts WHERE attempt_id=?",
+                (proposal["attempt_id"],)).fetchone()
+        elif conversation_id:
+            attempt_row = self.conn.execute(
+                "SELECT a.attempt_id, a.state, a.route_reason, a.runtime_ms,"
+                " a.metrics_json, a.error_json FROM attempts a"
+                " JOIN jobs j ON j.job_id=a.job_id"
+                " WHERE j.workspace_id=? AND j.chat_id=?"
+                " ORDER BY a.created_at DESC, a.rowid DESC LIMIT 1",
+                (self.workspace_id, conversation_id)).fetchone()
+        attempt = None
+        if attempt_row:
+            attempt = {
+                "attempt_id": attempt_row["attempt_id"],
+                "state": attempt_row["state"],
+                "route_reason": attempt_row["route_reason"],
+                "runtime_ms": attempt_row["runtime_ms"],
+                "metrics": (json.loads(attempt_row["metrics_json"])
+                            if attempt_row["metrics_json"] else {}),
+                "error": (json.loads(attempt_row["error_json"])
+                          if attempt_row["error_json"] else None),
+            }
         return {
             "repositories": repositories,
             "active": active,
@@ -1532,6 +1771,7 @@ class CodeService:
             "pending_approvals": db.pending_approvals(
                 self.conn, self.workspace_id, active, conversation_id),
             "proposal": proposal,
+            "attempt": attempt,
             "validation": validation,
             # Said in the state, so the surface reports what is true rather
             # than deciding for itself what a missing validation means.
@@ -1551,7 +1791,10 @@ class CodeService:
                        "max_total_bytes": repo.MAX_TOTAL_BYTES},
             # One answer for the whole surface: without descriptor-relative
             # traversal nothing here is safe, reading included.
-            "code_supported": repo.descriptor_traversal_supported(),
-            "writes_supported": repo.descriptor_traversal_supported(),
-            "platform_note": None if repo.descriptor_traversal_supported() else repo.PLATFORM_NOTE,
+            "code_supported": repo.containment_supported(),
+            "writes_supported": repo.containment_supported(),
+            "platform_note": None if repo.containment_supported() else repo.PLATFORM_NOTE,
+            # Which guarantee this computer gives, so the surface can say so
+            # rather than implying one shape of support on every platform.
+            "containment_backend": repo.containment_backend(),
         }

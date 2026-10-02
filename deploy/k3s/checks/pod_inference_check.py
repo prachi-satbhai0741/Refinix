@@ -59,6 +59,7 @@ def _disarm() -> None:
 
 
 def main() -> int:
+    from backend.contracts import profiles as inference_profiles
     from backend.worker import runtime          # imported after the env is read
 
     started = time.monotonic()
@@ -79,8 +80,22 @@ def main() -> int:
                   "its host restrictions, and 30-runtime-egress.yaml")
             return EXIT_UNREACHABLE
 
+        # The same qualified semantics the executor uses. A check that sent
+        # raw settings would prove the Pod can reach a runtime while proving
+        # nothing about whether this Pod may run this model for this workflow,
+        # which is the question C05 is actually asking.
+        qualified = runtime.qualified_profiles(probe)
+        profile = next((item for item in qualified
+                        if item.workflow_mode == inference_profiles.CHAT), None)
+        if profile is None:
+            print("FAIL: this Pod has no qualified chat profile for the "
+                  "observed model, runtime version and target profile")
+            return EXIT_FAILED_CHECKS
+        inference = inference_profiles.request(
+            profile, reasoning="disabled", decoder="text")
         for kind, payload in runtime.stream_chat(
                 [{"role": "user", "content": f"Reply with the single word {EXPECTED}."}],
+                profile=profile, inference=inference,
                 timeout=DEADLINE):
             if kind == "delta":
                 if first is None:

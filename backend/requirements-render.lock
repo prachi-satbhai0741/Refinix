@@ -1,0 +1,28 @@
+# Coordinator PDF rendering, hash-pinned. Phase 1 item E.
+#
+# Deliberately a file of its own rather than a line in
+# backend/worker-image/requirements.lock: the worker never renders a PDF, and
+# that lock describes an image already built and recorded by digest in
+# worker-image/provenance.json. Adding a package there without a rebuild would
+# make the recorded provenance describe an image that does not exist.
+#
+# Every published wheel for the pin is listed, so one `--require-hashes` install
+# works on each supported platform and architecture. pip accepts several hashes
+# for one requirement and matches the wheel it selected against any of them.
+#
+# Source: https://pypi.org/project/pypdfium2/5.13.0/
+# Licence: BSD-3-Clause / Apache-2.0, bundling PDFium (BSD-3-Clause) and its
+# build dependencies' notices. No runtime dependencies, no network access, no
+# system package. pypdfium2 5.13.0 carries PDFium 153.0.7999.0.
+# PyPI metadata inspected 2026-09-19; the macOS arm64 digest was also verified
+# against the downloaded wheel on the macOS device.
+#
+#   pypdfium2-5.13.0-py3-none-macosx_13_0_arm64.whl                            3507415 bytes
+#   pypdfium2-5.13.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl   3730077 bytes
+#   pypdfium2-5.13.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl 3676486 bytes
+#   pypdfium2-5.13.0-py3-none-win_amd64.whl                                    3885553 bytes
+pypdfium2==5.13.0 \
+    --hash=sha256:da5c7b74eebf40b5c1fbe1de01aa1edc8827a79fb1efd999616bc20dcaf77ba4 \
+    --hash=sha256:81df25c1ab4c13ff773102d3cbea1967511d079123b067fc077bd0c4d57d91d8 \
+    --hash=sha256:9ee8c2bb2e68b396ab4a763215ac100dacb6b96d0da5bebeb239a021aecc3a7e \
+    --hash=sha256:47dcca2a8d507b5fd24f94c3c9d48fb379430f097bc20f01beff6c963ffbcedb

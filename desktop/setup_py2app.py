@@ -6,14 +6,23 @@ desktop requirements are installed:
     python3 desktop/setup_py2app.py py2app          # release bundle
     python3 desktop/setup_py2app.py py2app -A       # alias build, for a quick check
 
+This file is a script, run by path — `desktop/setup-macos.command` runs exactly
+the first line above. It is not imported as `desktop.setup_py2app`, and its
+imports are written for the path a script gets, not the one a package gets.
+
 The alias build (`-A`) symlinks back into this working tree, so it proves the
 window and the launch path but NOT independence from the repository. Only the
 plain `py2app` build produces a bundle that stands on its own; the acceptance
 check for that is in desktop/README.md.
 
 The bundle carries the frontend and the icon. It does not carry a model, the
-model runtime, or any state: `~/.aegisforge` stays where it is, so an existing
-database, identity and history are picked up unchanged.
+model runtime, or any state: `backend.coordinator.paths` chooses the durable
+root, which is always outside the bundle, so an existing database, identity and
+history are picked up unchanged and survive the application being replaced.
+
+The application boundary itself — which modules, which frontend files, which
+icon — lives in `desktop/packaging_plan.py`, shared with the Windows and Linux
+package steps so the three describe the same application.
 """
 
 from __future__ import annotations
@@ -26,75 +35,43 @@ from pathlib import Path
 
 from setuptools import setup
 
-REPO = Path(__file__).resolve().parents[1]
-VERSION = "0.1.0"
-APPLICATION_PACKAGES = ("desktop", "backend/coordinator", "backend/contracts")
+# `desktop/setup-macos.command` executes this file, it does not import it, so
+# sys.path[0] is the directory this file is in and the repository root is not
+# on the path at all: the application boundary resolves as a sibling module.
+# `from desktop import packaging_plan` would fail here before the build starts.
+import packaging_plan
 
+REPO = packaging_plan.REPO
+VERSION = packaging_plan.VERSION
+APPLICATION_PACKAGES = packaging_plan.APPLICATION_PACKAGES
+BUNDLE_ID = packaging_plan.BUNDLE_ID
 
-def stage_application_sources(destination: Path) -> Path:
-    """Give modulegraph source-only packages, never the package's build/venv.
-
-    py2app recursively copies non-Python package data. Pointing it at desktop/
-    would copy its virtualenv and recursively copy the build into itself.
-    The frontend is shipped separately by frontend_data_files().
-    """
-    for package in APPLICATION_PACKAGES:
-        target = destination / package
-        target.mkdir(parents=True, exist_ok=True)
-        for source in (REPO / package).glob("*.py"):
-            if source.name.startswith(("test_", "setup_")):
-                continue
-            shutil.copy2(source, target / source.name)
-    # Make the existing backend namespace explicit only in the build staging
-    # tree; no worker code or unrelated repository data belongs in this app.
-    (destination / "backend" / "__init__.py").touch()
-    return destination
+# The application boundary — which modules, which frontend files, which icon —
+# lives in `desktop/packaging_plan.py` so a Windows or Linux packaging step uses the
+# same answers instead of a second hand-maintained list.
+stage_application_sources = packaging_plan.stage_application_sources
+frontend_data_files = packaging_plan.frontend_data_files
 
 
 def verify_application_contents(bundle: Path) -> None:
     """Check both loose packages and the ZIP, not just the staging directory."""
-    allowed = {"backend/__init__.py"}
-    for package in APPLICATION_PACKAGES:
-        allowed.update(f"{package}/{source.name}" for source in (REPO / package).glob("*.py")
-                       if not source.name.startswith(("test_", "setup_")))
-    allowed |= {name + "c" for name in allowed}
     library = bundle / "Contents" / "Resources" / "lib"
     shipped = set()
     for root in library.glob("python3.*"):
         for package in ("backend", "desktop"):
-            shipped.update(str(path.relative_to(root)) for path in (root / package).rglob("*")
+            shipped.update(path.relative_to(root).as_posix()
+                           for path in (root / package).rglob("*")
                            if path.is_file())
     for archive in library.glob("python*.zip"):
         with zipfile.ZipFile(archive) as files:
             shipped.update(name for name in files.namelist()
                            if name.startswith(("backend/", "desktop/")) and not name.endswith("/"))
-    unexpected = shipped - allowed
-    required = ("backend/coordinator/server.py", "backend/contracts/v1.py", "desktop/shell.py")
-    missing = [name for name in required if not {name, name + "c"} & shipped]
+    unexpected = packaging_plan.unexpected_shipped_files(shipped)
+    missing = packaging_plan.missing_shipped_files(
+        shipped, ("backend/coordinator/server.py", "backend/contracts/v1.py",
+                  "desktop/shell.py"))
     if unexpected or missing:
-        raise RuntimeError(f"Invalid application bundle: unexpected={sorted(unexpected)}, missing={missing}")
-
-# Reverse-DNS identifier. Nothing is signed or distributed from this repository,
-# so this is a local identifier only; a real distribution needs an owned domain
-# and a Developer ID, which is a requester decision, not an implementation one.
-BUNDLE_ID = "com.refinix.desktop"
-
-
-def frontend_data_files() -> list[tuple[str, list[str]]]:
-    """Ship frontend/app exactly as the coordinator serves it."""
-    root = REPO / "frontend" / "app"
-    grouped: dict[str, list[str]] = {}
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.name.startswith("."):
-            continue
-        # The synthetic UI fixture and its Node check are development tools.
-        if path.name in ("fixture.html", "fixture.js") or path.name.endswith(".cjs"):
-            continue
-        parent = path.relative_to(root).parent
-        destination = "frontend/app" if parent == Path(".") else \
-            str(Path("frontend/app") / parent)
-        grouped.setdefault(destination, []).append(str(path))
-    return sorted(grouped.items())
+        raise RuntimeError(f"Invalid application bundle: unexpected={unexpected}, missing={missing}")
 
 
 PLIST = {
@@ -121,20 +98,28 @@ PLIST = {
 OPTIONS = {
     "bdist_base": str(REPO / "desktop" / "build"),
     "dist_dir": str(REPO / "desktop" / "dist"),
-    "iconfile": str(REPO / "desktop" / "icons" / "Refinix.icns"),
+    "iconfile": str(packaging_plan.icon_for("macos")),
     "plist": PLIST,
-    # pywebview carries JS/native resources. Python application modules are
-    # followed from imports; do not force-bundle worker code or test suites.
-    "packages": ["webview"],
+    # pywebview carries JS/native resources, and pypdfium2 ships the PDFium
+    # binary as package data (`pypdfium2_raw/libpdfium.dylib`). Both must be
+    # copied whole: modulegraph follows imports, not data files, so naming them
+    # only in `includes` would ship an application whose Documents surface
+    # reports PDF unavailable on a Mac that has the renderer installed.
+    # Python application modules are followed from imports; do not force-bundle
+    # worker code or test suites.
+    "packages": ["webview", "pypdfium2", "pypdfium2_raw"],
     "includes": ["backend.contracts.v1", "backend.coordinator.server",
                  "backend.coordinator.db", "backend.coordinator.runtime",
                  "backend.coordinator.context", "desktop.lifecycle", "desktop.shell",
-                 # C08. `pdfrender` imports Quartz lazily so the module stays
-                 # importable where PyObjC is absent — which also means
-                 # modulegraph cannot see the dependency and would ship an
+                 # C08. `pdfrender` imports both renderers lazily so the module
+                 # stays importable where neither is present — which also means
+                 # modulegraph cannot see either dependency and would ship an
                  # application that reports PDF unavailable on a Mac that has
-                 # it. Named here for that reason. Already pinned in
-                 # requirements-macos.lock (pyobjc-framework-quartz 12.2.2, MIT).
+                 # one. Quartz is the retained macOS fallback; the portable
+                 # PDFium engine is in `packages` above because it carries a
+                 # binary. Already pinned in requirements-macos.lock
+                 # (pyobjc-framework-quartz 12.2.2, MIT; pypdfium2 5.13.0,
+                 # BSD-3-Clause/Apache-2.0).
                  "Quartz", "objc",
                  "backend.coordinator.pdfrender", "backend.coordinator.ocr",
                  "backend.coordinator.proof"],

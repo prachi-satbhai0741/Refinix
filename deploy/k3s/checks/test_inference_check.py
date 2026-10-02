@@ -18,6 +18,12 @@ import unittest
 HERE = pathlib.Path(__file__).resolve().parent
 SCRIPT = HERE / "pod_inference_check.py"
 WRAPPER = HERE / "inference-in-pod.sh"
+# The stub shadows `backend.worker` only. `backend.contracts.profiles` is the
+# REAL registry: the profile the check resolves and revalidates is the whole
+# point of the check, so stubbing it would test a contract nothing ships.
+# `backend` is a namespace package in both trees, so putting the stub first and
+# the repository second shadows exactly one subpackage.
+REPO_ROOT = HERE.parents[2]
 
 EXIT_OK, EXIT_FAILED, EXIT_UNREACHABLE, EXIT_DEADLINE = 0, 1, 2, 3
 
@@ -31,10 +37,11 @@ def run_script(stream_body: str, *, reachable=True, deadline="20", expected="POD
     with tempfile.TemporaryDirectory() as tmp:
         pkg = pathlib.Path(tmp) / "backend" / "worker"
         pkg.mkdir(parents=True)
-        (pathlib.Path(tmp) / "backend" / "__init__.py").write_text("")
         (pkg / "__init__.py").write_text("")
         (pkg / "runtime.py").write_text(textwrap.dedent(f"""
             import time
+
+            from backend.contracts import profiles as _profiles
 
             def probe():
                 return {{"endpoint": "http://stub:11434",
@@ -42,10 +49,19 @@ def run_script(stream_body: str, *, reachable=True, deadline="20", expected="POD
                          "server_version": "0.0.0-stub",
                          "models": ["stub"], "error": None}}
 
-            def stream_chat(messages, should_cancel=None, timeout=None):
+            def qualified_profiles(observed=None):
+                # One real registry profile, so the check resolves and
+                # revalidates exactly what it would in a Pod.
+                return [item for item in _profiles.PROFILES
+                        if item.workflow_mode == _profiles.CHAT][:1]
+
+            def stream_chat(messages, *, profile, inference,
+                            should_cancel=None, timeout=None,
+                            response_format=None):
             {textwrap.indent(textwrap.dedent(stream_body), " " * 16)}
             """))
-        env = {**os.environ, "PYTHONPATH": tmp,
+        env = {**os.environ,
+               "PYTHONPATH": os.pathsep.join([tmp, str(REPO_ROOT)]),
                "AEGIS_CHECK_DEADLINE": deadline,
                "AEGIS_EXPECTED_ANSWER": expected,
                "PYTHONDONTWRITEBYTECODE": "1"}
@@ -130,13 +146,16 @@ class TestInferenceCheck(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             pkg = pathlib.Path(tmp) / "backend" / "worker"
             pkg.mkdir(parents=True)
-            (pathlib.Path(tmp) / "backend" / "__init__.py").write_text("")
             (pkg / "__init__.py").write_text("")
             (pkg / "runtime.py").write_text(
                 "import time\n"
                 "def probe():\n    time.sleep(600)\n    return {}\n"
-                "def stream_chat(*a, **k):\n    yield 'done', {}\n")
-            env = {**os.environ, "PYTHONPATH": tmp, "AEGIS_CHECK_DEADLINE": "3"}
+                "def qualified_profiles(observed=None):\n    return []\n"
+                "def stream_chat(messages, *, profile, inference, **k):\n"
+                "    yield 'done', {}\n")
+            env = {**os.environ,
+                   "PYTHONPATH": os.pathsep.join([tmp, str(REPO_ROOT)]),
+                   "AEGIS_CHECK_DEADLINE": "3"}
             import time as _t
             began = _t.monotonic()
             result = subprocess.run([sys.executable, str(SCRIPT)], env=env,

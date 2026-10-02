@@ -23,8 +23,9 @@ from pathlib import Path
 from unicodedata import category
 
 from backend.contracts import v1
+from backend.coordinator import winfs
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 12
 
 # ponytail: one coordinator database; use per-database locks if hosting several.
 LOCK = threading.RLock()
@@ -99,6 +100,8 @@ CREATE TABLE IF NOT EXISTS attempts (
     runtime_ms   INTEGER,
     metrics_json TEXT,
     selection_json TEXT,
+    requested_inference_json TEXT,
+    actual_profile_json TEXT,
     error_json   TEXT,
     output_text  TEXT NOT NULL DEFAULT ''
 );
@@ -146,6 +149,20 @@ CREATE TABLE IF NOT EXISTS model_selections (
     scope      TEXT PRIMARY KEY,
     model      TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+-- One capability self-test result per model and workflow. `digest` is the
+-- manifest the result was observed against: replacing a model's bytes under
+-- the same tag must not inherit its pass, and the row stays so the fact that a
+-- check was once run is not lost either.
+CREATE TABLE IF NOT EXISTS model_selftests (
+    model           TEXT NOT NULL,
+    scope           TEXT NOT NULL,
+    state           TEXT NOT NULL,
+    detail          TEXT NOT NULL,
+    digest          TEXT,
+    runtime_version TEXT,
+    ran_at          TEXT NOT NULL,
+    PRIMARY KEY (model, scope)
 );
 -- A folder the user connected through the native picker. `root` is the
 -- canonical absolute path and never leaves the coordinator: the page and the
@@ -475,6 +492,16 @@ def connect(path: Path) -> sqlite3.Connection:
         # The model and reasoning value a request actually ran with. Older
         # attempts keep NULL rather than being back-filled with a guess.
         conn.execute("ALTER TABLE attempts ADD COLUMN reasoning_json TEXT")
+    if "requested_inference_json" not in existing:
+        # The exact requested profile and actual request semantics. Historical
+        # attempts remain NULL rather than being assigned a profile they never
+        # carried.
+        conn.execute(
+            "ALTER TABLE attempts ADD COLUMN requested_inference_json TEXT")
+    if "actual_profile_json" not in existing:
+        # Snapshot the profile actually used; do not resolve a mutable current
+        # registry when auditing an old attempt.
+        conn.execute("ALTER TABLE attempts ADD COLUMN actual_profile_json TEXT")
     proposal_columns = {r["name"] for r in conn.execute("PRAGMA table_info(proposals)")}
     if "execution_target" not in proposal_columns:
         # Where this proposal was generated and where it may be applied. Rows
@@ -506,6 +533,13 @@ def connect(path: Path) -> sqlite3.Connection:
     audit_columns = {r["name"] for r in conn.execute("PRAGMA table_info(code_audit)")}
     if "conversation_id" not in audit_columns:
         conn.execute("ALTER TABLE code_audit ADD COLUMN conversation_id TEXT")
+    # Whether a model may be chosen for new work. Everything that existed
+    # before this column was choosable, so the default is on: a migration must
+    # not silently disable a model somebody is already using.
+    pref_columns = {r["name"] for r in conn.execute("PRAGMA table_info(model_prefs)")}
+    if "enabled" not in pref_columns:
+        conn.execute("ALTER TABLE model_prefs ADD COLUMN enabled INTEGER NOT NULL"
+                     " DEFAULT 1")
     # Full-text search is created only where this SQLite build has FTS5. Its
     # absence disables document search and says so; it never fails a startup.
     try:
@@ -536,7 +570,8 @@ def connect(path: Path) -> sqlite3.Connection:
         (str(SCHEMA_VERSION),),
     )
     conn.execute(
-        "INSERT OR IGNORE INTO meta(key, value) VALUES ('contract_version', ?)",
+        "INSERT INTO meta(key, value) VALUES ('contract_version', ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (v1.CONTRACT_VERSION,),
     )
     conn.commit()
@@ -1056,6 +1091,70 @@ def set_reasoning(conn, model: str, enabled: bool) -> bool:
 
 
 @serialized
+def get_model_enabled(conn, model: str) -> bool:
+    """Whether this model may be chosen for new work.
+
+    Absent means enabled. Disabling is an explicit act, so a model nobody has
+    touched must not arrive switched off.
+    """
+    row = conn.execute("SELECT enabled FROM model_prefs WHERE model=?",
+                       (model,)).fetchone()
+    return bool(row["enabled"]) if row else True
+
+
+@serialized
+def set_model_enabled(conn, model: str, enabled: bool) -> bool:
+    if not isinstance(model, str) or not model.strip() or len(model) > 200:
+        raise ValueError("a model name is required")
+    if not isinstance(enabled, bool):
+        raise ValueError("enabled must be true or false")
+    with conn:
+        conn.execute(
+            "INSERT INTO model_prefs(model, reasoning, enabled, updated_at)"
+            " VALUES (?,?,?,?)"
+            " ON CONFLICT(model) DO UPDATE SET enabled=excluded.enabled,"
+            " updated_at=excluded.updated_at",
+            (model, int(DEFAULT_REASONING), int(enabled), now()))
+    return enabled
+
+
+@serialized
+def model_enablement(conn) -> dict:
+    """Every explicit enable/disable decision, for one read instead of many."""
+    return {row["model"]: bool(row["enabled"])
+            for row in conn.execute("SELECT model, enabled FROM model_prefs")}
+
+
+@serialized
+def record_selftest(conn, *, model: str, scope: str, state: str, detail: str,
+                    digest: str | None, runtime_version: str | None) -> dict:
+    """Store one capability check against the manifest it was observed on."""
+    if not isinstance(model, str) or not model.strip() or len(model) > 200:
+        raise ValueError("a model name is required")
+    if not isinstance(scope, str) or not scope or len(scope) > 64:
+        raise ValueError("a model scope is required")
+    ran_at = now()
+    with conn:
+        conn.execute(
+            "INSERT INTO model_selftests(model, scope, state, detail, digest,"
+            " runtime_version, ran_at) VALUES (?,?,?,?,?,?,?)"
+            " ON CONFLICT(model, scope) DO UPDATE SET state=excluded.state,"
+            " detail=excluded.detail, digest=excluded.digest,"
+            " runtime_version=excluded.runtime_version, ran_at=excluded.ran_at",
+            (model, scope, state, detail[:2000], digest, runtime_version, ran_at))
+    return {"model": model, "scope": scope, "state": state,
+            "detail": detail[:2000], "digest": digest,
+            "runtime_version": runtime_version, "ran_at": ran_at}
+
+
+@serialized
+def selftests(conn) -> list[dict]:
+    return [dict(row) for row in conn.execute(
+        "SELECT model, scope, state, detail, digest, runtime_version, ran_at"
+        " FROM model_selftests ORDER BY model, scope")]
+
+
+@serialized
 def get_model_selection(conn, scope: str, default: str) -> str:
     row = conn.execute("SELECT model FROM model_selections WHERE scope=?",
                        (scope,)).fetchone()
@@ -1086,6 +1185,26 @@ def set_attempt_reasoning(conn, attempt_id: str, model: str, enabled: bool) -> N
         conn.execute("UPDATE attempts SET reasoning_json=? WHERE attempt_id=?",
                      (json.dumps({"model": model, "reasoning_enabled": bool(enabled)}),
                       attempt_id))
+
+
+@serialized
+def set_attempt_inference(conn, attempt_id: str, request: dict,
+                          actual_profile: dict | None = None) -> None:
+    """Persist requested semantics and the immutable profile actually used."""
+    with conn:
+        conn.execute(
+            "UPDATE attempts SET requested_inference_json=?, actual_profile_json=?"
+            " WHERE attempt_id=?",
+            (json.dumps(request),
+             json.dumps(actual_profile) if actual_profile is not None else None,
+             attempt_id))
+
+
+@serialized
+def set_attempt_actual_profile(conn, attempt_id: str, profile: dict) -> None:
+    with conn:
+        conn.execute("UPDATE attempts SET actual_profile_json=? WHERE attempt_id=?",
+                     (json.dumps(profile), attempt_id))
 
 
 # ---- repositories ---------------------------------------------------------
@@ -1932,32 +2051,47 @@ def verify_backup(root: Path, row: dict) -> bytes:
             f"the stored original for {row['path']} has an unsafe name.")
     stored = root / stored_name
     nofollow = getattr(os, "O_NOFOLLOW", 0)
-    if not nofollow:
-        raise BackupError("this computer cannot safely open stored originals.")
     descriptor = None
     try:
-        descriptor = os.open(stored, os.O_RDONLY | nofollow)
-        info = os.fstat(descriptor)
-    except OSError as exc:
+        if os.name == "nt":
+            # Hold the backup directory and open the final name as a reparse
+            # point. This is the Windows equivalent of O_NOFOLLOW: a junction
+            # or symlink is inspected and refused, never followed.
+            with winfs.pinned(root, ()) as folder:
+                descriptor, entry = folder.open_file(stored_name)
+                if entry.links != 1:
+                    raise BackupError(
+                        f"the stored original for {row['path']} is not private.")
+                if entry.size != row["byte_size"]:
+                    raise BackupError(
+                        f"the stored original for {row['path']} changed size since "
+                        "it was written.")
+                with os.fdopen(descriptor, "rb") as handle:
+                    descriptor = None
+                    data = handle.read(int(row["byte_size"]) + 1)
+        else:
+            if not nofollow:
+                raise BackupError(
+                    "this computer cannot safely open stored originals.")
+            descriptor = os.open(
+                stored, os.O_RDONLY | getattr(os, "O_BINARY", 0) | nofollow)
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode):
+                raise BackupError(
+                    f"the stored original for {row['path']} is not an ordinary file.")
+            if stat.S_IMODE(info.st_mode) & 0o077:
+                raise BackupError(
+                    f"the stored original for {row['path']} is not private.")
+            if info.st_size != row["byte_size"]:
+                raise BackupError(
+                    f"the stored original for {row['path']} changed size since it "
+                    "was written.")
+            with os.fdopen(descriptor, "rb") as handle:
+                descriptor = None
+                data = handle.read(int(row["byte_size"]) + 1)
+    except (OSError, winfs.Unavailable) as exc:
         raise BackupError(
             f"the stored original for {row['path']} is missing: {exc}") from exc
-    try:
-        if not stat.S_ISREG(info.st_mode):
-            raise BackupError(
-                f"the stored original for {row['path']} is not an ordinary file.")
-        if stat.S_IMODE(info.st_mode) & 0o077:
-            raise BackupError(
-                f"the stored original for {row['path']} is not private.")
-        if info.st_size != row["byte_size"]:
-            raise BackupError(
-                f"the stored original for {row['path']} changed size since it was "
-                "written.")
-        with os.fdopen(descriptor, "rb") as handle:
-            descriptor = None
-            data = handle.read(int(row["byte_size"]) + 1)
-    except OSError as exc:
-        raise BackupError(
-            f"the stored original for {row['path']} could not be read: {exc}") from exc
     finally:
         if descriptor is not None:
             os.close(descriptor)
@@ -1985,25 +2119,47 @@ def record_backup(conn, root: Path, *, workspace_id, repo_id, conversation_id,
     except OSError:
         pass
     backup_id, stamp = new_id(), now()
-    stored = root / f"{backup_id}.bak"
-    temporary = root / f".{backup_id}.tmp"
-    try:
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                             0o600)
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(original)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, stored)
-        temporary = None
-    finally:
-        if temporary is not None:
-            Path(temporary).unlink(missing_ok=True)
-    try:
-        stored.chmod(0o600)
-    except OSError as exc:
-        stored.unlink(missing_ok=True)
-        raise BackupError(f"The backup of {path} could not be made private.") from exc
+    stored_name = f"{backup_id}.bak"
+    temporary_name = f".{backup_id}.tmp"
+    stored = root / stored_name
+    if os.name == "nt":
+        try:
+            with winfs.pinned(root, ()) as folder:
+                try:
+                    descriptor, _entry = folder.create_file(temporary_name)
+                    with os.fdopen(descriptor, "wb") as handle:
+                        handle.write(original)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    folder.replace(temporary_name, stored_name)
+                except BaseException:
+                    folder.unlink(temporary_name)
+                    raise
+        except (OSError, winfs.Unavailable) as exc:
+            raise BackupError(
+                f"The backup of {path} could not be stored safely: {exc}") from exc
+    else:
+        temporary = root / temporary_name
+        try:
+            descriptor = os.open(
+                temporary,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                | getattr(os, "O_BINARY", 0), 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(original)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, stored)
+            temporary = None
+        finally:
+            if temporary is not None:
+                Path(temporary).unlink(missing_ok=True)
+        try:
+            stored.chmod(0o600)
+        except OSError as exc:
+            stored.unlink(missing_ok=True)
+            raise BackupError(
+                f"The backup of {path} could not be made private.") from exc
     # Read back before the row is written. A backup that cannot be re-read is
     # not a backup, and the caller must be able to trust the row it sees.
     verification_row = {"stored_name": stored.name, "path": path,
@@ -2394,6 +2550,25 @@ def set_attempt_metrics(conn, attempt_id: str, metrics: dict) -> None:
     with conn:
         conn.execute("UPDATE attempts SET metrics_json=? WHERE attempt_id=?",
                      (json.dumps(metrics), attempt_id))
+
+
+@serialized
+def set_attempt_runtime_ms(conn, attempt_id: str, runtime_ms: int | None) -> None:
+    """Persist a measured generation duration on its own.
+
+    The Chat path records this on a lifecycle transition, but a Code proposal
+    can measure a duration and then fail without one, which left the column
+    empty while `metrics_json` held the number. A surface reading the column
+    then said "not measured" about something the runtime had measured.
+
+    `None` is left alone rather than written: not measuring is a real state
+    and must not be overwritten by a later call that also did not measure.
+    """
+    if runtime_ms is None:
+        return
+    with conn:
+        conn.execute("UPDATE attempts SET runtime_ms=? WHERE attempt_id=?",
+                     (runtime_ms, attempt_id))
 
 
 @serialized

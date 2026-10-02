@@ -1,4 +1,4 @@
-"""AF-006 routing: Mac coordinator to a paired worker, and back honestly.
+"""AF-006 routing: this workspace to a paired worker, and back honestly.
 
 This module decides *whether* to dispatch, builds the envelope, talks to the
 worker over the pinned channel, and turns the worker's event stream back into
@@ -33,6 +33,7 @@ import json
 import time
 from dataclasses import dataclass, field
 
+from backend.contracts import profiles as profile_registry
 from backend.contracts import v1
 from backend.coordinator import pairing
 
@@ -77,6 +78,14 @@ class ReceiptUnknown(Exception):
     """
 
 
+class ProfileMismatch(DispatchUnavailable):
+    """Definite pre-inference refusal of stale/incompatible semantics."""
+
+
+class IncompatibleContract(DispatchUnavailable):
+    """The peer answered but does not negotiate the current wire contract."""
+
+
 @dataclass(frozen=True)
 class Route:
     """Where an attempt goes, and the sentence explaining why."""
@@ -86,6 +95,7 @@ class Route:
     node_id: str | None = None
     relationship_id: str | None = None
     model: dict | None = None
+    profile: dict | None = None
 
     @property
     def remote(self) -> bool:
@@ -102,6 +112,7 @@ class StreamOutcome:
     queue_ms: int | None = None
     runtime_ms: int | None = None
     failure: dict | None = None
+    metrics: dict | None = None
     last_sequence: int = 0
 
 
@@ -109,7 +120,10 @@ class StreamOutcome:
 
 def choose_route(*, relationship: dict | None, node: dict | None,
                  required: list[str], model_id: str | None = None,
-                 require_model: bool = True) -> Route:
+                 require_model: bool = True, workflow: str = "chat",
+                 reasoning: str = "disabled", decoder: str = "text",
+                 context_window: int | None = None,
+                 output_allowance: int | None = None) -> Route:
     """Decide between the paired worker and local execution.
 
     Every refusal names the missing precondition. A caller that cannot dispatch
@@ -123,6 +137,12 @@ def choose_route(*, relationship: dict | None, node: dict | None,
     if node is None:
         return Route("local",
                      "local coordinator: the paired worker did not answer preflight")
+    try:
+        observed_node = v1.Node.model_validate(node)
+    except ValueError:
+        return Route("local",
+                     "local coordinator: the worker advertisement was invalid")
+    node = observed_node.model_dump()
     supported = node.get("supported_contract_versions") or []
     if v1.CONTRACT_VERSION not in supported:
         return Route("local",
@@ -154,15 +174,38 @@ def choose_route(*, relationship: dict | None, node: dict | None,
         return Route("local",
                      "local coordinator: the worker does not offer "
                      f"{model_id or 'any advertised model'}")
-    return Route("remote",
-                 f"paired worker {node.get('display_name') or node['node_id']}: "
-                 f"healthy, {chosen['model_id']}{queue_note}",
-                 node_id=node["node_id"],
-                 relationship_id=relationship["relationship_id"], model=chosen)
+    qualified = None
+    for advertised_profile in node.get("inference_profiles") or []:
+        try:
+            candidate = v1.ExecutionProfile.model_validate(advertised_profile)
+        except ValueError:
+            continue
+        if candidate.model.model_dump() != chosen:
+            continue
+        if profile_registry.compatible(
+                candidate, model_id=chosen["model_id"], workflow=workflow,
+                reasoning=reasoning, decoder=decoder,
+                context_window=context_window,
+                output_allowance=output_allowance):
+            qualified = candidate
+            break
+    if qualified is None:
+        return Route(
+            "local", "local coordinator: the worker has no qualified profile "
+            f"for {workflow}, reasoning {reasoning}, decoder {decoder}")
+    return Route(
+        "remote",
+        f"paired worker {node.get('display_name') or node['node_id']}: healthy, "
+        f"qualified {workflow} profile {qualified.profile_id[:12]}{queue_note}",
+        node_id=node["node_id"], relationship_id=relationship["relationship_id"],
+        model=chosen, profile=qualified.model_dump())
 
 
 def build_envelope(*, job: dict, attempt_id: str, step_id: str, route: Route,
                    coordinator_node_id: str, request_text: str,
+                   system_instruction: str | None = None,
+                   messages: list[dict] | None = None,
+                   inference: v1.InferenceRequest | None = None,
                    runtime_seconds: int = 300,
                    output_bytes: int = 1_048_576,
                    task_type: str = "chat",
@@ -195,7 +238,9 @@ def build_envelope(*, job: dict, attempt_id: str, step_id: str, route: Route,
         chat_id=job["chat_id"], coordinator_node_id=coordinator_node_id,
         target_node_id=route.node_id or coordinator_node_id,
         relationship_id=route.relationship_id,
-        original_request=request_text, task_type=task_type,
+        original_request=request_text, system_instruction=system_instruction,
+        messages=list(messages or []), inference=inference,
+        task_type=task_type,
         model=route.model,
         required_capabilities=list(required_capabilities or ["text.generate"]),
         context=list(context or []), attachments=list(attachments or []),
@@ -257,9 +302,11 @@ class WorkerClient:
             response = connection.getresponse()
             body = response.read(v1.MAX_REQUEST_BYTES)
             if response.status != 200:
+                if _refusal_code(body) == "incompatible_contract":
+                    raise IncompatibleContract(_refusal(response.status, body))
                 raise DispatchUnavailable(
                     f"the worker refused preflight with status {response.status}")
-            return json.loads(body)
+            return json.loads(v1.parse_message(v1.Node, body).model_dump_json())
         except (OSError, ValueError) as exc:
             raise DispatchUnavailable("the worker's preflight reply was unreadable") from exc
         finally:
@@ -314,7 +361,10 @@ class WorkerClient:
         if 400 <= status < 500:
             # An authenticated, typed refusal. The worker read the envelope and
             # declined it, which proves no receipt was committed.
-            raise DispatchUnavailable(_refusal(status, payload))
+            refusal = _refusal(status, payload)
+            if _refusal_code(payload) == "incompatible_profile":
+                raise ProfileMismatch(refusal)
+            raise DispatchUnavailable(refusal)
         # A 5xx. Only the codes the worker emits before or instead of its
         # atomic commit prove non-acceptance; everything else is unknown.
         if _definite_refusal(payload):
@@ -407,6 +457,14 @@ def _refusal(status: int, payload: bytes) -> str:
         return f"the worker refused with status {status}"
 
 
+def _refusal_code(payload: bytes) -> str | None:
+    try:
+        record = json.loads(payload)
+        return record.get("code") if isinstance(record, dict) else None
+    except ValueError:
+        return None
+
+
 # Codes the worker emits ONLY when it knows nothing was committed.
 #
 # `redis_lost` earns its place here because `DispatchQueue.enqueue` now raises
@@ -492,6 +550,9 @@ def consume(client: WorkerClient, envelope: v1.JobEnvelope, *, on_event=None,
                 outcome.events.append(event)
                 if event.data.kind == "output.delta":
                     outcome.text += event.data.text
+                elif event.data.kind == "inference.metrics":
+                    outcome.metrics = event.data.model_dump(exclude={"kind"})
+                    outcome.runtime_ms = outcome.metrics.get("runtime_ms")
                 elif event.data.kind == "attempt.state":
                     outcome.state = event.data.current
                 if on_event is not None:

@@ -375,6 +375,28 @@ body {
   transition: color 160ms ease;
 }
 .nav-links a:hover { color: var(--ink); }
+/* The one nav link that glows. Static, so it reads as the primary action
+   without flashing; a pale ground turns a strong blue halo into a smudge, so
+   the light theme gets a softer one. */
+.nav-links a.nav-cta {
+  color: var(--accent);
+  padding: 6px 14px;
+  border-radius: var(--r-pill);
+  border: var(--hair) solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: color 160ms ease, box-shadow 160ms ease;
+}
+.nav-links a.nav-cta:hover {
+  color: var(--ink);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+:root[data-theme="light"] .nav-links a.nav-cta {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+:root[data-theme="light"] .nav-links a.nav-cta:hover {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
 
 /* ================================================================ buttons */
 
@@ -549,6 +571,8 @@ body {
 }
 .intro[hidden] { display: none; }
 .intro.gone { opacity: 0; pointer-events: none; }
+/* Without script nothing can dismiss the entry, so it never covers the page. */
+html:not(.js) .intro { display: none; }
 
 /* The clip: full viewport height, native aspect, centred.
    Sized in viewport units, NOT height:100%. `.intro` centres its children, so
@@ -973,6 +997,9 @@ body {
   transition: transform 1.15s cubic-bezier(.55,0,.2,1), opacity 1.15s ease .25s;
   opacity: 0;
 }
+/* Reduced motion: the entry shows the still artwork instead of the clip. */
+.intro.still .intro-video { display: none; }
+.intro.still .deity-reveal { opacity: 1; }
 
 /* the eyes: two sky-blue points over the blindfold, blinking */
 /* The figure is blindfolded, so the light does not read as eyes — it escapes
@@ -1541,6 +1568,72 @@ body {
 .card:nth-child(2) h3,
 .card:nth-child(3) h3 { padding-right: 46px; }
 
+/* --- approach: product clip over four points ------------------------------
+   The clip keeps its own 16:9 frame and colours in both themes; a hairline
+   edge makes it read as an inset screen on the light ground. The points sit
+   in one row of four, then two, then one, with sky and mint alternating on
+   the markers only — the body text stays neutral. */
+.approach-media { margin: 0; display: grid; gap: 10px; justify-items: end; }
+.approach-clip {
+  justify-self: stretch;
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: #000;
+  border: var(--hair) solid var(--edge);
+  border-radius: var(--r-panel);
+}
+.approach-toggle,
+.evidence-toggle {
+  font-family: var(--font-data);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  border: var(--hair) solid var(--edge-2);
+  background: var(--glass);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+.approach-toggle:hover,
+.evidence-toggle:hover { color: var(--ink); border-color: var(--edge-hi); }
+/* The evidence clip's control sits centred under the graphic. */
+.evidence-toggle { position: relative; z-index: 2; margin-top: 10px; }
+.points {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(18px, 2vw, 32px);
+  margin-top: clamp(24px, 3vw, 40px);
+}
+@media (max-width: 1100px) { .points { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px)  { .points { grid-template-columns: 1fr; } }
+.point { --mark: var(--accent); padding-top: 14px; border-top: 1.5px solid var(--mark); }
+.point:nth-child(even) { --mark: var(--ok); }
+.point-n {
+  font-family: var(--font-data);
+  font-size: 11px;
+  letter-spacing: .16em;
+  color: var(--mark);
+  display: block;
+}
+.point h3 {
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -.005em;
+  color: var(--ink);
+  margin: 8px 0 6px;
+}
+.point p { margin: 0; color: var(--ink-2); font-size: 15.5px; line-height: 1.6; }
+
+/* The supplied pillar replaces the drawn temple. Capped so a 16:9 picture
+   does not open a tall empty band at full content width. */
+.plate-pillar img { display: block; width: 100%; max-width: 960px; height: auto; margin: 0 auto; }
+
 /* --- the sun ornament ------------------------------------------------------
    Absolutely positioned, and that is the whole point of it.
 
@@ -1942,6 +2035,82 @@ body {
 .closing .sec-h { margin-inline: auto; }
 .closing .sec-lede { margin-inline: auto; margin-bottom: 34px; }
 .closing .cta-row { justify-content: center; }
+/* The launch countdown: its own block between the launch line and the
+   buttons, four units side by side at every width. The digits are larger
+   than the launch heading, in its face and weight; Spectral's bold figures
+   share one width, so a rolling digit never shifts the row. Each digit slot
+   clips top and bottom only, so a digit can drop in from above and fall
+   away below without spilling over the label. The script fills it, so
+   without the script it is hidden and the line above still states the
+   deadline. */
+.countdown {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(6px, 1.4vw, 18px);
+  max-width: 760px;
+  margin: 0 auto 34px;
+}
+.cd-unit {
+  display: grid;
+  justify-items: center;
+  gap: clamp(6px, 1vw, 10px);
+  min-width: 0;
+  padding: clamp(14px, 2vw, 26px) 4px;
+  border: var(--hair) solid var(--edge);
+  border-radius: var(--r-card);
+  background: var(--glass);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.cd-num {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 1.1rem + 4.4vw, 4.6rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.cd-digits { display: inline-flex; }
+.cd-d { position: relative; display: inline-block; padding: .06em 0; clip-path: inset(0 -1em); }
+.cd-c { display: block; }
+.cd-in { animation: cd-in 560ms cubic-bezier(.2, .8, .2, 1); }
+.cd-out {
+  position: absolute;
+  top: .06em;
+  left: 0;
+  right: 0;
+  animation: cd-out 560ms cubic-bezier(.4, 0, .2, 1) forwards;
+}
+@keyframes cd-in {
+  0%   { transform: translateY(-80%); opacity: 0; filter: blur(4px); }
+  60%  { opacity: 1; filter: blur(0); text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 75%, transparent); }
+  100% { transform: none; text-shadow: none; }
+}
+@keyframes cd-out {
+  to { transform: translateY(80%); opacity: 0; filter: blur(4px); }
+}
+.cd-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.cd-label {
+  font-family: var(--font-data);
+  font-size: clamp(11px, 9px + .3vw, 13px);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+html:not(.js) .countdown { display: none; }
+@media (max-width: 400px) {
+  .cd-label { letter-spacing: .06em; }
+}
 
 /* --- footer --------------------------------------------------------------- */
 
@@ -1968,6 +2137,8 @@ body {
 .foot ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
 .foot a { color: var(--ink-2); text-decoration: none; font-size: 14.5px; transition: color 160ms ease; }
 .foot a:hover { color: var(--accent); }
+/* A footer item with no working destination yet: plain text, not a link. */
+.foot .foot-na { color: var(--ink-faint); font-size: 14.5px; }
 .foot dl { margin: 0; }
 .foot dd { margin: 0; font-size: 14.5px; color: var(--ink-2); }
 .foot-base {
@@ -2029,6 +2200,15 @@ body {
   .cap-row p { grid-column: 1; }
   .plate .todo { width: 70px; height: 70px; font-size: 7.5px; }
   .nav-links { display: none; }
+  /* Homepage only: About us and Download Beta stay reachable on a phone, on
+     their own row under the brand. */
+  .nav-links-compact { display: flex; order: 3; width: 100%; justify-content: flex-end; gap: 16px; }
+  .nav-links-compact a:not(.nav-keep) { display: none; }
+}
+/* No-script fallback for the homepage anchor offset, which the page script
+   otherwise measures from the bar itself wherever the nav wraps. */
+@media (max-width: 1000px) {
+  html:has(.nav-links-compact) { scroll-padding-top: 132px; }
 }
 
 :root[data-theme-switching] *,

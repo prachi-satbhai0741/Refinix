@@ -669,6 +669,8 @@ function renderSkill() {
   if (!live) {
     chip.hidden = true;
     if (status) { status.hidden = true; status.textContent = ''; }
+    renderWorkflowChip();
+    renderTaskRow();
     refreshSend();
     return;
   }
@@ -688,7 +690,21 @@ function renderSkill() {
     status.textContent = live.state === 'available' ? ''
       : `${live.detail} Remove the skill to send an ordinary request.`;
   }
+  wireWorkflowChip();
+  renderWorkflowChip();
+  renderTaskRow();
   refreshSend();
+}
+
+/* The configuration row carries padding of its own, so an empty one would
+ * leave a band of space above the prompt for no reason. It exists exactly
+ * when something is in it. */
+function renderTaskRow() {
+  const row = $('composer-task');
+  if (!row) return;
+  const shown = [$('skill-chip'), $('workflow-chip')]
+    .filter((el) => el && !el.hidden);
+  row.hidden = shown.length === 0;
 }
 
 /* Send is disabled rather than quietly falling back to plain chat, because a
@@ -840,9 +856,14 @@ function openModelPopover() {
 /* The row is a name and a location inside one narrow popover, and the name is
  * the identity: "qwen3.5:4b-q4_K_M" and "qwen3:4b" differ only in the middle,
  * so a name clipped to "qwen…" names nothing. The location prose is wider than
- * the name it was displacing, and the machine reads just as clearly short.
- * Only the display is shortened; the inventory keeps naming both in full. */
-const LOCATION_SHORT = { 'macOS coordinator': 'Mac', 'Ubuntu worker': 'Ubuntu' };
+ * the name it was displacing, and it reads just as clearly short.
+ *
+ * The long forms come from the coordinator and name a ROLE, not an operating
+ * system — the earlier 'Mac' and 'Ubuntu' were the two machines the prototype
+ * was built on, and every other computer they were shown on they described
+ * wrongly. Anything the coordinator sends that is not shortened here is
+ * displayed as it arrived. */
+const LOCATION_SHORT = { 'this computer': 'here', 'paired worker': 'worker' };
 
 function locationLabel(locations) {
   if (!locations?.length) return 'not installed';
@@ -857,21 +878,107 @@ const OUTPUT_FORMATS = [
   { id: 'docx', name: 'Word (.docx)', tag: 'default' },
   { id: 'pdf', name: 'PDF (.pdf)', tag: '' },
 ];
+
+/* Only the formats this computer can actually write.
+ *
+ * Word is portable and is always here; PDF writing still needs the macOS
+ * frameworks. Offering it anyway on a computer without them produced a picker
+ * that accepted the choice and a request that failed at Send — so the
+ * coordinator says which formats it can write, and an unwritable one is shown
+ * disabled with the reason rather than hidden, because a format that silently
+ * vanishes looks like a bug. */
+function outputFormatChoices(documents) {
+  const writable = documents && documents.generates;
+  // Before the first status arrives — and against a coordinator that does not
+  // send this — nothing is disabled. Guessing "unavailable" from a missing
+  // answer would switch off a working format, and the coordinator still
+  // refuses an unwritable one at Send with the real reason.
+  if (!Array.isArray(writable)) return OUTPUT_FORMATS;
+  const why = documents.generate_detail || {};
+  return OUTPUT_FORMATS.map((format) => (
+    writable.includes(format.id)
+      ? format
+      : { ...format, disabled: true,
+          tag: why[format.id] ? 'unavailable here' : 'unavailable' }));
+}
+
+/* Keep the selection on something that can be written. A format that became
+ * unavailable must not stay selected and fail at Send. */
+function usableOutputFormat(documents) {
+  const choices = outputFormatChoices(documents);
+  const current = choices.find((format) => format.id === outputFormat);
+  if (current && !current.disabled) return outputFormat;
+  const usable = choices.find((format) => !format.disabled);
+  return usable ? usable.id : outputFormat;
+}
+const APPROVAL_NOTE_WORKFLOW = 'inspection_report_to_approval_note';
 const DOC_WORKFLOWS = [
   { id: 'general_document', name: 'General document', tag: 'default' },
-  { id: 'inspection_report_to_approval_note',
+  { id: APPROVAL_NOTE_WORKFLOW,
     name: 'Inspection approval note', tag: 'cited' },
 ];
 
 let outputFormat = 'docx';
 let docWorkflow = 'general_document';
 
-function appendDocumentChoices(box) {
-  appendChoiceGroup(box, 'Save as', OUTPUT_FORMATS, outputFormat, (id) => {
-    outputFormat = id;
+/* The workflow, shown where the skill is shown.
+ *
+ * The control already existed and already sent the right value; it lived
+ * inside the model-settings popover, which is not where anyone looks for it.
+ * A real run attached an inspection report and an SOP, asked in plain English
+ * for a grounded approval note, and got the general document route — because
+ * nothing in the composer offered the choice. This renders the same single
+ * `docWorkflow` state beside the skill chip, so the selection is visible
+ * before Send. `DOC_WORKFLOWS` stays the one list both controls read. */
+function renderWorkflowChip() {
+  const chip = $('workflow-chip');
+  const select = $('workflow-select');
+  const hint = $('workflow-hint');
+  if (!chip || !select) return;
+  const writing = selectedSkill()?.id === 'write-document';
+  chip.hidden = !writing;
+  if (hint) { hint.hidden = true; hint.textContent = ''; }
+  if (!writing) return;
+  if (select.children.length !== DOC_WORKFLOWS.length) {
+    select.replaceChildren(...DOC_WORKFLOWS.map((choice) => {
+      const option = document.createElement('option');
+      option.value = choice.id;
+      option.textContent = choice.name;
+      return option;
+    }));
+  }
+  select.value = docWorkflow;
+  select.setAttribute('aria-label', 'Document workflow');
+  if (hint && docWorkflow === APPROVAL_NOTE_WORKFLOW) {
+    // Said only for the workflow that reads the files positionally, because
+    // that is the one where the order of the attachments changes the result.
+    hint.hidden = false;
+    hint.textContent = 'First attachment is treated as the inspection report. '
+      + 'Additional files are optional references.';
+  }
+}
+
+function wireWorkflowChip() {
+  const select = $('workflow-select');
+  if (!select || select.dataset.workflowWired) return;
+  select.dataset.workflowWired = 'true';
+  select.addEventListener('change', () => {
+    docWorkflow = select.value;
+    renderWorkflowChip();
+    renderTaskRow();
+    renderModelPill();
   });
+}
+
+function appendDocumentChoices(box) {
+  const documents = lastStatus && lastStatus.documents;
+  outputFormat = usableOutputFormat(documents);
+  appendChoiceGroup(box, 'Save as', outputFormatChoices(documents), outputFormat,
+    (id) => { outputFormat = id; });
   appendChoiceGroup(box, 'Workflow', DOC_WORKFLOWS, docWorkflow, (id) => {
     docWorkflow = id;
+    renderWorkflowChip();
+    renderTaskRow();
   });
   const note = document.createElement('p');
   note.className = 'mp-note';
@@ -905,7 +1012,11 @@ function appendChoiceGroup(box, labelText, choices, current, onPick) {
     button.setAttribute('role', 'radio');
     button.setAttribute('aria-checked', String(selected));
     appendModelChoiceParts(button, selected, choice.name, choice.tag);
+    // A choice this computer cannot carry out is shown and refused, not
+    // hidden: a control that disappears reads as a fault.
+    button.disabled = Boolean(choice.disabled);
     button.onclick = () => {
+      if (choice.disabled) return;
       onPick(choice.id);
       closeModelPopover(false);
       openModelPopover();
@@ -2163,6 +2274,30 @@ async function decideApproval(approval, approved) {
   await proposeChange(approval.approval_id);
 }
 
+function codeAttemptDetails(attempt) {
+  const details = document.createElement('details');
+  details.className = 'quiet';
+  const summary = document.createElement('summary');
+  summary.className = 'lbl';
+  summary.textContent = 'Generation details';
+  const values = document.createElement('dl');
+  values.className = 'kv';
+  const metrics = attempt?.metrics || {};
+  kv(values, [
+    ['state', attempt?.state, 'not recorded'],
+    ['route reason', attempt?.route_reason, 'not recorded'],
+    ['runtime ms', attempt?.runtime_ms, 'not measured'],
+    ['stop reason', metrics.done_reason, 'not recorded'],
+    ['output tokens', metrics.output_tokens ?? metrics.eval_count, 'not measured'],
+    ['reply limit', metrics.output_token_limit, 'not recorded'],
+    ['limit reached', metrics.limit_reason?.replace(/_/g, ' '), 'not reported'],
+    ['detail', attempt?.error?.message || (metrics.done_reason === 'stop'
+      ? 'Model finished normally' : null), 'not recorded'],
+  ]);
+  details.append(summary, values);
+  return details;
+}
+
 function proposalCard(proposal) {
   const card = document.createElement('section');
   card.className = 'card';
@@ -2181,6 +2316,7 @@ function proposalCard(proposal) {
   summary.className = 'card-lead';
   summary.textContent = proposal.summary;    // model text, as a text node only
   card.append(summary);
+  if (codeState?.attempt) card.append(codeAttemptDetails(codeState.attempt));
 
   if (!proposal.edits.length) {
     const none = document.createElement('p');
@@ -2425,6 +2561,11 @@ function renderCode() {
     showCodeResult((article) => article.append(proposalCard(codeState.proposal)),
                    `proposal:${codeState.proposal.proposal_id}:${codeState.proposal.state}:`
                    + `${codeState.validation?.validation_id || 'unvalidated'}`);
+  } else if (codeState.attempt) {
+    const attempt = codeState.attempt;
+    showCodeResult((article) => article.append(codeAttemptDetails(attempt)),
+                   `attempt:${attempt.attempt_id}:${attempt.state}:`
+                   + `${attempt.runtime_ms ?? 'unmeasured'}`);
   }
 }
 
@@ -2737,15 +2878,22 @@ function renderReadyLine(s) {
   const line = $('ready-line');
   if (!line) return;
   const reachable = s.runtime.reachable;
-  if (!reachable) {
+  const available = s.model_available ?? s.model_installed;
+  if (available && s.model_installed) {
+    line.dataset.state = 'ok';
+    line.textContent = 'Ready on this computer.';
+  } else if (available) {
+    line.dataset.state = 'ok';
+    line.textContent = 'Ready through a paired worker.';
+  } else if (!reachable) {
     line.dataset.state = 'failed';
     line.textContent = 'The AI engine is not answering. Open Settings.';
   } else if (!s.model_installed) {
     line.dataset.state = 'attention';
-    line.textContent = 'The model is not installed. Open Settings.';
+    line.textContent = 'The selected model is not eligible. Open Settings.';
   } else {
-    line.dataset.state = 'ok';
-    line.textContent = 'Ready on this computer.';
+    line.dataset.state = 'attention';
+    line.textContent = 'The selected model is unavailable for new work. Open Settings.';
   }
 }
 
@@ -2811,6 +2959,251 @@ function renderEngineCard(s) {
   actions($('c-engine-actions'), list);
 }
 
+/* ---- Settings -> Models ------------------------------------------------ *
+ *
+ * The persistent catalogue lifecycle, not a first-run wizard. Four states are
+ * kept apart because they need four different answers:
+ *
+ *   installed    the engine lists it here now
+ *   absent       Refinix records a manifest for it and it is not installed
+ *   unlisted     installed, with no recorded source or licence
+ *   unavailable  the engine did not answer, so nothing is known
+ *
+ * Every value comes from /v1/status. Nothing is downloaded, installed or
+ * removed from this page: a missing model shows the exact command the person
+ * can run, which is the same rule startup already follows.
+ */
+
+const MODEL_STATE_CHIP = {
+  installed: ['installed', 'enforced'],
+  absent: ['not installed', 'caution'],
+  unlisted: ['installed, unverified', 'observed'],
+  unavailable: ['unknown', 'unknown'],
+};
+
+const SELFTEST_CHIP = {
+  passed: ['self-test passed', 'enforced'],
+  failed: ['self-test failed', 'fault'],
+  superseded: ['self-test superseded', 'caution'],
+  /* Ran and passed, against bytes nobody can see now — the engine is down or
+   * the model is gone. Distinct from 'passed', which would let an uninstalled
+   * model read as ready, and from 'not self-tested', which would lose the
+   * fact that a check was once run. */
+  unconfirmed: ['self-test not confirmed here', 'unknown'],
+  unavailable: ['self-test could not run', 'unknown'],
+  not_run: ['not self-tested', 'unknown'],
+};
+
+/* The worst news across this model's workflows, in that order: a failure is
+ * never hidden behind another workflow's pass, and a pass only shows as one
+ * when it was observed against the bytes installed now. */
+function selftestSummary(model) {
+  const runs = Object.values(model.selftests || {})
+    .filter((run) => run.state !== 'not_run');
+  if (!runs.length) return SELFTEST_CHIP.not_run;
+  if (runs.some((r) => r.state === 'failed')) return SELFTEST_CHIP.failed;
+  if (runs.some((r) => r.superseded)) return SELFTEST_CHIP.superseded;
+  if (runs.some((r) => r.current)) return SELFTEST_CHIP.passed;
+  if (runs.some((r) => r.state === 'passed')) return SELFTEST_CHIP.unconfirmed;
+  if (runs.some((r) => r.state === 'unavailable')) return SELFTEST_CHIP.unavailable;
+  return SELFTEST_CHIP.not_run;
+}
+
+function modelFactRows(model) {
+  const p = model.provenance || {};
+  const local = model.integrity?.local;
+  const worker = model.integrity?.worker;
+  const integrity = [
+    local?.observed ? `this computer: ${local.state}` : null,
+    worker?.observed ? `paired worker: ${worker.state}` : null,
+  ].filter(Boolean).join('; ');
+  return [
+    ['Where', model.locations?.length ? model.locations.join(' and ') : null,
+     'not installed anywhere Refinix can see'],
+    ['Source', p.source, 'not recorded by Refinix'],
+    ['Licence', p.licence, 'not recorded by Refinix'],
+    ['Format', p.format, 'not recorded'],
+    ['Integrity', integrity, 'not observed'],
+    ['Expected manifest', p.manifest_sha256, 'not recorded by Refinix'],
+    ['Observed here', model.digests?.local, 'not observed on this computer'],
+    ['Used for', model.selected_for?.length ? model.selected_for.join(', ') : null,
+     'no workflow is set to use it'],
+    ['Evidence', p.evidence || p.note, 'nothing recorded'],
+  ];
+}
+
+async function setModelEnabled(model, enabled, button) {
+  button.disabled = true;
+  try {
+    await api('/v1/model/enabled', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, enabled }),
+    });
+    await loadStatus();
+  } catch (err) {
+    notice('That model could not be changed.', 'error', err.message);
+    button.disabled = false;
+  }
+}
+
+/* Shown before a removal, not discovered after one.
+ *
+ * Refinix never removes a model itself — the engine owns its store — so what
+ * it owes the person is the consequence in advance: which workflows lose their
+ * model, what is kept regardless, and the exact command. */
+async function showRemovalImpact(model, button) {
+  button.disabled = true;
+  try {
+    const { impact } = await api(
+      `/v1/model/impact?model=${encodeURIComponent(model)}`);
+    const affected = impact.blocked_capabilities?.length
+      ? `Affects: ${impact.blocked_capabilities.join(', ')}. ` : '';
+    const how = impact.command
+      ? ` Refinix does not remove models itself; run ${impact.command} `
+        + 'yourself if you want it gone.'
+      : ' Refinix does not remove models itself.';
+    notice(`Removing ${model}`, 'ok', `${affected}${impact.detail}${how}`);
+  } catch (err) {
+    notice('That could not be checked.', 'error', err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function runSelfTest(scope, button) {
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = 'Checking…';
+  try {
+    const { selftest } = await api('/v1/model/selftest', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope }),
+    });
+    notice(selftest.state === 'passed' ? 'Self-test passed.'
+      : selftest.state === 'failed' ? 'Self-test failed.'
+      : 'The self-test could not run.',
+      selftest.state === 'passed' ? 'ok' : 'error', selftest.detail);
+    await loadStatus();
+  } catch (err) {
+    notice('The self-test could not run.', 'error', err.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+function renderModelsCard(s) {
+  const host = $('c-model-list');
+  if (!host) return;
+  const list = s.models || [];
+  const local = list.filter((m) => m.locations?.includes('this computer')).length;
+  const workers = list.filter((m) => m.locations?.includes('paired worker')).length;
+  // "Supported and not installed" means Refinix records a manifest for it.
+  // A model that is merely configured and absent is not something Refinix
+  // vouches for, so it is not counted as one it supports.
+  const supported = list.filter(
+    (m) => m.state === 'absent' && m.provenance?.known).length;
+  chip($('c-models-chip'),
+       s.runtime.reachable ? `${local} here` : 'local engine not answering',
+       s.runtime.reachable && local ? 'enforced' : 'unknown');
+  $('c-models-lead').textContent = s.runtime.reachable
+    ? `${local} model(s) are installed on this computer`
+      + (workers ? `; ${workers} are visible on a paired worker` : '')
+      + (supported ? `, and ${supported} Refinix supports are not.` : '.')
+    : 'The AI engine did not answer, so what is installed on this computer is '
+      + 'unknown.' + (workers ? ` ${workers} model(s) are visible on a paired worker.` : '')
+      + ' Refinix does not guess, and it does not download anything.';
+
+  host.replaceChildren();
+  for (const model of list) {
+    const li = document.createElement('li');
+    li.dataset.state = model.state;
+
+    const head = document.createElement('div');
+    head.className = 'model-head';
+    const name = document.createElement('span');
+    const id = document.createElement('span');
+    id.className = 'model-id';
+    id.textContent = model.id;
+    const where = document.createElement('span');
+    where.className = 'model-where';
+    // Where it is, not what state it is in: the chip beside it already says
+    // that, and printing the same word twice reads as a rendering fault.
+    where.textContent = (model.locations?.length
+      ? model.locations.join(' and ')
+      : 'not installed on this computer')
+      + (model.enabled ? '' : ' — switched off for new work');
+    name.append(id, where);
+    const badge = document.createElement('span');
+    const [chipText, chipKind] = MODEL_STATE_CHIP[model.state]
+      || MODEL_STATE_CHIP.unavailable;
+    badge.className = 'chip chip-' + (model.enabled ? chipKind : 'unknown');
+    badge.textContent = model.enabled ? chipText : 'switched off';
+    head.append(name, badge);
+
+    const dl = document.createElement('dl');
+    dl.className = 'model-facts';
+    for (const [key, value, fallback] of modelFactRows(model)) {
+      const row = document.createElement('div');
+      const dt = document.createElement('dt');
+      dt.textContent = key;
+      row.append(dt, cell(value, fallback));
+      dl.append(row);
+    }
+
+    const row = document.createElement('div');
+    row.className = 'model-actions';
+    const [testText, testKind] = selftestSummary(model);
+    const test = document.createElement('span');
+    test.className = 'chip chip-' + testKind;
+    test.textContent = testText;
+    row.append(test);
+
+    if (model.setup?.command) {
+      const code = document.createElement('p');
+      code.className = 'setup-command';
+      code.textContent = model.setup.command;
+      row.append(code);
+    }
+    for (const scope of model.selected_for || []) {
+      if (!(s.selftest_scopes || []).includes(scope)) continue;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn';
+      button.textContent = `Self-test ${scope}`;
+      button.onclick = () => runSelfTest(scope, button);
+      row.append(button);
+    }
+    if (model.installed) {
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'btn';
+      toggle.textContent = model.enabled ? 'Switch off for new work'
+                                         : 'Switch back on';
+      toggle.onclick = () => setModelEnabled(model.id, !model.enabled, toggle);
+      const impact = document.createElement('button');
+      impact.type = 'button';
+      impact.className = 'btn';
+      impact.textContent = 'What removing this affects';
+      impact.onclick = () => showRemovalImpact(model.id, impact);
+      row.append(toggle, impact);
+    }
+
+    li.append(head, dl, row);
+    host.append(li);
+  }
+
+  const note = $('c-models-note');
+  if (note) {
+    note.textContent =
+      'Refinix never downloads or removes a model on its own. Switching a '
+      + 'model off stops it being chosen for new work; it does not delete it, '
+      + 'and nothing you have written or generated is removed with it. A '
+      + 'self-test shows a capability ran once here — it is not a measure of '
+      + 'answer quality.';
+  }
+}
+
 /* AF-007. Every value here is observed now or shown as unavailable. There is
  * no cached "last known healthy": a stale number displayed as current is the
  * fabricated health this card exists to avoid. */
@@ -2854,8 +3247,14 @@ function renderOthersCard(s, worker) {
     $('c-others-lead').textContent = worker.keychain_available
       ? 'Refinix can share work with another computer you connect. None is '
         + 'connected, so everything runs here.'
-      : 'Connecting another computer needs the macOS Keychain to hold its '
-        + 'credential. It is not available here, so connecting is switched off.';
+      // The coordinator names this computer's own missing prerequisite. Only
+      // an older coordinator omits it, so the macOS wording is the fallback
+      // rather than the sentence every operating system is shown.
+      : 'Connecting another computer needs a protected credential store to '
+        + 'hold its credential. '
+        + ((worker.credential_store && worker.credential_store.detail)
+          || 'It is not available here.')
+        + ' Connecting is switched off.';
     facts($('c-others-facts'), [
       ['Connected computers', null, 'none'],
       ['This computer', `${s.node_id.slice(0, 8)} — the only one in use`],
@@ -3698,6 +4097,7 @@ async function loadStatus() {
   }
   renderComputerCard(s);
   renderEngineCard(s);
+  renderModelsCard(s);
   renderOthersCard(s, worker);
   renderWorkCard(s, jobs);
   renderCapabilityCard(s);
@@ -4578,10 +4978,12 @@ function wireConversationControls() {
  * sandbox requirement exactly as it was. */
 let executionTarget = 'this_device';
 
+/* Named by role. A paired worker is whatever computer the person connected,
+ * and calling it "Ubuntu" told every other pairing something untrue. */
 const TARGETS = [
   { id: 'this_device', name: 'This device',
-    tag: 'local qwen, no sandbox tests' },
-  { id: 'distributed', name: 'Ubuntu worker',
+    tag: 'local model, no sandbox tests' },
+  { id: 'distributed', name: 'Paired worker',
     tag: 'sandbox tested' },
 ];
 
@@ -4593,9 +4995,9 @@ function appendTargetChoices(box) {
   note.className = 'mp-note';
   note.textContent = executionTarget === 'this_device'
     ? 'Runs on the local model. Changes are reviewed here and written after '
-      + 'Refinix’s own checks — the Ubuntu sandbox tests do not run, and '
+      + 'Refinix’s own checks — the sandbox tests do not run, and '
       + 'Refinix keeps a copy of every file it replaces so you can undo it.'
-    : 'Generates on the paired Ubuntu worker and requires a passing sandbox '
+    : 'Generates on the paired worker and requires a passing sandbox '
       + 'validation before any file is written.';
   box.append(note);
 }

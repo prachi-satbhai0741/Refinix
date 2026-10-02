@@ -38,8 +38,13 @@ Standard library only; the renderer and the runtime adapter do the rest.
 
 from __future__ import annotations
 
+import binascii
 import json
+import struct
+import zlib
 
+from backend.contracts import profiles as inference_profiles
+from backend.contracts import v1
 from backend.coordinator import pdfrender, runtime
 
 # One bounded reading per page, plus at most one repair of a malformed reply.
@@ -55,6 +60,38 @@ PAGE_SCHEMA = {
     "required": ["status", "text"],
     "additionalProperties": False,
 }
+
+
+def selftest_image() -> bytes:
+    """A tiny generated PNG whose visible text is REFINIX."""
+    glyphs = {
+        "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
+        "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
+        "F": ("11111", "10000", "10000", "11110", "10000", "10000", "10000"),
+        "I": ("11111", "00100", "00100", "00100", "00100", "00100", "11111"),
+        "N": ("10001", "11001", "11001", "10101", "10011", "10011", "10001"),
+        "X": ("10001", "10001", "01010", "00100", "01010", "10001", "10001"),
+    }
+    scale, margin, word = 6, 12, "REFINIX"
+    width = margin * 2 + (len(word) * 5 + len(word) - 1) * scale
+    height = margin * 2 + 7 * scale
+    rows = [bytearray([255] * width) for _ in range(height)]
+    for index, letter in enumerate(word):
+        left = margin + index * 6 * scale
+        for y, line in enumerate(glyphs[letter]):
+            for x, pixel in enumerate(line):
+                if pixel == "1":
+                    for row in rows[margin + y * scale:margin + (y + 1) * scale]:
+                        row[left + x * scale:left + (x + 1) * scale] = bytes([0]) * scale
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", binascii.crc32(kind + data) & 0xffffffff))
+
+    pixels = b"".join(b"\0" + bytes(row) for row in rows)
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b""))
 
 SYSTEM_INSTRUCTION = (
     "You transcribe one page of a scanned document, on a person's own computer.\n\n"
@@ -102,16 +139,62 @@ class OcrError(ValueError):
 # Capability
 # --------------------------------------------------------------------------
 
-def probe(model: str = runtime.OCR_MODEL) -> dict:
+NO_PROFILE_STATE = "no_qualified_profile"
+
+
+def no_profile_detail(model: str) -> str:
+    """Why reading pixels is unavailable when nothing has qualified it.
+
+    Stated as the prerequisite it is. A model being installed, switched on and
+    even declaring `vision` does not make it qualified: the licence, provenance
+    and measured envelope are what a profile records, and none of them can be
+    inferred from the runtime answering.
+    """
+    return (f"Refinix has no qualified reading profile for {model} on this "
+            "computer, so it will not send a page image to it. Reading scans "
+            "stays unavailable until that model, runtime and device are "
+            "measured and qualified together.")
+
+
+def profile_state(model: str, profile) -> dict:
+    """The model-prerequisite row for a missing OCR profile."""
+    return {"state": NO_PROFILE_STATE, "model": model, "digest": None,
+            "capabilities": None, "detail": no_profile_detail(model),
+            "runtime_version": None}
+
+
+def qualified_profile(profile, model: str) -> bool:
+    """Whether this exact profile may receive this model's page images."""
+    return isinstance(profile, v1.ExecutionProfile) \
+        and profile.profile_id == v1.execution_profile_id(profile) \
+        and inference_profiles.compatible(
+        profile, model_id=model, workflow=inference_profiles.OCR,
+        reasoning="disabled", decoder="json_schema",
+        output_allowance=min(PAGE_NUM_PREDICT, profile.max_output_tokens))
+
+
+def probe(model: str = runtime.OCR_MODEL, *, profile=None) -> dict:
     """Whether this computer can read a scan right now, and why not if not.
 
     Every unavailable answer names one prerequisite, because each needs a
-    different fix: no renderer (install PyObjC), no runtime (start Ollama), no
-    such model (a device checkpoint, since nothing here downloads), or a model
-    that is present and does not accept images (choose another installed
-    model). Collapsing them would send someone to fix the wrong thing.
+    different fix: no qualified profile (nothing has measured this model here,
+    which no amount of runtime health changes), no renderer (the renderer's own
+    probe names which one is missing on this platform), no runtime (start
+    Ollama), no such model (a device checkpoint, since nothing here downloads),
+    or a model that is present and does not accept images (choose another
+    installed model). Collapsing them would send someone to fix the wrong
+    thing.
+
+    The profile is checked FIRST and without touching the runtime. Refusing on
+    the unqualified prerequisite costs no round trip, and it is the honest
+    primary reason: a reachable runtime holding a vision-capable model still
+    may not be sent a page.
     """
     render = pdfrender.probe()
+    if not qualified_profile(profile, model):
+        return {"available": False, "renderer": render,
+                "model": profile_state(model, profile),
+                "detail": no_profile_detail(model)}
     model = runtime.model_state(model, requires=runtime.VISION_CAPABILITY)
     if not render["available"]:
         return {"available": False, "renderer": render, "model": model,
@@ -127,10 +210,19 @@ def probe(model: str = runtime.OCR_MODEL) -> dict:
 
 
 def method_label(digest: str | None = None,
-                 model: str = runtime.OCR_MODEL) -> str:
-    """How an extraction says it was produced. Always the exact model tag."""
+                 model: str = runtime.OCR_MODEL,
+                 renderer: str | None = None) -> str:
+    """How an extraction says it was produced. Always the exact model tag.
+
+    `renderer` is the backend that actually drew the pages, taken from the pages
+    themselves. Naming a fixed framework here stopped being truthful the moment
+    there was more than one renderer: a page drawn by the portable engine must
+    not be recorded as a Quartz render. An unnamed renderer is reported as
+    unnamed rather than filled in with whichever backend happens to be selected.
+    """
     suffix = f" manifest {digest[:16]}…" if digest else " manifest unavailable"
-    return f"pdf render (Quartz) + vision ({model}){suffix}"
+    return (f"pdf render ({renderer or 'renderer not recorded'}) "
+            f"+ vision ({model}){suffix}")
 
 
 # --------------------------------------------------------------------------
@@ -154,13 +246,16 @@ DIRECT_IMAGE_NOTE = (
     "so there is one page and no page mapping beyond it.")
 
 
-def image_probe(model: str = runtime.OCR_MODEL) -> dict:
+def image_probe(model: str = runtime.OCR_MODEL, *, profile=None) -> dict:
     """Whether a supplied image can be read right now, and why not if not.
 
     Deliberately **not** `probe()`: reading a bare image needs no PDF renderer,
     so requiring Quartz here would refuse work this computer can do. The model
-    prerequisite is identical and is checked the same way.
+    and profile prerequisites are identical and are checked the same way.
     """
+    if not qualified_profile(profile, model):
+        return {"available": False, "model": profile_state(model, profile),
+                "detail": no_profile_detail(model)}
     state = runtime.model_state(model, requires=runtime.VISION_CAPABILITY)
     if state["state"] != "installed":
         return {"available": False, "model": state, "detail": state["detail"]}
@@ -228,6 +323,7 @@ def check_image(data: bytes, *, filename: str, media_type: str) -> str:
 
 
 def extract_image(data: bytes, *, filename: str, media_type: str,
+                  profile: v1.ExecutionProfile | None = None,
                   should_cancel=None, chat=None,
                   model: str = runtime.OCR_MODEL) -> dict:
     """Read one supplied image, returning the shape `extract_pdf` returns.
@@ -237,15 +333,22 @@ def extract_image(data: bytes, *, filename: str, media_type: str,
     there was. It is page 1 because it is the only page, not because a page
     number was recovered from anywhere.
     """
-    state = image_probe(model)
-    if not state["available"]:
-        raise OcrError("unavailable", state["detail"])
+    qualified = qualified_profile(profile, model)
+    state = image_probe(model, profile=profile)
+    if not qualified or not state["available"]:
+        # The profile is re-checked here and not merely inferred from the
+        # probe. A caller that supplies its own probe result must not be able
+        # to talk this function into reading a page with nothing qualified.
+        raise OcrError(
+            "no_qualified_profile" if not qualified else "unavailable",
+            no_profile_detail(model) if not qualified else state["detail"])
     observed = check_image(data, filename=filename, media_type=media_type)
     if should_cancel is not None and should_cancel():
         raise OcrError("cancelled", "Reading that image was stopped.")
 
-    text = read_page(data, media_type=observed, should_cancel=should_cancel,
-                     chat=chat, model=model)
+    text = read_page(data, media_type=observed, profile=profile,
+                     inference=page_inference(profile),
+                     should_cancel=should_cancel, chat=chat)
     warnings = []
     if not text.strip():
         # A blank reading is reported, never smoothed into an empty document
@@ -306,13 +409,49 @@ def parse_page_reply(reply: str) -> str:
     return text
 
 
-def read_page(image: bytes, *, media_type: str, should_cancel=None,
-              chat=None, model: str = runtime.OCR_MODEL) -> str:
+def page_inference(profile) -> v1.InferenceRequest:
+    """The qualified semantics one page reading asks for.
+
+    Built from the profile rather than from module constants, so a page can
+    never be sent with an allowance the profile has not qualified. The page
+    allowance stays bounded by `PAGE_NUM_PREDICT`: a transcription that needs
+    more than one page's worth of tokens is a failure to report, not a budget
+    to raise.
+    """
+    model = profile.model.model_id if isinstance(profile, v1.ExecutionProfile) else "unknown"
+    if not qualified_profile(profile, model):
+        raise OcrError(
+            "no_qualified_profile",
+            no_profile_detail(model))
+    return inference_profiles.request(
+        profile, reasoning="disabled", decoder="json_schema",
+        output_allowance=min(PAGE_NUM_PREDICT, profile.max_output_tokens),
+        decoder_schema_sha256=inference_profiles.schema_sha256(PAGE_SCHEMA))
+
+
+def read_page(image: bytes, *, media_type: str,
+              profile: v1.ExecutionProfile, inference: v1.InferenceRequest,
+              should_cancel=None, chat=None) -> str:
     """Send one rendered page and return exactly the text that came back.
 
+    `profile` and `inference` are REQUIRED and carry the exact qualified
+    semantics, exactly as every other runtime caller does. They are not
+    optional with a fallback: a page image must never reach a model that
+    nothing has qualified to receive one, and a keyword-only required argument
+    is what makes that unreachable rather than merely discouraged.
+
     `chat` is the streaming call, injected so the offline checks can drive
-    every failure path through a fake endpoint without stubbing sockets.
+    every failure path through a fake endpoint without stubbing sockets. A
+    fake is called with the same keywords production uses.
     """
+    model = profile.model.model_id if isinstance(profile, v1.ExecutionProfile) else "unknown"
+    if not qualified_profile(profile, model):
+        raise OcrError("no_qualified_profile", no_profile_detail(model))
+    if inference != page_inference(profile):
+        raise OcrError(
+            "incompatible_profile",
+            "The page request does not match the qualified OCR profile, so the "
+            "image was not sent.")
     call = chat or runtime.stream_chat
     messages = page_messages(media_type)
     attempt, reply = 0, ""
@@ -320,8 +459,7 @@ def read_page(image: bytes, *, media_type: str, should_cancel=None,
         collected, metrics = [], {}
         for kind, payload in call(messages, images=[image],
                                   response_format=PAGE_SCHEMA,
-                                  model=model, think=False,
-                                  num_predict=PAGE_NUM_PREDICT,
+                                  profile=profile, inference=inference,
                                   should_cancel=should_cancel):
             if kind == "delta":
                 collected.append(payload)
@@ -353,7 +491,9 @@ def read_page(image: bytes, *, media_type: str, should_cancel=None,
 # A whole document
 # --------------------------------------------------------------------------
 
-def extract_pdf(data: bytes, *, filename: str, should_cancel=None,
+def extract_pdf(data: bytes, *, filename: str,
+                profile: v1.ExecutionProfile | None = None,
+                should_cancel=None,
                 chat=None, render=None, model: str = runtime.OCR_MODEL) -> dict:
     """Render every page and read it, returning page-mapped text.
 
@@ -362,22 +502,32 @@ def extract_pdf(data: bytes, *, filename: str, should_cancel=None,
     the declared page count. It never returns a partial document silently — a
     page that could not be read stops the whole extraction.
     """
-    state = probe(model)
-    if not state["available"]:
-        raise OcrError("unavailable", state["detail"])
+    qualified = qualified_profile(profile, model)
+    state = probe(model, profile=profile)
+    if not qualified or not state["available"]:
+        raise OcrError(
+            "no_qualified_profile" if not qualified else "unavailable",
+            no_profile_detail(model) if not qualified else state["detail"])
 
     renderer = render or pdfrender.render_pages
+    inference = page_inference(profile)
     digest = state["model"].get("digest")
     pages, warnings = [], []
+    # Recorded from the pages as they arrive, never assumed from the probe: an
+    # injected renderer, or a second backend, must not be reported as the one
+    # `probe()` happens to prefer.
+    drew_pages = None
     try:
         for rendered in renderer(data, should_cancel=should_cancel):
             if should_cancel is not None and should_cancel():
                 raise OcrError("cancelled", "Reading that document was stopped.")
             text = read_page(rendered.image, media_type=rendered.media_type,
-                             should_cancel=should_cancel, chat=chat, model=model)
+                             profile=profile, inference=inference,
+                             should_cancel=should_cancel, chat=chat)
             if text == "[unreadable]":
                 warnings.append(
                     f"Page {rendered.number} produced no readable text.")
+            drew_pages = getattr(rendered, "renderer", "") or drew_pages
             pages.append({
                 # The coordinator's number, from the renderer. The model was
                 # never told which page this is and never supplies one.
@@ -401,7 +551,7 @@ def extract_pdf(data: bytes, *, filename: str, should_cancel=None,
             "guessed to fill the gap.")
     return {
         "pages": pages,
-        "method": method_label(digest, model),
+        "method": method_label(digest, model, drew_pages),
         "uncertain": uncertain,
         # The renderer counted these pages; it is an observation of the file.
         "page_count": len(pages),
