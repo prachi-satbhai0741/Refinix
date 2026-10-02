@@ -1893,3 +1893,86 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Representative Code requires a qualified no-network sandbox; do not omit it, run generated code on the host, widen an envelope, install/download dependencies or models, expose the runtime to LAN, invent Windows/Linux/distributed evidence, auto-admit an artifact, rewrite historical evidence, claim release acceptance or perform Git/GitHub writes. Synthetic credentials and temporary workspaces must be removed.
 - follow_up_to: [UP-20260922-003](#up-20260922-003)
 - linked_changes: [AC-20260922-004](agentchangelog.md#ac-20260922-004)
+
+<a id="up-20261002-001"></a>
+## UP-20261002-001 — Website: product video, pillar image, About us and Download Beta
+- date: 2026-10-02
+- status: plan agreed through review (v3), requester-approved execution; preview verification authorised; no Git/GitHub write or deployment
+- tags: website, site.html, docs.html, video, about-us, navigation, design-reference
+- aliases: replace design approach with video, pillar png, about us in docs, download beta glow, mobile nav anchor offset
+- paths: frontend/design/site.html, frontend/design/site.css, frontend/design/docs.html, frontend/design/docs.css, frontend/design/assets/intro-video-poster.jpg, agent-memory/
+- summary: Replace the homepage Design approach heading and cards with the supplied looping product video over the four preserved points, swap the drawn temple for the supplied pillar.png, add an About us section to Docs with homepage top/bottom links, rename visible Beta launch CTAs to Download Beta with a scoped nav glow, and keep anchors clear of the wrapping header.
+- constraints: Four point titles/descriptions verbatim; supplied video/pillar/team-photo bytes unchanged; no compression without an available encoder; no purple in new elements; existing theme tokens only; countdown, destinations and private-source labels unchanged; no app/backend/protected-doc changes.
+- follow_up_to: none
+- linked_changes: [AC-20261002-001](agentchangelog.md#ac-20261002-001)
+
+<a id="up-20261002-002"></a>
+## UP-20261002-002 — Website consolidated repair (TOC, theme, motion, intro, docs copy, copy, links)
+- date: 2026-10-02
+- status: plan v3 agreed through review, requester-approved execution and verification; no Git/GitHub write or deployment
+- tags: website, site.html, docs.html, accessibility, reduced-motion, toc, theme, design-reference
+- aliases: docs toc highlight about, saved theme both pages, reduced motion intro, no-script intro, copy failed, link unavailable
+- paths: frontend/design/site.html, frontend/design/site.css, frontend/design/docs.html, agent-memory/
+- summary: Repair inherited website defects F1-F7 from the 2 October review: Docs TOC by reading position, one validated saved theme, reduced-motion and script-failure handling for the intro and clips, intro focus isolation, five Docs copy corrections, truthful Copy state, and plain-text unavailable destinations.
+- constraints: Media, artwork, section order, four points, About copy, colours/fonts (Michroma added to Docs only), countdown endpoints, private-source wording and Download Beta destinations frozen; no app/backend/protected-doc changes; requester notes refinix.run deploys from dev.
+- follow_up_to: [UP-20261002-001](#up-20261002-001)
+- linked_changes: [AC-20261002-002](agentchangelog.md#ac-20261002-002)
+
+<a id="up-20261002-003"></a>
+## UP-20261002-003 — Website launch countdown as its own block
+- date: 2026-10-02
+- status: requester-directed execution of a countdown-only adjustment, then a full website audit; no Git/GitHub write or deployment
+- tags: website, site.html, countdown, launch, design-reference
+- aliases: countdown block, days hours minutes seconds, 2x2 countdown phone
+- paths: frontend/design/site.html, frontend/design/site.css, agent-memory/
+- summary: Move the launch timer out of the paragraph into a centred block between the paragraph and the three options, with Days/Hours/Minutes/Seconds digits comparable to the launch heading, four across on desktop and 2x2 on narrow phones, and no per-second screen-reader announcements; then audit the website.
+- constraints: Paragraph, heading, deadline, IST timing, one-second ticks and zero stop preserved; nav glow, four points, media sizes, images and all other content unchanged; the earlier glow/points/media plan was not executed.
+- follow_up_to: [UP-20261002-002](#up-20261002-002)
+- linked_changes: [AC-20261002-003](agentchangelog.md#ac-20261002-003)
+
+<a id="up-20261002-004"></a>
+## UP-20261002-004 — Countdown side by side, larger, with digit animation
+- date: 2026-10-02
+- status: requester-directed execution; no Git/GitHub write or deployment
+- tags: website, site.html, countdown, animation, cache
+- aliases: countdown side by side, bigger countdown, rolling digits
+- paths: frontend/design/site.html, frontend/design/site.css, agent-memory/
+- summary: Requester's Safari showed the countdown stacked as plain "8Days/08Hours" text; asked for side-by-side units, bold larger digits and a more interesting digit-change animation.
+- constraints: Deadline, IST timing, one-second ticks, zero stop and no per-second announcements preserved; other content unchanged.
+- follow_up_to: [UP-20261002-003](#up-20261002-003)
+- linked_changes: [AC-20261002-004](agentchangelog.md#ac-20261002-004)
+
+<a id="up-20261002-005"></a>
+## UP-20261002-005 — Final scoped website repair: entry scroll, prose dashes, stylesheet versions
+- date: 2026-10-02
+- status: requester-relayed Codex /execute instruction; executed; no Git/GitHub write or deployment
+- tags: website, site.html, docs.html, scroll-restoration, punctuation, cache, ci
+- aliases: get started lands on evidence, reload scroll position, remove em dashes, docs css version
+- paths: frontend/design/site.html, frontend/design/docs.html, agent-memory/
+- summary: Option A entry scroll (no restored mid-page position behind the intro; hash targets honoured), dash separators removed from reader-facing prose with commas/periods/colons, Docs references the homepage site.css version plus a versioned docs.css; run the full CI test set and website checks.
+- constraints: Points, media sizes, glow, assets, countdown look/animation/timing, other copy, CSS, app/backend, protected docs and CI configuration frozen; R2-R4 dropped (requester accepts current presentation); isolated environment for dependencies; local results are not GitHub CI results.
+- follow_up_to: [UP-20261002-004](#up-20261002-004)
+- linked_changes: [AC-20261002-005](agentchangelog.md#ac-20261002-005)
+
+<a id="up-20261002-006"></a>
+## UP-20261002-006 — Verify actual website deployment and prepare publication
+- date: 2026-10-02
+- status: local deployment preparation authorised; four focused offline exporter tests explicitly authorised; no Git/GitHub write or live publication
+- tags: website, deployment, github-pages, static-export
+- paths: scripts/build-site.sh, scripts/test_build_site.py, frontend/design/, agent-memory/
+- summary: Inspect how the public website deploys before deciding how to commit/push; user supplied the actual URL https://refinix.runs-on.dev.
+- constraints: Preserve accepted website and media, unrelated dirty work and protected docs; prepare locally without changing hosting settings or publishing.
+- follow_up_to: [UP-20261002-005](#up-20261002-005)
+- linked_changes: [AC-20261002-006](agentchangelog.md#ac-20261002-006)
+
+<a id="up-20261002-007"></a>
+## UP-20261002-007 — Restore the published poster and WebM clips in the website source
+- date: 2026-10-02
+- status: plan v1.1 approved by requester (edits A-C and checks 1-6); executed; no Git/GitHub write, publish or deployment
+- tags: website, site.html, media, performance, pages, exporter
+- aliases: hero-poster preload, webm first, restore published optimisation, media regression before publishing
+- paths: frontend/design/site.html, frontend/design/assets/hero-poster.jpg, frontend/design/assets/hero-loop.webm, frontend/design/assets/evidence-loop.webm, agent-memory/
+- summary: Import hero-poster.jpg, hero-loop.webm and evidence-loop.webm byte-for-byte from refinix-site commit 072bb2586d02632a66e8c84664f88632041ad422; add the poster preload and intro poster and prefer WebM before the existing MP4 fallbacks; keep the exporter; verify parity, bundle references and playback.
+- constraints: Every existing media file, design, text and countdown preserved; URL, CNAME, DNS and Pages settings untouched; publication via a clean-checkout dry-run procedure; HTTPS checked for validity not certificate identity; Git actions need separate explicit approval.
+- follow_up_to: [UP-20261002-006](#up-20261002-006)
+- linked_changes: [AC-20261002-007](agentchangelog.md#ac-20261002-007)

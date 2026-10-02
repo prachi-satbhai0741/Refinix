@@ -3,15 +3,60 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refinix — private agent workbench for confidential industrial work</title>
+<title>Refinix: private agent workbench for confidential industrial work</title>
+<!-- The intro clip's poster is the first thing a visitor sees, so it is
+     fetched ahead of the stylesheets rather than found later on the <video>. -->
+<link rel="preload" as="image" href="assets/hero-poster.jpg" fetchpriority="high">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Bodoni+Moda:opsz,wght@6..96,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=Michroma&family=Pixelify+Sans:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="site.css?v=20261002-cd2">
 </head>
 <body>
 <!-- Marks the document scripted before any content paints, so the reveal
      styles apply without a flash. Kept inside <body> so single-file builds
      that strip the document head still carry it. -->
-<script>document.documentElement.classList.add('js');</script>
+<script>
+(function () {
+  var root = document.documentElement;
+  root.classList.add('js');
+  /* One saved theme for both pages, applied before first paint. Only the two
+     known values count; storage that throws or holds anything else leaves the
+     page on its own dark default. */
+  try {
+    var t = localStorage.getItem('refinix.site.theme');
+    if (t === 'light' || t === 'dark') root.setAttribute('data-theme', t);
+  } catch (e) {}
+  /* A reload would otherwise put back the old scroll position behind the
+     intro, so Get started opened mid-page. The intro decides where the
+     visitor lands instead: the linked section, or the top. Only for the
+     intro: the page script hands restoration back to the browser once the
+     visitor is in, so Back and Forward between sections still scroll, and
+     takes it again as the page is left, because a reload reuses the mode the
+     page was left in. */
+  var manualScroll = function () {
+    try {
+      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    } catch (e) {}
+  };
+  manualScroll();
+  addEventListener('pagehide', manualScroll);
+  /* If the page script never reaches its end, drop the scripted state so the
+     content is not left behind the intro or an unrevealed section. Checked at
+     DOMContentLoaded, after every inline script has run, so slow media never
+     delays it. */
+  document.addEventListener('DOMContentLoaded', function () {
+    if (root.classList.contains('ready')) return;
+    root.classList.remove('js');
+    var vid = document.querySelector('.intro-video');
+    if (vid) { try { vid.pause(); } catch (e) {} }
+    var page = document.querySelector('.page');
+    if (page) page.removeAttribute('inert');
+    if (document.body) document.body.style.overflow = '';
+    try {
+      if ('scrollRestoration' in history) history.scrollRestoration = 'auto';
+    } catch (e) {}
+  });
+})();
+</script>
 
 <!--
   The Refinix mark: three curved arrows around an inner pinwheel, drawn to the
@@ -86,10 +131,11 @@
   download section renders its honest pre-release state.
 
   Surface system: near-black ground, layered radial lighting, glass panels with
-  hairline borders and backdrop blur. Ornament is three engraved plates drawn as
-  inline SVG for the owl, temple and labyrinth; the hero carries a supplied
-  video clip instead. The drawn motifs are Athena's: the owl and olive are her
-  emblems and the Parthenon her temple. They are placeholders and say so.
+  hairline borders and backdrop blur. Ornament is engraved plates drawn as
+  inline SVG for the owl and labyrinth, with the supplied pillar.png standing
+  in for the temple; the hero carries a supplied video clip instead. The drawn
+  motifs are Athena's: the owl and olive are her emblems. They are
+  placeholders and say so.
 -->
 
 <div class="atmos" aria-hidden="true"></div>
@@ -145,11 +191,14 @@
 
 <div class="intro" id="intro">
   <canvas class="net" aria-hidden="true"></canvas>
-  <video class="intro-video" autoplay muted loop playsinline preload="auto">
-    <!-- The supplied master first, so a served copy plays it untouched. Any
-         transcode is a generation of loss; this avoids it entirely. The WebM
-         is only a fallback: a single-file build cannot carry a 15 MB master,
-         so there the mp4 404s and the browser moves to the next source. -->
+  <video class="intro-video" autoplay muted loop playsinline preload="auto"
+         poster="assets/hero-poster.jpg">
+    <!-- The poster paints at once and the clip replaces it when it can play.
+         WebM first: the browser takes the first source it supports, so the
+         VP9 copy, a third of the master's size, is what plays. The supplied
+         mp4 master is the fallback for anything without VP9, and the older
+         WebM stays last for a single-file build, where the mp4 404s. -->
+    <source src="assets/hero-loop.webm" type="video/webm">
     <source src="assets/hero-loop.mp4" type="video/mp4">
     <source src="assets/intro.webm" type="video/webm">
   </video>
@@ -194,12 +243,13 @@
       </span>
       <span class="chip">Pre-release</span>
     </a>
-    <div class="nav-links">
-      <a href="#proof">Proof</a>
+    <div class="nav-links nav-links-compact">
+      <a href="#proof">Evidence</a>
       <a href="#surfaces">Surfaces</a>
       <a href="#work">What it does</a>
-      <a href="#get">Download</a>
+      <a class="nav-cta nav-keep" href="#get">Download Beta</a>
       <a href="docs.html">Docs</a>
+      <a class="nav-keep" href="docs.html#about">About us</a>
     </div>
     <button class="theme-btn" type="button" id="theme">Light</button>
   </nav>
@@ -211,15 +261,15 @@
   <div class="wrap">
     <section class="hero">
       <div class="reveal">
-        <p class="eyebrow"><b>Apache-2.0</b> &middot; Air-gapped &middot; Open-weight models</p>
+        <p class="eyebrow"><b>Apache-2.0</b> &middot; Offline-first &middot; Open-weight models</p>
         <!-- Six words in three pairs. The spans are the line breaks: at this size
              the browser's own wrapping would put four words on the first line and
              strand the last, and the pairing is the point of the setting. -->
         <h1><span>Sovereign intelligence,</span><span>behind your</span><span>own walls.</span></h1>
         <p class="lede">
-          A private agent workbench for confidential industrial work — chat, documents
-          and code, running entirely on hardware inside your perimeter.
-          <strong>The proof is a live counter at zero</strong>, not a promise in a brochure.
+          A private agent workbench for confidential industrial work: chat, documents
+          and code on approved local models, running on hardware inside your perimeter.
+          <strong>The aim is evidence you can inspect</strong>, not a promise in a brochure.
         </p>
 
         <div class="cta-row">
@@ -228,30 +278,30 @@
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
             </svg>
-            Get Refinix
+            Download Beta
           </a>
-          <a class="btn" href="#proof">See the proof</a>
+          <a class="btn" href="#proof">See the evidence rule</a>
           <a class="btn" href="#surfaces">Explore the surfaces</a>
         </div>
 
         <div class="term">
           <div class="term-tabs" role="tablist" aria-label="Install method">
-            <button class="term-tab" role="tab" aria-selected="true"  aria-controls="t-verify"  id="tb-verify"  type="button">Verify a build</button>
-            <button class="term-tab" role="tab" aria-selected="false" aria-controls="t-offline" id="tb-offline" type="button">Offline install</button>
+            <button class="term-tab" role="tab" aria-selected="true"  aria-controls="t-verify"  id="tb-verify"  type="button">Beta packages</button>
+            <button class="term-tab" role="tab" aria-selected="false" aria-controls="t-offline" id="tb-offline" type="button">Beta install</button>
             <button class="term-copy" type="button" data-copy>Copy</button>
           </div>
           <div class="term-body">
             <div class="term-panel" id="t-verify" role="tabpanel" aria-labelledby="tb-verify">
-<pre><span class="cmt"># every build is published with its checksum</span>
-<span class="pr">$</span> sha256sum refinix-0.1.0-windows-x64.msi
-<span class="cmt"># compare against the signed manifest</span>
-<span class="pr">$</span> refinix verify --manifest refinix-0.1.0.manifest.json</pre>
+<pre><span class="cmt"># each Beta package will ship with a checksum</span>
+<span class="pr">$</span> # exact file names and commands arrive with the Beta
+<span class="cmt"># and a signed manifest you can check offline</span>
+<span class="pr">$</span> # launch target: 10 October 2026</pre>
             </div>
             <div class="term-panel" id="t-offline" role="tabpanel" aria-labelledby="tb-offline" hidden>
-<pre><span class="cmt"># mount the verified bundle, then install from it</span>
-<span class="pr">$</span> refinix install --bundle /media/refinix-0.1.0-bundle
-<span class="cmt"># no network is contacted at any point</span>
-<span class="pr">$</span> refinix selftest --offline</pre>
+<pre><span class="cmt"># a graphical installer, no terminal setup</span>
+<span class="pr">$</span> # Windows, macOS and Linux, on qualified profiles
+<span class="cmt"># offline model import, then a self-test</span>
+<span class="pr">$</span> # full steps arrive with the Beta release notes</pre>
             </div>
           </div>
         </div>
@@ -269,7 +319,7 @@
   <!-- ============================================================= formula -->
   <div class="formula">
     <div class="wrap">
-      <p class="reveal"><b>Sovereign</b> <span class="plus">=</span> <b>Local</b> <span class="plus">+</span> <b>Agentic</b> <span class="plus">+</span> <b>Proven</b></p>
+      <p class="reveal"><b>Sovereign</b> <span class="plus">=</span> <b>Local</b> <span class="plus">+</span> <b>Agentic</b> <span class="plus">+</span> <b>Inspectable</b></p>
     </div>
   </div>
 
@@ -277,35 +327,44 @@
        Order set by the owner: download first, then approach, product, what
        it does, the evidence rule, and the counts. -->
   <div class="wrap">
-    <!-- =========================================================== statement -->
-    <section class="sec">
-      <p class="label reveal">Design approach</p>
-      <h2 class="statement reveal d1">Nothing leaves.<span>Everything is recorded.</span></h2>
+    <!-- ============================================================ approach
+         The supplied product clip at its natural 16:9, then the four design
+         points in one compact row. The control sits under the clip rather
+         than over it, so no part of the recording is covered. -->
+    <section class="sec approach" aria-label="Design approach">
+      <figure class="approach-media reveal">
+        <video class="approach-clip" autoplay muted loop playsinline preload="metadata"
+               width="1920" height="1080" poster="assets/intro-video-poster.jpg"
+               aria-label="Refinix: chat, documents and code on your computer.">
+          <source src="assets/intro%20video.mp4" type="video/mp4">
+        </video>
+        <button class="approach-toggle" type="button">Pause video</button>
+      </figure>
 
-      <div class="cards" style="margin-top:56px">
-        <article class="card reveal">
-          <span class="card-n">01</span>
+      <div class="points">
+        <article class="point reveal">
+          <span class="point-n">01</span>
           <h3>One coordinator, one policy boundary</h3>
           <p>Chat, Documents and Code are entry points into a single local harness.
              They do not keep separate identity, memory, routing or audit systems.</p>
         </article>
-        <article class="card reveal d1">
-          <span class="card-n">02</span>
+        <article class="point reveal d1">
+          <span class="point-n">02</span>
           <h3>Capabilities arrive as packs</h3>
-          <p>Enable document work or code work and the installer resolves the smallest
+          <p>Enable document or code work and the installer will resolve the smallest
              model and tool plan for it, showing source, licence and size first.</p>
         </article>
-        <article class="card reveal d2">
-          <span class="card-n">03</span>
+        <article class="point reveal d2">
+          <span class="point-n">03</span>
           <h3>Routing you can override</h3>
-          <p>Auto picks a device from capability and health evidence. The chosen model,
-             the device and the reason stay on screen, and you can overrule them.</p>
+          <p>Each job keeps its model, its device and the reason on record. Automatic
+             model choice is on the way; for now, you pick the model.</p>
         </article>
-        <article class="card reveal d3">
-          <span class="card-n">04</span>
-          <h3>Every run is replayable</h3>
-          <p>Job state, tool calls, artifacts and approvals land on one append-only
-             event stream, so a run can be inspected after the fact.</p>
+        <article class="point reveal d3">
+          <span class="point-n">04</span>
+          <h3>Every run is inspectable</h3>
+          <p>Job state, tool calls, artifacts and approvals are recorded as events,
+             so a run can be inspected after the fact.</p>
         </article>
       </div>
     </section>
@@ -326,14 +385,14 @@
       <p class="label reveal">The product</p>
       <h2 class="sec-h reveal d1">Four surfaces, one harness.</h2>
       <p class="sec-lede reveal d1">
-        Pick a surface to see what it shows. Every value below is sample content,
-        not a measurement.
+        Pick a surface to see the workflow Refinix is being built for. Every value
+        below is sample content, not a measurement or a live result.
       </p>
 
       <div class="demo reveal d2">
         <div class="demo-bar">
           <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span class="demo-name">refinix &mdash; node-01</span>
+          <span class="demo-name">refinix: node-01</span>
           <div class="demo-tabs" role="tablist" aria-label="Surface">
             <button class="demo-tab" role="tab" aria-selected="true"  aria-controls="d-chat" id="db-chat" type="button">Chat</button>
             <button class="demo-tab" role="tab" aria-selected="false" aria-controls="d-docs" id="db-docs" type="button">Documents</button>
@@ -383,7 +442,7 @@
                 be traced back to the sheet.
               </p>
               <ul class="mini">
-                <li class="done"><span class="tick">[&times;]</span><span>SR-4471.pdf &mdash; 14 pages, 300 dpi, scanned</span><span class="cap">ocr</span></li>
+                <li class="done"><span class="tick">[&times;]</span><span>SR-4471.pdf: 14 pages, 300 dpi, scanned</span><span class="cap">ocr</span></li>
                 <li class="done"><span class="tick">[&times;]</span><span>6 findings extracted, 2 above the clause 4.2 threshold</span><span class="cap">vision</span></li>
                 <li class="done"><span class="tick">[&times;]</span><span>Citations bound to pages 6, 9, 11</span><span class="cap">retrieve</span></li>
                 <li><span class="tick">[&gt;]</span><span>Rendering .docx and validating against the template</span><span class="cap">validate</span></li>
@@ -417,7 +476,7 @@
 <span class="add">+    if not rows:</span>
 <span class="add">+        raise EmptyTagFile(path)</span>
      return normalise(rows)</pre>
-              <div class="mini-file">pytest &mdash; 24 passed, 0 failed <span class="sz">sandbox</span></div>
+              <div class="mini-file">pytest: 24 passed, 0 failed <span class="sz">sandbox</span></div>
             </div>
             <div class="demo-side">
               <h4>Sandbox</h4>
@@ -460,73 +519,15 @@
 
     <!-- ================================================================ work -->
     <section class="sec" id="work" style="padding-top:0">
-      <figure class="plate reveal" aria-hidden="true" style="margin-bottom:clamp(40px,5vw,72px)">
-        <svg viewBox="0 0 1000 300" role="img"
-             aria-label="Elevation of a Doric temple: pediment, triglyph frieze and fluted columns.">
-          <g fill="none" stroke="var(--ink-dim)" stroke-width="1.5">
-            <!-- pediment -->
-            <path d="M180,120 L500,34 L820,120"/>
-            <path d="M196,120 L500,50 L804,120"/>
-            <path d="M196,120 L804,120"/>
-            <!-- acroteria -->
-            <path d="M500,34 C494,24 496,14 504,10 C508,18 506,28 500,34 Z"/>
-            <path d="M180,120 C172,114 172,104 180,100 C186,106 186,114 180,120 Z"/>
-            <path d="M820,120 C828,114 828,104 820,100 C814,106 814,114 820,120 Z"/>
-            <!-- tympanum figures, suggested rather than drawn -->
-            <g opacity=".55" stroke-width="1.1">
-              <path d="M330,116 C336,96 352,88 360,98 C368,88 382,94 384,112"/>
-              <path d="M420,114 C428,88 452,80 462,94 C472,80 494,86 498,110"/>
-              <path d="M540,112 C548,86 572,80 582,94 C592,82 612,90 616,114"/>
-              <path d="M650,116 C658,98 672,92 680,102 C688,92 700,98 704,116"/>
-            </g>
-            <!-- entablature -->
-            <path d="M168,120 L832,120 L832,136 L168,136 Z"/>
-            <path d="M172,136 L828,136 L828,176 L172,176 Z"/>
-            <path d="M164,176 L836,176 L836,190 L164,190 Z"/>
-          </g>
-
-          <!-- triglyphs -->
-          <g fill="none" stroke="var(--ink-dim)" stroke-width="1.2" opacity=".85">
-            <g><rect x="186" y="140" width="26" height="32"/><path d="M195,140 v32 M203,140 v32"/></g>
-            <g><rect x="266" y="140" width="26" height="32"/><path d="M275,140 v32 M283,140 v32"/></g>
-            <g><rect x="346" y="140" width="26" height="32"/><path d="M355,140 v32 M363,140 v32"/></g>
-            <g><rect x="426" y="140" width="26" height="32"/><path d="M435,140 v32 M443,140 v32"/></g>
-            <g><rect x="506" y="140" width="26" height="32"/><path d="M515,140 v32 M523,140 v32"/></g>
-            <g><rect x="586" y="140" width="26" height="32"/><path d="M595,140 v32 M603,140 v32"/></g>
-            <g><rect x="666" y="140" width="26" height="32"/><path d="M675,140 v32 M683,140 v32"/></g>
-            <g><rect x="746" y="140" width="26" height="32"/><path d="M755,140 v32 M763,140 v32"/></g>
-          </g>
-
-          <!-- columns: capital, fluted shaft, base -->
-          <g fill="none" stroke="var(--ink-dim)" stroke-width="1.4">
-            <g><path d="M186,190 h50 v12 h-50 Z"/><path d="M192,202 h38 v72 h-38 Z"/>
-               <path d="M199,202 v72 M206,202 v72 M213,202 v72 M220,202 v72" opacity=".6" stroke-width="1"/></g>
-            <g><path d="M280,190 h50 v12 h-50 Z"/><path d="M286,202 h38 v72 h-38 Z"/>
-               <path d="M293,202 v72 M300,202 v72 M307,202 v72 M314,202 v72" opacity=".6" stroke-width="1"/></g>
-            <g><path d="M374,190 h50 v12 h-50 Z"/><path d="M380,202 h38 v72 h-38 Z"/>
-               <path d="M387,202 v72 M394,202 v72 M401,202 v72 M408,202 v72" opacity=".6" stroke-width="1"/></g>
-            <g><path d="M468,190 h50 v12 h-50 Z"/><path d="M474,202 h38 v72 h-38 Z"/>
-               <path d="M481,202 v72 M488,202 v72 M495,202 v72 M502,202 v72" opacity=".6" stroke-width="1"/></g>
-            <g><path d="M562,190 h50 v12 h-50 Z"/><path d="M568,202 h38 v72 h-38 Z"/>
-               <path d="M575,202 v72 M582,202 v72 M589,202 v72 M596,202 v72" opacity=".6" stroke-width="1"/></g>
-            <g><path d="M656,190 h50 v12 h-50 Z"/><path d="M662,202 h38 v72 h-38 Z"/>
-               <path d="M669,202 v72 M676,202 v72 M683,202 v72 M690,202 v72" opacity=".6" stroke-width="1"/></g>
-            <g><path d="M750,190 h50 v12 h-50 Z"/><path d="M756,202 h38 v72 h-38 Z"/>
-               <path d="M763,202 v72 M770,202 v72 M777,202 v72 M784,202 v72" opacity=".6" stroke-width="1"/></g>
-          </g>
-
-          <!-- stylobate -->
-          <g fill="none" stroke="var(--ink-dim)" stroke-width="1.5">
-            <path d="M156,274 h688 M144,286 h712 M132,298 h736"/>
-          </g>
-        </svg>
+      <figure class="plate plate-pillar reveal" aria-hidden="true" style="margin-bottom:clamp(40px,5vw,72px)">
+        <img src="assets/pillar.png" alt="" width="1672" height="941" loading="lazy" decoding="async">
       </figure>
 
       <p class="label reveal">Capabilities</p>
       <h2 class="sec-h reveal d1">Built for the work a plant actually generates.</h2>
       <p class="sec-lede reveal d1">
-        Approval notes, inspection reports, engineering calculations, internal tooling
-        code, and drawings that arrive as scans.
+        Where Refinix is headed: approval notes, inspection reports, engineering
+        calculations, internal tooling code, and drawings that arrive as scans.
       </p>
 
       <div class="caps">
@@ -548,14 +549,14 @@
           <span class="cap-n">03</span>
           <h3>Produce the actual deliverable</h3>
           <p>Approval notes, spreadsheets and decks that open correctly as
-             <code>.docx</code>, <code>.xlsx</code> and <code>.pptx</code> — plus code
+             <code>.docx</code>, <code>.xlsx</code> and <code>.pptx</code>, plus code
              changes validated in a sandbox with networking off.</p>
         </article>
         <article class="cap-row reveal">
           <span class="cap-n">04</span>
           <h3>Use the machines you have</h3>
           <p>One workstation is a complete installation. Pair a second trusted device
-             and a vision job can run there while a coding job runs here — one job, one
+             and a vision job can run there while a coding job runs here. One job, one
              model, one device, never weights split across machines.</p>
         </article>
       </div>
@@ -569,7 +570,7 @@
           <h2 class="sec-h">A claim, an observation and a blank are three different things.</h2>
           <p class="sec-lede">
             A green tick cannot tell you whether a control is running, or whether
-            anyone was watching. So Refinix does not draw one.
+            anyone was watching. So Refinix is designed never to draw one.
           </p>
           <!-- The rule itself, as three lines rather than three paragraphs. The
                numerals carry the state colours, so the system the cards below use
@@ -589,8 +590,10 @@
         <figure class="plate plate-clip reveal d2">
           <video class="evidence-clip" autoplay muted loop playsinline preload="metadata"
                  aria-label="Motion graphic: configuration and measurement icons animating.">
+            <source src="assets/evidence-loop.webm" type="video/webm">
             <source src="assets/evidence-loop.mp4" type="video/mp4">
           </video>
+          <button class="evidence-toggle" type="button">Pause video</button>
         </figure>
       </div>
 
@@ -601,22 +604,22 @@
         <article class="claim claim-enforced reveal">
           <span class="claim-tag">Enforced</span>
           <h3>A named control is active</h3>
-          <p>The host firewall ruleset is loaded and blocking, and the layer doing
-             the enforcing is named beside the claim.</p>
-          <p class="claim-src">nftables &middot; inet/filter</p>
+          <p>For example: a host firewall ruleset is loaded and blocking, and the
+             layer doing the enforcing is named beside the claim.</p>
+          <p class="claim-src">example &middot; nftables inet/filter</p>
         </article>
         <article class="claim claim-observed reveal d1">
           <span class="claim-tag">Observed</span>
           <h3>A named observer saw a count</h3>
-          <p>Zero public outbound flows, on stated interfaces, in a stated window.
-             No observer and no window means no figure.</p>
-          <p class="claim-src">flow-probe &middot; 24 h window</p>
+          <p>For example: zero public outbound flows, on stated interfaces, in a
+             stated window. No observer and no window means no figure.</p>
+          <p class="claim-src">example &middot; named observer, stated window</p>
         </article>
         <article class="claim claim-unknown reveal d2">
           <span class="claim-tag">Unavailable</span>
           <h3>There is no evidence</h3>
-          <p>No observer installed on this host. Drawn as missing &mdash; never as a
-             zero, because absence is not proof.</p>
+          <p>For example: no observer installed on this host. Drawn as missing,
+             never as a zero, because absence is not proof.</p>
           <p class="claim-src">no source</p>
         </article>
       </div>
@@ -627,7 +630,7 @@
       <div class="stats">
         <div class="stat reveal">
           <b>2</b><span>Execution targets without leaving your policy boundary</span>
-          <em>This device, or a trusted paired device</em>
+          <em>This device; a trusted paired device is experimental</em>
         </div>
         <div class="stat reveal d1">
           <b>4</b><span>Surfaces over one harness</span>
@@ -635,7 +638,7 @@
         </div>
         <div class="stat reveal d2">
           <b>0</b><span>Public network calls in offline runtime</span>
-          <em>A design invariant, not a benchmark</em>
+          <em>A design rule, not a measured result</em>
         </div>
         <div class="stat reveal d3">
           <b>3</b><span>Kinds of evidence claim</span>
@@ -652,15 +655,24 @@
         <svg class="lockup-mark" viewBox="0 0 120 120" aria-hidden="true"><use href="#rfx-mark"/></svg>
         <p class="wordmark">REFINIX</p>
       </div>
-      <h2 class="sec-h reveal d1" style="max-width:24ch">Confidential work deserves better than a policy nobody can check.</h2>
+      <h2 class="sec-h reveal d1" style="max-width:24ch">BETA WILL BE LAUNCHED SOON</h2>
       <p class="sec-lede reveal d1">
-        One local harness for chat, documents and code &mdash; every run recorded,
-        every figure sourced, and nothing leaving your perimeter.
+        One private workspace for chat, documents and code, built to keep your
+        work under your control. Launch target: end of 10 October 2026, IST.
       </p>
+      <!-- Filled by the countdown script; hidden without it, where the line
+           above still gives the deadline. role=timer is not a live region, so
+           the seconds are not announced as they tick. -->
+      <div class="countdown reveal d2" role="timer">
+        <div class="cd-unit"><span class="cd-num" data-cd="d">9</span><span class="cd-label">Days</span></div>
+        <div class="cd-unit"><span class="cd-num" data-cd="h">00</span><span class="cd-label">Hours</span></div>
+        <div class="cd-unit"><span class="cd-num" data-cd="m">00</span><span class="cd-label">Minutes</span></div>
+        <div class="cd-unit"><span class="cd-num" data-cd="s">00</span><span class="cd-label">Seconds</span></div>
+      </div>
       <div class="cta-row reveal d2">
-        <a class="btn btn-primary" href="#get">Download</a>
-        <a class="btn" href="#">Read the security model</a>
-        <a class="btn" href="#">Source on GitHub</a>
+        <a class="btn btn-primary" href="#get">Download Beta</a>
+        <span class="btn" aria-disabled="true">Security model (link unavailable)</span>
+        <span class="btn" aria-disabled="true">Source: private for now</span>
       </div>
     </section>
   </div>
@@ -674,9 +686,9 @@
         <h4>Product</h4>
         <ul>
           <li><a href="#surfaces">Surfaces</a></li>
-          <li><a href="#proof">Sovereignty proof</a></li>
+          <li><a href="#proof">Evidence rule</a></li>
           <li><a href="#work">Capabilities</a></li>
-          <li><a href="#get">Download</a></li>
+          <li><a href="#get">Download Beta</a></li>
         </ul>
       </div>
       <div>
@@ -691,9 +703,10 @@
       <div>
         <h4>Project</h4>
         <ul>
-          <li><a href="#">Source repository</a></li>
-          <li><a href="#">Licence — Apache-2.0</a></li>
-          <li><a href="#">Report an issue</a></li>
+          <li><a href="docs.html#about">About us</a></li>
+          <li><span class="foot-na">Source repository (private for now)</span></li>
+          <li><span class="foot-na">Licence: Apache-2.0</span></li>
+          <li><span class="foot-na">Report an issue (link unavailable)</span></li>
         </ul>
       </div>
       <div>
@@ -756,15 +769,116 @@
         .filter(function (l) { return l.trim() && l.trim()[0] !== '#'; })
         .map(function (l) { return l.replace(/^\s*\$\s?/, ''); })
         .join('\n');
-      var done = function () {
-        btn.textContent = 'Copied';
-        btn.classList.add('done');
+      /* Copied is shown only once the write has actually succeeded; a refused
+         write or a browser without the clipboard API says so instead. */
+      var show = function (label, ok) {
+        btn.textContent = label;
+        btn.classList.toggle('done', ok);
         setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1600);
       };
-      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, done);
-      else done();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { show('Copied', true); },
+                                                 function () { show('Copy failed', false); });
+      } else {
+        show('Copy failed', false);
+      }
     });
   });
+
+  /* ---- Beta launch countdown ----
+     A nine-day window, 00:00 IST on 2 October to 00:00 IST on 11 October 2026
+     (18:30 UTC the evening before each). Remaining time is recomputed from those
+     absolute instants on every tick, so a refresh, a throttled tab or the
+     visitor's timezone cannot shift it. Before the window opens it shows the
+     full nine days; at the end it stops at zero. Reaching zero is not a
+     release, so the launch message stays as written until the page is updated.
+     The four numbers live in their own block under the launch line.
+
+     Each digit sits in its own slot, and only a digit that changes rolls: the
+     old one drops away as the new one falls in from above. The rolling copies
+     are hidden from assistive tech, which reads one plain copy of the number;
+     role=timer is not a live region, so nothing is announced as it ticks.
+     Under reduced motion the digits are swapped in place. */
+  var launch = document.querySelector('#get .countdown');
+  if (launch) {
+    var LAUNCH_START = Date.UTC(2026, 9, 1, 18, 30, 0);
+    var LAUNCH_END = Date.UTC(2026, 9, 10, 18, 30, 0);
+    var cd = function (k) { return launch.querySelector('[data-cd="' + k + '"]'); };
+    var cdD = cd('d'), cdH = cd('h'), cdM = cd('m'), cdS = cd('s');
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var cdSlot = function (ch) {
+      var slot = document.createElement('span'), c = document.createElement('span');
+      slot.className = 'cd-d';
+      c.className = 'cd-c';
+      c.textContent = ch;
+      slot.appendChild(c);
+      return slot;
+    };
+    var cdRoll = function (slot, ch) {
+      var prev = slot.querySelector('.cd-c:not(.cd-out)');
+      [].forEach.call(slot.querySelectorAll('.cd-out'), function (o) { slot.removeChild(o); });
+      var next = document.createElement('span');
+      next.className = 'cd-c cd-in';
+      next.textContent = ch;
+      if (prev) prev.className = 'cd-c cd-out';
+      slot.appendChild(next);
+      setTimeout(function () {
+        if (prev && prev.parentNode === slot) slot.removeChild(prev);
+        next.className = 'cd-c';
+      }, 700);
+    };
+    var cdSet = function (el, text) {
+      text = String(text);
+      var old = el.getAttribute('data-v');
+      if (old === text) return;
+      el.setAttribute('data-v', text);
+      var digits = el.querySelector('.cd-digits');
+      if (!digits || old === null || old.length !== text.length || reduced) {
+        el.textContent = '';
+        var plain = document.createElement('span');
+        plain.className = 'cd-sr';
+        el.appendChild(plain);
+        digits = document.createElement('span');
+        digits.className = 'cd-digits';
+        digits.setAttribute('aria-hidden', 'true');
+        for (var i = 0; i < text.length; i++) digits.appendChild(cdSlot(text.charAt(i)));
+        el.appendChild(digits);
+      } else {
+        for (var j = 0; j < text.length; j++) {
+          if (old.charAt(j) !== text.charAt(j)) cdRoll(digits.children[j], text.charAt(j));
+        }
+      }
+      el.querySelector('.cd-sr').textContent = text;
+    };
+    var launchTimer = 0;
+    var launchTick = function () {
+      var from = Math.max(Date.now(), LAUNCH_START);
+      var left = Math.max(0, Math.floor((LAUNCH_END - from) / 1000));
+      var d = Math.floor(left / 86400), h = Math.floor(left % 86400 / 3600),
+          m = Math.floor(left % 3600 / 60), s = left % 60;
+      cdSet(cdD, d);
+      cdSet(cdH, pad(h));
+      cdSet(cdM, pad(m));
+      cdSet(cdS, pad(s));
+      if (!left && launchTimer) { clearInterval(launchTimer); launchTimer = 0; }
+      return left;
+    };
+    if (launchTick()) launchTimer = setInterval(launchTick, 1000);
+  }
+
+  /* ---- anchor offset follows the real header height ----
+     The nav wraps onto extra rows at tablet and phone widths, so a fixed
+     scroll-padding lets an anchor jump land under the sticky bar. Measuring
+     the bar keeps every heading clear at whatever width it wraps. */
+  var navShell = document.querySelector('.nav-shell');
+  if (navShell) {
+    var setAnchorOffset = function () {
+      root.style.scrollPaddingTop = (navShell.offsetHeight + 24) + 'px';
+    };
+    setAnchorOffset();
+    if (window.ResizeObserver) new ResizeObserver(setAnchorOffset).observe(navShell);
+    else addEventListener('resize', setAnchorOffset);
+  }
 
   /* ---- reveal on scroll ----
      A position check rather than IntersectionObserver on purpose. An anchor
@@ -933,9 +1047,15 @@
       }
     };
 
+    var active = true;
     var frame = function () { raf = requestAnimationFrame(frame); draw(); };
-    var start = function () { if (!raf) raf = requestAnimationFrame(frame); };
     var stop = function () { if (raf) { cancelAnimationFrame(raf); raf = 0; } };
+    /* Every caller goes through here: nothing animates while the canvas is
+       inactive, the visitor prefers reduced motion, or the page is hidden. */
+    var start = function () {
+      if (raf || !active || reduced || document.hidden) return;
+      raf = requestAnimationFrame(frame);
+    };
 
     addEventListener('pointermove', function (e) {
       var b = canvas.getBoundingClientRect();
@@ -959,7 +1079,8 @@
 
     readColours(); resize(); draw(); start();
     return { recolour: function () { readColours(); draw(); },
-             resize: resize, start: start, stop: stop };
+             resize: resize, start: start, stop: stop,
+             setActive: function (on) { active = on; if (on) start(); else stop(); } };
   }
 
   var nets = [], pageNet = null, introNet = null;
@@ -970,29 +1091,69 @@
     if (introNet) nets.push(introNet);
     /* Only one field runs at a time. Two full-screen canvases animating while
        a video decodes is the difference between smooth and not. */
-    if (pageNet && document.getElementById('intro')) pageNet.stop();
+    if (pageNet && document.getElementById('intro')) pageNet.setActive(false);
   }
   window.__grainRecolour = function () { nets.forEach(function (n) { n.recolour(); }); };
 
-  /* ---- the evidence clip plays only while it is on screen ----
-     The page can have two clips alive at once (this and the intro), and
-     decoding both is what costs frames. Nothing here re-encodes or rescales the
-     file — it is played exactly as supplied. */
-  var evClip = document.querySelector('.evidence-clip');
-  if (evClip) {
-    if (reduced) {
-      evClip.setAttribute('controls', '');
-    } else if ('IntersectionObserver' in window) {
+  /* ---- clips that loop beside the text ----
+     The product clip under the approach points and the evidence clip. Each
+     loops while it is on screen and pauses off screen or in a hidden tab, so
+     the page never decodes clips nobody can see. A visitor's own pause is
+     kept: scrolling back never restarts a clip they stopped. Reduced motion
+     starts held, with the same control to play it, and a refused autoplay
+     leaves a Play button. The policy runs once at setup, so autoplay never
+     starts a clip that is off screen or held; pause() also cancels an
+     autoplay that has not begun. Nothing here re-encodes or rescales a file. */
+  var clips = [];
+  var wireClip = function (clip, btn) {
+    var held = reduced;
+    var box = clip.getBoundingClientRect();
+    var seen = !('IntersectionObserver' in window) ||
+      (box.bottom > -120 && box.top < innerHeight + 120);
+    var label = function () {
+      btn.textContent = clip.paused ? 'Play video' : 'Pause video';
+    };
+    var play = function () {
+      var p = clip.play();
+      if (p && p.catch) p.catch(label);
+    };
+    var update = function () {
+      if (held || !seen || document.hidden) clip.pause();
+      else if (clip.paused) play();
+    };
+    clip.addEventListener('play', label);
+    clip.addEventListener('pause', label);
+    btn.addEventListener('click', function () {
+      held = !clip.paused;
+      update();
+    });
+    if ('IntersectionObserver' in window) {
       new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) {
-          if (e.isIntersecting) { evClip.play().catch(function () {}); }
-          else { evClip.pause(); }
-        });
-      }, { threshold: 0.01, rootMargin: '120px' }).observe(evClip);
-    } else {
-      evClip.play().catch(function () {});
+        seen = entries[entries.length - 1].isIntersecting;
+        update();
+      }, { threshold: 0.01, rootMargin: '120px' }).observe(clip);
     }
-  }
+    document.addEventListener('visibilitychange', update);
+    update();
+    label();
+    clips.push({ hold: function () { held = true; update(); } });
+  };
+  /* The evidence clip has no poster, so a held clip tries to show its own
+     first frame: load it fully and seek to the start once data arrives. */
+  var stillFrame = function (clip) {
+    if (!clip) return;
+    clip.preload = 'auto';
+    var seek = function () { try { clip.currentTime = 0; } catch (e) {} };
+    if (clip.readyState >= 2) seek();
+    else clip.addEventListener('loadeddata', seek, { once: true });
+  };
+  [['.approach-clip', '.approach-toggle'], ['.evidence-clip', '.evidence-toggle']]
+    .forEach(function (pair) {
+      var clip = document.querySelector(pair[0]);
+      var btn = document.querySelector(pair[1]);
+      if (clip && btn) wireClip(clip, btn);
+    });
+  if (reduced) stillFrame(document.querySelector('.evidence-clip'));
 
   /* ---- the figure corrupts every few seconds on the page ----
      The SVG filter is restarted each burst so the block pattern differs every
@@ -1002,7 +1163,7 @@
   if (pageArt && !reduced) {
     var pixAnims = document.querySelectorAll('#pixglitch animate');
     setInterval(function () {
-      if (document.hidden) return;
+      if (document.hidden || reduced) return;
       for (var p = 0; p < pixAnims.length; p++) { try { pixAnims[p].beginElement(); } catch (e) {} }
       pageArt.classList.add('pixglitch');
       setTimeout(function () { pageArt.classList.remove('pixglitch'); }, 520);
@@ -1015,6 +1176,7 @@
      owns the motion and this only sequences it. The rays and the lightning are
      timed to finish inside that hold - see the cancel rules in site.css, since
      an animated opacity cannot be overridden by a plain declaration. */
+  var introMotion = null;
   var intro = document.getElementById('intro');
   var enter = document.getElementById('enter');
   if (intro && enter) {
@@ -1036,21 +1198,89 @@
     };
     addEventListener('resize', placeEyes);
 
+    var page = document.querySelector('.page');
+    var introVid = intro.querySelector('.intro-video');
+    /* Every pending stage goes through later(), so a dismissal that has to
+       finish at once can cancel whatever is still queued. */
+    var timers = [];
+    var later = function (fn, ms) { timers.push(setTimeout(fn, ms)); };
+    /* Reduced motion: the entry shows the existing still artwork instead of
+       the clip. */
+    var showStill = function () {
+      if (introVid) { try { introVid.pause(); } catch (e) {} }
+      intro.classList.add('still');
+    };
+    /* Afterwards the page is usable again, and the visitor lands where they
+       were headed — the linked section if the address named one — or at the
+       top of the page, never at a position left over from a reload. */
+    var release = function () {
+      if (page) page.inert = false;
+      var target = location.hash && document.getElementById(location.hash.slice(1));
+      if (target) target.scrollIntoView();
+      else scrollTo(0, 0);
+      /* Back to the browser's own restoration for history moves inside the
+         page. Deferred past load, so a visitor who enters before the page
+         finishes loading is not thrown back to the reload position. */
+      var autoScroll = function () {
+        setTimeout(function () {
+          try { history.scrollRestoration = 'auto'; } catch (e) {}
+        }, 0);
+      };
+      if ('scrollRestoration' in history) {
+        if (document.readyState === 'complete') autoScroll();
+        else addEventListener('load', autoScroll, { once: true });
+        /* A page kept in the back/forward cache comes back as it was left,
+           intro already done, so it takes the browser's restoration again. */
+        addEventListener('pageshow', function (e) { if (e.persisted) autoScroll(); });
+      }
+      var focusTo = (target && target.querySelector('a[href], button')) ||
+                    document.querySelector('.nav-brand');
+      if (focusTo) { try { focusTo.focus({ preventScroll: true }); } catch (e) {} }
+    };
+    /* The one way out, run once. fast skips the fade for reduced motion or a
+       transition that has to stop part-way. */
+    var finishIntro = function (fast) {
+      if (intro.dataset.finished) return;
+      intro.dataset.finished = '1';
+      timers.forEach(clearTimeout);
+      timers = [];
+      if (introVid) { try { introVid.pause(); } catch (e) {} introVid.style.display = 'none'; }
+      intro.classList.remove('glitching');
+      intro.classList.add('gone');
+      document.body.style.overflow = '';
+      if (introNet) introNet.setActive(false);
+      if (pageNet) pageNet.setActive(true);
+      if (fast) intro.hidden = true;
+      else later(function () { intro.hidden = true; }, 900);
+      release();
+    };
+
     document.body.style.overflow = 'hidden';
+    /* While the entry is up, nothing behind it can be reached by keyboard. */
+    if (page) page.inert = true;
+    if (reduced) showStill();
+    try { enter.focus({ preventScroll: true }); } catch (e) {}
+    /* A linked address (site.html#get) scrolls to its fragment after this
+       runs and drops focus to the body; hand it back to the entry control. */
+    addEventListener('load', function () {
+      if (intro.dataset.done || document.activeElement !== document.body) return;
+      try { enter.focus({ preventScroll: true }); } catch (e) {}
+    });
+
     var leave = function () {
       if (intro.dataset.done) return;
       intro.dataset.done = '1';
+      if (reduced) { finishIntro(true); return; }
       intro.classList.add('glitching');
       var anims = document.querySelectorAll('#turb animate');
       for (var i = 0; i < anims.length; i++) { try { anims[i].beginElement(); } catch (e) {} }
 
-      setTimeout(function () {
+      later(function () {
         intro.classList.remove('glitching');
-        var vid = intro.querySelector('.intro-video');
-        if (vid) { try { vid.pause(); } catch (e) {} vid.style.display = 'none'; }
+        if (introVid) { try { introVid.pause(); } catch (e) {} introVid.style.display = 'none'; }
         intro.classList.add('revealing');
         placeEyes();
-        setTimeout(function () {
+        later(function () {
           /* Measure the hero artwork and map the figure onto it, so it
              travels right and settles exactly where the page shows it. */
           var target = document.querySelector('.hero-art');
@@ -1065,13 +1295,7 @@
             }
           }
           intro.classList.add('exiting');
-          setTimeout(function () {
-            intro.classList.add('gone');
-            document.body.style.overflow = '';
-            if (introNet) introNet.stop();
-            if (pageNet) pageNet.start();
-            setTimeout(function () { intro.hidden = true; }, 900);
-          }, 300);
+          later(function () { finishIntro(false); }, 300);
           /* The hold. Shortening this alone would have cut the reveal off
              mid-stroke — the arrival, the lightning and the blink were all
              timed against the old 1300, and the bolts alone ran to 1.2s. They
@@ -1080,6 +1304,13 @@
       }, 1000);
     };
     enter.addEventListener('click', leave);
+    /* Reduced motion switched on while the entry is still up: a waiting entry
+       turns to the still artwork, and one already in transition finishes at
+       once with its queued stages cancelled. */
+    introMotion = function () {
+      if (intro.dataset.finished) return;
+      if (intro.dataset.done) finishIntro(true); else showStill();
+    };
   }
 
 
@@ -1095,6 +1326,7 @@
     root.setAttribute('data-theme-switching', '');
     root.setAttribute('data-theme', toLight ? 'light' : 'dark');
     btn.textContent = toLight ? 'Dark' : 'Light';
+    try { localStorage.setItem('refinix.site.theme', toLight ? 'light' : 'dark'); } catch (e) {}
     /* Recolour synchronously: the custom properties have already changed, and
        deferring this to rAF leaves the field on the old theme's colour for any
        tab where frames are throttled. Only the transition suppression needs
@@ -1106,6 +1338,28 @@
       });
     });
   });
+
+  /* ---- the motion preference can change while the page is open ----
+     Turning reduced motion on holds every looping clip, stops the canvases
+     (their start() refuses while it is set) and settles the entry. Turning it
+     off lets the active canvases run again; clips wait for a Play press. */
+  var motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+  var onMotionChange = function (e) {
+    reduced = e.matches;
+    if (reduced) {
+      clips.forEach(function (c) { c.hold(); });
+      stillFrame(document.querySelector('.evidence-clip'));
+      nets.forEach(function (n) { n.stop(); });
+      if (introMotion) introMotion();
+    } else {
+      nets.forEach(function (n) { n.start(); });
+    }
+  };
+  if (motionQuery.addEventListener) motionQuery.addEventListener('change', onMotionChange);
+  else if (motionQuery.addListener) motionQuery.addListener(onMotionChange);
+
+  /* Reached the end: the early fallback leaves the scripted state alone. */
+  root.classList.add('ready');
 })();
 </script>
 
