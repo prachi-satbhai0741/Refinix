@@ -3,14 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Documentation — Refinix</title>
+<title>Refinix: Documentation</title>
 <meta name="description" content="How to install Refinix, how to use chat, code and settings, and exactly what this build can and cannot do.">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Bodoni+Moda:opsz,wght@6..96,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=Spectral:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="site.css">
-<link rel="stylesheet" href="docs.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Bodoni+Moda:opsz,wght@6..96,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=Spectral:wght@400;600;700&family=Michroma&display=swap">
+<link rel="stylesheet" href="site.css?v=20261002-cd2">
+<link rel="stylesheet" href="docs.css?v=20261002-r1">
 </head>
 <body>
-<script>document.documentElement.classList.add('js');</script>
+<script>
+(function () {
+  var root = document.documentElement;
+  root.classList.add('js');
+  /* One saved theme for both pages, applied before first paint. Only the two
+     known values count; storage that throws or holds anything else leaves the
+     page on its own dark default. */
+  try {
+    var t = localStorage.getItem('refinix.site.theme');
+    if (t === 'light' || t === 'dark') root.setAttribute('data-theme', t);
+  } catch (e) {}
+})();
+</script>
 
 <!--
   Refinix documentation.
@@ -93,10 +105,10 @@
       <span class="chip">Pre-release</span>
     </a>
     <div class="nav-links">
-      <a href="site.html#proof">Proof</a>
+      <a href="site.html#proof">Evidence</a>
       <a href="site.html#surfaces">Surfaces</a>
       <a href="site.html#work">What it does</a>
-      <a href="site.html#get">Download</a>
+      <a href="site.html#get">Download Beta</a>
       <a href="docs.html" aria-current="page">Docs</a>
     </div>
     <button class="theme-btn" type="button" id="theme">Light</button>
@@ -110,9 +122,9 @@
       <h1>Everything you need to run Refinix.</h1>
       <p class="sec-lede">
         Refinix is a private agent workbench: chat, documents and code, running
-        on your own computer. <strong>Nothing you type or attach leaves the
-        machine.</strong> This page covers getting it running, using it day to
-        day, and what this pre-release build genuinely cannot do yet.
+        on hardware you control. <strong>This manual covers the current
+        pre-release build, not a finished release.</strong> Where the Beta will
+        work differently, it says so, along with what this build cannot do yet.
       </p>
 
       <ul class="docs-jump">
@@ -120,7 +132,7 @@
           <a href="#start">
             <em>01</em>
             <b>Getting started</b>
-            <span>What you need, and the four steps from a fresh install to your first answer.</span>
+            <span>What you need today, and the four steps from setup to your first answer.</span>
           </a>
         </li>
         <li>
@@ -170,6 +182,7 @@
             <li><a href="#questions">Common questions</a></li>
           </ol>
         </li>
+        <li><a href="#about">About us</a></li>
       </ol>
     </aside>
 
@@ -180,9 +193,9 @@
       <section class="doc-sec" id="start">
         <h2>Getting started</h2>
         <p class="doc-lede">
-          Refinix runs entirely on one computer. There is no account to create,
-          no key to paste and no service to sign up for — which also means the
-          machine you install it on is the machine that does the thinking.
+          One computer can run Refinix locally. There is no account to create,
+          no key to paste and no cloud service to sign up for. Pairing a trusted
+          second computer as a worker is experimental.
         </p>
 
         <div class="doc-sub" id="need">
@@ -190,24 +203,31 @@
           <dl class="spec">
             <div>
               <dt>A computer you control</dt>
-              <dd>Windows, macOS or Linux. The work happens locally, so a
-                  machine with more memory answers faster.</dd>
+              <dd>Windows, macOS and Linux are all targets. macOS is the strongest
+                  desktop build today; Windows and Linux desktop builds are still
+                  being qualified on specific hardware. Which models fit depends
+                  on memory.</dd>
             </div>
             <div>
               <dt>A local model engine</dt>
-              <dd>Refinix talks to an engine on your own machine over
-                  <code>127.0.0.1</code> — Ollama on its default port is the
-                  usual choice. Refinix does not ship the model; you choose it.</dd>
+              <dd>The current build talks to Ollama on this computer over
+                  <code>127.0.0.1</code>, with models pulled separately. The Beta
+                  is meant to manage its engine and models for you, without a
+                  terminal.</dd>
             </div>
             <div>
               <dt>At least one open-weight model</dt>
-              <dd>Any chat model the engine has pulled. Smaller models answer
-                  faster; larger ones answer better. You can switch at any time.</dd>
+              <dd>Refinix runs a model only for workflows it is qualified for
+                  (tested end to end on named hardware), so installed does not
+                  mean supported. The model button marks one that is not
+                  available.</dd>
             </div>
             <div>
               <dt>No internet connection</dt>
-              <dd>Not a requirement — the point. Once the model is on the
-                  machine, Refinix works with the network unplugged.</dd>
+              <dd>Not needed for daily work. Setup uses an explicit download or,
+                  as planned, a verified offline bundle from removable media;
+                  after that, Refinix is designed to run with the network
+                  unplugged.</dd>
             </div>
           </dl>
         </div>
@@ -217,39 +237,38 @@
           <ol class="steps">
             <li>
               <b>Get the build</b>
-              Download it from the <a href="site.html#get">download section</a>
-              and check it against the published checksum. Refinix is
-              Apache-2.0, so you can also build it from source.
+              Beta will be launched soon. See the <a href="site.html#get">launch countdown</a>.
+              Each Beta package will come with a checksum to check it against.
             </li>
             <li>
               <b>Open Refinix and let it look around</b>
               On first launch it checks this computer for a model engine and
               reports what it found. The line at the bottom-left of the window
-              is the short version — <em>Ready on this computer</em> means the
-              engine answered and a model is installed.
+              is the short version: <em>Ready on this computer</em> means the
+              engine answered and the selected model is eligible for local Chat.
             </li>
             <li>
               <b>Check the engine in Settings</b>
               Open <strong>Settings</strong> from the bottom of the sidebar.
               <em>AI engine and model</em> names the engine it reached, the
               model in use and any others available. If it says the engine did
-              not answer, start the engine and press <em>Re-check now</em>.
+              not answer, start the engine and press <em>Try again</em>.
             </li>
             <li>
               <b>Ask your first question</b>
               Go back to <strong>Chat</strong>, type into the box at the bottom
-              and press <kbd>Enter</kbd>. The first answer from a cold model is
-              always the slowest — it has to be loaded into memory before it can
+              and press <kbd>Enter</kbd>. The first answer from a cold model
+              usually takes longer. It has to be loaded into memory before it can
               reply.
             </li>
           </ol>
 
           <div class="note" data-kind="enforced">
-            <b>How to tell it is really local</b>
-            <p>The address bar says <code>127.0.0.1</code>. That is your own
-               machine and nothing else can reach it. Settings &rarr; Advanced
-               shows the exact engine address Refinix is talking to, so you can
-               confirm rather than take our word for it.</p>
+            <b>What the local address tells you</b>
+            <p>Refinix's local address is <code>127.0.0.1</code> (loopback),
+               reachable only from this computer. Settings &rarr; Advanced shows
+               the engine address Refinix is using. Loopback binding alone does
+               not prove that nothing else on the machine goes online.</p>
           </div>
         </div>
       </section>
@@ -258,7 +277,7 @@
       <section class="doc-sec" id="manual">
         <h2>User manual</h2>
         <p class="doc-lede">
-          Everything below describes the running application. If a control is
+          Everything below describes the current build. If a control is
           named here in <strong>bold</strong>, that is the word printed on it in
           the window.
         </p>
@@ -324,8 +343,8 @@
 
           <p>
             The round button in the header switches between light and dark. The
-            icon shows the theme that is <em>on</em> — a moon and star while
-            dark, a sun and cloud while light — and the choice is remembered.
+            icon shows the theme that is <em>on</em>: a moon and star while
+            dark, a sun and cloud while light. The choice is remembered.
           </p>
         </div>
 
@@ -339,11 +358,11 @@
           <ul class="doc-list">
             <li><strong>While it is working</strong> the mark beside the box
                 turns and the header says the request is running. A
-                <strong>Stop</strong> button appears next to Send — pressing it
+                <strong>Stop</strong> button appears next to Send. Pressing it
                 ends that reply and keeps everything already written.</li>
             <li><strong>The model button</strong> at the bottom-right of the box
-                names the model answering. Click it to switch to another model
-                the engine has installed.</li>
+                names the model answering. Click it to switch to another
+                installed model; one not available for this workflow says so.</li>
             <li><strong>Scrolled up mid-answer?</strong> A small arrow appears
                 over the conversation; click it to jump back to the newest text.
                 Refinix will not yank the view down while you are reading.</li>
@@ -356,7 +375,7 @@
         <div class="doc-sub" id="conversations">
           <h3>Managing conversations</h3>
           <p>
-            The sidebar lists every conversation on this computer, newest first.
+            The sidebar lists conversations on this computer: pinned first, then most recently updated.
           </p>
           <ul class="doc-list">
             <li><strong>+ New conversation</strong> sits at the top of the list,
@@ -365,13 +384,13 @@
                 <em>Conversations</em> opens a search box. It searches titles and
                 message text; closing it puts the full list back.</li>
             <li><strong>The &hellip; on a row</strong> opens the actions for that
-                conversation — renaming and pinning among them.</li>
+                conversation, renaming and pinning among them.</li>
           </ul>
           <div class="note">
             <b>Conversations are files on your disk</b>
-            <p>They are stored on this computer and nowhere else. That also
-               means they are yours to back up — and that deleting one is
-               permanent.</p>
+            <p>They are stored in Refinix's data folder on this computer, so
+               they are yours to back up. Deleting one is permanent. Refinix
+               cannot undo it, but it is not a secure wipe of the disk.</p>
           </div>
         </div>
 
@@ -385,31 +404,35 @@
           <dl class="spec">
             <div>
               <dt>Reads today</dt>
-              <dd><code>txt</code>, <code>md</code>, <code>csv</code>,
-                  <code>json</code> as plain text, and <code>docx</code> Word
-                  documents.</dd>
+              <dd><code>txt, md, csv, json</code> as plain text, <code>docx</code>,
+                  <code>xlsx</code>, and <code>pdf</code> with a text layer
+                  (selectable text). In Chat, one <code>png/jpg</code> as the only
+                  attachment can be described by a vision-capable model, not a
+                  qualified document-OCR result.</dd>
             </div>
             <div>
               <dt>Writes today</dt>
-              <dd><code>docx</code>.</dd>
+              <dd><code>docx</code> and PDF.</dd>
             </div>
             <div>
               <dt>Per request</dt>
-              <dd>Up to 10 files, 20&nbsp;MB each.</dd>
+              <dd>Up to 6 files read, 20&nbsp;MB each.</dd>
             </div>
             <div>
               <dt>Searching documents</dt>
-              <dd>Keyword search — it matches the words you type, not their
-                  meaning. No embedding model is installed, and the product
-                  labels this rather than implying more.</dd>
+              <dd>Keyword search (SQLite FTS5): it matches the words you type,
+                  not their meaning. Semantic search with a local embedding model
+                  is planned; the product labels this rather than implying more.</dd>
             </div>
           </dl>
           <div class="note" data-kind="caution">
-            <b>Plain chat does not read your attachments</b>
-            <p>Attaching a file to an ordinary chat message does not make the
-               model read it. Choose a document skill with <strong>+</strong> to
-               have the files on that request actually read. This is deliberate:
-               nothing is fed to a model without you asking for it.</p>
+            <b>Chat reads only the files selected for this request</b>
+            <p>Plain Chat reads only files attached or explicitly reused for that
+               request, and says if one could not be read. Choose a document skill with
+               <strong>+</strong> to generate a Word or PDF document. The
+               citation-checked inspection approval note needs a model qualified
+               for its structured, schema-checked workflow; without one, only a
+               general document is offered.</p>
           </div>
         </div>
 
@@ -424,21 +447,22 @@
             <li>
               <b>Choose a project</b>
               <strong>Choose project</strong> above the message box picks the
-              folder. Nothing outside it is ever read or written.
+              folder. Paths outside it, including symlink escapes, are refused.
             </li>
             <li>
               <b>Select the files</b>
               Use <strong>+</strong> to pick the files that are allowed to
-              change. Refinix sends the minimum set — not the repository.
+              change. Refinix sends the minimum set, not the repository.
             </li>
             <li>
               <b>Describe the change and press Propose</b>
               You are asking for a proposal, not an edit.
             </li>
             <li>
-              <b>Read the complete diff, then approve</b>
+              <b>Read the complete diff, then accept</b>
               Every line that would change is shown before anything is written
-              to disk. Nothing is saved until you say so.
+              to disk. Local changes are marked not sandbox tested and can be
+              reverted with Undo this change.
             </li>
           </ol>
           <div class="note" data-kind="caution">
@@ -446,7 +470,7 @@
             <p>Refinix replaces the contents of existing text files you select.
                Creating, deleting or renaming files, running project commands,
                using Git, and installing anything are <strong>not
-               available</strong> — not gated behind a setting, not present.</p>
+               available</strong>: not gated behind a setting, not present.</p>
           </div>
         </div>
 
@@ -463,7 +487,7 @@
             <li><strong>When a conversation gets long</strong>, older complete
                 exchanges are left out of the next request so it still fits.</li>
             <li><strong>Your saved history is never changed.</strong> Leaving an
-                exchange out of one request does not delete it — scroll up and it
+                exchange out of one request does not delete it. Scroll up and it
                 is still there.</li>
             <li><strong>The meter beside +</strong> shows how full the current
                 request is, so a long conversation is visible before it becomes
@@ -481,15 +505,15 @@
           <p>
             <strong>Advanced</strong> is collapsed by default and nothing in it
             is needed for ordinary use. It opens with three charts of what this
-            computer has actually been doing — how long replies take, which
-            hours it was busy, and how requests ended — followed by the engine
+            computer has actually been doing: how long replies take, which
+            hours it was busy, and how requests ended, followed by the engine
             address, model settings, the token window, addresses and the recent
             job record.
           </p>
           <div class="note">
             <b>A hatched value means "not observed"</b>
             <p>Where a row is struck through with diagonal lines, Refinix has no
-               evidence for it — not a failure, and never to be read as a
+               evidence for it: not a failure, and never to be read as a
                healthy zero. The work that would produce that evidence has not
                run.</p>
           </div>
@@ -500,25 +524,27 @@
       <section class="doc-sec" id="limits">
         <h2>Limits &amp; answers</h2>
         <p class="doc-lede">
-          This is a pre-release build. The honest list of what it will not do is
-          shorter to read than finding out the hard way.
+          This is a pre-release build. The honest list of what it will not do yet
+          is shorter to read than finding out the hard way.
         </p>
 
         <div class="doc-sub" id="cannot">
           <h3>Not in this build</h3>
           <dl class="spec">
             <div>
-              <dt>PDF files</dt>
-              <dd>Not read. A reviewed PDF text adapter has not landed yet.</dd>
+              <dt>Scanned PDFs</dt>
+              <dd>PDF text layers are read; scanned pages remain unread without
+                  supported OCR.</dd>
             </div>
             <div>
               <dt>Scans and photographs of text</dt>
-              <dd>Not read. There is no OCR in this build, and Refinix will not
-                  guess at words in a picture.</dd>
+              <dd>Not read as document text: OCR is not yet qualified, and
+                  Refinix will not guess at words in a picture. Chat's
+                  single image description is not a qualified document-OCR result.</dd>
             </div>
             <div>
               <dt>Meaning-based document search</dt>
-              <dd>Not available — search matches words, not meaning.</dd>
+              <dd>Not available: search matches words, not meaning.</dd>
             </div>
             <div>
               <dt>Creating, deleting or renaming files</dt>
@@ -526,11 +552,14 @@
             </div>
             <div>
               <dt>Running commands, Git, installing packages</dt>
-              <dd>Not available.</dd>
+              <dd>Not available, on this computer or through a paired worker.
+                  Separately, a paired worker can run a change's tests in a
+                  network-off sandbox. Experimental.</dd>
             </div>
             <div>
               <dt>Sharing work with another computer</dt>
-              <dd>Pairing is shown in Settings but no worker is paired yet.</dd>
+              <dd>Pairing and remote jobs exist in early form and are experimental;
+                  they are not yet qualified for general use.</dd>
             </div>
           </dl>
         </div>
@@ -541,9 +570,10 @@
             <details>
               <summary>Does anything I type leave my computer?</summary>
               <div>
-                <p>No. Refinix binds to <code>127.0.0.1</code>, which is the
-                   machine itself, and it talks to a model engine on that same
-                   machine. Unplug the network and it keeps working.</p>
+                <p>Not to any public AI service. Refinix and its model engine
+                   listen on <code>127.0.0.1</code>, this computer only. If you
+                   send a job to a trusted paired worker, its bounded input
+                   travels there over your local network.</p>
                 <p>The website you are reading runs no inference and stores no
                    chats either.</p>
               </div>
@@ -551,29 +581,29 @@
             <details>
               <summary>Which models can I use?</summary>
               <div>
-                <p>Any chat model your local engine has installed. Refinix does
-                   not ship a model and does not restrict you to a list — the
-                   model button in the message box shows what is available on
-                   this computer and switches between them.</p>
+                <p>Models qualified for the workflow you are running. The model
+                   button lists what the engine has installed and marks any that
+                   is not available for that workflow. Automatic model choice is
+                   not enabled yet.</p>
               </div>
             </details>
             <details>
               <summary>Why is the first answer so slow?</summary>
               <div>
                 <p>The model has to be loaded into memory before it can reply.
-                   That happens once; later answers in the same session are
-                   faster. Settings &rarr; Advanced shows whether a model is
-                   currently resident, and the reply-time chart shows what is
-                   typical on your machine.</p>
+                   Later answers are usually faster while it stays loaded.
+                   Settings shows which model is loaded in memory now, and the
+                   reply-time chart in Advanced shows what is typical on your
+                   machine.</p>
               </div>
             </details>
             <details>
               <summary>Can I trust what the model tells me?</summary>
               <div>
                 <p>Treat it as a capable assistant, not an authority. Refinix is
-                   careful about its <em>own</em> claims — every state it reports
-                   is something it observed, and it marks anything it has not
-                   observed rather than filling the gap. It cannot make the same
+                   designed to be careful about its <em>own</em> claims: each
+                   state it reports names its source, and anything not observed
+                   is marked rather than filled in. It cannot make the same
                    guarantee about the model's prose, so check anything that
                    matters.</p>
               </div>
@@ -582,9 +612,9 @@
               <summary>What happens to a request if I close the window?</summary>
               <div>
                 <p>Work that was interrupted is reconciled the next time Refinix
-                   starts, and the count of repaired requests is reported in
-                   Settings &rarr; Advanced. Nothing is left claiming to be
-                   running when it is not.</p>
+                   starts, and the number of repaired requests is shown in
+                   Settings &rarr; This computer. Nothing should be left claiming
+                   to be running when it is not.</p>
               </div>
             </details>
             <details>
@@ -601,13 +631,48 @@
         <div class="docs-end">
           <p>
             Something here wrong, or a question this page did not answer?
-            Refinix is Apache-2.0 and developed in the open — corrections to the
-            documentation are as welcome as corrections to the code.
+            Refinix is Apache-2.0. Corrections to the documentation are as
+            welcome as corrections to the code.
           </p>
           <div class="cta-row">
-            <a class="btn btn-primary" href="site.html#get">Download Refinix</a>
-            <a class="btn" href="site.html#proof">See the sovereignty proof</a>
+            <a class="btn btn-primary" href="site.html#get">Download Beta</a>
+            <a class="btn" href="site.html#proof">See the evidence rule</a>
           </div>
+        </div>
+      </section>
+
+      <!-- ================================================= 04 about us -->
+      <section class="doc-sec" id="about">
+        <h2>About us</h2>
+        <p class="doc-lede">
+          We are Team Rokunin Sync, a student team building Refinix: an
+          offline-first AI workspace for chat, documents and code. Our goal is
+          to make useful AI work easier while keeping users in control of their
+          work.
+        </p>
+
+        <figure class="about-photo">
+          <img src="assets/About%20US.png"
+               alt="The six members of Team Rokunin Sync, the team building Refinix."
+               width="1401" height="1003" loading="lazy" decoding="async">
+        </figure>
+
+        <div class="doc-sub">
+          <h3>Our team and contributions</h3>
+          <ul class="team-list">
+            <li><strong>Aditya: Team lead, backend engineering and deployment.</strong>
+                Leads the team and works on the backend and deployment.</li>
+            <li><strong>Vedant: UI/UX, frontend engineering and planning.</strong>
+                Plans the interface and builds the frontend experience.</li>
+            <li><strong>Yug: Model research and routing.</strong>
+                Researches local models and works on model-routing decisions.</li>
+            <li><strong>Sahil: Research and debugging.</strong>
+                Contributes research across the project and helps investigate and fix issues.</li>
+            <li><strong>Tanvi: Kubernetes and distributed architecture planning.</strong>
+                Plans the Kubernetes and distributed architecture work.</li>
+            <li><strong>Prachi: Kubernetes and distributed architecture implementation.</strong>
+                Implements the Kubernetes and distributed architecture work.</li>
+          </ul>
         </div>
       </section>
 
@@ -622,9 +687,9 @@
         <h4>Product</h4>
         <ul>
           <li><a href="site.html#surfaces">Surfaces</a></li>
-          <li><a href="site.html#proof">Sovereignty proof</a></li>
+          <li><a href="site.html#proof">Evidence rule</a></li>
           <li><a href="site.html#work">Capabilities</a></li>
-          <li><a href="site.html#get">Download</a></li>
+          <li><a href="site.html#get">Download Beta</a></li>
         </ul>
       </div>
       <div>
@@ -639,9 +704,9 @@
       <div>
         <h4>Project</h4>
         <ul>
-          <li><a href="#">Source repository</a></li>
-          <li><a href="#">Licence — Apache-2.0</a></li>
-          <li><a href="#">Report an issue</a></li>
+          <li><span class="foot-na">Source repository (private for now)</span></li>
+          <li><span class="foot-na">Licence: Apache-2.0</span></li>
+          <li><span class="foot-na">Report an issue (link unavailable)</span></li>
         </ul>
       </div>
       <div>
@@ -673,10 +738,6 @@
           the swap so colours do not animate, which reads as lag. ---- */
   var btn = document.getElementById('theme');
   var isLight = function () { return root.getAttribute('data-theme') === 'light'; };
-  try {
-    var saved = localStorage.getItem('refinix.site.theme');
-    if (saved) root.setAttribute('data-theme', saved);
-  } catch (e) {}
   btn.textContent = isLight() ? 'Dark' : 'Light';
   btn.addEventListener('click', function () {
     var toLight = !isLight();
@@ -691,9 +752,7 @@
     });
   });
 
-  /* ---- table of contents follows the reading position.
-          IntersectionObserver rather than a scroll handler, so this costs
-          nothing while you are actually reading. ---- */
+  /* ---- table of contents follows the reading position ---- */
   var links = [].slice.call(document.querySelectorAll('.toc a[href^="#"]'));
   var byId = {};
   var targets = [];
@@ -719,18 +778,35 @@
     }
   };
 
-  if ('IntersectionObserver' in window && targets.length) {
-    var seen = {};
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) { seen[e.target.id] = e.isIntersecting; });
-      /* The topmost heading currently on screen wins, so scrolling up and
-         down through the page always names the part you are looking at. */
-      for (var i = 0; i < targets.length; i++) {
-        if (seen[targets[i].id]) { mark(targets[i].id); return; }
-      }
-    }, { rootMargin: '-72px 0px -70% 0px', threshold: 0 });
-    targets.forEach(function (t) { io.observe(t); });
-  }
+  /* The current part is the last one whose top has passed the reading line,
+     so a subsection wins over the section around it and mark() lights its
+     parent too. At the very bottom of the page the final part wins once it is
+     on screen, because a short last section can never scroll up to the line.
+     One rAF-batched read per scroll; nothing is pinned by a click. */
+  var tocBar = document.querySelector('.nav-shell');
+  var tocQueued = false;
+  var tocUpdate = function () {
+    tocQueued = false;
+    if (!targets.length) return;
+    var bar = tocBar ? tocBar.getBoundingClientRect().bottom : 0;
+    var line = Math.max(bar + 120, innerHeight * 0.3);
+    var pick = targets[0];
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i].getBoundingClientRect().top <= line) pick = targets[i];
+    }
+    var last = targets[targets.length - 1];
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2 &&
+        last.getBoundingClientRect().top < innerHeight) pick = last;
+    mark(pick.id);
+  };
+  var tocQueue = function () {
+    if (!tocQueued) { tocQueued = true; requestAnimationFrame(tocUpdate); }
+  };
+  addEventListener('scroll', tocQueue, { passive: true });
+  addEventListener('resize', tocQueue);
+  addEventListener('hashchange', tocQueue);
+  addEventListener('load', tocQueue);
+  tocUpdate();
 
   /* ---- reveal on scroll, matching site.css's .reveal contract ---- */
   var reveals = document.querySelectorAll('.reveal');

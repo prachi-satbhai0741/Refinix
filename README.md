@@ -150,11 +150,14 @@ unavoidable OS permissions and unsupported prerequisites must be explained.
 A remote-only client can skip local models. These are target installer behaviours,
 not a claim that the existing prototype package already provides them.
 
-The Beta target is for Refinix to own a pinned, tested inference engine and its application dependencies.
-Engineering/release work qualifies supported combinations; customers use graphical setup and automatic local checks,
-without maintaining Ollama versions or registering profiles. External Ollama updates must not affect
-the managed engine. Bundled llama.cpp remains the preferred candidate pending qualification; the
-current source still uses Ollama. See the [runtime contract](docs/PROJECT.md#13-runtime-and-resource-policy).
+The college/hackathon Beta direction is to reuse existing local Ollama models through its API without
+copying weights and offer a managed upstream llama.cpp path for people who need it. Users may browse
+compatible upstream models and choose beyond lightweight hardware recommendations. Model origin
+selects the runtime internally; automatic task-to-model routing is required, with optional manual
+preferences. Team measurements are evidence rather than a general model/device/version allowlist.
+These are updated requirements, not a claim that the current source completes them. See the
+[runtime contract](docs/PROJECT.md#13-runtime-and-resource-policy) and the
+[user's full verbatim direction](docs/beta-user-direction-2026-10-05.md).
 
 Keep the existing orchestration harness for now. LangGraph remains an unadopted alternative to
 evaluate for a demonstrated workflow gap; comparative benefit in Refinix is unmeasured. See the

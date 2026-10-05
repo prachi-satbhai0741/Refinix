@@ -33,11 +33,13 @@ OS approvals and unsupported prerequisites. Sandbox installation must be qualifi
 early; local inference does not establish safe local code execution. Beta must work without a peer,
 private server or managed Kubernetes/Redis backend. Retain existing distributed code for later work.
 
-The release team owns engine/model/workflow qualification. Ship a pinned, integrity-verified
-app-managed inference engine with its matching compatibility records and core dependency manifests.
-Normal customers must not separately maintain Ollama versions or create qualification profiles.
-Selected model weights remain explicitly provisioned/imported assets; one managed application does
-not mean downloading every optional model or capability.
+The release team verifies the shipped app, core dependencies and representative workflows. Provide
+a pinned, integrity-verified managed engine and support existing local Ollama reuse under the
+[open-model runtime policy](PROJECT.md#13-runtime-and-resource-policy). Model origin selects the
+backend without mandatory duplicate weights or a technical chooser. Customers do not create
+qualification profiles; broad compatible model listing/downloads do not require team measurements.
+Package/update/tool-security acceptance remains separate from model recommendations and admission.
+Selected weights are explicitly provisioned/imported assets; no automatic download of every model.
 
 Current source boundary: [.github/workflows/ci.yml](../.github/workflows/ci.yml)
 checks main pull requests and pushes on a Linux runner. It does not implement the
@@ -323,8 +325,11 @@ fixture state and actual observations. Required cases:
   change; no external engine is selected silently and offline work remains usable.
 - A release transition changing the managed engine installs matching qualification records, runs
   local installation checks and completes supported model/workflow work without customer profile edits.
-- Wrong/missing managed-engine bytes or mismatched qualification metadata produce a specific,
-  truthful blocker and approved graphical recovery; no version spoofing or unsupported admission.
+- Wrong/missing managed-engine bytes or corrupted identity/compatibility metadata produce a specific
+  integrity/compatibility blocker and graphical recovery. Absence of a team-measured model profile
+  alone is not a local admission failure; no spoofed identity or fabricated evidence.
+- Existing local Ollama models remain available through their recorded source/runtime identity;
+  preserve both stores, manual preferences and automatic routing without forced duplicate downloads.
 - Interrupted/cancelled download, offline host, missing asset and insufficient disk.
 - Modified package/metadata, wrong platform, incompatible version, stale replay and
   invalid signer; no partial installation or user-data changes on rejection.

@@ -528,6 +528,28 @@ kbd, .kbd {
 
 .docs-end p { color: var(--ink-dim); max-width: 60ch; }
 
+/* ---- about us ----------------------------------------------------------- */
+
+/* The supplied team photograph, whole: capped for a compact section and
+   shrinking with the column on a phone, never cropped. The list rules are
+   neutral rather than the violet .doc-list markers. */
+.about-photo { margin: 22px 0 30px; max-width: 560px; }
+.about-photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: var(--hair) solid var(--edge);
+  border-radius: var(--r-card);
+}
+.team-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.team-list li {
+  padding-left: 14px;
+  border-left: 2px solid var(--edge-2);
+  color: var(--ink-2);
+  line-height: 1.6;
+  max-width: 72ch;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .docs-jump a:hover { transform: none; }
 }

@@ -19,7 +19,9 @@ Normal agent/developer context order:
    - [`releases.md`](releases.md)
 
 That three-file core (`AGENTS.md` + `PROJECT.md` + `tasks.md`) should answer most implementation
-questions.
+questions. For the current planning correction, first read the user's full statements in
+[beta-user-direction-2026-10-05.md](beta-user-direction-2026-10-05.md). They are preserved verbatim;
+the report includes the copyable planning handoff and independent-review rubric.
 
 Do not preload the entire documentation tree, archives or ledgers unless the current task genuinely
 needs them.

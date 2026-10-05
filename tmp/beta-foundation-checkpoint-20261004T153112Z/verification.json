@@ -1,0 +1,16 @@
+{
+  "verified_at_utc": "2026-10-04T15:40:36.276623+00:00",
+  "captured_files_still_identical": false,
+  "archive_sha256": "1b9767bf2f8595a0aa7d7443131f196b770f2c32728061b86369ae94c5ad9ea4",
+  "application_source_changed_by_review": false,
+  "application_tests_run": false,
+  "git_writes": false,
+  "review_findings": 5,
+  "final_verified_at_utc": "2026-10-04T15:43:01.284278+00:00",
+  "intentional_post_capture_differences": [
+    "agent-memory/agentchangelog.md",
+    "agent-memory/userprompts.md"
+  ],
+  "application_and_protected_doc_files_still_identical": true,
+  "updated_ledger_copies_preserved": true
+}

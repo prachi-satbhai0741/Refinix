@@ -8,8 +8,9 @@ cannot prove isolation, secure storage, zero egress, or resistance to attack.
 
 The [standalone Beta scope](PROJECT.md#25-platform-support-and-beta-scope) narrows the profiles offered in Beta;
 they do not relax authentication, model provenance, approval, sandbox, data-loss
-or offline-runtime boundaries. A capability is advertised only on its qualified
-execution profile. Beta in-app updates and manual recovery follow
+or offline-runtime boundaries. Local model admission follows the open-model compatibility policy
+in PROJECT.md; lack of team measurement alone is not a refusal. Advertised measurements, tool
+containment and package/security claims still require their own evidence. Beta in-app updates and manual recovery follow
 [release acceptance](releases.md#beta-01-publication). Qualify every offered installation/update/
 recovery path. Peer discovery, pairing, remote execution and admission are post-Beta capabilities;
 their controls remain required when exposed. Deferring mesh work does not weaken local isolation,
@@ -76,6 +77,24 @@ Normal work:
 The strongest demonstration uses operating-system or network enforcement plus
 independent observation. Application logs alone cannot prove that traffic was
 blocked.
+
+### Existing local Ollama reuse
+
+Connect only to the supported numeric loopback endpoint; bypass proxies and reject inference redirects.
+Before sending work or a check, establish that the selected model is local using the supported API's
+model metadata. Cloud/remote-backed models are excluded from offline work; model-name suffixes alone
+are insufficient. Unknown locality must be explained before confidential input is sent.
+
+Use required API/feature compatibility and known security/incompatibility exclusions rather than an
+exact team-measured version allowlist. A newer version alone is not evidence of failure. An endpoint
+answering on loopback is not independent proof of publisher identity, zero egress or safe host setup.
+Do not silently change the user's service, cloud settings, model store, credentials or updater.
+
+Ollama reuse is read-and-run in Beta: list metadata and issue bounded inference; do not copy, pull,
+remove or modify its models. Handle startup graphically under user authority. Manage Refinix's own
+jobs and resources without terminating an externally owned service or interrupting unrelated clients.
+No arbitrary executable model code, permissions expansion or unrestricted host-tool fallback is added.
+Source, licence, identity, observed compatibility and published/team evidence remain separately labelled.
 
 ### Kubernetes worker exposure
 
@@ -324,12 +343,15 @@ The curated catalogue accepts only components with:
 - a compatible licence for code, weights, tokenizer, and runtime;
 - a pinned version or commit;
 - expected files and hashes;
-- supported runtime and hardware evidence;
+- actual format/runtime compatibility information and labelled published, observed or estimated hardware evidence;
 - recorded local modifications;
 - no required cloud dependency or silent network behaviour.
 
-Public availability does not prove permission, safety, compatibility, or
-reproducibility. Arbitrary remote model code is excluded from the MVP.
+Public availability does not prove permission, safety, compatibility, or reproducibility. Prefer
+identifiable publishers and recorded upstream assets; reuse available model cards, hashes and source
+metadata. Broad model discovery does not require manual team measurement of every candidate.
+Third-party conversions and missing evidence are disclosed. Runtime-owned user assets remain distinct
+from models endorsed or redistributed by Refinix. Arbitrary remote model code is excluded from the MVP.
 
 Prefer suitable local/open-source components over reimplementing standard
 functionality, but reject competing SIH submissions, unlicensed snippets,

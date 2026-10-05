@@ -3,7 +3,14 @@
 Prepared at the user's request on 2026-10-04. Repository:
 `/Users/adityatadge/Documents/GitHub/AegisForge`.
 
-**State: USER-APPROVED CORRECTED EXECUTION DIRECTION — prerequisite permissions remain pending.**
+**Current planning correction, 5 October 2026:** read the user's
+[full verbatim direction](beta-user-direction-2026-10-05.md), updated PROJECT.md and tasks.md first.
+The measured-only local model/version/device gates and managed-only runtime proposals below are
+historical and superseded. Broad compatible model choice, local Ollama reuse, recommendations and
+automatic task-to-model assignment now guide the owner's next plan. Existing evidence and unfinished
+work below are retained; the user sends the new handoff and obtains independent review before execution.
+
+**Historical state (4 October 2026): USER-APPROVED CORRECTED EXECUTION DIRECTION — prerequisite permissions remain pending.**
 The [approved execution addendum](#approved-execution-addendum-20261004) records the user's latest
 approval and supersedes conflicting O.5, O.6, O.11 and prompt details. This approves the direction
 and correction handoff; it does not establish runtime, sandbox, package or release acceptance. See

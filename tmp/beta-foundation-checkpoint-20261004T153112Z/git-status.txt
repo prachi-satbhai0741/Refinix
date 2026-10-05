@@ -1,0 +1,71 @@
+## aditya...origin/aditya
+ M AGENTS.md
+ M README.md
+ M agent-memory/agentchangelog.md
+ M agent-memory/userprompts.md
+ M backend/contracts/profiles.py
+ M backend/coordinator/db.py
+ M backend/coordinator/device.py
+ M backend/coordinator/models.py
+ M backend/coordinator/repo.py
+ M backend/coordinator/runtime.py
+ M backend/coordinator/server.py
+ M desktop/__main__.py
+ M desktop/lifecycle.py
+ M desktop/packaging_plan.py
+ M desktop/refinix.py
+ M desktop/setup_py2app.py
+ M desktop/shell.py
+ M desktop/test_packaging.py
+ M desktop/test_review_fixes.py
+ M docs/PROJECT.md
+ M docs/README.md
+ M docs/evaluation.md
+ M docs/model-catalog.md
+ M docs/releases.md
+ M docs/security.md
+ M frontend/app/app.js
+ M frontend/app/control.html
+ M frontend/app/test-control-centre.cjs
+ M frontend/design/docs.css
+ M frontend/design/docs.html
+ M frontend/design/site.css
+ M frontend/design/site.html
+ M scripts/qualify_execution.py
+ M tasks.md
+?? backend/coordinator/build_info.py
+?? backend/coordinator/engine.py
+?? backend/coordinator/fake_llama_server.py
+?? backend/coordinator/local_engine.py
+?? backend/coordinator/ownership.py
+?? backend/coordinator/readiness.py
+?? backend/coordinator/runtime_llamacpp.py
+?? backend/coordinator/test_engine.py
+?? backend/coordinator/test_ownership_admission.py
+?? backend/coordinator/test_readiness.py
+?? backend/requirements-runtime.lock
+?? desktop/TESTING.md.in
+?? desktop/build.py
+?? desktop/engine/
+?? desktop/linux/
+?? desktop/packaging-tools.json
+?? desktop/refinix.spec
+?? desktop/requirements-build-linux.lock
+?? desktop/requirements-build-windows.lock
+?? desktop/requirements-linux.lock
+?? desktop/requirements-windows.lock
+?? desktop/test_build.py
+?? desktop/windows/
+?? docs/beta-execution-handoff.md
+?? "frontend/design/assets/About US.png"
+?? frontend/design/assets/evidence-loop.webm
+?? frontend/design/assets/hero-loop.webm
+?? frontend/design/assets/hero-poster.jpg
+?? "frontend/design/assets/intro video.mp4"
+?? frontend/design/assets/intro-video-poster.jpg
+?? frontend/design/assets/pillar.png
+?? qualification-artifacts/macos/macos-applesilicon-metal-16g/
+?? scripts/build-site.sh
+?? scripts/engine_parity.py
+?? scripts/test_build_site.py
+?? tmp/

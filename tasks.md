@@ -19,6 +19,13 @@ until after Beta 0.1.** The Beta includes qualified in-app updates on Windows, m
 
 **Current active phase: Phase 1 — Cross-platform foundation.**
 
+**5 October 2026 planning correction:** the [full user statements](docs/beta-user-direction-2026-10-05.md)
+are preserved verbatim. Align the next owner plan with broad upstream model choice, existing Ollama
+reuse, managed llama.cpp, lightweight recommendations and automatic local task-to-model routing.
+Do not require team certification of every model/device/version. Preserve the existing foundation
+and defer distribution. The user will send the handoff and return the owner's plan for independent
+review before implementation; this document update is not execution authorization.
+
 Phase 1 is only the first part of the total Refinix Beta path. Completing Phase 1 does **not** mean
 Refinix is Beta-complete, release-ready or production-qualified. It establishes the portable
 foundation needed by the local-product, standalone safety/proof and release phases. Trusted-mesh
@@ -35,8 +42,9 @@ detail remain in their focused authorities.
 - Continue prototype work from the existing repository and preserve merged capabilities. Trace each
   relevant UI/API, coordinator, runtime/tool, storage and validator path before adding code; repair
   or adapt the existing path instead of rebuilding it or overlooking available behaviour.
-- Qualification is developer/release work, not routine customer administration. The installed app
-  owns its tested engine; customers use graphical setup and automatic local installation checks.
+- Reuse upstream infrastructure and published evidence within the college/hackathon scope. Local
+  model admission uses actual compatibility and capacity; team measurements are evidence, not a
+  general allowlist. Keep graphical setup, a managed engine path and existing Ollama reuse.
 - Keep the current orchestration harness. LangGraph remains a considered option under
   `docs/PROJECT.md` section 7.0, not a dependency to install or a prerequisite to completing Beta.
 - Windows, macOS and Linux are all required desktop OS families for the Beta direction. Publish
@@ -227,34 +235,33 @@ facts first. Run larger probes only when the user authorises them or the simple 
 - Ensure failure states are truthful when a required runtime/native dependency is unavailable.
 - Do not introduce a new frontend framework merely for portability.
 
-### D. App-managed inference runtime
+<a id="d-app-managed-inference-runtime"></a>
+### D. Reused local runtimes and compatible model admission
 
-- Retain and reuse the current Ollama adapter as the development/parity baseline; do not turn the
-  installed customer's system Ollama or its updater into a Beta runtime dependency.
-- Evaluate/implement the preferred bundled `llama.cpp`/`llama-server` path only when parity and
-  packaging requirements justify it; do not force a migration simply because it is the target
-  candidate.
-- Establish an explicit pinned app-managed engine executable/configuration/endpoint. An external
-  runtime update, changed executable search path or other installation must not replace or redirect it.
-- Bind shipped qualification records to the actual engine/model bytes and supported profile. Keep
-  strict admission internally; do not bypass it or require each customer to create new profile entries.
-- Distinguish installed model, runtime health and unsupported/unverified engine combinations in
-  status. Explain the specific blocker and an approved graphical repair action rather than generic
-  model unavailability or manual qualification instructions.
-- Preserve model selection, streaming, cancellation, structured output, context bounds, reasoning
-  controls and health semantics across supported runtime adapters.
-- Keep inference endpoints on loopback.
-- Establish memory/resource budgeting hooks needed by later concurrency work.
-- Use the [reviewed preset contract](docs/model-catalog.md#reviewed-presets) for context/output, KV,
-  backend/offload, slots and current-capacity floors. Reuse runtime allocation and scheduling features;
-  do not implement a second cache allocator or startup fit-calculation engine.
-- Do not require ordinary users to install/manage model servers from a terminal.
+- Reuse the existing Ollama adapter as a product path for installed local Ollama models, without
+  copying weights. Keep the managed upstream llama.cpp path for users who need it.
+- Select the backend from model origin internally; show runtime/source on entries. Users with
+  Ollama may also download managed models. No mandatory technical runtime chooser or second install.
+- Preserve managed-engine executable/configuration/integrity ownership; an external updater cannot
+  replace its bytes. Broaden managed model choice beyond the current static measured entry.
+- Replace blanket local exact-profile gates with actual API/format/task capability, health/locality,
+  resource and data/tool-policy admission. Preserve measured evidence honestly; no spoofed versions,
+  invented qualification, weakened worker checks or unsafe host execution.
+- A newer Ollama version alone does not block normal work. Refresh metadata and explain real missing
+  features/security exclusions, offering normal graphical upstream update/start guidance under user
+  authority rather than requiring every customer to maintain a measured version.
+- Preserve streaming, cancellation, context bounds, reasoning, structured parsing, model identity,
+  task validators, persisted history and approvals across both adapters and every affected caller.
+- Keep inference local/offline and reject cloud-backed choices before work is sent.
+- Reuse allocation/loading/queuing features for multiple models/jobs. Permit concurrency where
+  capacity allows it; do not impose a universal one-model rule or disturb other Ollama clients.
+- Use lightweight hardware facts and published estimates for recommendations, not a mandatory
+  optimizer, per-model benchmark or hardware allowlist. Real format/capacity failures stay visible.
 
-**Decision checkpoint:** if runtime parity evidence shows that keeping Ollama or moving to bundled
-llama.cpp materially changes the Beta package, the agent must present a recommendation and obtain
-user approval before changing the product/runtime direction or protected docs. The app-managed
-ownership requirement and preference for bundled llama.cpp are already recorded; do not re-ask those
-settled decisions. Ask for a materially different engine/package/security choice if evidence requires it.
+**Next planning checkpoint:** the implementation owner inspects current source/callers and proposes
+one coherent plan against the user's verbatim requirements. The user returns that plan for independent
+review. Ask only for genuine new scope/security/host actions; do not re-ask settled model freedom,
+Documents/Code use, automatic assignment or distribution deferral.
 
 ### E. Cross-platform document/image foundation
 
@@ -339,27 +346,32 @@ packaging remain deferred until after Beta.
 
 ## Phase 2 outcome
 
-Make each selected desktop profile useful on its own through the existing Refinix interface, with
-qualified local models and dependable Chat/Documents/Code workflows.
+Make each selected desktop profile useful through the existing interface, with broad compatible
+local models, automatic task-to-model routing and useful Chat/Documents/Code workflows. Reuse existing
+infrastructure and published evidence; do not certify every model as a prerequisite.
 
 ## Phase 2 required outcomes
 
 - Persistent **Settings -> Models** lifecycle:
-  - installed vs supported/uninstalled entries;
+  - existing Ollama and managed entries with runtime/source identity, plus broad upstream discovery;
   - explicit compatible download or verified offline import;
   - progress/cancellation;
   - provenance/integrity verification;
-  - capability self-test;
+  - lightweight compatibility/health/locality information and honest task failures;
   - enable/disable;
   - safe removal without losing chats or unrelated models.
-- Run the local installation/self-test flow automatically after approved provisioning/enablement,
-  with graphical progress and specific failures. Release qualification remains an engineering gate;
-  customers do not manually register or requalify runtime/model profiles.
-- Match detected hardware to precomputed category recommendations and execution presets. Show the
-  source and evidence state, preserve optional category selection and advanced compatible choices,
-  and check current capacity without conducting automatic benchmarks or public network research.
-- At least two qualified task/model combinations across at least two task types; installed model
-  names alone are insufficient.
+- Reuse download/import integrity, progress and cancellation. Local checks or real task execution
+  show observed results without mandatory synthetic certification for every model/version. Customers
+  do not register qualification profiles. Preserve app/tool/package safety evidence separately.
+- Recommend using lightweight hardware facts and published/estimated requirements. Users may choose
+  beyond recommendations; show source, evidence, format/runtime needs and resource warnings. No
+  hardware-brand/device allowlist or compulsory benchmark. Ordinary runtime remains offline.
+- Implement automatic local assignment from workflow/prompt/attachments, available capabilities
+  and capacity; preserve optional manual overrides and persist a concise routing reason.
+- Exercise multiple model identities/jobs and representative Chat/Documents/Code tasks, including
+  existing Ollama and managed paths. Use available small models and deterministic fixtures where
+  appropriate; do not require a large model download or claim mocked checks establish real performance.
+- Demonstrate capacity-aware concurrent work or queuing, preserving cancellation and other clients.
 - Real multi-turn Chat with bounded context, reasoning behaviour, cancellation, persisted history and
   truthful omissions/failures.
 - Grounded scan/image + selected SOP -> readable Word artifact with page/source citations and
@@ -373,8 +385,8 @@ qualified local models and dependable Chat/Documents/Code workflows.
 ## Human/device checkpoints
 
 Use real device/model checks only when authorised. Ask the user for simple device/UI observations
-before escalating to broad diagnostic commands. Qualify exact model/runtime/profile combinations;
-do not extrapolate one machine's result to another.
+before escalating to broad diagnostic commands. Record exact identities/settings for observed runs;
+do not extrapolate one result to another or make every model's measurement a local admission gate.
 
 ## Phase 2 completion condition
 

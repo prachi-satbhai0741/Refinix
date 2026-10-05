@@ -2,22 +2,24 @@
 
 ## Status and evidence rule
 
-The selected Qwen3.5-4B/Ollama prototype baseline and its dated evidence are
-recorded below. Other named components remain candidates unless an exact manifest
-and qualifying result says otherwise. Production recommendations require source,
-licence, integrity, compatibility and workload evidence, not model-name claims.
+The selected Qwen3.5-4B/Ollama prototype baseline and its dated evidence are recorded below.
+Candidate and measured status describe that evidence; they do not close the local model library.
+Recommendations identify source, licence, integrity, format compatibility and the origin of workload
+evidence rather than treating model names or hosting as a universal quality/safety guarantee.
 
 [PROJECT.md](PROJECT.md#13-runtime-and-resource-policy) owns the current runtime contract.
-Engineering/release qualification is completed before a supported model/engine combination is
-offered. Normal customers choose capabilities and models graphically; they do not pin external
-Ollama versions, edit execution profiles or repeat qualification when unrelated software updates.
+The [verbatim user direction](beta-user-direction-2026-10-05.md) requires broad compatible model
+choice using existing upstream infrastructure. Source handling, runtime compatibility and published
+evidence do not require team measurement of every model before listing, downloading or local use.
+Normal customers do not author execution profiles. Dated prototype qualification records below
+remain evidence, not the local catalogue's admission allowlist.
 
 The actual fleet and outstanding hardware checks are in
 [devicespecifications.md](devicespecifications.md).
 
 ## 1. Catalogue purpose
 
-The catalogue converts raw model choices into approved capabilities. It lets
+The catalogue exposes model sources, compatible runtime assets and evidence. It lets
 onboarding and persistent Settings → Models answer:
 
 - which main engine fits this device;
@@ -26,10 +28,12 @@ onboarding and persistent Settings → Models answer:
 - whether the model is installed, verified, measured, or unavailable;
 - how to reproduce or import the exact artifact.
 
-The recommendation catalogue is curated. Show more and advanced import preserve
-user choice among supported models; imports still require provenance, integrity,
-licence and runtime compatibility. User choice does not promise every model format
-or unrestricted executable model code.
+Recommendations provide useful starting choices; Show more, upstream discovery and advanced import
+are not restricted to models the team has measured. Reuse official publisher model cards, runtime
+metadata and upstream evaluations, with source/format/licence/integrity information. Identify third-party
+quantizers/converters. Hosting on Hugging Face is not universal certification. Missing team measurements
+alone do not make a model unusable; actual unsupported formats or unrestricted model code are different
+limitations. Qwen, Gemma, GLM, DeepSeek and GPT-OSS are examples, not a closed family list.
 
 <a id="persistent-model-management"></a>
 ### Persistent model management
@@ -41,19 +45,20 @@ and later changes, rather than two separate installers/catalogues.
 
 | Operation | Required behaviour |
 |---|---|
-| Browse | Distinguish installed models from supported not-installed entries; show capabilities/profiles, exact source, licence, version/revision, quantisation, download/installed size, runtime and expected hardware requirements from the approved manifest |
-| Understand evidence | Distinguish measured, estimated, documentation-only and unverified compatibility/performance; installed does not imply supported or self-tested. Unqualified research candidates are not supported download offers |
-| Choose or revisit | Select another compatible model for eligible profiles; refresh recommendations when hardware, runtime or enabled capabilities change, on explicit inspection/self-test without silent public checks |
-| Download later | User explicitly starts an approved compatible download; show source, size, progress and cancellation. Stage partial files outside active model entries; failure/cancel leaves existing capabilities usable |
+| Browse | Show existing local Ollama entries and upstream discovery/downloads for compatible managed assets; show publisher/source, licence, revision, format, size, runtime and known capabilities/requirements. Recommendations are not the full library |
+| Understand evidence | Separate installation, runtime/task compatibility, published upstream evidence, local observations, estimates and team measurements. Missing team measurements alone do not prevent an otherwise compatible local model from being used |
+| Choose or revisit | Default to automatic task-to-model assignment among installed compatible models; preserve optional manual preferences and choices beyond hardware recommendations. Refresh relevant metadata without silent public checks |
+| Download later | User starts a download from a recorded upstream source, including choices beyond fit recommendations; show size, format/runtime needs and warnings. Preserve staged progress/cancellation and existing models |
 | Import offline | Apply the approved bundle path below, including manifest, provenance/licence, compatibility and integrity; arbitrary files or runtime inventory names never auto-enter the trusted catalogue |
-| Verify and self-test | The app verifies exact files and automatically runs the capability-specific local installation test after approved download/import/enablement; only successful eligible profiles become ready. No customer-authored qualification records; keep specific failure details and incomplete/unverified states visible |
+| Verify and self-test | Verify downloaded asset integrity and establish runtime health/locality. Bounded task checks or normal execution record what actually ran; synthetic team certification of every model/version is not mandatory. Keep actual incompatibilities/failures visible and never fabricate measured evidence |
 | Enable or disable | Change profile eligibility explicitly; prevent new placement on disabled models and explain affected queued/active jobs. Never silently change the model of an in-flight attempt |
 | Remove safely | Preview affected capabilities/defaults, model references and jobs; drain or explicitly cancel affected work before removal. Require confirmation; preserve shared files referenced by other models and do not delete externally owned runtime stores without a supported explicit removal operation |
 | Recover | Interrupted provisioning/removal cannot leave false Ready status or corrupt another model. Preserve catalogue/history; clear stale selections and offer compatible alternatives without overriding user choice |
 
-The standalone Beta requires this lifecycle for a small approved set, including at least two
-appropriate task/model combinations. A small supported set is sufficient; there is no requirement
-to invent six qualified choices. Additional models and calibrated scores follow later.
+The standalone Beta requires broad compatible local choice and this persistent lifecycle, not a
+small measured-only admission list. Demonstrate representative task/model combinations rather than
+benchmarking every available model. Initial recommendations may be few while discovery and downloads
+remain open. Calibrated scores are later work, not a prerequisite for listing models.
 [PROJECT.md](PROJECT.md#5-persistent-model-management) owns interaction and
 [tasks.md](../tasks.md) owns active sequencing; [evaluation](evaluation.md#beta-acceptance) records
 evidence. Historical P-task labels are not active gates. The current inventory and per-scope selector
@@ -66,7 +71,7 @@ do **not** yet implement this lifecycle.
 | Main engine | Required for local generation; optional for remote-only clients | Chat, planning, tool use, and fallback |
 | Documents | Required when Documents is enabled | OCR/vision model or proven equivalent |
 | Semantic knowledge | Required when semantic retrieval is enabled | Embedding model plus local index |
-| Code | Requires a coding-capable verified model when Code is enabled | May reuse the main engine if it passes the code benchmark |
+| Code | Requires a compatible local generation model for the selected Code workflow | May reuse the main model; preserve proposal parsing, review, approvals and safe validation rather than requiring a team benchmark for every model |
 | Voice | Optional | Local transcription; speech output remains later scope |
 | Multilingual | Required when FR-019 Indian-language interaction is enabled | Indic speech input, translation, and speech output; text may reuse the main engine |
 
@@ -385,10 +390,12 @@ runtime/backend and measured versus estimated status. In P17, a 96/100 suitabili
 must never be labelled “96% accuracy”. No “100% speed” claim without a defined
 comparison. The screenshot's compact bars are a UI reference, not a benchmark.
 
-Warn visibly for slow or memory-heavy advanced choices. Known-incompatible local
-execution is blocked with a reason; downloading for a compatible remote target is
-a separate valid choice. The user controls the selection and can revisit it without
-resetting chats. Installation status, compatibility and quality are distinct states.
+Warn visibly for slow or memory-heavy choices without treating estimated fit as a download allowlist.
+Users may select larger/different models. Report actual unsupported formats/capabilities, insufficient
+disk or failed resource admission precisely; lack of team measurement is not an incompatibility.
+Automatic routing handles normal task assignment, with optional manual preferences. Installation,
+compatibility, upstream results and team-measured quality remain distinct; Beta does not offer a peer
+fallback for a local limitation.
 
 ## 7. Provisioning
 
@@ -415,31 +422,43 @@ installation during offline runtime.
 
 ## 8. Runtime strategy
 
-**Current:** Ollama, as recorded in OD-03 below. **Preferred production candidate:**
-a pinned app-managed [llama.cpp llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server)
-for qualified GGUF models, using Metal/CUDA/Vulkan/CPU builds only where tested.
-Provide a safe CPU fallback where it actually meets the supported profile.
+Beta supports existing local Ollama via its official API and the Refinix-managed upstream
+[llama.cpp llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) path.
+Ollama-owned models run in Ollama without copying weights. Compatible managed assets run in the
+managed engine. Show model origin/runtime, select the backend internally and preserve separate
+identities for matching model names. Do not require a technical runtime chooser or second engine
+installation. Reusing Ollama files directly in another engine is deferred.
 
-The installed Beta requires one app-managed, pinned and integrity-verified default engine per
-supported profile. The inference engine is an application dependency, not a separately administered
-customer prerequisite. External/system Ollama updates must not change the engine selected by
-Refinix. Upgrade the managed engine through the explicit qualified Refinix update path, with matching
-compatibility records and recovery; preserve reusable model assets and the existing development path.
+The managed engine remains pinned/integrity-verified as an application dependency. Its ownership,
+update and recovery boundary is separate from the optional externally maintained Ollama connection.
+On either path, team-measured profiles are evidence, not a blanket model/device/version allowlist.
+Local compatibility follows API/features, supported model formats, declared task capabilities,
+health/locality and capacity. Unknown or insufficient evidence is labelled; real failures are reported.
 
-An exact-version qualification mismatch means the engine/model combination is unverified for that
-workflow; it does not establish that the model weights are missing. Show the actual cause and an
-approved graphical recovery action. Do not admit unsupported combinations by spoofing versions or
-copying old measurements. Local automatic self-tests check a qualified installation; they do not
-create workload qualification for arbitrary imports or new engine builds.
+Distinguish **Installed**, **Published upstream evidence**, **Checked/observed here** and
+**Measured in Refinix**, with **Not usable for this task** when an actual limitation is found.
+These are independent facts, not a ladder every model must climb before admission. An upstream
+benchmark does not become a Refinix benchmark; a quick check does not prove general reliability.
+Recorded observations identify runtime version, runtime-reported digest and relevant settings.
+Runtime-reported identity is not independent verification of weight bytes.
 
-Before replacing the default, compare exact model files and settings on supported
-OS/architectures: installation/startup, cold/warm latency, memory, cancellation,
-structured outputs, context handling, concurrent admission and document/vision
-parity. [Multimodal support](https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md)
-requires supported model architecture and any matching projector assets. Record
-build/revision, hashes and licences. Existing Ollama results are not proof that a
-separate upstream binary is qualified. Preserve rollback and avoid duplicate weight
-stores or a permanent requirement for two runtimes.
+Use lightweight hardware recommendations and bounded runtime settings rather than mandatory model
+benchmarks. Context/output defaults are recommendations adapted to model declarations and available
+capacity, not universal measured limits. Keep explicit context/output/concurrency control and supported
+reasoning settings. More than one model/job may run when resources permit; otherwise queue or release
+Refinix-managed resources without stopping another app's work.
+
+Version/model/settings changes refresh compatibility information. A newer Ollama version alone must
+not block Chat/Documents/Code. Recommend a supported upstream update for a genuinely missing feature;
+maintain necessary feature/security exclusions without claiming every new version is safe. Do not
+silently change the host. Model selection never changes the backend of an active attempt implicitly.
+
+Preserve validators, approvals, grounding and safe tool execution on both paths. Local open-model
+admission does not relax worker qualification or sandbox controls. Package/workflow checks use
+representative fixtures and available devices, not every model/hardware combination. Downloads remain
+explicit connected setup and use source/revision/licence/integrity metadata, including documented
+publisher/CDN redirects handled by established upstream mechanisms. No broad redirect trust or
+inference redirects are implied.
 
 For semantic RAG, qualify [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)
 with a supported local runtime and [sqlite-vec](https://github.com/asg017/sqlite-vec)
@@ -447,12 +466,11 @@ as an embedded vector-index candidate alongside existing FTS5. These are proposa
 not installed or approved versions. Check packaging/extension loading and retrieval
 quality on each supported platform; no external vector database is required.
 
-Keep one baseline model wherever it meets quality requirements. Specialist coding,
-OCR/vision or larger reasoning models enter the supported set only after a measured
-benefit on representative tasks. Demonstrate auto-selection with at least two
-qualified model options and task types; one model serving several profiles alone
-does not demonstrate selection between models. Voice, speech and image-generation
-engines remain optional future packs.
+Reuse one model across tasks where appropriate while allowing compatible specialist and larger
+models without prior team measurement. Demonstrate automatic selection between model identities
+and task types with available models/fixtures; do not claim a mocked route demonstrates real model
+quality or fit. Published task evidence can guide routing. Voice, speech and image-generation packs
+remain later capabilities; listing model metadata does not implement those workflows.
 
 Refinix supplies the harness. [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 is not adopted; its developer-preview plugin approach is a research option only
@@ -527,12 +545,12 @@ inventory constraint, not a limit on production users. Begin evaluation with:
 - cold and warm measurements;
 - explicit CPU offload where tested.
 
-Advertised maximum context is not a supported context. Support comes from local
-quality, latency, and memory evidence. Record context/output limits, concurrent
-slots, cache precision/reuse settings and backend with each measurement. Follow
-the [KV-cache policy](PROJECT.md#132-resource-and-context-policy): the
-engine owns allocation; Refinix admits work against a measured resource budget.
-PagedAttention is an optional engine capability, not a custom Refinix requirement.
+Advertised maximum context does not establish practical fit on this computer. Use declared runtime
+limits, published requirements, current capacity and labelled estimates for recommendations; users
+may choose beyond recommended defaults. Record settings with observations and enforce actual bounded
+requests. Follow the [KV-cache policy](PROJECT.md#132-resource-and-context-policy): the engine owns
+allocation. A missing measured resource profile is not a general admission refusal. PagedAttention
+is an optional engine capability, not a custom Refinix requirement.
 
 Use the [reviewed presets](#reviewed-presets) for setup defaults and current-capacity thresholds.
 Public research may support conservative candidate bounds; keep estimates and missing configuration
@@ -540,20 +558,25 @@ details visible and do not declare a tier release-accepted from research alone.
 
 Historical device assignments remain hypotheses in
 [devicespecifications.md](devicespecifications.md). Onboarding must use detected
-and measured evidence rather than member names or hard-coded machines.
+and published/observed/estimated evidence rather than member names or hard-coded machines.
 
-## 10. Acceptance for one catalogue entry
+## 10. Listing, local use and demonstrated evidence
 
-An entry is demo-ready only when:
+A model may be listed from its runtime or recorded upstream metadata without a team benchmark.
+For downloads, identify publisher/converter, source/revision, applicable licence, file format/size
+and available integrity metadata. Runtime-owned user assets are reported separately from endorsed
+or redistributed catalogue assets. Do not label unknown provenance or upstream results as verified
+by Refinix.
 
-- authoritative source and all relevant licences are recorded;
-- exact revision and files are pinned;
-- integrity verification succeeds;
-- the selected runtime loads it locally;
-- the representative capability self-test passes;
-- memory, latency, and quality are recorded on the assigned device;
-- offline runtime completes without an external inference call;
-- setup instructions reproduce the result.
+Local use needs actual runtime/API/task compatibility, locality and capacity handling, not a prior
+measurement on an assigned device. Keep specific runtime failures and missing information visible;
+preserve workflow validators and user authority. A synthetic self-test is not required to turn
+every model into an approved catalogue entry.
+
+Claim that a workflow was demonstrated only after observing it with recorded model/runtime/settings,
+inputs and outcomes. Record limitations and offline evidence; do not infer quality from one successful
+reply. Release checks use representative integrated app/workflow examples rather than benchmarking
+all downloadable models. Package and tool-security acceptance remain separate.
 
 ## 11. Personalisation and optional model adaptation
 

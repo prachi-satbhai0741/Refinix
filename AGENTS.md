@@ -12,16 +12,18 @@ The first Beta targets standalone operation on Windows, macOS and Linux with a
 qualified, user-initiated in-app update path. Distributed execution is deferred
 until after Beta; preserve its existing code and trust boundaries for later reuse.
 
-Runtime compatibility and qualification belong to Refinix development/release work.
-Normal customers must not maintain runtime versions, register execution profiles
-or manually requalify models after an external engine update. Retain the existing
-orchestration harness; LangGraph remains an evaluation option, not an adopted dependency.
+The user's [5 October 2026 direction](docs/beta-user-direction-2026-10-05.md) is preserved verbatim.
+For this college/hackathon Beta, reuse existing upstream infrastructure and the current foundation.
+Existing local Ollama models and Refinix-managed llama.cpp are both product paths; model origin
+selects the runtime without a mandatory technical chooser or duplicate weights. Broad compatible
+model choice and automatic local task-to-model routing are required. Team-measured model/device/
+version profiles are evidence, not a general local admission allowlist.
 
-Hardware-aware setup matches reviewed model/capability presets derived from published evidence
-and representative qualification; it does not require a custom startup optimizer or ownership of
-every laptop. Device brands are labels, not admission keys. Reuse existing repository paths and
-established offline tools before implementing commodity detection, provisioning or runtime logic.
-Preset evidence, current capacity checks and package/security acceptance remain distinct.
+Use published model/runtime evidence and lightweight hardware facts for recommendations. Users may
+choose beyond recommendations; do not require ownership of every laptop or measurement of every
+model. Actual format/API/capability compatibility, offline locality, resources and tool/data safety
+still apply. Do not invent compatibility, fit or accuracy. Retain the existing orchestration harness;
+LangGraph remains an evaluation option, not an adopted dependency.
 
 ## 1. Authority and conflict handling
 
@@ -311,10 +313,11 @@ Do not create a new per-session planning/handoff document unless the user explic
   An agent owning a section handles its implementation and integration directly. Routine technical
   choices remain agent-owned; interrupt only for the genuine checkpoints in section 3.5.
 - Preserve the current UI/harness and working paths unless the product contract requires change.
-- Implement the app-managed runtime boundary rather than shifting compatibility work to customers.
-  Preserve real qualification checks; do not spoof an engine version, copy old evidence into a new
-  profile or disable admission to make the UI appear ready. Graphical installation/self-tests are
-  customer setup checks, distinct from developer/release qualification.
+- Preserve managed-runtime ownership/integrity and support existing local Ollama reuse. Replace
+  blanket local qualification gates with honest compatibility/capacity admission; missing team
+  measurements are not themselves a refusal. Never spoof versions, fabricate measured profiles or
+  weaken worker, sandbox, approval or data-integrity checks. Local checks and upstream evidence
+  remain distinct from team measurements and package/security acceptance.
 - Keep the current orchestration harness for the present execution scope. Consider LangGraph only
   for a demonstrated gap with evidence of lower implementation/maintenance cost and preserved
   offline, state, approval and security behaviour; mentioning a competitor's framework is not
