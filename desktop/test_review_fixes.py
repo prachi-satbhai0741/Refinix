@@ -54,7 +54,10 @@ class TestDesktopReviewFixes(unittest.TestCase):
             kwargs["on_started"](SimpleNamespace(port=choice.port))
             return 0
 
-        with patch.object(lifecycle, "SingleInstance", return_value=instance), \
+        # Both entries take the lock beside the database they will open.
+        lock_class = Mock(return_value=instance)
+        lock_class.for_state.return_value = instance
+        with patch.object(lifecycle, "SingleInstance", lock_class), \
                 patch.object(shell, "run", run):
             self.assertEqual(refinix.main(), 0)
             with patch.object(sys, "argv", ["desktop"]), self.assertRaises(SystemExit) as exit:
@@ -159,3 +162,51 @@ class TestDesktopReviewFixes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPinnedToolkit(unittest.TestCase):
+    """K19: a packaged build pins its renderer and checks it before starting."""
+
+    def test_packaged_builds_pin_the_renderer_per_os(self):
+        self.assertEqual(shell.pinned_gui(None, frozen=True, platform="win32"), "edgechromium")
+        self.assertEqual(shell.pinned_gui(None, frozen=True, platform="darwin"), "cocoa")
+        self.assertEqual(shell.pinned_gui(None, frozen=True, platform="linux"), "gtk")
+        self.assertIsNone(shell.pinned_gui(None, frozen=False, platform="win32"))
+        self.assertEqual(shell.pinned_gui("qt", frozen=True, platform="win32"), "qt")
+
+    def _registry(self, values):
+        class Key:
+            def __init__(self, path): self.path = path
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        class Registry:
+            HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER = "HKLM", "HKCU"
+
+            def OpenKey(self, hive, path):
+                if (hive, path) not in values:
+                    raise OSError("absent")
+                return Key((hive, path))
+
+            def QueryValueEx(self, key, name):
+                return values[key.path], 1
+        return Registry()
+
+    def test_missing_webview2_is_explained_not_bypassed(self):
+        problem = shell.toolkit_problem("win32", registry=self._registry({}))
+        self.assertIn("WebView2", problem)
+
+    def test_a_zeroed_registration_counts_as_absent(self):
+        hive, path = shell.WEBVIEW2_KEYS[0]
+        registry = self._registry({("HKLM", path): "0.0.0.0"})
+        self.assertIsNotNone(shell.toolkit_problem("win32", registry=registry))
+
+    def test_an_installed_runtime_passes(self):
+        hive, path = shell.WEBVIEW2_KEYS[2]
+        registry = self._registry({("HKCU", path): "141.0.3537.71"})
+        self.assertIsNone(shell.toolkit_problem("win32", registry=registry))
+
+    def test_linux_without_webkitgtk_is_explained(self):
+        problem = shell.toolkit_problem("linux", gtk_probe=lambda: False)
+        self.assertIn("WebKitGTK 4.1", problem)
+        self.assertIsNone(shell.toolkit_problem("linux", gtk_probe=lambda: True))

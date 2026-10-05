@@ -24,7 +24,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.contracts import profiles, qualification, v1  # noqa: E402
-from backend.coordinator import db, device, docflow, docgen, models, runtime  # noqa: E402
+from backend.coordinator import (db, device, docflow, docgen, engine,  # noqa: E402
+                                 local_engine, models, runtime)
 from backend.coordinator.server import Coordinator  # noqa: E402
 
 
@@ -49,9 +50,13 @@ def _candidate(profile: v1.ExecutionProfile) -> v1.ExecutionProfile:
     })
 
 
+BOTH_REASONING = ("disabled", "enabled")
+
+
 def _temporary_profile(model: v1.ModelRef, target: str, workflow: str,
                        context: int, output: int, decoder: str,
-                       maximum: int | None = None) \
+                       maximum: int | None = None,
+                       reasoning_modes: tuple[str, ...] = BOTH_REASONING) \
         -> v1.ExecutionProfile:
     """A process-local profile for one qualification run.
 
@@ -69,8 +74,8 @@ def _temporary_profile(model: v1.ModelRef, target: str, workflow: str,
         "qualified_context_tokens": context,
         "default_output_tokens": output,
         "max_output_tokens": maximum if maximum is not None else output,
-        "reasoning_modes": ["disabled", "enabled"],
-        "default_reasoning": "disabled",
+        "reasoning_modes": list(reasoning_modes),
+        "default_reasoning": "disabled" if "disabled" in reasoning_modes else "enabled",
         "decoder_modes": [decoder],
         "qualified_memory_bytes": None,
         # Process-local admission only; the artifact converts this back to a
@@ -87,12 +92,20 @@ def _temporary_profile(model: v1.ModelRef, target: str, workflow: str,
 def _profiles(model: v1.ModelRef, target: str, context: int,
               outputs: dict[str, int], allow_candidate: bool,
               maxima: dict[str, int] | None = None,
-              workflows=WORKFLOWS) \
+              workflows=WORKFLOWS, reasoning: dict[str, tuple[str, ...]] | None = None) \
         -> tuple[list[v1.ExecutionProfile], bool]:
+    """The profile each workflow is qualified under.
+
+    `reasoning` narrows a workflow to the reasoning modes this run claims, so a
+    combination that is not offered (for example Documents with reasoning on,
+    which exhausts its output allowance) is neither measured nor registered.
+    """
     maxima = maxima or {}
+    reasoning = reasoning or {}
     selected = []
     for workflow, decoder in workflows:
         maximum = maxima.get(workflow, outputs[workflow])
+        modes = tuple(reasoning.get(workflow, BOTH_REASONING))
         match = next((item for item in profiles.PROFILES
                       if item.model == model
                       and item.target_profile_id == target
@@ -100,7 +113,7 @@ def _profiles(model: v1.ModelRef, target: str, context: int,
                       and item.qualified_context_tokens == context
                       and item.default_output_tokens == outputs[workflow]
                       and item.max_output_tokens == maximum
-                      and set(item.reasoning_modes) == {"disabled", "enabled"}
+                      and set(item.reasoning_modes) == set(modes)
                       and item.decoder_modes == [decoder]), None)
         if match is None:
             if not allow_candidate:
@@ -109,7 +122,7 @@ def _profiles(model: v1.ModelRef, target: str, context: int,
                     "only for an isolated new-device qualification run")
             match = _temporary_profile(
                 model, target, workflow, context, outputs[workflow], decoder,
-                maximum)
+                maximum, modes)
         selected.append(match)
     transient = any(item not in profiles.PROFILES for item in selected)
     return selected, transient
@@ -183,7 +196,7 @@ def _submit(coordinator: Coordinator, chat_id: str, text: str, **kwargs) -> str:
 
 def _chat(coordinator: Coordinator, profile: v1.ExecutionProfile, reasoning: str) \
         -> qualification.RunEvidence:
-    db.set_reasoning(coordinator.conn, runtime.MODEL, reasoning == "enabled")
+    db.set_reasoning(coordinator.conn, profile.model.model_id, reasoning == "enabled")
     chat_id = db.create_chat(coordinator.conn, coordinator.workspace_id,
                              f"qualification chat {reasoning}")
     job_id = _submit(
@@ -267,7 +280,7 @@ def _representative_code(coordinator: Coordinator, profile: v1.ExecutionProfile,
     and the canonical-file protection are all exercised by the same run that
     produces the envelope evidence.
     """
-    db.set_reasoning(coordinator.conn, runtime.MODEL, reasoning == "enabled")
+    db.set_reasoning(coordinator.conn, profile.model.model_id, reasoning == "enabled")
     root.mkdir(parents=True)
     source = root / REPRESENTATIVE_CODE_FILE
     source.write_text("", encoding="utf-8")
@@ -294,7 +307,7 @@ def _representative_code(coordinator: Coordinator, profile: v1.ExecutionProfile,
 
 def _code(coordinator: Coordinator, profile: v1.ExecutionProfile, reasoning: str,
           root: Path) -> qualification.RunEvidence:
-    db.set_reasoning(coordinator.conn, runtime.MODEL, reasoning == "enabled")
+    db.set_reasoning(coordinator.conn, profile.model.model_id, reasoning == "enabled")
     root.mkdir(parents=True)
     source = root / "maths.py"
     original = "def add(left, right):\n    return left - right\n"
@@ -323,7 +336,7 @@ def _code(coordinator: Coordinator, profile: v1.ExecutionProfile, reasoning: str
 
 def _documents(coordinator: Coordinator, profile: v1.ExecutionProfile,
                reasoning: str) -> qualification.RunEvidence:
-    db.set_reasoning(coordinator.conn, runtime.MODEL, reasoning == "enabled")
+    db.set_reasoning(coordinator.conn, profile.model.model_id, reasoning == "enabled")
     chat_id = db.create_chat(coordinator.conn, coordinator.workspace_id,
                              f"qualification documents {reasoning}")
     source = (b"Qualification observation: shaft velocity was 7.9 mm/s. "
@@ -362,22 +375,69 @@ def _documents(coordinator: Coordinator, profile: v1.ExecutionProfile,
          "document.required_facts", "source.fenced"])
 
 
+def verified_model_files(entry: models.Entry, directory: Path) -> list[dict]:
+    """Hash every catalogue file in `directory`; refuse any mismatch."""
+    files = []
+    for item in entry.files:
+        path = (directory / item.name).resolve()
+        if not path.is_file() or path.stat().st_size != item.size:
+            raise RuntimeError(f"{item.name} is missing or has the wrong size")
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for block in iter(lambda: handle.read(4 * 1024 * 1024), b""):
+                digest.update(block)
+        if digest.hexdigest() != item.sha256:
+            raise RuntimeError(f"{item.name} does not match its pinned SHA-256")
+        files.append({"role": item.role, "name": item.name, "path": str(path),
+                      "size": item.size, "sha256": item.sha256})
+    return files
+
+
+def managed_settings(args) -> engine.LaunchSettings:
+    return engine.LaunchSettings(
+        context_tokens=args.context_tokens, slots=1, gpu_layers="all",
+        cache_type_k="f16", cache_type_v="f16", flash_attention="auto")
+
+
+def _managed_observation(args):
+    selection = engine.select(environ={}, frozen=False,
+                              roots=[args.engine_root] if args.engine_root else None)
+    if selection.mode != engine.MANAGED or not selection.usable:
+        raise RuntimeError("the managed engine is missing or modified: "
+                           + "; ".join(selection.problems or ["not fetched"]))
+    if args.expect_runtime_version != selection.runtime_version:
+        raise RuntimeError(f"engine drift: expected {args.expect_runtime_version}, "
+                           f"found {selection.runtime_version}")
+    entry = models.BY_ID[args.model or models.MANAGED_MAIN]
+    files = verified_model_files(entry, args.model_dir)
+    model = v1.ModelRef(model_id=entry.id, manifest_sha256=entry.manifest_sha256,
+                        runtime=engine.LLAMA_CPP, runtime_version=selection.runtime_version)
+    return selection, entry, files, model
+
+
 def qualify(args, *, representative_validator=None) \
         -> qualification.QualificationArtifact:
-    state = runtime.probe()
-    if not state.get("reachable"):
-        raise RuntimeError(f"Ollama is unavailable at {runtime.HOST}: {state.get('error')}")
-    if state.get("server_version") != args.expect_runtime_version:
-        raise RuntimeError(
-            f"runtime version drift: expected {args.expect_runtime_version}, "
-            f"observed {state.get('server_version') or 'unknown'}")
-    digest = (state.get("digests") or {}).get(runtime.MODEL)
-    if digest != profiles.MODEL_DIGEST or not models.digest_eligible(runtime.MODEL, digest):
-        raise RuntimeError("the installed model digest does not match the qualified manifest")
-    observed_model = v1.ModelRef(
-        model_id=runtime.MODEL, manifest_sha256=digest,
-        runtime=profiles.RUNTIME, runtime_version=state["server_version"])
-    target = args.target_profile_id or device.qualified_target_profile()
+    managed = getattr(args, "engine", "ollama") == "managed"
+    if managed:
+        selection, entry, managed_files, observed_model = _managed_observation(args)
+        facts = device.hardware(engine_devices=engine.list_devices(selection))
+        tiers = [tier.tier_id for tier in profiles.matching_tiers(facts)]
+        target = args.target_profile_id or (tiers[0] if tiers else None)
+    else:
+        state = runtime.probe()
+        if not state.get("reachable"):
+            raise RuntimeError(f"Ollama is unavailable at {runtime.HOST}: {state.get('error')}")
+        if state.get("server_version") != args.expect_runtime_version:
+            raise RuntimeError(
+                f"runtime version drift: expected {args.expect_runtime_version}, "
+                f"observed {state.get('server_version') or 'unknown'}")
+        digest = (state.get("digests") or {}).get(runtime.MODEL)
+        if digest != profiles.MODEL_DIGEST or not models.digest_eligible(runtime.MODEL, digest):
+            raise RuntimeError("the installed model digest does not match the qualified manifest")
+        observed_model = v1.ModelRef(
+            model_id=runtime.MODEL, manifest_sha256=digest,
+            runtime=profiles.RUNTIME, runtime_version=state["server_version"])
+        target = args.target_profile_id or device.qualified_target_profile()
     if not target:
         raise RuntimeError("this device has no target identity; pass --target-profile-id")
     outputs = {
@@ -394,9 +454,14 @@ def qualify(args, *, representative_validator=None) \
     selected_workflows = tuple(
         item for item in WORKFLOWS
         if not args.workflows or item[0] in args.workflows)
+    reasoning = {workflow: tuple(sorted(set(value.split(","))))
+                 for workflow, value in (
+                     (profiles.CHAT, args.chat_reasoning),
+                     (profiles.CODE, args.code_reasoning),
+                     (profiles.DOCUMENTS, args.documents_reasoning))}
     selected, transient = _profiles(
         observed_model, target, args.context_tokens, outputs, args.candidate,
-        maxima, selected_workflows)
+        maxima, selected_workflows, reasoning)
     code_profile = next(
         (item for item in selected if item.workflow_mode == profiles.CODE), None)
     if code_profile is not None:
@@ -414,11 +479,26 @@ def qualify(args, *, representative_validator=None) \
             coordinator = Coordinator(temporary / "state" / "coordinator.sqlite3")
             coordinator.target_profile_id = target
             coordinator.preflight = lambda relationship=None: None
+            backend = None
+            if managed:
+                # Absolute paths: the files stay where they were verified.
+                db.record_model_install(
+                    coordinator.conn, model_id=entry.id,
+                    manifest_sha256=entry.manifest_sha256, engine=engine.LLAMA_CPP,
+                    files=managed_files, source="qualification run")
+                backend = local_engine.LocalEngine(
+                    selection, temporary / "state", registry=coordinator.installed_models,
+                    settings_for=lambda _model: managed_settings(args))
+                runtime.configure_managed(backend)
             by_workflow = {item.workflow_mode: item for item in selected}
             results = {workflow: [] for workflow, _decoder in selected_workflows}
+            def claimed(workflow, reasoning):
+                return workflow in by_workflow \
+                    and reasoning in by_workflow[workflow].reasoning_modes
+
             try:
                 for reasoning in ("disabled", "enabled"):
-                    if profiles.CHAT in by_workflow:
+                    if claimed(profiles.CHAT, reasoning):
                         results[profiles.CHAT].append(
                             _chat(coordinator, by_workflow[profiles.CHAT], reasoning))
                     # One Code run per reasoning mode: the artifact contract
@@ -427,7 +507,7 @@ def qualify(args, *, representative_validator=None) \
                     # maximum. The representative workload REPLACES the small
                     # edit rather than joining it, because a claimed maximum
                     # has to be justified by the run that approaches it.
-                    if profiles.CODE in by_workflow:
+                    if claimed(profiles.CODE, reasoning):
                         if args.representative_code:
                             evidence = _representative_code(
                                 coordinator, by_workflow[profiles.CODE], reasoning,
@@ -438,10 +518,13 @@ def qualify(args, *, representative_validator=None) \
                                 coordinator, by_workflow[profiles.CODE], reasoning,
                                 temporary / f"code-{reasoning}")
                         results[profiles.CODE].append(evidence)
-                    if profiles.DOCUMENTS in by_workflow:
+                    if claimed(profiles.DOCUMENTS, reasoning):
                         results[profiles.DOCUMENTS].append(
                             _documents(coordinator, by_workflow[profiles.DOCUMENTS], reasoning))
             finally:
+                if backend is not None:
+                    backend.stop()
+                    runtime.configure_managed(None)
                 coordinator.conn.close()
     finally:
         profiles.PROFILES = original_registry
@@ -472,6 +555,13 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--output", type=Path,
                        help="new artifact path; an existing file is never replaced")
     value.add_argument("--target-profile-id")
+    value.add_argument("--engine", choices=["ollama", "managed"], default="ollama",
+                       help="qualify the developer Ollama baseline or the managed engine")
+    value.add_argument("--model-dir", type=Path,
+                       help="managed engine: folder holding the catalogue files")
+    value.add_argument("--model", help="managed engine: catalogue id (default: main model)")
+    value.add_argument("--engine-root", type=Path,
+                       help="managed engine: fetched engine folder (default: this lane)")
     value.add_argument("--expect-runtime-version")
     value.add_argument("--candidate", action="store_true",
                        help="admit unregistered profiles only inside this isolated run")
@@ -490,6 +580,11 @@ def parser() -> argparse.ArgumentParser:
                        help="largest Code allowance this run claims; must be "
                             "exercised by a representative workload")
     value.add_argument("--documents-max-output-tokens", type=int, default=None)
+    # Which reasoning modes each workflow claims. Only claimed modes are run
+    # and recorded; an unclaimed mode stays unavailable for that workflow.
+    for name in ("chat", "code", "documents"):
+        value.add_argument(f"--{name}-reasoning", default="disabled,enabled",
+                           choices=["disabled,enabled", "disabled", "enabled"])
     code_mode = value.add_mutually_exclusive_group()
     code_mode.add_argument(
         "--representative-code", action="store_true",

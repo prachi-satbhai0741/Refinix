@@ -399,3 +399,123 @@ test('an absent model cannot be switched off, because there is nothing to switch
     .map((b) => b.textContent);
   assert.ok(!labels.some((l) => /Switch off/.test(l)));
 });
+
+// Refinix's own engine: a catalogued model can be downloaded or imported, only
+// when the person asks, and removed after the impact is shown.
+const MANAGED_ABSENT = Object.assign({}, ABSENT, {
+  id: 'qwen3.5-4b-q4_k_m',
+  setup: { kind: 'download', label: 'Download', model: 'qwen3.5-4b-q4_k_m',
+           download_bytes: 3413361504, detail: 'About 3.2 GB.' },
+});
+
+function buttons(p) {
+  return p.rows()[0].children[2].children.filter((child) => child.tag === 'button');
+}
+
+test('a managed model offers a download with its size, and nothing starts by itself', () => {
+  const p = render({ engine: { mode: 'managed' }, models: [MANAGED_ABSENT] });
+  const download = buttons(p).find((b) => /^Download/.test(b.textContent));
+  assert.ok(download, 'a download button is shown');
+  assert.match(download.textContent, /3\.2 GB/);
+  assert.equal(p.requests.length, 0, 'rendering must not request anything');
+});
+
+test('a download is confirmed with source, licence, revision and checksums first', async () => {
+  const p = render({ engine: { mode: 'managed' }, models: [MANAGED_ABSENT] });
+  let asked = '';
+  p.run('window').confirm = (text) => { asked = text; return false; };
+  const download = buttons(p).find((b) => /^Download/.test(b.textContent));
+  download.onclick();
+  await new Promise((r) => setImmediate(r));
+  assert.match(p.requests[0].path, /\/v1\/model\/plan\?model=qwen3\.5-4b-q4_k_m/);
+  p.requests[0].reply({
+    display_name: 'Qwen3.5 4B', source: 'huggingface.co/x at abc', licence: 'Apache-2.0',
+    revision: 'abc', download_bytes: 3413361504, already_staged_bytes: 0,
+    location: '/data/models/qwen3.5-4b-q4_k_m', enough_space: true, free_bytes: 9e10,
+    files: [{ name: 'w.gguf', size: 2740937888, sha256: 'f'.repeat(64) }],
+  });
+  await new Promise((r) => setImmediate(r));
+  assert.match(asked, /huggingface\.co\/x at abc/);
+  assert.match(asked, /Apache-2\.0/);
+  assert.match(asked, /f{64}/);
+  assert.equal(p.requests.length, 1, 'declining must not start a download');
+});
+
+test('a running download shows progress and can be cancelled', () => {
+  const p = render({
+    engine: { mode: 'managed' }, models: [MANAGED_ABSENT],
+    provisioning: { 'qwen3.5-4b-q4_k_m': {
+      kind: 'download', state: 'running', bytes_done: 1073741824,
+      bytes_total: 4294967296, file: 'w.gguf' } },
+  });
+  const row = p.rows()[0].textContent;
+  assert.match(row, /Downloading w\.gguf: 1\.0 of 4\.0 GB \(25%\)/);
+  assert.ok(!buttons(p).some((b) => /^Download/.test(b.textContent)),
+            'no second download is offered while one runs');
+});
+
+test('removal is offered for a managed model and only after its impact is shown', async () => {
+  const p = render({ engine: { mode: 'managed' },
+                     models: [Object.assign({}, INSTALLED, { id: 'qwen3.5-4b-q4_k_m' })] });
+  const remove = buttons(p).find((b) => /Remove/.test(b.textContent));
+  assert.ok(remove);
+  let asked = '';
+  p.run('window').confirm = (text) => { asked = text; return false; };
+  remove.onclick();
+  await new Promise((r) => setImmediate(r));
+  assert.match(p.requests[0].path, /\/v1\/model\/impact/);
+  p.requests[0].reply({ impact: { blocked_capabilities: ['chat'], detail: 'Chat stops.' } });
+  await new Promise((r) => setImmediate(r));
+  assert.match(asked, /This stops: chat/);
+  assert.match(asked, /chats, documents and history are kept/);
+  assert.equal(p.requests.length, 1, 'declining must not remove anything');
+});
+
+test('the developer engine never offers to remove a model itself', () => {
+  const p = render({ models: [INSTALLED] });
+  assert.ok(buttons(p).some((b) => /What removing this affects/.test(b.textContent)));
+  assert.ok(!buttons(p).some((b) => /^Remove/.test(b.textContent)));
+});
+
+// Settings -> Updates: nothing is checked on its own, only verified offers are
+// shown, and no Install control is drawn while installing is not built.
+function renderUpdates(updates) {
+  const p = page();
+  p.run(`renderUpdatesCard(${JSON.stringify({ updates })})`);
+  return p;
+}
+
+function updateButtons(p) {
+  return p.document.getElementById('c-updates-actions').children
+    .filter((child) => child.tag === 'button').map((b) => b.textContent);
+}
+
+test('a build that cannot check says why and offers no Check button', () => {
+  const p = renderUpdates({ version: '0.1.0', channel: 'development', can_check: false,
+    can_import: false, unavailable: 'This is a source checkout, not an installed package.' });
+  assert.match(p.text('c-updates-lead'), /source checkout/);
+  assert.deepEqual(updateButtons(p), []);
+  assert.equal(p.requests.length, 0, 'rendering must not check for updates');
+});
+
+test('a failed check is never shown as up to date', () => {
+  const p = renderUpdates({ version: '0.1.0-internal.1', channel: 'internal', can_check: true,
+    last_check: { at: '2026-10-05T10:00:00Z', result: 'failed',
+                  detail: 'The update information has expired, so it was not trusted.' } });
+  assert.match(p.text('c-updates-chip'), /check failed/);
+  assert.doesNotMatch(p.text('c-updates-chip'), /up to date/);
+  assert.match(p.text('c-updates-facts'), /expired/);
+});
+
+test('a verified offer can be downloaded, and a verified package is never installed from here', () => {
+  const offered = renderUpdates({ version: '0.1.0-internal.1', channel: 'internal',
+    can_check: true, offer: { version: '0.1.1-internal.1', size: 2147483648, notes: 'Fixes.' } });
+  assert.ok(updateButtons(offered).includes('Download 0.1.1-internal.1'));
+  const verified = renderUpdates({ version: '0.1.0-internal.1', channel: 'internal',
+    can_check: true, offer: { version: '0.1.1-internal.1', size: 1, notes: '' },
+    download: { state: 'verified', path: '/data/updates/staging/0.1.1/Refinix.zip' },
+    install_note: 'Installing an update from inside Refinix is not available in this build yet.' });
+  assert.match(verified.text('c-updates-chip'), /package verified/);
+  assert.match(verified.text('c-updates-note'), /not available in this build/);
+  assert.ok(!updateButtons(verified).some((label) => /Install/.test(label)));
+});

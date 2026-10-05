@@ -1943,3 +1943,261 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260924-003](#up-20260924-003)
 - supersedes: none
 - linked_changes: [AC-20260924-005](agentchangelog.md#ac-20260924-005)
+
+<a id="up-20261002-001"></a>
+## UP-20261002-001 — Website: product video, pillar image, About us and Download Beta
+- date: 2026-10-02
+- status: plan agreed through review (v3), requester-approved execution; preview verification authorised; no Git/GitHub write or deployment
+- tags: website, site.html, docs.html, video, about-us, navigation, design-reference
+- aliases: replace design approach with video, pillar png, about us in docs, download beta glow, mobile nav anchor offset
+- paths: frontend/design/site.html, frontend/design/site.css, frontend/design/docs.html, frontend/design/docs.css, frontend/design/assets/intro-video-poster.jpg, agent-memory/
+- summary: Replace the homepage Design approach heading and cards with the supplied looping product video over the four preserved points, swap the drawn temple for the supplied pillar.png, add an About us section to Docs with homepage top/bottom links, rename visible Beta launch CTAs to Download Beta with a scoped nav glow, and keep anchors clear of the wrapping header.
+- constraints: Four point titles/descriptions verbatim; supplied video/pillar/team-photo bytes unchanged; no compression without an available encoder; no purple in new elements; existing theme tokens only; countdown, destinations and private-source labels unchanged; no app/backend/protected-doc changes.
+- follow_up_to: none
+- linked_changes: [AC-20261002-001](agentchangelog.md#ac-20261002-001)
+
+<a id="up-20261002-002"></a>
+## UP-20261002-002 — Website consolidated repair (TOC, theme, motion, intro, docs copy, copy, links)
+- date: 2026-10-02
+- status: plan v3 agreed through review, requester-approved execution and verification; no Git/GitHub write or deployment
+- tags: website, site.html, docs.html, accessibility, reduced-motion, toc, theme, design-reference
+- aliases: docs toc highlight about, saved theme both pages, reduced motion intro, no-script intro, copy failed, link unavailable
+- paths: frontend/design/site.html, frontend/design/site.css, frontend/design/docs.html, agent-memory/
+- summary: Repair inherited website defects F1-F7 from the 2 October review: Docs TOC by reading position, one validated saved theme, reduced-motion and script-failure handling for the intro and clips, intro focus isolation, five Docs copy corrections, truthful Copy state, and plain-text unavailable destinations.
+- constraints: Media, artwork, section order, four points, About copy, colours/fonts (Michroma added to Docs only), countdown endpoints, private-source wording and Download Beta destinations frozen; no app/backend/protected-doc changes; requester notes refinix.run deploys from dev.
+- follow_up_to: [UP-20261002-001](#up-20261002-001)
+- linked_changes: [AC-20261002-002](agentchangelog.md#ac-20261002-002)
+
+<a id="up-20261002-003"></a>
+## UP-20261002-003 — Website launch countdown as its own block
+- date: 2026-10-02
+- status: requester-directed execution of a countdown-only adjustment, then a full website audit; no Git/GitHub write or deployment
+- tags: website, site.html, countdown, launch, design-reference
+- aliases: countdown block, days hours minutes seconds, 2x2 countdown phone
+- paths: frontend/design/site.html, frontend/design/site.css, agent-memory/
+- summary: Move the launch timer out of the paragraph into a centred block between the paragraph and the three options, with Days/Hours/Minutes/Seconds digits comparable to the launch heading, four across on desktop and 2x2 on narrow phones, and no per-second screen-reader announcements; then audit the website.
+- constraints: Paragraph, heading, deadline, IST timing, one-second ticks and zero stop preserved; nav glow, four points, media sizes, images and all other content unchanged; the earlier glow/points/media plan was not executed.
+- follow_up_to: [UP-20261002-002](#up-20261002-002)
+- linked_changes: [AC-20261002-003](agentchangelog.md#ac-20261002-003)
+
+<a id="up-20261002-004"></a>
+## UP-20261002-004 — Countdown side by side, larger, with digit animation
+- date: 2026-10-02
+- status: requester-directed execution; no Git/GitHub write or deployment
+- tags: website, site.html, countdown, animation, cache
+- aliases: countdown side by side, bigger countdown, rolling digits
+- paths: frontend/design/site.html, frontend/design/site.css, agent-memory/
+- summary: Requester's Safari showed the countdown stacked as plain "8Days/08Hours" text; asked for side-by-side units, bold larger digits and a more interesting digit-change animation.
+- constraints: Deadline, IST timing, one-second ticks, zero stop and no per-second announcements preserved; other content unchanged.
+- follow_up_to: [UP-20261002-003](#up-20261002-003)
+- linked_changes: [AC-20261002-004](agentchangelog.md#ac-20261002-004)
+
+<a id="up-20261002-005"></a>
+## UP-20261002-005 — Final scoped website repair: entry scroll, prose dashes, stylesheet versions
+- date: 2026-10-02
+- status: requester-relayed Codex /execute instruction; executed; no Git/GitHub write or deployment
+- tags: website, site.html, docs.html, scroll-restoration, punctuation, cache, ci
+- aliases: get started lands on evidence, reload scroll position, remove em dashes, docs css version
+- paths: frontend/design/site.html, frontend/design/docs.html, agent-memory/
+- summary: Option A entry scroll (no restored mid-page position behind the intro; hash targets honoured), dash separators removed from reader-facing prose with commas/periods/colons, Docs references the homepage site.css version plus a versioned docs.css; run the full CI test set and website checks.
+- constraints: Points, media sizes, glow, assets, countdown look/animation/timing, other copy, CSS, app/backend, protected docs and CI configuration frozen; R2-R4 dropped (requester accepts current presentation); isolated environment for dependencies; local results are not GitHub CI results.
+- follow_up_to: [UP-20261002-004](#up-20261002-004)
+- linked_changes: [AC-20261002-005](agentchangelog.md#ac-20261002-005)
+
+<a id="up-20261002-006"></a>
+## UP-20261002-006 — Verify actual website deployment and prepare publication
+- date: 2026-10-02
+- status: local deployment preparation authorised; four focused offline exporter tests explicitly authorised; no Git/GitHub write or live publication
+- tags: website, deployment, github-pages, static-export
+- paths: scripts/build-site.sh, scripts/test_build_site.py, frontend/design/, agent-memory/
+- summary: Inspect how the public website deploys before deciding how to commit/push; user supplied the actual URL https://refinix.runs-on.dev.
+- constraints: Preserve accepted website and media, unrelated dirty work and protected docs; prepare locally without changing hosting settings or publishing.
+- follow_up_to: [UP-20261002-005](#up-20261002-005)
+- linked_changes: [AC-20261002-006](agentchangelog.md#ac-20261002-006)
+
+<a id="up-20261002-007"></a>
+## UP-20261002-007 — Restore the published poster and WebM clips in the website source
+- date: 2026-10-02
+- status: plan v1.1 approved by requester (edits A-C and checks 1-6); executed; no Git/GitHub write, publish or deployment
+- tags: website, site.html, media, performance, pages, exporter
+- aliases: hero-poster preload, webm first, restore published optimisation, media regression before publishing
+- paths: frontend/design/site.html, frontend/design/assets/hero-poster.jpg, frontend/design/assets/hero-loop.webm, frontend/design/assets/evidence-loop.webm, agent-memory/
+- summary: Import hero-poster.jpg, hero-loop.webm and evidence-loop.webm byte-for-byte from refinix-site commit 072bb2586d02632a66e8c84664f88632041ad422; add the poster preload and intro poster and prefer WebM before the existing MP4 fallbacks; keep the exporter; verify parity, bundle references and playback.
+- constraints: Every existing media file, design, text and countdown preserved; URL, CNAME, DNS and Pages settings untouched; publication via a clean-checkout dry-run procedure; HTTPS checked for validity not certificate identity; Git actions need separate explicit approval.
+- follow_up_to: [UP-20261002-006](#up-20261002-006)
+- linked_changes: [AC-20261002-007](agentchangelog.md#ac-20261002-007)
+
+<a id="up-20261002-008"></a>
+## UP-20261002-008 — Website-only source and publishing PRs
+- date: 2026-10-02
+- status: user approved focused checks, isolated website-only commits/branch pushes/PRs and publishing fork; no merge or direct protected-branch push
+- tags: website, publication, github-pages, pull-request
+- paths: frontend/design/, scripts/build-site.sh, scripts/test_build_site.py, agent-memory/
+- summary: User confirmed the accepted website works locally, requested deployment, then explicitly approved website-only Git/PR work and checks. User also asked what the reported launcher-test address mismatch means; inspect and explain, without changing application code.
+- constraints: Preserve accepted website, URL, unrelated dirty work, application code and protected docs; source PR into dev, publishing PR into the separate site repository; owner merge needed because the current account has read-only hosting-repository access.
+- follow_up_to: [UP-20261002-007](#up-20261002-007)
+- linked_changes: [AC-20261002-008](agentchangelog.md#ac-20261002-008)
+
+
+<a id="up-20261003-001"></a>
+## UP-20261003-001 — Standalone three-OS Beta and section-level execution
+- date: 2026-10-03
+- status: done
+- scope: docs, decision
+- tags: beta, standalone, cross-platform, updates, reuse, agent-execution
+- paths: AGENTS.md, docs/PROJECT.md, tasks.md, docs/releases.md, README.md, docs/README.md, docs/security.md
+- summary: User approved careful documentation changes for standalone Windows/macOS/Linux Beta with in-app updates, deferred distributed execution, reuse of existing repository code and execution by major sections without further task tiers or delegation.
+- constraints: No workflow-tool download/install; preserve distributed source, local security/approval/recovery requirements, historical evidence and unrelated dirty work. Documentation permission does not authorise application changes, test suites, builds, live checks or Git writes.
+- acceptance: Current authorities and entry points agree on Beta scope, deferred mesh gates, updater qualification and section-level execution.
+- follow_up_to: none
+- linked_changes: [AC-20261003-001](agentchangelog.md#ac-20261003-001)
+
+
+<a id="up-20261004-001"></a>
+## UP-20261004-001 — Runtime ownership UX and orchestration options
+- date: 2026-10-04
+- status: done
+- scope: docs, decision
+- tags: runtime, ollama, llama-cpp, qualification, onboarding, langgraph, reuse
+- paths: AGENTS.md, docs/PROJECT.md, tasks.md, docs/model-catalog.md, docs/releases.md, docs/evaluation.md, README.md, docs/README.md
+- summary: User approved careful documentation updates and another review to record that Refinix owns runtime compatibility/qualification, customers should open and use it without manual requalification after external updates, and the existing orchestration harness remains selected while LangGraph stays an option for evidenced need.
+- constraints: Preserve existing repository implementation, prior standalone three-OS Beta/mesh-deferral decisions, security/admission and data recovery. No application implementation, test suites, downloads/installs, runtime checks, framework adoption or Git writes authorised by this documentation request.
+- acceptance: Product/model/release/agent/phase guidance agrees on app-managed pinned engine ownership, automatic graphical installation checks, internal engineering qualification, truthful failure/recovery, and criteria for reconsidering LangGraph; source finding distinguished from an unobserved live diagnosis.
+- follow_up_to: [UP-20261003-001](#up-20261003-001)
+- linked_changes: [AC-20261004-001](agentchangelog.md#ac-20261004-001)
+
+
+<a id="up-20261004-002"></a>
+## UP-20261004-002 — Core Beta direction and reasoned execution handoff
+- date: 2026-10-04
+- status: handoff-prepared; coordination-pending
+- scope: planning, handoff, memory
+- tags: beta, code-quality, reuse, coherent-execution, review, runtime, memory
+- paths: docs/beta-execution-handoff.md, agent-memory/
+- summary: User requested a deep implementation-owner plan with independent agent review before a concrete change summary and sustained execution; prioritize optimizing existing code and product quality, remove evidenced unwanted code, update necessary docs, save this as the current core memory and pin it.
+- constraints: Four existing major Beta sections; no nested delegation or per-file task trees; preserve dirty work, useful capabilities and deferred distributed code. Planning must precede application execution; tests/live actions/Git/publication retain their separate permission boundaries.
+- acceptance: Source-grounded handoff explains reasons, alternatives, affected paths, coherent execution sections, meaningful acceptance and prerequisite/review gates; memory saved and current chat pinned; no unobserved delivery, agreement or implementation claims.
+- follow_up_to: [UP-20261004-001](#up-20261004-001)
+- linked_changes: [AC-20261004-002](agentchangelog.md#ac-20261004-002)
+
+
+<a id="up-20261004-003"></a>
+## UP-20261004-003 — Implementation-owner Beta plan for review
+- date: 2026-10-04
+- status: plan-recorded; review-pending
+- scope: planning, handoff
+- tags: beta, runtime, llama-cpp, model-lifecycle, sandbox, updater, review
+- paths: docs/beta-execution-handoff.md
+- summary: User asked the implementation owner to read the handoff and current authorities, independently inspect source, record a reasoned plan with corrections, affected paths, acceptance checks and prerequisites for review-agent evaluation, then later execute the approved plan in one sustained run without further delegation.
+- constraints: Planning only before review; follow the handoff's coordination and execution gates; ask when blocked; no subagents, tests, downloads, installs, live runtime calls or Git writes in this step.
+- acceptance: Plan in the handoff is source-grounded with checkable line references, a parity decision rule, section plans, cleanup evidence, validation families, one prerequisite batch with recommendations and a user-facing change summary.
+- follow_up_to: [UP-20261004-002](#up-20261004-002)
+- linked_changes: [AC-20261004-003](agentchangelog.md#ac-20261004-003)
+
+
+<a id="up-20261004-004"></a>
+## UP-20261004-004 — Research-backed presets and independent owner-plan review
+- date: 2026-10-04
+- status: docs-updated; owner-reconciliation-pending
+- scope: documentation, research, review, memory
+- tags: presets, hardware, research, reuse, beta, recovery, sandbox
+- paths: AGENTS.md, docs/PROJECT.md, tasks.md, docs/model-catalog.md, docs/releases.md, docs/evaluation.md, docs/beta-execution-handoff.md
+- summary: User requested category recommendations with precomputed hardware/runtime/context/KV/resource presets derived from existing research, hardware matching rather than startup calculations, reuse of existing tools, a memory update, necessary docs changes and an independent review/correction handoff asking the owner to review our doc changes.
+- constraints: Do not require ownership of target laptops for research; preserve existing source, dirty work, four major sections and the original owner proposal. No app implementation, tests, downloads/installs, live runtime checks, new delegation or Git writes in this step.
+- acceptance: Preset schema and evidence states agree across authorities; sources and reusable options identified; plan disagreements recorded with reasons and acceptance; actual delivery status reported honestly.
+- follow_up_to: [UP-20261004-003](#up-20261004-003)
+- linked_changes: [AC-20261004-004](agentchangelog.md#ac-20261004-004)
+
+
+<a id="up-20261004-004"></a>
+## UP-20261004-004 — Reconcile review findings and deepen the Beta plan
+- date: 2026-10-04
+- status: reconciliation-recorded; re-review-pending
+- scope: planning, handoff
+- tags: beta, presets, reuse, rollback, sandbox, observer, packaging
+- paths: docs/beta-execution-handoff.md
+- summary: User shared the review agent's NEEDS FIX result (preset matching, reuse, update recovery, sandbox enforcement, evidence claims) and asked the implementation owner to reason, improve the plan and analyse the repository more deeply.
+- constraints: Planning and source inspection only; preserve the original proposal and the review section; necessary doc corrections already authorized; no subagents, tests, downloads, installs, builds or Git writes.
+- acceptance: One appended reconciliation mapping R1-R5 into the same four sections with evidence, reuse decisions, recovery order, named sandbox enforcement, observer contract, revised prerequisites and change summary.
+- follow_up_to: [UP-20261004-003](#up-20261004-003)
+- linked_changes: [AC-20261004-004](agentchangelog.md#ac-20261004-004)
+
+
+<a id="up-20261004-005"></a>
+## UP-20261004-005 — Internal Windows/Ubuntu/macOS test packages and stronger cleanup rule
+- date: 2026-10-04
+- status: plan-updated; re-review-pending
+- scope: planning, handoff
+- tags: beta, packaging, build-matrix, test-artifacts, ci, cleanup
+- paths: docs/beta-execution-handoff.md
+- summary: User added a Beta requirement for complete internal test packages on Windows and Ubuntu alongside macOS, built natively from one source snapshot and version with pinned dependencies and the managed engine, labelled with SHA-256 manifests and short instructions, reused across tests and kept as N/N+1 builds for updater testing; plus a stronger reuse-first cleanup rule.
+- constraints: Same four sections; no subagents or task tiers; no Git/GitHub writes or CI trigger; plan PASS not declared and the long run not started; model weights stay explicit assets; internal unsigned packages separate from signing, publication and device acceptance.
+- acceptance: Reconciled plan, prerequisite batch and change summary updated; Codex doc changes re-checked; genuine build-environment prerequisite named.
+- follow_up_to: [UP-20261004-004](#up-20261004-004)
+- linked_changes: [AC-20261004-005](agentchangelog.md#ac-20261004-005)
+
+<a id="up-20261004-006"></a>
+## UP-20261004-006 — Approved corrected four-section Beta handoff and direct delivery
+- date: 2026-10-04
+- status: approved-direction; handoff-prepared; delivery-pending
+- scope: handoff, coordination
+- tags: beta, approval, reuse, schema-preflight, recovery, sandbox, packaging
+- paths: docs/beta-execution-handoff.md, agent-memory/
+- summary: After reviewing the owner's reply and receiving a plain-language explanation, the user approved the four-section approach and requested a corrected handoff delivered directly to the implementation owner.
+- constraints: Reuse the existing handoff/code and established offline tools; no subagents or further task tiers. Preserve dirty work. Handoff approval does not silently authorize tests, downloads/installs, live calls, build/host actions, Git/CI writes, other protected-doc edits or publication.
+- acceptance: The handoff includes actual-root ownership and coherent-copy schema admission, exclusive recovery, host IPC/io_uring denial, aggregate temporary-storage enforcement, final-artifact identities and reuse, four-section execution and one genuine prerequisite batch; direct delivery is reported only after visible confirmation.
+- follow_up_to: [UP-20261004-005](#up-20261004-005)
+- linked_changes: [AC-20261004-006](agentchangelog.md#ac-20261004-006)
+- delivery_result: DELIVERED directly to the existing owner conversation, visibly confirmed as Message 9; owner response started. Detailed acknowledgement and required action permissions remain pending.
+
+
+<a id="up-20261004-007"></a>
+## UP-20261004-007 — Execute the approved four-section Beta plan
+- date: 2026-10-04
+- status: in-progress (Section 1 largely done; run paused at usage limit)
+- scope: implementation, tests, local engine/model acquisition, packaging preparation, ledgers
+- tags: beta, managed-engine, ownership, admission, readiness, presets, packaging, parity
+- paths: backend/coordinator, backend/contracts, desktop, frontend/app, scripts, qualification-artifacts
+- summary: User confirmed /execute with permissions: source changes in the four sections, offline suites, one pinned llama.cpp macOS release plus the Qwen3.5-4B model and projector (~3.4 GB) with a private Ollama comparison, llmfit for estimates, hash-pinned psutil/tuf/securesystemslib/urllib3, preparing native CI builds (no Git/Actions writes), and one releases.md §2 addition.
+- constraints: No Git/GitHub/Actions writes, signing, publication, host/sandbox changes, privileged helpers or extra model downloads; generated-code execution stays unavailable where controls cannot be enforced.
+- follow_up_to: [UP-20261004-006](#up-20261004-006)
+- linked_changes: [AC-20261004-007](agentchangelog.md#ac-20261004-007)
+
+
+<a id="up-20261004-008"></a>
+## UP-20261004-008 — Preserve and review interrupted Beta Foundation work
+- date: 2026-10-04
+- status: done (review and checkpoint; implementation remains partial)
+- scope: review, preservation, memory
+- tags: beta, checkpoint, partial-execution, parity, source-review, low-context
+- paths: tmp/beta-foundation-checkpoint-20261004T153112Z, agent-memory/
+- summary: User requested a rigorous scan and preservation of the owner's interrupted work plus a memory checkpoint before starting a new chat; the user will resume execution after the owner's limit resets.
+- constraints: Preserve the mixed dirty tree and approved four sections; no source fixes, tests, live models, downloads/installs, protected-doc edits, Git/Actions writes or delegation in this review. Future handoffs are copyable unless Computer Use is necessary.
+- acceptance: Recoverable verified source/evidence snapshot, factual review and saved memory update; distinguish interrupted work and owner-reported checks from fresh review evidence.
+- follow_up_to: [UP-20261004-007](#up-20261004-007)
+- linked_changes: [AC-20261004-008](agentchangelog.md#ac-20261004-008)
+
+
+<a id="up-20261005-001"></a>
+## UP-20261005-001 — Resume the four-section Beta execution with seven review findings
+- date: 2026-10-05
+- status: in-progress
+- scope: implementation, offline tests, ledgers
+- tags: beta, resume, ownership, engine-cleanup, admission, build-identity, tiers, model-integrity, readiness
+- paths: backend/coordinator, backend/contracts, desktop, frontend/app, scripts, .github/workflows
+- summary: User re-issued /execute to continue the existing four-section plan from the interruption point and fold in seven validated findings: database aliases, engine survivor tracking, empty foreign SQLite, material build inputs/reuse and Windows installer isolation, Ubuntu distribution matching, installed-model byte identity, and startup readiness.
+- constraints: Existing conversation permissions only; no Git/GitHub/Actions writes, signing, publication, privileged helpers, host/sandbox changes, extra model downloads, or protected-doc edits beyond the previously named releases.md §2 addition; no subagents or new planning cycle.
+- follow_up_to: [UP-20261004-008](#up-20261004-008)
+- linked_changes: [AC-20261005-001](agentchangelog.md#ac-20261005-001), [AC-20261005-002](agentchangelog.md#ac-20261005-002), [AC-20261005-003](agentchangelog.md#ac-20261005-003), [AC-20261005-004](agentchangelog.md#ac-20261005-004), [AC-20261005-005](agentchangelog.md#ac-20261005-005), [AC-20261005-006](agentchangelog.md#ac-20261005-006)
+
+
+<a id="up-20261005-002"></a>
+## UP-20261005-002 — Save the partial Beta checkpoint and explain runtime strictness
+- date: 2026-10-05
+- status: checkpoint requested; implementation remains partial
+- scope: local Git commit, explanation
+- tags: beta, checkpoint, managed-engine, ollama, qualification
+- paths: backend, desktop, frontend/app, scripts, .github/workflows, docs, agent-memory
+- summary: User explicitly requested a local commit of the existing work and an explanation of why Refinix restricts runtime versions when other applications integrate Ollama directly.
+- constraints: Preserve unrelated website/media/temporary work; no push, release, new test runs, runtime changes or protected-document edits.
+- linked_changes: [AC-20261005-007](agentchangelog.md#ac-20261005-007)

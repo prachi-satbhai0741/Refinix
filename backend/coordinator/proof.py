@@ -56,6 +56,11 @@ VALIDATION_UNAVAILABLE_NOTE = (
     "No sandbox validation result has been recorded for this attempt.")
 
 
+def observer_coverage() -> str:
+    from backend.coordinator import observer
+    return observer.COVERAGE_NOTE
+
+
 def _empty_network() -> v1.NetworkEvidence:
     """The only network evidence this build can honestly produce."""
     return v1.NetworkEvidence(
@@ -63,6 +68,40 @@ def _empty_network() -> v1.NetworkEvidence:
         started_at=None, ended_at=None, node_ids=[], interfaces=[],
         public_outbound_flows=None, external_ai_calls=None,
         blocked_attempts=None, trusted_lan_connections=None)
+
+
+def _network(raw: dict | None, *, local: bool) -> tuple[v1.NetworkEvidence, str]:
+    """Observed evidence for a local attempt, or the honest absence of it.
+
+    Policy stays `unavailable`: the observer watches, nothing enforces. A
+    window with observer errors is not presented as a clean observation.
+    """
+    if not raw or not local:
+        return _empty_network(), NETWORK_UNAVAILABLE_NOTE
+    if raw.get("observer_errors"):
+        return _empty_network(), (
+            "Network evidence is unavailable: the observer reported errors during "
+            "this run, so its counts are not shown as complete.")
+    try:
+        record = v1.NetworkEvidence(
+            public_egress_policy="unavailable", enforcer=None,
+            observer=raw["observer"], started_at=raw["started_at"],
+            ended_at=raw["ended_at"], node_ids=[raw["node_id"]],
+            interfaces=list(raw["interfaces"]),
+            public_outbound_flows=raw["public_outbound_flows"],
+            external_ai_calls=None, blocked_attempts=None,
+            trusted_lan_connections=raw["trusted_lan_connections"])
+    except (KeyError, TypeError, ValueError):
+        return _empty_network(), NETWORK_UNAVAILABLE_NOTE
+    flows = raw["public_outbound_flows"]
+    lookups = raw.get("public_name_lookups") or []
+    summary = (f"{raw['observer']} saw {flows} public connection"
+               f"{'' if flows == 1 else 's'} and {raw['trusted_lan_connections']} "
+               "local-network connection(s) from Refinix between "
+               f"{raw['started_at']} and {raw['ended_at']}"
+               + (f"; names looked up: {', '.join(lookups)}" if lookups else "")
+               + ". " + raw.get("coverage_note", ""))
+    return record, summary.strip()
 
 
 def _model_ref(raw: dict | None) -> v1.ModelRef | None:
@@ -154,6 +193,7 @@ def attempt_proof(*, workspace_id: str, job_id: str, attempt: dict,
             source = None
     else:
         state, source = "unavailable", None
+    network, network_source = _network(attempt.get("network"), local=not remote)
 
     record = v1.Proof(
         contract_version=v1.CONTRACT_VERSION,
@@ -165,7 +205,7 @@ def attempt_proof(*, workspace_id: str, job_id: str, attempt: dict,
         queue_ms=attempt.get("queue_ms"), runtime_ms=attempt.get("runtime_ms"),
         validation=state, validation_source=source,
         artifacts=_artifact_refs(artifacts), citations=_citations(citations),
-        approval_id=approval_id, network=_empty_network(),
+        approval_id=approval_id, network=network,
         recorded_at=attempt.get("finished_at") or attempt.get("created_at"))
 
     return {
@@ -190,7 +230,7 @@ def attempt_proof(*, workspace_id: str, job_id: str, attempt: dict,
             "citations": SOURCE_SQLITE,
             "approval": (SOURCE_SQLITE if approval_id else
                          "unavailable — no approval is bound to this attempt"),
-            "network": NETWORK_UNAVAILABLE_NOTE,
+            "network": network_source,
         },
         "route_reason": attempt.get("route_reason"),
         "state": attempt.get("state"),
@@ -226,6 +266,7 @@ def job_card(coordinator, job_id: str) -> dict | None:
         "model": json.loads(row["model_json"]) if row["model_json"] else None,
         "queue_ms": row["queue_ms"], "runtime_ms": row["runtime_ms"],
         "created_at": row["created_at"], "finished_at": row["finished_at"],
+        "network": json.loads(row["network_json"]) if row["network_json"] else None,
     } for row in conn.execute(
         "SELECT * FROM attempts WHERE job_id=? ORDER BY created_at, rowid",
         (job_id,))]
@@ -279,9 +320,11 @@ def job_card(coordinator, job_id: str) -> dict | None:
         "state": job["state"],
         "created_at": job["created_at"],
         "attempts": cards,
-        # Stated once for the whole card, so no attempt row can imply it has
-        # network evidence of its own.
-        "network": NETWORK_UNAVAILABLE_NOTE,
+        # Stated once for the whole card when no attempt carries its own
+        # observation; each attempt's "network" source says what it saw.
+        "network": (NETWORK_UNAVAILABLE_NOTE if not any(a["network"] for a in attempts)
+                    else "Each attempt below lists what was observed while it ran. "
+                         + observer_coverage()),
         "evidence_note": (
             "Every value on this card was read from a record of something "
             "observed. Anything not observed is shown as unavailable rather "

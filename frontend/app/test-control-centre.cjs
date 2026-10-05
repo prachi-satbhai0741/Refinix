@@ -80,12 +80,15 @@ function page() {
   return { run, requests, document, text };
 }
 
-const STATUS = { node_id: '11111111-2222-4333-8444-555555555555' };
+// The paired-computer card is deferred and hidden unless the feature is on;
+// these tests exercise the retained card with the feature switched on.
+const STATUS = { node_id: '11111111-2222-4333-8444-555555555555',
+                 features: { mesh: true } };
 
 function paired(over = {}) {
   return Object.assign({
     paired: true,
-    keychain_available: true,
+    credential_store: { available: true },
     identity_mismatch: null,
     would_dispatch: true,
     health: 'healthy',
@@ -111,13 +114,13 @@ function render(worker) {
 }
 
 test('with nothing connected it says work runs here', () => {
-  const p = render({ paired: false, keychain_available: true });
+  const p = render({ paired: false, credential_store: { available: true } });
   assert.match(p.text('c-others-chip'), /none connected/);
   assert.match(p.text('c-others-facts'), /on this computer/);
 });
 
 test('without a credential store it says connecting is switched off, not that it failed', () => {
-  const p = render({ paired: false, keychain_available: false });
+  const p = render({ paired: false, credential_store: { available: false } });
   assert.match(p.text('c-others-lead'), /switched off/);
   assert.equal(p.document.getElementById('c-others-actions').children.length, 0,
     'no connect button when the credential has nowhere legitimate to go');
@@ -127,7 +130,7 @@ test('the unavailable store names this computer\'s own prerequisite', () => {
   // The coordinator knows which store this OS uses; the card must repeat that
   // rather than sending a Windows or Linux user to fix a macOS framework.
   const p = render({
-    paired: false, keychain_available: false,
+    paired: false,
     credential_store: {
       available: false, backend: 'secret-service',
       detail: 'This computer has no `secret-tool`, so the desktop keyring cannot be reached.',
@@ -138,7 +141,7 @@ test('the unavailable store names this computer\'s own prerequisite', () => {
 });
 
 test('an older coordinator that sends no store detail still explains itself', () => {
-  const p = render({ paired: false, keychain_available: false });
+  const p = render({ paired: false, credential_store: { available: false } });
   assert.match(p.text('c-others-lead'), /not available here/);
 });
 
@@ -226,7 +229,7 @@ test('a paired worker offers the self-test and the disconnect', () => {
 });
 
 test('nothing offers the self-test before a computer is connected', () => {
-  const p = render({ paired: false, keychain_available: true });
+  const p = render({ paired: false, credential_store: { available: true } });
   const labels = p.document.getElementById('c-others-actions')
     .children.map((c) => c.textContent);
   assert.ok(!labels.includes('Run distributed self-test'));
@@ -307,4 +310,86 @@ test('the address a request goes to is never a value from the page URL', () => {
   assert.doesNotMatch(handler, /location\./);
   assert.doesNotMatch(handler, /localStorage/,
     'the pairing code and certificate are not the page\'s to keep');
+});
+
+test('the paired-computer card is hidden in a Beta build', () => {
+  const p = page();
+  p.run(`renderOthersCard(${JSON.stringify({ node_id: STATUS.node_id })}, `
+        + `${JSON.stringify({ paired: false, credential_store: { available: true } })})`);
+  assert.equal(p.text('c-others-chip'), '', 'nothing was rendered into a hidden card');
+  assert.equal(p.document.getElementById('c-others-actions').children.length, 0);
+});
+
+/* Typed readiness (K5). The generic "unavailable for new work" sentence used to
+ * cover a modified engine, an external runtime upgrade, a missing model and a
+ * switched-off model alike; each now has its own code and words. */
+const READY_STATUS = {
+  runtime: { reachable: true, models: ['qwen3.5-4b-q4_k_m'], server_version: 'b11390-metal' },
+  model_installed: true, model_available: false,
+  readiness: { code: 'no_qualified_profile', state: 'attention',
+    message: 'qwen3.5-4b-q4_k_m has not been qualified with the Refinix engine b11390-metal on this kind of computer.',
+    detail: 'The model is installed, but no checked setting exists for this engine and hardware combination.',
+    action: { kind: 'open_settings', target: 'models', label: 'Open Settings → Models' } },
+};
+
+test('the ready line names the specific cause, not the generic sentence', () => {
+  const p = page();
+  p.run(`renderReadyLine(${JSON.stringify(READY_STATUS)})`);
+  const line = p.document.getElementById('ready-line');
+  assert.equal(line.dataset.state, 'attention');
+  assert.equal(line.dataset.code, 'no_qualified_profile');
+  assert.match(line.textContent, /not been qualified/);
+  assert.doesNotMatch(line.textContent, /unavailable for new work/);
+});
+
+test('a modified engine is a failure with a repair action, never a command', () => {
+  const p = page();
+  const status = {
+    ...READY_STATUS, model_configured: 'qwen3.5-4b-q4_k_m',
+    engine: { mode: 'managed', release: 'b11390', backend: 'metal', verified: false,
+      problems: ['llama-server does not match the shipped engine'], running: false },
+    readiness: { code: 'engine_unverified', state: 'failed',
+      message: 'The Refinix engine files were changed, so the engine was not started.',
+      detail: 'Reinstall Refinix from a verified package.',
+      action: { kind: 'reinstall', label: 'How to repair Refinix' } },
+  };
+  p.run(`renderReadyLine(${JSON.stringify(status)}); renderEngineCard(${JSON.stringify(status)})`);
+  assert.equal(p.document.getElementById('ready-line').dataset.state, 'failed');
+  const actions = p.text('c-engine-actions');
+  assert.match(actions, /How to repair Refinix/);
+  assert.doesNotMatch(actions, /ollama/i);
+  assert.match(p.text('c-engine-facts'), /does not match the shipped engine/);
+});
+
+test('the managed engine card names the engine and never offers a terminal command', () => {
+  const p = page();
+  const status = {
+    ...READY_STATUS, model_configured: 'qwen3.5-4b-q4_k_m',
+    engine: { mode: 'managed', release: 'b11390', backend: 'metal', verified: true,
+      problems: [], running: false },
+    readiness: { code: 'ready', state: 'ok', message: 'Ready on this computer.',
+      detail: '', action: null },
+  };
+  p.run(`renderEngineCard(${JSON.stringify(status)})`);
+  assert.match(p.text('c-engine-facts'), /Refinix engine b11390 \(metal\)/);
+  assert.match(p.text('c-engine-lead'), /do not change it/);
+  assert.doesNotMatch(p.text('c-engine-actions') + p.text('c-engine-facts'), /ollama pull/);
+});
+
+// Refinix's own engine reports changed model files without a digest, and
+// files not yet re-read this session as pending; both must read plainly.
+test('a changed model file is named as changed, not hidden as unobserved', () => {
+  const p = page();
+  const rows = p.run(`modelFactRows(${JSON.stringify({
+    integrity: { local: { state: 'mismatch', observed: null } } })})`);
+  const integrity = rows.find((row) => row[0] === 'Integrity');
+  assert.match(integrity[1], /changed since it was installed/);
+});
+
+test('a pending file check says when it is checked', () => {
+  const p = page();
+  const rows = p.run(`modelFactRows(${JSON.stringify({
+    integrity: { local: { state: 'pending', observed: 'c'.repeat(64) } } })})`);
+  const integrity = rows.find((row) => row[0] === 'Integrity');
+  assert.match(integrity[1], /checked again before it loads/);
 });

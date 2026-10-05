@@ -1,0 +1,710 @@
+{
+  "cold_first_request_s": 1.291,
+  "cold_first_request_ttft_s": 0.9399426659947494,
+  "device": {
+    "architecture": "arm64",
+    "cpu_brand": "Apple M5",
+    "cpu_count": 10,
+    "disk_free_bytes": null,
+    "engine_devices": [
+      {
+        "free_mib": 12123,
+        "id": "MTL0",
+        "memory_mib": 12124,
+        "name": "Apple M5"
+      },
+      {
+        "free_mib": 0,
+        "id": "BLAS",
+        "memory_mib": 0,
+        "name": "Accelerate"
+      }
+    ],
+    "memory_total_bytes": 17179869184,
+    "os_family": "macos",
+    "os_version": "26.7",
+    "os_version_tuple": [
+      26,
+      7
+    ]
+  },
+  "engine": {
+    "backend": "metal",
+    "kind": "llama.cpp",
+    "label": "Refinix engine",
+    "lane": "macos-arm64",
+    "mode": "managed",
+    "problems": [],
+    "release": "b11390",
+    "runtime_version": "b11390-metal",
+    "verified": true
+  },
+  "generated_at": "2026-10-04T14:17:08Z",
+  "kind": "engine-parity-evidence",
+  "model": {
+    "manifest_sha256": "c0d7259fae4642a79a12e9b6a20b3693c5b816166459511d79d14df45cb6db2f",
+    "model_id": "qwen3.5-4b-q4_k_m",
+    "runtime": "llama.cpp",
+    "runtime_version": "b11390-metal"
+  },
+  "observer": {
+    "coverage_note": "Snapshots can miss a connection opened and closed between samples; this is observation, not enforcement.",
+    "interval_s": 0.25,
+    "listening": [
+      "127.0.0.1:39401"
+    ],
+    "loopback_only": true,
+    "method": "psutil per-process socket snapshot",
+    "non_loopback_connections_seen": [],
+    "observer_errors": 0,
+    "peak_rss_bytes": 4606459904,
+    "samples": 4135
+  },
+  "ollama_same_bytes": {
+    "available": true,
+    "imported_manifest": "4356eaa3387761f6d1db1d1f965ac7fe3a521e9b884bd0ae2f62de8dc5486116",
+    "ollama_version": "0.34.4",
+    "performance": {
+      "engine_start_to_ready_s": null,
+      "first_request_ttft_s": 0.9410842079960275,
+      "median_tokens_per_s": 25.18,
+      "warm_median_ttft_s": 0.0989
+    },
+    "trials": {
+      "approval_note/disabled": {
+        "of": 3,
+        "passed": 3,
+        "runs": [
+          {
+            "done_reason": "stop",
+            "elapsed_s": 39.269,
+            "failure": null,
+            "output_tokens": 846,
+            "passed": true,
+            "prompt_tokens": 1436,
+            "tokens_per_s": 23.26,
+            "ttft_s": 2.8989949579990935
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 24.882,
+            "failure": null,
+            "output_tokens": 544,
+            "passed": true,
+            "prompt_tokens": 1442,
+            "tokens_per_s": 24.04,
+            "ttft_s": 2.256343667002511
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 39.367,
+            "failure": null,
+            "output_tokens": 867,
+            "passed": true,
+            "prompt_tokens": 1443,
+            "tokens_per_s": 23.38,
+            "ttft_s": 2.284517042004154
+          }
+        ]
+      },
+      "approval_note/enabled": {
+        "of": 3,
+        "passed": 0,
+        "runs": [
+          {
+            "done_reason": "length",
+            "elapsed_s": 130.453,
+            "failure": "approval note rejected: The model returned nothing to review.",
+            "output_tokens": 3072,
+            "passed": false,
+            "prompt_tokens": 1435,
+            "tokens_per_s": 23.94,
+            "ttft_s": 2.144908000002033
+          },
+          {
+            "done_reason": "length",
+            "elapsed_s": 140.846,
+            "failure": "approval note rejected: The model returned nothing to review.",
+            "output_tokens": 3072,
+            "passed": false,
+            "prompt_tokens": 1432,
+            "tokens_per_s": 22.18,
+            "ttft_s": 2.3338109579926822
+          },
+          {
+            "done_reason": "length",
+            "elapsed_s": 131.125,
+            "failure": "approval note rejected: The model returned nothing to review.",
+            "output_tokens": 3072,
+            "passed": false,
+            "prompt_tokens": 1435,
+            "tokens_per_s": 23.84,
+            "ttft_s": 2.291872792004142
+          }
+        ]
+      },
+      "chat/disabled": {
+        "of": 3,
+        "passed": 1,
+        "runs": [
+          {
+            "done_reason": "stop",
+            "elapsed_s": 0.573,
+            "failure": "did not answer in the single line it was asked for, so what it concluded could not be read back without guessing",
+            "output_tokens": 7,
+            "passed": false,
+            "prompt_tokens": 81,
+            "tokens_per_s": 29.63,
+            "ttft_s": 0.3374573750043055
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 0.301,
+            "failure": "did not answer in the single line it was asked for, so what it concluded could not be read back without guessing",
+            "output_tokens": 7,
+            "passed": false,
+            "prompt_tokens": 81,
+            "tokens_per_s": 31.66,
+            "ttft_s": 0.08030033299291972
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 0.408,
+            "failure": null,
+            "output_tokens": 10,
+            "passed": true,
+            "prompt_tokens": 81,
+            "tokens_per_s": 30.17,
+            "ttft_s": 0.07686637500592042
+          }
+        ]
+      },
+      "chat/enabled": {
+        "of": 3,
+        "passed": 3,
+        "runs": [
+          {
+            "done_reason": "stop",
+            "elapsed_s": 14.885,
+            "failure": null,
+            "output_tokens": 327,
+            "passed": true,
+            "prompt_tokens": 79,
+            "tokens_per_s": 22.07,
+            "ttft_s": 0.06997420800325926
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 17.405,
+            "failure": null,
+            "output_tokens": 402,
+            "passed": true,
+            "prompt_tokens": 79,
+            "tokens_per_s": 23.21,
+            "ttft_s": 0.08880587499879766
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 18.66,
+            "failure": null,
+            "output_tokens": 419,
+            "passed": true,
+            "prompt_tokens": 79,
+            "tokens_per_s": 22.57,
+            "ttft_s": 0.0990004159975797
+          }
+        ]
+      },
+      "code/disabled": {
+        "of": 3,
+        "passed": 3,
+        "runs": [
+          {
+            "done_reason": "stop",
+            "elapsed_s": 7.018,
+            "failure": null,
+            "output_tokens": 139,
+            "passed": true,
+            "prompt_tokens": 471,
+            "tokens_per_s": 23.98,
+            "ttft_s": 1.2222228340106085
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 6.013,
+            "failure": null,
+            "output_tokens": 134,
+            "passed": true,
+            "prompt_tokens": 471,
+            "tokens_per_s": 22.63,
+            "ttft_s": 0.09280437500274274
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 6.106,
+            "failure": null,
+            "output_tokens": 142,
+            "passed": true,
+            "prompt_tokens": 471,
+            "tokens_per_s": 23.59,
+            "ttft_s": 0.08723499999905471
+          }
+        ]
+      },
+      "code/enabled": {
+        "of": 3,
+        "passed": 3,
+        "runs": [
+          {
+            "done_reason": "stop",
+            "elapsed_s": 10.098,
+            "failure": null,
+            "output_tokens": 257,
+            "passed": true,
+            "prompt_tokens": 469,
+            "tokens_per_s": 25.69,
+            "ttft_s": 0.09393179199832957
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 8.607,
+            "failure": null,
+            "output_tokens": 220,
+            "passed": true,
+            "prompt_tokens": 469,
+            "tokens_per_s": 25.78,
+            "ttft_s": 0.07327100000111386
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 10.421,
+            "failure": null,
+            "output_tokens": 267,
+            "passed": true,
+            "prompt_tokens": 469,
+            "tokens_per_s": 25.83,
+            "ttft_s": 0.08457808299863245
+          }
+        ]
+      },
+      "general_document/disabled": {
+        "of": 3,
+        "passed": 3,
+        "runs": [
+          {
+            "done_reason": "stop",
+            "elapsed_s": 2.506,
+            "failure": null,
+            "output_tokens": 53,
+            "passed": true,
+            "prompt_tokens": 321,
+            "tokens_per_s": 30.29,
+            "ttft_s": 0.7561285830015549
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 2.673,
+            "failure": null,
+            "output_tokens": 53,
+            "passed": true,
+            "prompt_tokens": 319,
+            "tokens_per_s": 28.68,
+            "ttft_s": 0.8251752500073053
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 2.685,
+            "failure": null,
+            "output_tokens": 55,
+            "passed": true,
+            "prompt_tokens": 318,
+            "tokens_per_s": 29.8,
+            "ttft_s": 0.8390744589996757
+          }
+        ]
+      },
+      "general_document/enabled": {
+        "of": 3,
+        "passed": 1,
+        "runs": [
+          {
+            "done_reason": "length",
+            "elapsed_s": 129.464,
+            "failure": "document rejected: The model returned nothing to write.",
+            "output_tokens": 3072,
+            "passed": false,
+            "prompt_tokens": 315,
+            "tokens_per_s": 23.88,
+            "ttft_s": 0.7982517920027021
+          },
+          {
+            "done_reason": "length",
+            "elapsed_s": 137.717,
+            "failure": "document rejected: The model returned nothing to write.",
+            "output_tokens": 3072,
+            "passed": false,
+            "prompt_tokens": 317,
+            "tokens_per_s": 22.43,
+            "ttft_s": 0.761190125005669
+          },
+          {
+            "done_reason": "stop",
+            "elapsed_s": 102.921,
+            "failure": null,
+            "output_tokens": 2218,
+            "passed": true,
+            "prompt_tokens": 320,
+            "tokens_per_s": 21.74,
+            "ttft_s": 0.9181025830039289
+          }
+        ]
+      }
+    }
+  },
+  "overflow": {
+    "message": "Context window exceeded (8192 tokens). Shorten your message or start a new chat. The runtime rejected the request without trimming it.",
+    "refused": true
+  },
+  "performance": {
+    "engine_start_to_ready_s": null,
+    "first_request_ttft_s": 0.1688106659858022,
+    "median_tokens_per_s": 34.945,
+    "warm_median_ttft_s": 0.0745
+  },
+  "release_accepted": false,
+  "settings": {
+    "context_tokens": 8192,
+    "trials": 3
+  },
+  "stop": {
+    "during_generation": {
+      "cancelled": true,
+      "stop_latency_s": 0.0
+    },
+    "during_prompt_processing": {
+      "cancelled": true,
+      "returned_after_s": 0.411
+    },
+    "engine_usable_after_stop": {
+      "text": "ready",
+      "ttft_s": 3.8910556670016376
+    }
+  },
+  "trials": {
+    "approval_note/disabled": {
+      "of": 3,
+      "passed": 3,
+      "runs": [
+        {
+          "done_reason": "stop",
+          "elapsed_s": 31.873,
+          "failure": null,
+          "output_tokens": 656,
+          "passed": true,
+          "prompt_tokens": 1440,
+          "tokens_per_s": 22.98,
+          "ttft_s": 3.3627761660027318
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 28.649,
+          "failure": null,
+          "output_tokens": 623,
+          "passed": true,
+          "prompt_tokens": 1433,
+          "tokens_per_s": 23.44,
+          "ttft_s": 2.1120212500100024
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 24.306,
+          "failure": null,
+          "output_tokens": 522,
+          "passed": true,
+          "prompt_tokens": 1442,
+          "tokens_per_s": 23.41,
+          "ttft_s": 2.0468527499906486
+        }
+      ]
+    },
+    "approval_note/enabled": {
+      "of": 3,
+      "passed": 0,
+      "runs": [
+        {
+          "done_reason": "length",
+          "elapsed_s": 134.828,
+          "failure": "approval note rejected: The model returned nothing to review.",
+          "output_tokens": 3072,
+          "passed": false,
+          "prompt_tokens": 1429,
+          "tokens_per_s": 23.12,
+          "ttft_s": 1.9827977920067497
+        },
+        {
+          "done_reason": "length",
+          "elapsed_s": 138.868,
+          "failure": "approval note rejected: The model returned nothing to review.",
+          "output_tokens": 3072,
+          "passed": false,
+          "prompt_tokens": 1440,
+          "tokens_per_s": 22.45,
+          "ttft_s": 2.0492345000093337
+        },
+        {
+          "done_reason": "length",
+          "elapsed_s": 136.564,
+          "failure": "approval note rejected: The model returned nothing to review.",
+          "output_tokens": 3072,
+          "passed": false,
+          "prompt_tokens": 1436,
+          "tokens_per_s": 22.84,
+          "ttft_s": 2.0814717080065748
+        }
+      ]
+    },
+    "chat/disabled": {
+      "of": 3,
+      "passed": 0,
+      "runs": [
+        {
+          "done_reason": "stop",
+          "elapsed_s": 0.411,
+          "failure": "did not answer in the single line it was asked for, so what it concluded could not be read back without guessing",
+          "output_tokens": 7,
+          "passed": false,
+          "prompt_tokens": 81,
+          "tokens_per_s": 34.61,
+          "ttft_s": 0.23799104199861176
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 0.249,
+          "failure": "did not answer in the single line it was asked for, so what it concluded could not be read back without guessing",
+          "output_tokens": 7,
+          "passed": false,
+          "prompt_tokens": 81,
+          "tokens_per_s": 32.43,
+          "ttft_s": 0.06386091699823737
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 0.23,
+          "failure": "did not answer in the single line it was asked for, so what it concluded could not be read back without guessing",
+          "output_tokens": 7,
+          "passed": false,
+          "prompt_tokens": 81,
+          "tokens_per_s": 35.3,
+          "ttft_s": 0.05965416600520257
+        }
+      ]
+    },
+    "chat/enabled": {
+      "of": 3,
+      "passed": 3,
+      "runs": [
+        {
+          "done_reason": "stop",
+          "elapsed_s": 12.158,
+          "failure": null,
+          "output_tokens": 413,
+          "passed": true,
+          "prompt_tokens": 79,
+          "tokens_per_s": 34.03,
+          "ttft_s": 0.050082290996215306
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 17.031,
+          "failure": null,
+          "output_tokens": 552,
+          "passed": true,
+          "prompt_tokens": 79,
+          "tokens_per_s": 32.5,
+          "ttft_s": 0.07509445800678805
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 13.461,
+          "failure": null,
+          "output_tokens": 371,
+          "passed": true,
+          "prompt_tokens": 79,
+          "tokens_per_s": 27.63,
+          "ttft_s": 0.07128462499531452
+        }
+      ]
+    },
+    "code/disabled": {
+      "of": 3,
+      "passed": 3,
+      "runs": [
+        {
+          "done_reason": "stop",
+          "elapsed_s": 6.728,
+          "failure": null,
+          "output_tokens": 142,
+          "passed": true,
+          "prompt_tokens": 471,
+          "tokens_per_s": 25.97,
+          "ttft_s": 1.2989013330079615
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 6.62,
+          "failure": null,
+          "output_tokens": 141,
+          "passed": true,
+          "prompt_tokens": 471,
+          "tokens_per_s": 21.43,
+          "ttft_s": 0.08797995900386013
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 6.105,
+          "failure": null,
+          "output_tokens": 133,
+          "passed": true,
+          "prompt_tokens": 471,
+          "tokens_per_s": 22.0,
+          "ttft_s": 0.10367829199822154
+        }
+      ]
+    },
+    "code/enabled": {
+      "of": 3,
+      "passed": 3,
+      "runs": [
+        {
+          "done_reason": "stop",
+          "elapsed_s": 11.235,
+          "failure": null,
+          "output_tokens": 235,
+          "passed": true,
+          "prompt_tokens": 469,
+          "tokens_per_s": 20.98,
+          "ttft_s": 0.08536312499199994
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 10.271,
+          "failure": null,
+          "output_tokens": 211,
+          "passed": true,
+          "prompt_tokens": 469,
+          "tokens_per_s": 20.62,
+          "ttft_s": 0.08739699999568984
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 15.405,
+          "failure": null,
+          "output_tokens": 318,
+          "passed": true,
+          "prompt_tokens": 469,
+          "tokens_per_s": 20.71,
+          "ttft_s": 0.09766287499223836
+        }
+      ]
+    },
+    "general_document/disabled": {
+      "of": 3,
+      "passed": 3,
+      "runs": [
+        {
+          "done_reason": "stop",
+          "elapsed_s": 3.577,
+          "failure": null,
+          "output_tokens": 55,
+          "passed": true,
+          "prompt_tokens": 317,
+          "tokens_per_s": 20.48,
+          "ttft_s": 0.9399801670078887
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 3.347,
+          "failure": null,
+          "output_tokens": 51,
+          "passed": true,
+          "prompt_tokens": 324,
+          "tokens_per_s": 16.87,
+          "ttft_s": 0.38361512499977835
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 4.258,
+          "failure": null,
+          "output_tokens": 77,
+          "passed": true,
+          "prompt_tokens": 320,
+          "tokens_per_s": 20.85,
+          "ttft_s": 0.6132744579954306
+        }
+      ]
+    },
+    "general_document/enabled": {
+      "of": 3,
+      "passed": 2,
+      "runs": [
+        {
+          "done_reason": "stop",
+          "elapsed_s": 141.577,
+          "failure": null,
+          "output_tokens": 2845,
+          "passed": true,
+          "prompt_tokens": 318,
+          "tokens_per_s": 20.14,
+          "ttft_s": 0.3800059159984812
+        },
+        {
+          "done_reason": "length",
+          "elapsed_s": 130.387,
+          "failure": "document rejected: The model returned nothing to write.",
+          "output_tokens": 3072,
+          "passed": false,
+          "prompt_tokens": 317,
+          "tokens_per_s": 23.65,
+          "ttft_s": 0.5192934999940917
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 120.412,
+          "failure": null,
+          "output_tokens": 2824,
+          "passed": true,
+          "prompt_tokens": 319,
+          "tokens_per_s": 23.52,
+          "ttft_s": 0.4086147920024814
+        }
+      ]
+    },
+    "page_reading/disabled": {
+      "of": 3,
+      "passed": 0,
+      "runs": [
+        {
+          "done_reason": "stop",
+          "elapsed_s": 19.576,
+          "failure": "page reading missed ['NG-2026-0417']",
+          "output_tokens": 232,
+          "passed": false
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 9.838,
+          "failure": "page reading missed ['NG-2026-0417', 'SOP-MECH-014']",
+          "output_tokens": 231,
+          "passed": false
+        },
+        {
+          "done_reason": "stop",
+          "elapsed_s": 9.772,
+          "failure": "page reading missed ['NG-2026-0417', 'SOP-MECH-014']",
+          "output_tokens": 230,
+          "passed": false
+        }
+      ]
+    }
+  }
+}

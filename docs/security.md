@@ -3,15 +3,17 @@
 ## Status and authority
 
 This document owns security implementation boundaries under
-[prd.md](prd.md). Planned controls are not verified controls. A static review
+[PROJECT.md](PROJECT.md). Planned controls are not verified controls. A static review
 cannot prove isolation, secure storage, zero egress, or resistance to attack.
 
-The [release bands](prd.md#release-bands) narrow the profiles offered in Beta;
+The [standalone Beta scope](PROJECT.md#25-platform-support-and-beta-scope) narrows the profiles offered in Beta;
 they do not relax authentication, model provenance, approval, sandbox, data-loss
 or offline-runtime boundaries. A capability is advertised only on its qualified
-execution profile. Beta manual package replacement follows
-[release acceptance](releases.md#beta-01-publication); unused future updater
-mechanisms need not ship, but every offered installation/recovery path is checked.
+execution profile. Beta in-app updates and manual recovery follow
+[release acceptance](releases.md#beta-01-publication). Qualify every offered installation/update/
+recovery path. Peer discovery, pairing, remote execution and admission are post-Beta capabilities;
+their controls remain required when exposed. Deferring mesh work does not weaken local isolation,
+protected credential storage, approval, data preservation or offline evidence requirements.
 
 ## 1. Security objectives
 

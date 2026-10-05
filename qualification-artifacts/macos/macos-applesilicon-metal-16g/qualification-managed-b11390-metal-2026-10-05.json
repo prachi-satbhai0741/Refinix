@@ -1,0 +1,230 @@
+{
+  "artifact_version": "1.0",
+  "generated_at": "2026-10-05T11:43:22Z",
+  "device": {
+    "os_family": "macos",
+    "os_release": "25.6.0",
+    "architecture": "arm64",
+    "target_profile_id": "macos-applesilicon-metal-16g"
+  },
+  "observed_model": {
+    "model_id": "qwen3.5-4b-q4_k_m",
+    "manifest_sha256": "c0d7259fae4642a79a12e9b6a20b3693c5b816166459511d79d14df45cb6db2f",
+    "runtime": "llama.cpp",
+    "runtime_version": "b11390-metal"
+  },
+  "result": "passed",
+  "release_accepted": false,
+  "workflows": [
+    {
+      "profile": {
+        "profile_id": "938d6c227ea0d2c5450a1eb294123b5561e286076c4455c10acb884e1083fac8",
+        "model": {
+          "model_id": "qwen3.5-4b-q4_k_m",
+          "manifest_sha256": "c0d7259fae4642a79a12e9b6a20b3693c5b816166459511d79d14df45cb6db2f",
+          "runtime": "llama.cpp",
+          "runtime_version": "b11390-metal"
+        },
+        "target_profile_id": "macos-applesilicon-metal-16g",
+        "workflow_mode": "chat",
+        "qualified_context_tokens": 8192,
+        "default_output_tokens": 2048,
+        "max_output_tokens": 2048,
+        "reasoning_modes": [
+          "disabled",
+          "enabled"
+        ],
+        "default_reasoning": "disabled",
+        "decoder_modes": [
+          "text"
+        ],
+        "qualified_memory_bytes": null,
+        "qualification_state": "candidate",
+        "eligible": false,
+        "evidence_kind": "unverified",
+        "evidence_ref": "qualification-run:pending-review"
+      },
+      "result": "passed",
+      "evidence": [
+        {
+          "reasoning": "disabled",
+          "decoder": "text",
+          "requested_profile_id": "938d6c227ea0d2c5450a1eb294123b5561e286076c4455c10acb884e1083fac8",
+          "actual_profile_id": "938d6c227ea0d2c5450a1eb294123b5561e286076c4455c10acb884e1083fac8",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 370,
+          "output_tokens": 14,
+          "total_ms": 1076,
+          "output_sha256": "94171329985df268b709ab3eba4a66305687d56e9e536593ee3c882d6e84be98",
+          "thinking_observed": false,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.disabled",
+            "answer.nonempty"
+          ]
+        },
+        {
+          "reasoning": "enabled",
+          "decoder": "text",
+          "requested_profile_id": "938d6c227ea0d2c5450a1eb294123b5561e286076c4455c10acb884e1083fac8",
+          "actual_profile_id": "938d6c227ea0d2c5450a1eb294123b5561e286076c4455c10acb884e1083fac8",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 368,
+          "output_tokens": 381,
+          "total_ms": 14053,
+          "output_sha256": "94171329985df268b709ab3eba4a66305687d56e9e536593ee3c882d6e84be98",
+          "thinking_observed": true,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.separated",
+            "answer.nonempty"
+          ]
+        }
+      ]
+    },
+    {
+      "profile": {
+        "profile_id": "9b605cbbafcab539de714afcacc440e2c9a42708f82d994a3b71c43d76ed12a8",
+        "model": {
+          "model_id": "qwen3.5-4b-q4_k_m",
+          "manifest_sha256": "c0d7259fae4642a79a12e9b6a20b3693c5b816166459511d79d14df45cb6db2f",
+          "runtime": "llama.cpp",
+          "runtime_version": "b11390-metal"
+        },
+        "target_profile_id": "macos-applesilicon-metal-16g",
+        "workflow_mode": "code.whole_file",
+        "qualified_context_tokens": 8192,
+        "default_output_tokens": 2048,
+        "max_output_tokens": 2048,
+        "reasoning_modes": [
+          "disabled",
+          "enabled"
+        ],
+        "default_reasoning": "disabled",
+        "decoder_modes": [
+          "json_schema"
+        ],
+        "qualified_memory_bytes": null,
+        "qualification_state": "candidate",
+        "eligible": false,
+        "evidence_kind": "unverified",
+        "evidence_ref": "qualification-run:pending-review"
+      },
+      "result": "passed",
+      "evidence": [
+        {
+          "reasoning": "disabled",
+          "decoder": "json_schema",
+          "requested_profile_id": "9b605cbbafcab539de714afcacc440e2c9a42708f82d994a3b71c43d76ed12a8",
+          "actual_profile_id": "9b605cbbafcab539de714afcacc440e2c9a42708f82d994a3b71c43d76ed12a8",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 471,
+          "output_tokens": 140,
+          "total_ms": 5796,
+          "output_sha256": "20a831d7fb20f822ec6deef94f2999057fffc8f43a30f208f836df471fbed1ea",
+          "thinking_observed": false,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.disabled",
+            "structured.decoder",
+            "proposal.schema",
+            "proposal.small_edit",
+            "canonical.unchanged"
+          ]
+        },
+        {
+          "reasoning": "enabled",
+          "decoder": "json_schema",
+          "requested_profile_id": "9b605cbbafcab539de714afcacc440e2c9a42708f82d994a3b71c43d76ed12a8",
+          "actual_profile_id": "9b605cbbafcab539de714afcacc440e2c9a42708f82d994a3b71c43d76ed12a8",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 469,
+          "output_tokens": 241,
+          "total_ms": 9001,
+          "output_sha256": "794a3a590b49a750d0b73d6e6c706b8ab821fc849619604b02b6a94456f67e02",
+          "thinking_observed": true,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.separated",
+            "structured.decoder",
+            "proposal.schema",
+            "proposal.small_edit",
+            "canonical.unchanged"
+          ]
+        }
+      ]
+    },
+    {
+      "profile": {
+        "profile_id": "85d0433fe1b9ba9de047d236426578dc19e75cd8f4753527a88bb7a236ca514b",
+        "model": {
+          "model_id": "qwen3.5-4b-q4_k_m",
+          "manifest_sha256": "c0d7259fae4642a79a12e9b6a20b3693c5b816166459511d79d14df45cb6db2f",
+          "runtime": "llama.cpp",
+          "runtime_version": "b11390-metal"
+        },
+        "target_profile_id": "macos-applesilicon-metal-16g",
+        "workflow_mode": "documents.structured",
+        "qualified_context_tokens": 8192,
+        "default_output_tokens": 3072,
+        "max_output_tokens": 3072,
+        "reasoning_modes": [
+          "disabled"
+        ],
+        "default_reasoning": "disabled",
+        "decoder_modes": [
+          "json_schema"
+        ],
+        "qualified_memory_bytes": null,
+        "qualification_state": "candidate",
+        "eligible": false,
+        "evidence_kind": "unverified",
+        "evidence_ref": "qualification-run:pending-review"
+      },
+      "result": "passed",
+      "evidence": [
+        {
+          "reasoning": "disabled",
+          "decoder": "json_schema",
+          "requested_profile_id": "85d0433fe1b9ba9de047d236426578dc19e75cd8f4753527a88bb7a236ca514b",
+          "actual_profile_id": "85d0433fe1b9ba9de047d236426578dc19e75cd8f4753527a88bb7a236ca514b",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 3072,
+          "done_reason": "stop",
+          "prompt_tokens": 337,
+          "output_tokens": 65,
+          "total_ms": 2743,
+          "output_sha256": "d1ee3276aad3400556361f98dda8fa1cc5a642263bb0d31d04d75d6b82d4afdd",
+          "thinking_observed": false,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.disabled",
+            "structured.decoder",
+            "document.schema",
+            "document.readable",
+            "document.required_facts",
+            "source.fenced"
+          ]
+        }
+      ]
+    }
+  ]
+}

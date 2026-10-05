@@ -25,10 +25,12 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
-from backend.coordinator import (code_service, codeflow, context, db, device, dispatch,
-                                 docflow, docgen, documents, identity, models,
-                                 pairing, pdfgen, policy, proof, repo,
-                                 retrieval, runtime)
+from backend.coordinator import (build_info, code_service, codeflow, context, db,
+                                 device, dispatch, docflow, docgen, documents,
+                                 identity, models, ownership, pairing, pdfgen, policy,
+                                 observer, proof, provisioning, readiness, repo,
+                                 retrieval, runtime, sandbox_probe, updates)
+from backend.coordinator import engine as engine_module
 
 repo_errors = repo.RepositoryError
 
@@ -112,6 +114,19 @@ CAPABILITY_SELFTEST_SCOPE = {
     "read-document": models.DOCUMENTS_OCR,
 }
 
+def mesh_enabled(environ=None) -> bool:
+    """Whether the deferred paired-computer controls are shown.
+
+    Off in every packaged build: running work on other computers is post-Beta,
+    and an unfinished control must not look functional. A source checkout can
+    turn it on with REFINIX_ENABLE_MESH=1 for development of that feature.
+    """
+    import os
+    environ = os.environ if environ is None else environ
+    return (not getattr(sys, "frozen", False)
+            and environ.get("REFINIX_ENABLE_MESH", "") == "1")
+
+
 def _as_payload(query: dict) -> dict:
     """One-value view of a query string, so `_text` validates GET the same way."""
     return {key: values[0] for key, values in query.items() if values}
@@ -165,10 +180,18 @@ class Hub:
 
 
 class Coordinator:
-    def __init__(self, state_path: Path, node_id: str | None = None):
+    def __init__(self, state_path: Path, node_id: str | None = None, *,
+                 owner=None, admitted: db.Admission | None = None):
+        # The real database, so every workspace folder derived from it below
+        # belongs to the store this process owns, whatever spelling was given.
+        state_path = ownership.canonical_database(state_path)
         self.state_path = state_path
+        # The workspace lock this process holds for the coordinator's lifetime.
+        # Production entry points always supply it; a test or a tool working on
+        # a private temporary store may not, and is still admitted first.
+        self.owner = owner
         self.attachments_root = db.attachments_root(state_path)
-        self.conn = db.connect(state_path)
+        self.conn = db.connect(state_path, owner=owner, admitted=admitted)
         self.node_id = node_id or self._identity("node_id")
         self.hub = Hub()
         self.workspace_id = self._identity("workspace_id")
@@ -176,6 +199,11 @@ class Coordinator:
         # memory/health reading.  Unknown hardware intentionally has no local
         # production profile until it is qualified.
         self.target_profile_id = device.qualified_target_profile()
+        # Reviewed hardware tiers this computer matches (managed-engine
+        # presets and profiles bind to these). Observed once at startup by
+        # `refresh_hardware`, not on every status poll.
+        self.tier_ids: list[str] = []
+        self.hardware_facts: dict | None = None
         self._cancelled: set[str] = set()
         self._cancel_lock = threading.Lock()
         # Set on Ctrl+C so streaming loops leave promptly instead of holding
@@ -196,6 +224,14 @@ class Coordinator:
         # rather than written twice and a file someone else changed is left
         # alone.
         self.resumed_writes = self.code.resume_writes()
+        # Checked, downloaded or imported only when the person asks.
+        self.updates = updates.UpdateService(
+            self.state_path.parent, schema_version=db.SCHEMA_VERSION,
+            os_version=device.os_version()[0])
+        # Model download, import and removal, started only by the person.
+        self.provisioner = provisioning.Provisioner(
+            self.conn, self.state_path, unload=self._unload_model,
+            busy=lambda: bool(self.active_jobs()))
 
     def _identity(self, key) -> str:
         row = self.conn.execute(
@@ -208,10 +244,77 @@ class Coordinator:
                               (key, workspace_id))
         return workspace_id
 
+    # The developer baseline's model and the managed engine's artifact of the
+    # same model. Used only to read an old selection under the other engine;
+    # the stored choice itself is never rewritten.
+    ENGINE_EQUIVALENTS = {runtime.MODEL: models.MANAGED_MAIN}
+
+    @staticmethod
+    def _engine_kind() -> str:
+        return "llama.cpp" if runtime.managed_engine() is not None else "ollama"
+
+    def default_model(self, scope: str) -> str:
+        if self._engine_kind() == "llama.cpp":
+            return models.MANAGED_DEFAULTS[scope]
+        return MODEL_DEFAULTS[scope]
+
+    def code_validation(self) -> dict:
+        """Which sandbox controls this computer has; observed once per run."""
+        if getattr(self, "_code_validation", None) is None:
+            try:
+                self._code_validation = sandbox_probe.probe()
+            except Exception as exc:                       # noqa: BLE001
+                self._code_validation = {"available": False, "controls": [],
+                                         "detail": f"The sandbox check failed: {exc}"}
+        return self._code_validation
+
+    @staticmethod
+    def _unload_model(model_id: str) -> None:
+        backend = runtime.managed_engine()
+        if backend is not None:
+            backend.unload(model_id)
+
+    def installed_models(self) -> dict:
+        """Managed-engine install records, with each file's recorded identity.
+
+        The size and SHA-256 recorded at install travel with the record so the
+        engine boundary can compare them with the files as they are now.
+        """
+        from backend.coordinator import local_engine
+        root = db.models_root(self.state_path)
+        found = {}
+        for record in db.model_installs(self.conn, engine="llama.cpp"):
+            components = []
+            for item in record["files"]:
+                try:
+                    relative = Path(item["path"])
+                    if not relative.is_absolute() and ".." in relative.parts:
+                        raise ValueError("path leaves the models folder")
+                    components.append(local_engine.ModelComponent(
+                        str(item["role"]), root / relative, int(item["size"]),
+                        str(item["sha256"])))
+                except (KeyError, TypeError, ValueError):
+                    components = None
+                    break
+            roles = {c.role: c for c in components or ()}
+            if components is None or "weights" not in roles:
+                continue
+            entry = models.entry_for(record["model_id"])
+            found[record["model_id"]] = local_engine.InstalledModel(
+                record["model_id"], record["manifest_sha256"], roles["weights"].path,
+                roles["projector"].path if "projector" in roles else None,
+                dict(entry.sampling) if entry else {}, tuple(components))
+        return found
+
     def model_for(self, scope: str, *, new_work: bool = False) -> str:
         if scope not in MODEL_DEFAULTS:
             raise RequestError("that model scope does not exist")
-        model = db.get_model_selection(self.conn, scope, MODEL_DEFAULTS[scope])
+        model = db.get_model_selection(self.conn, scope, self.default_model(scope))
+        entry = models.entry_for(model)
+        if entry is not None and entry.engine != self._engine_kind():
+            model = self.ENGINE_EQUIVALENTS.get(model) or next(
+                (k for k, v in self.ENGINE_EQUIVALENTS.items() if v == model),
+                self.default_model(scope))
         if new_work and not db.get_model_enabled(self.conn, model):
             raise RequestError(
                 f"The selected model {model} is switched off for new work.", 409)
@@ -230,7 +333,7 @@ class Coordinator:
                 or not models.digest_eligible(model, digest)):
             return None
         return {"model_id": model, "manifest_sha256": digest,
-                "runtime": "ollama",
+                "runtime": state.get("runtime") or "ollama",
                 "runtime_version": state.get("server_version") or "unknown"}
 
     def local_profiles(self, runtime_state: dict | None = None) \
@@ -242,12 +345,44 @@ class Coordinator:
                 try:
                     refs.append(v1.ModelRef(
                         model_id=model, manifest_sha256=digest,
-                        runtime="ollama",
+                        runtime=state.get("runtime") or "ollama",
                         runtime_version=state.get("server_version") or "unknown"))
                 except ValueError:
                     continue
+        targets = [t for t in [self.target_profile_id, *self.tier_ids] if t]
         return inference_profiles.for_observation(
-            target_profile_id=self.target_profile_id, models=refs)
+            target_profile_id=targets, models=refs)
+
+    def refresh_hardware(self) -> dict:
+        """Observe this computer once and match it to reviewed hardware tiers."""
+        backend = runtime.managed_engine()
+        devices = (engine_module.list_devices(backend.selection)
+                   if backend is not None else None)
+        facts = device.hardware(data_root=self.state_path.parent,
+                                engine_devices=devices)
+        self.hardware_facts = facts
+        self.tier_ids = [tier.tier_id for tier in inference_profiles.matching_tiers(facts)]
+        return facts
+
+    def engine_settings_for(self, model_id: str):
+        """The reviewed engine preset for this model's installed bytes here."""
+        backend = runtime.managed_engine()
+        if backend is None:
+            return None
+        record = backend.registry().get(model_id)
+        if record is None:
+            return None
+        preset = inference_profiles.preset_for(
+            model_id=model_id, manifest_sha256=record.manifest_sha256,
+            runtime_version=backend.selection.runtime_version, tier_ids=self.tier_ids)
+        if preset is None:
+            return None
+        return engine_module.LaunchSettings(
+            context_tokens=preset.context_tokens, slots=preset.slots,
+            gpu_layers=preset.gpu_layers, cache_type_k=preset.cache_type_k,
+            cache_type_v=preset.cache_type_v, flash_attention=preset.flash_attention,
+            min_available_memory_bytes=preset.min_available_memory_bytes,
+            min_free_disk_bytes=preset.min_free_disk_bytes)
 
     def local_profile(self, *, workflow: str, model_id: str, reasoning: str,
                       decoder: str, runtime_state: dict | None = None,
@@ -260,6 +395,15 @@ class Coordinator:
                          reasoning=reasoning, decoder=decoder,
                          output_allowance=output_allowance,
                          context_window=context_window)), None)
+
+    def _offered_reasoning(self, model_id: str, workflow: str, decoder: str,
+                           runtime_state: dict | None = None) -> set[str]:
+        """Reasoning modes any local profile qualifies for this model and workflow."""
+        return {mode for profile in self.local_profiles(runtime_state)
+                if profile.model.model_id == model_id
+                and profile.workflow_mode == workflow
+                and decoder in profile.decoder_modes
+                for mode in profile.reasoning_modes}
 
     def _document_execution(self, model_id: str,
                             runtime_state: dict | None = None) \
@@ -341,6 +485,9 @@ class Coordinator:
         digests = state.get("digests") or {}
         local = {model: digests.get(model) for model in (state.get("models") or [])
                  if model}
+        # Refinix's own engine says whether installed files still match their
+        # install record; an external Ollama reports only its own digests.
+        file_checks = state.get("file_checks") or {}
         remote = {}
         remote_profiles = []
         try:
@@ -359,8 +506,9 @@ class Coordinator:
         selected = {scope: self.model_for(scope) for scope in MODEL_DEFAULTS}
         enablement = db.model_enablement(self.conn)
         recorded = db.selftests(self.conn)
-        names = sorted(set(local) | set(remote) | set(MODEL_DEFAULTS.values())
-                       | set(models.BY_ID))
+        defaults = {self.default_model(scope) for scope in MODEL_DEFAULTS}
+        names = sorted(set(local) | set(remote) | defaults
+                       | {entry.id for entry in models.entries_for(self._engine_kind())})
         rows = []
         for model in names:
             # Named by role, not by operating system: the same words are true
@@ -370,6 +518,15 @@ class Coordinator:
                         ([device.location_label(local=False)] if model in remote else [])
             enabled = enablement.get(model, True)
             local_integrity = models.integrity(model, local.get(model))
+            check = file_checks.get(model) or {}
+            if check.get("state") == models.MISMATCH:
+                local_integrity = {"state": models.MISMATCH,
+                                   "expected": local_integrity["expected"],
+                                   "observed": None, "eligible": False,
+                                   "detail": check.get("detail")}
+            elif check.get("state") == "pending" and local_integrity["eligible"]:
+                local_integrity = {**local_integrity, "state": "pending",
+                                   "detail": check.get("detail")}
             worker_integrity = models.integrity(
                 model, (remote.get(model) or {}).get("manifest_sha256"))
             local_eligible = (model in local and local_integrity["eligible"]
@@ -503,7 +660,8 @@ class Coordinator:
         try:
             if not state.get("reachable"):
                 raise models.SelfTestError(
-                    f"The local engine at {runtime.HOST} did not answer.")
+                    f"{runtime.engine_label()[0].upper()}"
+                    f"{runtime.engine_label()[1:]} did not answer.")
             if model not in (state.get("models") or []):
                 raise models.SelfTestError(
                     f"{model} is not installed on this computer.")
@@ -683,7 +841,28 @@ class Coordinator:
         self._emit(job_id, None, {"kind": "job.state", "previous": previous,
                                   "current": following})
 
+    def _observe(self):
+        """A network observation window for work about to run on this computer."""
+        backend = runtime.managed_engine()
+
+        def engine_pid():
+            engine = backend.engine if backend is not None else None
+            return engine.process.pid if engine is not None and engine.running else None
+
+        return observer.Window(node_id=self.node_id, engine_pid=engine_pid).start()
+
     def _run(self, job_id: str, chat_id: str, skill_id: str | None = None):
+        """Run one job, observing what Refinix's processes connected to meanwhile."""
+        window = self._observe()
+        try:
+            return self._run_job(job_id, chat_id, skill_id)
+        finally:
+            try:
+                db.set_job_network(self.conn, job_id, self.node_id, window.stop())
+            except Exception:                              # noqa: BLE001
+                traceback.print_exc()
+
+    def _run_job(self, job_id: str, chat_id: str, skill_id: str | None = None):
         attempt_id = None
         try:
             for previous, following in (("created", "context_preparing"),
@@ -741,6 +920,20 @@ class Coordinator:
                     workflow_mode, decoder_mode = mode_workflow, mode_decoder
             structured_document = (skill_id in docflow.DOCUMENT_SKILLS
                                    and not chat_backed)
+            reasoning_note = ""
+            if structured_document and uses_model:
+                # Reasoning is chosen per model, but qualified per workflow. A
+                # structured document whose profile here offers only the other
+                # mode runs in that mode and says so, rather than being refused
+                # for a setting the person chose for Chat.
+                offered = self._offered_reasoning(model_id, workflow_mode,
+                                                  decoder_mode, runtime_state)
+                if offered and reasoning_mode not in offered:
+                    reasoning_mode = "disabled" if "disabled" in offered else "enabled"
+                    reasoning = reasoning_mode == "enabled"   # what the attempt records
+                    reasoning_note = (
+                        f"; ran with reasoning {'off' if reasoning_mode == 'disabled' else 'on'}"
+                        ", the only mode qualified for Documents on this computer")
             if skill_id in docflow.DOCUMENT_SKILLS:
                 route = self._local_route(
                     dispatch.Route(
@@ -750,7 +943,8 @@ class Coordinator:
                         "model answers with its qualified Chat profile; the "
                         "structured Documents workflow is not qualified here"
                         if chat_backed else
-                        "local coordinator: Documents runs on this computer"),
+                        "local coordinator: Documents runs on this computer"
+                        + reasoning_note),
                     model_id, uses_model, runtime_state,
                     workflow=workflow_mode, reasoning=reasoning_mode,
                     decoder=decoder_mode, context_window=None,
@@ -1846,15 +2040,6 @@ class Coordinator:
         store = pairing.credential_store()
         state = {
             "paired": relationship is not None,
-            # Deprecated, and kept only so an older interface build keeps
-            # working. It is NOT a macOS-specific flag any more: it is derived
-            # from the same `store` read on the line below, so the two can never
-            # disagree, and on Windows or Linux it means "this computer's own
-            # protected store is usable". New callers read `credential_store`,
-            # which also says which store and why not — a Windows computer must
-            # never be told it is missing a macOS framework. Remove this field
-            # once no shipped interface reads it.
-            "keychain_available": store["available"],
             "credential_store": store,
             "relationship": pairing.describe(relationship) if relationship else None,
             "node": None, "health": "unavailable", "identity_mismatch": None,
@@ -2501,7 +2686,9 @@ class Coordinator:
         return {"job": dict(job), "attempts": attempts, "events": events}
 
     def capabilities(self, runtime_state: dict | None = None,
-                     inventory: list[dict] | None = None) -> list[dict]:
+                     inventory: list[dict] | None = None, *,
+                     reading: dict | None = None,
+                     searchable: bool | None = None) -> list[dict]:
         """Observed capability state. `available` requires every observation.
 
         A document skill is available only when the parsers it needs exist on
@@ -2522,10 +2709,12 @@ class Coordinator:
                              if profile["workflow_mode"] == inference_profiles.CODE), None)
         # The runtime was already observed above; reuse it rather than probing
         # once more per capability row.
-        reading = documents.capability_summary(
-            state, ocr_model=self.enabled_model_for("documents.ocr"),
-            ocr_profile=self.ocr_profile(state))
-        searchable = retrieval.fts_available(self.conn)
+        if reading is None:
+            reading = documents.capability_summary(
+                state, ocr_model=self.enabled_model_for("documents.ocr"),
+                ocr_profile=self.ocr_profile(state))
+        if searchable is None:
+            searchable = retrieval.fts_available(self.conn)
         recorded = db.selftests(self.conn)
         document_mode, _workflow, _decoder = self._document_execution(
             document_model, state)
@@ -2665,8 +2854,10 @@ class Coordinator:
         if not row["enabled"]:
             return f"The selected model {model_id} is switched off for new work."
         version = state.get("server_version") or "this runtime"
+        engine_name = ("the Refinix engine" if state.get("runtime") == "llama.cpp"
+                       else "Ollama")
         return (f"The selected model {model_id} has no qualified {workflow} "
-                f"execution profile for Ollama {version} on this computer.")
+                f"execution profile for {engine_name} {version} on this computer.")
 
     @staticmethod
     def _document_blockers(entry, reading, searchable, model_blocker) -> list[str]:
@@ -2683,6 +2874,37 @@ class Coordinator:
             blocked.append("Word documents cannot be written on this computer.")
         return blocked
 
+    @staticmethod
+    def engine_state(runtime_state: dict) -> dict:
+        """Which engine answers inference here, as the status and readiness see it."""
+        if runtime.managed_engine() is not None:
+            return runtime_state.get("engine") or {}
+        return {"mode": "developer", "kind": "ollama",
+                "label": "Developer engine: external Ollama",
+                "release": runtime_state.get("server_version"),
+                "verified": None, "problems": []}
+
+    def chat_readiness(self, runtime_state: dict | None = None,
+                       inventory: list[dict] | None = None) -> dict:
+        """The one typed answer to "can ordinary Chat run here?".
+
+        Shared by the status read and the desktop startup sequence, so an
+        installed model never reads as ready when its selection, enablement,
+        file identity, hardware tier or qualified profile says otherwise.
+        """
+        state = runtime_state if runtime_state is not None else runtime.probe()
+        inventory = inventory if inventory is not None else self.model_inventory(state)
+        chat_model = self.model_for("chat")
+        chat_row = next((row for row in inventory if row["id"] == chat_model), None)
+        chat_profile = next((p for p in self.local_profiles(state)
+                             if p.model.model_id == chat_model
+                             and p.workflow_mode == inference_profiles.CHAT), None)
+        return readiness.assess(
+            runtime_state=state, engine=self.engine_state(state), chat_row=chat_row,
+            model_id=chat_model, chat_profile_found=chat_profile is not None,
+            device_tier=(self.tier_ids[0] if self.tier_ids else None),
+            managed=runtime.managed_engine() is not None)
+
     def status(self):
         with db.LOCK:
             counts = {row["state"]: row["n"] for row in self.conn.execute(
@@ -2691,21 +2913,35 @@ class Coordinator:
         inventory = self.model_inventory(runtime_state)
         chat_model = self.model_for("chat")
         chat_row = next((row for row in inventory if row["id"] == chat_model), None)
+        # Computed once per status read and shared with the capability rows.
+        reading = documents.capability_summary(
+            runtime_state, ocr_model=self.enabled_model_for("documents.ocr"),
+            ocr_profile=self.ocr_profile(runtime_state))
+        searchable = retrieval.fts_available(self.conn)
         local_profiles = self.local_profiles(runtime_state)
         chat_profile = next((p for p in local_profiles
                              if p.model.model_id == chat_model
                              and p.workflow_mode == inference_profiles.CHAT), None)
+        engine_state = self.engine_state(runtime_state)
+        chat_ready = self.chat_readiness(runtime_state, inventory)
         return {
             "product": {"name": "Refinix", "surface": "local"},
+            "build": build_info.describe(),
+            "readiness": chat_ready,
+            "engine": engine_state,
+            "hardware": {"facts": self.hardware_facts, "tiers": list(self.tier_ids)},
             "desktop": dict(self.desktop),
             # What this computer is, observed rather than assumed. Nothing here
             # claims the profile is qualified: that is evidence held elsewhere.
             "device": {**device.describe(),
-                       "code_containment": repo.containment_backend()},
+                       "code_containment": repo.containment_backend(),
+                       "code_validation": self.code_validation()},
             "node_id": self.node_id,
             "workspace_id": self.workspace_id,
             "contract_version": v1.CONTRACT_VERSION,
-            "contract_status": "reviewed draft; not frozen, integration pending C05",
+            "contract_status": ("worker contract used only by the deferred "
+                                "paired-computer feature"),
+            "features": {"mesh": mesh_enabled()},
             "bind": f"{BIND_HOST}",
             "runtime": runtime_state,
             "model_configured": chat_model,
@@ -2716,12 +2952,18 @@ class Coordinator:
             "model_selections": {scope: self.model_for(scope)
                                  for scope in MODEL_DEFAULTS},
             "auto_model": {"enabled": False,
-                           "detail": "Automatic model choice is planned after the internal hackathon."},
+                           "detail": ("Automatic model choice is not available in "
+                                      "this build; choose a model per workflow.")},
             "models": inventory,
             # Which workflows have a smallest representative check the person
             # can run. Sent so the interface offers only the checks that exist.
             "selftest_scopes": sorted(models.SELFTESTS),
-            "capabilities": self.capabilities(runtime_state, inventory),
+            # Downloads and imports in progress or just finished, by model.
+            "provisioning": self.provisioner.state(),
+            # Version, last check, any verified offer; never checked from here.
+            "updates": self.updates.describe(),
+            "capabilities": self.capabilities(runtime_state, inventory,
+                                              reading=reading, searchable=searchable),
             "attachments": {
                 "max_bytes": db.MAX_ATTACHMENT_BYTES,
                 "max_files": db.MAX_ATTACHMENTS_PER_REQUEST,
@@ -2735,12 +2977,8 @@ class Coordinator:
                               "not sent to the paired worker.",
             },
             "documents": {
-                **documents.capability_summary(
-                    runtime_state,
-                    ocr_model=self.enabled_model_for("documents.ocr"),
-                    ocr_profile=self.ocr_profile(runtime_state)),
-                "search": retrieval.METHOD if retrieval.fts_available(self.conn)
-                          else None,
+                **reading,
+                "search": retrieval.METHOD if searchable else None,
                 "search_note": retrieval.METHOD_NOTE,
                 # Which artifact formats this computer can actually write,
                 # observed rather than listed. Word is portable and is the
@@ -2785,13 +3023,14 @@ class Coordinator:
                                   else "unavailable")},
             "surface_notes": {"code": None if repo.containment_supported()
                               else repo.PLATFORM_NOTE},
-            # Every value below needs evidence this chunk cannot produce.
+            # What this build does not do yet, in plain words. Each entry is
+            # replaced by real evidence when the capability exists.
             "unavailable": {
-                "workers": "no worker is paired; C06 establishes pairing",
-                "cluster": "no cluster is deployed; C05 provisions it",
-                "approvals": "the approval path is implemented at C10",
-                "proof": "Proof Cards are produced at C10",
-                "egress": "zero-egress evidence is collected at C11",
+                "paired_computers": ("Running work on other computers is planned "
+                                     "after the Beta and is switched off in this "
+                                     "build."),
+                "network_evidence": ("Network observations are not attached to "
+                                     "Proof Cards yet."),
             },
         }
 
@@ -2928,6 +3167,21 @@ class Handler(BaseHTTPRequestHandler):
                         detail={"filename": artifact["filename"],
                                 "sha256": artifact["sha256"]})
 
+    def _update(self, operation, status: int = 200):
+        """One update step; a refusal keeps its code and its reason."""
+        try:
+            self._json(operation(), status)
+        except updates.UpdateError as exc:
+            self._json({"error": str(exc), "code": exc.code}, 409)
+
+    def _provision(self, operation, status: int = 200):
+        """Run one model download/import/removal step; refusals keep their code."""
+        try:
+            self._json(operation(), status)
+        except provisioning.ProvisioningError as exc:
+            self._json({"error": str(exc), "code": exc.code},
+                       404 if exc.code in ("unknown_model", "not_installed") else 409)
+
     def _code(self, operation):
         """Run one Code operation, turning a pending approval into a 202.
 
@@ -3002,6 +3256,12 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "/v1/model/impact":
                 self._json({"impact": c.removal_impact(
                     self._text(_as_payload(query), "model", 200))})
+            elif route == "/v1/updates":
+                self._json(c.updates.describe())
+            elif route == "/v1/model/plan":
+                # What a download would fetch, from where, and whether it fits.
+                self._provision(lambda: c.provisioner.plan(
+                    self._text(_as_payload(query), "model", 200)))
             elif route == "/v1/attachments":
                 self._json({"attachments": db.list_attachments(
                     c.conn, chat_id=query["chat_id"][0])})
@@ -3186,6 +3446,23 @@ class Handler(BaseHTTPRequestHandler):
                     raise RequestError("enabled must be true or false")
                 self._json(c.set_model_enabled(
                     self._text(payload, "model", 200), enabled))
+            elif route == "/v1/updates/check":
+                # Only when the person presses Check for updates.
+                self._update(c.updates.check)
+            elif route == "/v1/updates/download":
+                self._update(c.updates.start_download, 202)
+            elif route == "/v1/updates/cancel":
+                self._update(c.updates.cancel)
+            elif route == "/v1/model/download":
+                # Started only by the person, after the plan was shown.
+                self._provision(lambda: c.provisioner.start_download(
+                    self._text(payload, "model", 200)), 202)
+            elif route == "/v1/model/provisioning/cancel":
+                self._provision(lambda: c.provisioner.cancel(
+                    self._text(payload, "model", 200)))
+            elif route == "/v1/model/remove":
+                self._provision(lambda: c.provisioner.remove(
+                    self._text(payload, "model", 200)))
             elif route == "/v1/model/selftest":
                 # A self-test asks the local engine one bounded question. It
                 # downloads nothing and installs nothing, and it is only ever
@@ -3326,7 +3603,8 @@ class Handler(BaseHTTPRequestHandler):
             self.coordinator.hub.unsubscribe(key)
 
 
-def build_server(state_path: Path, port: int = DEFAULT_PORT):
+def build_server(state_path: Path, port: int = DEFAULT_PORT, *, owner=None,
+                 admitted: db.Admission | None = None):
     """Create the coordinator and its listener without serving.
 
     The desktop shell serves this on a background thread; `serve()` below runs
@@ -3335,7 +3613,11 @@ def build_server(state_path: Path, port: int = DEFAULT_PORT):
     """
     # Bind first: an occupied port must fail before any state is opened.
     httpd = ThreadingHTTPServer((BIND_HOST, port), Handler)
-    coordinator = Coordinator(state_path)
+    try:
+        coordinator = Coordinator(state_path, owner=owner, admitted=admitted)
+    except BaseException:
+        httpd.server_close()
+        raise
     Handler.coordinator = coordinator
     httpd.daemon_threads = True
     # ThreadingMixIn.block_on_close defaults to True, which makes server_close()
@@ -3353,7 +3635,27 @@ def shutdown_server(httpd, coordinator) -> None:
 
 
 def serve(state_path: Path, port: int = DEFAULT_PORT):
-    httpd, coordinator = build_server(state_path, port)
+    """The headless coordinator: owns its workspace for as long as it runs."""
+    state_path = ownership.canonical_database(state_path)
+    owner = ownership.WorkspaceLock.for_database(state_path)
+    if owner.acquire() is not None:
+        raise SystemExit(
+            f"Another Refinix process already owns the workspace at "
+            f"{Path(state_path).parent}. Quit it first, or pass --state to name "
+            "a different database.")
+    try:
+        _serve_owned(state_path, port, owner)
+    finally:
+        owner.release()
+
+
+def _serve_owned(state_path: Path, port: int, owner):
+    try:
+        httpd, coordinator = build_server(
+            state_path, port, owner=owner,
+            admitted=db.admit(state_path, owner=owner))
+    except db.AdmissionRefused as exc:
+        raise SystemExit(f"{exc}\n{exc.detail}") from exc
     # flush=True: the operator must see this even when stdout is a pipe.
     banner = [
         "Refinix coordinator",

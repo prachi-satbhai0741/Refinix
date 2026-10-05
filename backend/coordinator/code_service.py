@@ -1116,6 +1116,7 @@ class CodeService:
         deadline = time.monotonic() + PROPOSAL_DEADLINE_SECONDS
         collected, metrics = [], {}
         completed = False
+        window = self.c._observe() if attempt_id else None
         try:
             for kind, payload in runtime.stream_chat(
                     messages, profile=profile, inference=inference,
@@ -1143,6 +1144,11 @@ class CodeService:
                     self._incomplete_detail(metrics, inference))
             completed = True
         finally:
+            if window is not None:
+                try:
+                    db.set_attempt_network(self.conn, attempt_id, window.stop())
+                except Exception:                          # noqa: BLE001
+                    pass                                   # evidence, never a failure
             if attempt_id:
                 metrics["stage"] = stage
                 if not completed:

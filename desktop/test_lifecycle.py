@@ -403,6 +403,109 @@ class TestStartupSequence(unittest.TestCase):
         self.assertEqual(lifecycle.read_workspace_id(self.state), "w-42")
 
 
+def _readiness(code, state="attention", message="Not ready.", detail="Because."):
+    return {"code": code, "state": state, "message": message, "detail": detail,
+            "action": {"kind": "open_settings", "target": "models",
+                       "label": "Open Settings → Models"}}
+
+
+class FakeCoordinator:
+    """Answers only what startup asks a coordinator: its typed Chat readiness."""
+
+    def __init__(self, ready):
+        self.ready = ready
+        self.conn = type("Conn", (), {"close": lambda self: None})()
+
+    def chat_readiness(self, state=None):
+        return self.ready
+
+    def model_for(self, scope):
+        return "qwen3.5-4b-q4_k_m"
+
+
+class TestStartupReadiness(unittest.TestCase):
+    """Startup says "ready" only when the shared typed readiness says so.
+
+    Installed weights used to be enough for "Refinix is ready." even with no
+    reviewed preset, a different selected model or a switched-off model.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.state = Path(self.dir.name) / "state.sqlite3"
+
+    def _developer(self, ready):
+        progress = lifecycle.Progress()
+        supervisor = lifecycle.EngineSupervisor(
+            probe=probes(REACHABLE), locate=lambda: None,
+            spawn=lambda *a, **k: FakeProcess(), sleep=lambda _s: None)
+        with patch.object(lifecycle, "choose_port",
+                          return_value=lifecycle.PortChoice(8770, False, "free")):
+            result = lifecycle.run_startup(
+                progress, state_path=self.state, supervisor=supervisor,
+                start_server=lambda *_a: ("server", FakeCoordinator(ready)))
+        return progress.snapshot(), result
+
+    def test_an_installed_but_unqualified_model_is_not_called_ready(self):
+        snapshot, result = self._developer(_readiness(
+            "no_qualified_profile", message="qwen has not been qualified here."))
+        self.assertEqual(snapshot["phase"], "attention")
+        self.assertIn("not been qualified", snapshot["message"])
+        steps = {s["key"]: s for s in snapshot["steps"]}
+        self.assertEqual(steps["model"]["state"], "attention")
+        self.assertEqual(steps["model"]["action"]["kind"], "open_settings")
+        self.assertEqual(result.model["readiness"]["code"], "no_qualified_profile")
+
+    def test_ready_readiness_is_ready(self):
+        snapshot, _ = self._developer(_readiness("ready", "ok", "Ready on this computer."))
+        self.assertEqual(snapshot["phase"], "ready")
+
+    def _managed(self, ready, *, models=("other-model",)):
+        progress = lifecycle.Progress()
+        selection = type("Selection", (), {"problems": [], "manifest": {
+            "release": "b11390", "backend": "metal"}})()
+        backend = type("Backend", (), {"engine": object()})()
+        state = {"reachable": True, "models": list(models)}
+        with patch.object(lifecycle, "configure_managed_engine", return_value=backend), \
+                patch.object(lifecycle.runtime, "probe", return_value=state):
+            _state, model, engine_error, _control = lifecycle._managed_engine_steps(
+                progress, selection, FakeCoordinator(ready), self.state)
+        return progress.snapshot(), model, engine_error
+
+    def test_managed_installed_weights_without_a_preset_are_not_ready(self):
+        snapshot, model, error = self._managed(_readiness("device_unsupported"))
+        steps = {s["key"]: s for s in snapshot["steps"]}
+        self.assertEqual((steps["engine"]["state"], steps["model"]["state"]),
+                         ("ok", "attention"))
+        self.assertIsNone(error)
+        self.assertEqual(model["readiness"]["code"], "device_unsupported")
+
+    def test_managed_selected_model_missing_while_another_is_installed(self):
+        _snapshot, model, _ = self._managed(_readiness(
+            "model_not_installed", message="The selected model x is not installed."))
+        self.assertEqual(model["state"], "attention")
+        self.assertIn("selected model", model["detail"])
+
+    def test_managed_switched_off_model_is_not_ready(self):
+        _snapshot, model, _ = self._managed(_readiness("model_disabled"))
+        self.assertEqual(model["state"], "attention")
+
+    def test_managed_ready_names_the_selected_model(self):
+        snapshot, model, error = self._managed(_readiness("ready", "ok", "Ready."))
+        self.assertEqual(model["state"], "ok")
+        self.assertIn("qwen3.5-4b-q4_k_m", model["detail"])
+        self.assertIsNone(error)
+
+    def test_managed_engine_survivor_is_an_engine_problem(self):
+        snapshot, model, error = self._managed(_readiness(
+            "engine_stop_blocked", "failed", "An earlier engine is still running."))
+        steps = {s["key"]: s for s in snapshot["steps"]}
+        self.assertEqual(steps["engine"]["state"], "attention")
+        self.assertIsNotNone(error)
+        self.assertEqual(model["state"], "attention")
+
+
 class TestProgress(unittest.TestCase):
     def test_snapshots_are_safe_to_read_while_steps_are_written(self):
         progress = lifecycle.Progress()

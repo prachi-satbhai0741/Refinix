@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 
+from backend.coordinator import ownership
 from desktop import lifecycle
 
 parser = argparse.ArgumentParser(prog="python3 -m desktop", description="Open Refinix.")
@@ -56,7 +57,10 @@ def _second_launch(existing: dict) -> int:
 
 
 def main() -> int:
-    instance = lifecycle.SingleInstance()
+    # The lock guards the database this run will open, so an explicit --state
+    # is owned by its own lock rather than the default root's.
+    args.state = ownership.canonical_database(args.state)
+    instance = lifecycle.SingleInstance.for_state(args.state)
     existing = instance.acquire()
     if existing is not None:
         return _second_launch(existing)
@@ -67,7 +71,7 @@ def main() -> int:
             try:
                 instance.record(port=None, mode="starting")
                 return shell.run(state_path=args.state, port=args.port,
-                                 gui=args.gui, debug=args.debug,
+                                 gui=args.gui, debug=args.debug, owner=instance,
                                  on_started=lambda startup: instance.record(
                                      port=startup.port, mode="window"))
             except shell.MissingToolkit as exc:
@@ -78,7 +82,8 @@ def main() -> int:
         progress = lifecycle.Progress()
         try:
             startup = lifecycle.run_startup(progress, state_path=args.state,
-                                            preferred_port=args.port)
+                                            preferred_port=args.port,
+                                            owner=instance)
         except lifecycle.StartupError as exc:
             print(f"Refinix could not start: {exc}\n  {exc.detail}", file=sys.stderr)
             return 1

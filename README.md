@@ -61,7 +61,9 @@ The challenge calls for a **self-hosted, air-gapped AI workbench** that:
 - Grounds itself in the **organisation's own knowledge base** (manuals, SOPs, past correspondence) through a local retrieval connector, with nothing leaving the premises.
 - Provides **visible, demonstrable proof** — through logs or a live network monitor — that no external network call is made at any point during operation. This proof, not a written claim, is what the challenge treats as evidence of sovereignty.
 
-The current requirement interpretation, open design decisions, and demonstration plan are maintained in the project [PRD](docs/prd.md), which should be treated as the living source of truth alongside this README.
+The current product requirements, architecture and open decisions are maintained in
+[PROJECT.md](docs/PROJECT.md), the canonical project contract. The older PRD and design documents
+remain historical/reference material.
 
 ---
 
@@ -91,12 +93,12 @@ The open-source platform and a specialised paid offering share this core. The pa
 offering adds authorised customer corpora, workflows, templates, deployment and
 support; it does not require a cloud inference service.
 
-> **Status, 2026-09-16:** The current app/worker source and recent reliability
-> repairs are recorded in the [source audit](docs/evaluation.md#beta-source-audit).
-> The production architecture is retained. [Band A, P01–P14](tasks.md#numbered-execution-tasks)
-> leads to **Refinix Beta 0.1 / SIH Reviewer Preview**, followed by versioned
-> improvements and finals/production qualification. No public Beta support profile
-> is accepted yet; a working checkout or old Mac bundle is not a release.
+> **Release direction, 2026-10-03:** Continue from the existing prototype and merged source.
+> The [current phase plan](tasks.md) leads to standalone **Refinix Beta 0.1 / SIH Reviewer Preview**
+> on Windows, macOS and Linux with qualified in-app updates. Mesh execution follows after Beta.
+> Historical app/worker observations remain in the [source audit](docs/evaluation.md#beta-source-audit).
+> This scope change establishes no package, device or updater acceptance; a working checkout or
+> old Mac bundle is not a release.
 
 ---
 
@@ -113,6 +115,11 @@ It's worth being explicit about why "just run a local LLM" doesn't satisfy the c
 
 ## Design Philosophy: Coordinator, Not a Cluster
 
+Beta 0.1 / SIH Reviewer Preview targets useful **standalone Windows, macOS and Linux** installations
+with qualified local workflows and user-initiated in-app updates. Trusted-device execution is deferred
+until after Beta. Continue from the existing prototype and shared code; the broader architecture
+below is retained product direction, not a first-Beta release claim.
+
 Refinix distributes complete jobs or bounded workflow steps among trusted devices.
 Each model invocation runs on one selected target; there is no model sharding or
 pooled VRAM. Keep canonical workspace state and final-write authority with the
@@ -124,7 +131,7 @@ The existing Docker/K3s/Redis backend remains useful for managed services and
 isolated validation Jobs. It is an **optional server execution profile**, not a
 requirement for desktop installation or peer membership. Windows/macOS/Linux
 peers communicate through Refinix's authenticated application API; they do not
-need to become Kubernetes nodes. See [architecture](docs/architecture.md).
+need to become Kubernetes nodes. See the current [project contract](docs/PROJECT.md).
 
 ---
 
@@ -143,13 +150,25 @@ unavoidable OS permissions and unsupported prerequisites must be explained.
 A remote-only client can skip local models. These are target installer behaviours,
 not a claim that the existing prototype package already provides them.
 
-The first Beta is gated by a complete reviewer journey on a narrow qualified
-matrix, including real paired execution, routing and validated Code on an eligible
-sandbox. Settings → Models remains available after onboarding for supported
+The Beta target is for Refinix to own a pinned, tested inference engine and its application dependencies.
+Engineering/release work qualifies supported combinations; customers use graphical setup and automatic local checks,
+without maintaining Ollama versions or registering profiles. External Ollama updates must not affect
+the managed engine. Bundled llama.cpp remains the preferred candidate pending qualification; the
+current source still uses Ollama. See the [runtime contract](docs/PROJECT.md#13-runtime-and-resource-policy).
+
+Keep the existing orchestration harness for now. LangGraph remains an unadopted alternative to
+evaluate for a demonstrated workflow gap; comparative benefit in Refinix is unmeasured. See the
+[orchestration decision](docs/PROJECT.md#70-orchestration-choice-and-alternatives).
+
+The first Beta is gated by a complete standalone reviewer journey on a narrow qualified
+matrix containing all three OS families, without pairing or a managed backend. Qualify Code sandbox
+validation on an eligible local profile and disclose other profiles' validation limits.
+Settings → Models remains available after onboarding for supported
 provisioning, selection and safe removal. See the [model lifecycle](docs/model-catalog.md#persistent-model-management).
-The [release contract](docs/releases.md#beta-01-publication) allows authenticated
-manual package replacement/recovery for 0.1; in-app updates and broader platform
-matrices follow. A main change reaches users only as an accepted, versioned release.
+The [release contract](docs/releases.md#beta-01-publication) requires qualified in-app updates and
+authenticated manual recovery for 0.1; broader platform/upgrade/mesh matrices follow. These are
+targets, not a claim that packages or the updater are accepted. A main change reaches users only
+as an accepted, versioned release.
 
 Preserve the existing UI:
 
@@ -160,7 +179,9 @@ Preserve the existing UI:
 | Settings | Models, devices, jobs, approvals, health, and sovereignty evidence — secondary navigation |
 
 For each task the user may choose Auto, this device, trusted devices, or a
-specific paired target. Independent jobs can run concurrently where hardware
+specific paired target in the full product direction. Beta execution stays on this device;
+any offered automatic model choice is local, and unfinished peer controls remain unavailable.
+Independent jobs can run concurrently where hardware
 permits. The coordinator retains canonical state and exactly-once final-write
 authority.
 
@@ -210,11 +231,13 @@ refinix/
 │   ├── app/               # The application interface actually served by the coordinator
 │   └── design/            # Design track's visual reference; not served by the app
 ├── docs/
-│   ├── prd.md             # Short product contract and priorities
-│   ├── architecture.md    # Harness, nodes, state, jobs, and local data
-│   ├── workflows.md       # Onboarding and task flows
+│   ├── PROJECT.md         # Canonical product, architecture and workflow contract
+│   ├── prd.md             # Historical/reference product snapshot
+│   ├── architecture.md    # Historical/reference architecture snapshot
+│   ├── workflows.md       # Historical/reference workflow snapshot
 │   ├── security.md        # Trust, privacy, sandbox, and proof boundaries
 │   ├── model-catalog.md   # Model packs, manifests, and provisioning
+│   ├── releases.md        # Packages, publication, updates and recovery
 │   └── evaluation.md      # Prototype plan, acceptance, metrics, and demo
 ├── agent-memory/         # Searchable record of repository-affecting work and decisions
 ├── TechStack.md          # Recommended languages and technologies for each layer
@@ -254,13 +277,13 @@ source availability alone is not proof that a capability works on every device.
 
 Before implementation:
 
-1. Read the [PRD](docs/prd.md) for the product contract and
-   [architecture](docs/architecture.md) for task placement and state ownership.
-2. Use [TechStack.md](TechStack.md) to distinguish existing dependencies from
-   qualification candidates, including bundled llama.cpp and local embeddings.
-3. Follow [tasks.md](tasks.md#numbered-execution-tasks) for outcome-based gates.
-   Historical C/E/AF setup records explain the prototype; they do not prescribe
-   permanent OS roles, production deadlines or a new frontend framework.
+1. Read [AGENTS.md](AGENTS.md) for permissions and execution rules, then
+   [PROJECT.md](docs/PROJECT.md) for the current product contract.
+2. Follow [tasks.md](tasks.md) for the active major section and Beta gates. Reuse the existing
+   implementation and complete the authorised section without further task tiers or delegation.
+3. Read the focused security, model or release authority only when relevant. Historical C/E/AF/P
+   records explain the prototype; they do not prescribe permanent OS roles, release gates,
+   production deadlines or a new frontend framework.
 
 ## Contributing
 
@@ -269,7 +292,7 @@ Server-side branch protection is **not yet active**, so this workflow is current
 
 ## Licence
 
-This repository is currently licensed under [Apache-2.0](LICENSE). The open-source core and specialised paid offering follow the [PRD](docs/prd.md); this documentation change does not relicense the repository, publish a release or grant rights to third-party corpora.
+This repository is currently licensed under [Apache-2.0](LICENSE). The open-source core and specialised paid offering follow [PROJECT.md](docs/PROJECT.md); this documentation change does not relicense the repository, publish a release or grant rights to third-party corpora.
 
 ---
 

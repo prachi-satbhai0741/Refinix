@@ -47,7 +47,25 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 
-VERSION = "0.1.0"
+def _read_app_version() -> str:
+    """The one version, read from `backend/coordinator/build_info.py`.
+
+    Parsed, not imported: `setup_py2app.py` runs this module as a sibling
+    script where the repository root is not importable, so an import of
+    `backend` would break the real macOS build.
+    """
+    import ast
+    tree = ast.parse((REPO / "backend" / "coordinator" / "build_info.py")
+                     .read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                getattr(target, "id", None) == "APP_VERSION" for target in node.targets):
+            return ast.literal_eval(node.value)
+    raise RuntimeError("APP_VERSION is not defined in build_info.py")
+
+
+# One version source for the UI, the stored "last writer" value and packages.
+VERSION = _read_app_version()
 PRODUCT = "Refinix"
 
 # Reverse-DNS identifier. Nothing is signed or distributed from this
@@ -62,8 +80,14 @@ APPLICATION_PACKAGES = ("desktop", "backend/coordinator", "backend/contracts")
 
 # Module name prefixes that are development material rather than application
 # code, checked against the file's own name so a new test module is excluded
-# the day it is written.
-EXCLUDED_MODULE_PREFIXES = ("test_", "setup_")
+# the day it is written. `check_` modules make live model calls for engineering
+# evidence and `fake_` modules stand in for the engine in offline tests; neither
+# belongs on a user's computer.
+EXCLUDED_MODULE_PREFIXES = ("test_", "setup_", "check_", "fake_")
+# Build tooling that sits beside the application modules but is not part of the
+# application. Listed by exact name: a prefix such as "build" would also drop
+# `backend/coordinator/build_info.py`, which the application needs.
+EXCLUDED_MODULE_NAMES = ("build.py",)
 
 # Frontend files the coordinator serves but that exist for development: the
 # synthetic fixture page and the Node checks beside it.
@@ -106,22 +130,26 @@ PLATFORMS: dict[str, Platform] = {
                 "the login Keychain for credential storage")),
     "windows": Platform(
         key="windows", label="Windows", icon="Refinix.ico",
-        tool="PyInstaller", pinned=False, artifact="Refinix.exe",
-        checkpoint=("No Windows packaging tool is pinned in this repository, "
-                    "so no Windows package can be built from this checkout. "
-                    "The application boundary below is complete; pinning the "
-                    "tool and running it on a Windows machine is the remaining "
-                    "step."),
+        tool="PyInstaller + Inno Setup", pinned=True,
+        artifact="Refinix-<version>-windows-x64-setup.exe",
+        checkpoint=("Built by desktop/build.py on a native Windows x64 host or "
+                    "the package workflow's Windows runner, from the pinned "
+                    "requirements-windows.lock and requirements-build-windows.lock. "
+                    "PyInstaller cannot cross-build from another OS. A produced "
+                    "package is internal test evidence until signing and release "
+                    "acceptance."),
         native=("Credential Manager for credential storage",
                 "a WebView2 runtime for the application window")),
     "linux": Platform(
         key="linux", label="Linux", icon="refinix-256.png",
-        tool="PyInstaller", pinned=False, artifact="refinix",
-        checkpoint=("No Linux packaging tool is pinned in this repository, so "
-                    "no Linux package can be built from this checkout. The "
-                    "application boundary below is complete; pinning the tool "
-                    "and running it on the selected distribution is the "
-                    "remaining step."),
+        tool="PyInstaller + AppImage/.deb", pinned=True,
+        artifact="Refinix-<version>-linux-x86_64.AppImage",
+        checkpoint=("Built by desktop/build.py on a native Ubuntu 24.04 x86_64 "
+                    "host or the package workflow's Ubuntu runner, from the "
+                    "pinned requirements-linux.lock and requirements-build-linux.lock "
+                    "plus the distribution's GTK/WebKitGTK bindings. PyInstaller "
+                    "cannot cross-build from another OS. A produced package is "
+                    "internal test evidence until signing and release acceptance."),
         native=("secret-tool (libsecret-tools) and an unlocked desktop keyring "
                 "for credential storage",
                 "a WebKitGTK runtime for the application window")),
@@ -139,7 +167,8 @@ LINUX_ICON_SIZES = (16, 32, 48, 64, 128, 256, 512)
 
 def is_application_module(path: Path) -> bool:
     return (path.suffix == ".py"
-            and not path.name.startswith(EXCLUDED_MODULE_PREFIXES))
+            and not path.name.startswith(EXCLUDED_MODULE_PREFIXES)
+            and not (path.parent.name == "desktop" and path.name in EXCLUDED_MODULE_NAMES))
 
 
 def application_modules() -> dict[str, list[Path]]:
@@ -298,3 +327,112 @@ def plan(platform: str) -> dict:
                                   "deploy", "fixtures", "scripts", "docs"]},
         "native_prerequisites": list(entry.native),
     }
+
+
+# --------------------------------------------------------------------------
+# Build lanes: one per OS family, built natively from one source snapshot
+# --------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Lane:
+    """What `desktop/build.py` produces on one native build host."""
+
+    key: str
+    platform: str                  # PLATFORMS key
+    host: tuple[str, str]          # (sys.platform prefix, normalised machine)
+    locks: tuple[str, ...]         # application locks (shipped dependencies)
+    build_locks: tuple[str, ...]   # build-time tools, never shipped
+    engines: tuple[str, ...]       # engine lanes from desktop/engine/engine-pins.json
+    outputs: tuple[str, ...]       # artifact kinds produced
+
+
+LANES: dict[str, Lane] = {
+    "macos-arm64": Lane(
+        "macos-arm64", "macos", ("darwin", "arm64"),
+        ("desktop/requirements-macos.lock", "backend/requirements-runtime.lock"),
+        ("desktop/requirements-build-macos.lock",),
+        ("macos-arm64",), ("app-zip",)),
+    "windows-x64": Lane(
+        "windows-x64", "windows", ("win32", "x86_64"),
+        ("desktop/requirements-windows.lock", "backend/requirements-runtime.lock",
+         "backend/requirements-render.lock"),
+        ("desktop/requirements-build-windows.lock",),
+        ("windows-x64-vulkan", "windows-x64-cpu"), ("setup-exe",)),
+    "linux-x64": Lane(
+        "linux-x64", "linux", ("linux", "x86_64"),
+        ("desktop/requirements-linux.lock", "backend/requirements-runtime.lock",
+         "backend/requirements-render.lock"),
+        ("desktop/requirements-build-linux.lock",),
+        ("linux-x64-vulkan", "linux-x64-cpu"), ("appimage", "deb")),
+}
+
+# Files that define how a package is built, beyond the application sources and
+# frontend. All of them are part of the source snapshot every lane shares.
+BUILD_DEFINITION = (
+    "desktop/build.py", "desktop/packaging_plan.py", "desktop/setup_py2app.py",
+    "desktop/refinix.py", "desktop/refinix.spec", "desktop/engine/engine-pins.json",
+    "desktop/engine/fetch.py", "desktop/packaging-tools.json",
+    "desktop/windows/refinix.iss", "desktop/linux/refinix.desktop",
+    "desktop/linux/AppRun", "desktop/linux/control.in", "desktop/TESTING.md.in",
+    ".github/workflows/package.yml",
+)
+
+# What of an upstream engine archive is shipped: the server, its shared
+# libraries and their links, and the licence. The archive's other tools are
+# not needed and are left out.
+ENGINE_KEEP_NAMES = ("llama-server", "llama-server.exe", "LICENSE")
+ENGINE_KEEP_SUFFIXES = (".dylib", ".dll", ".so")
+
+
+def engine_file_is_shipped(name: str) -> bool:
+    if name in ENGINE_KEEP_NAMES:
+        return True
+    return name.endswith(ENGINE_KEEP_SUFFIXES) or ".so." in name
+
+
+def snapshot_files(lane: str) -> list[str]:
+    """Every repository file whose bytes define one lane's package."""
+    entry = LANES[lane]
+    files = set(application_module_names()) - {"backend/__init__.py"}
+    for _destination, sources in frontend_data_files():
+        files.update(str(Path(source).relative_to(REPO)) for source in sources)
+    files.update(str(path.relative_to(REPO)) for path in platform_assets(entry.platform))
+    files.update(entry.locks)
+    files.update(entry.build_locks)
+    files.update(BUILD_DEFINITION)
+    return sorted(f.replace("\\", "/") for f in files)
+
+
+def snapshot_digest(lane: str, root: Path | None = None) -> tuple[str, list[dict]]:
+    """SHA-256 over the sorted (path, SHA-256) of a lane's snapshot files.
+
+    The application sources, frontend and build definition are the same for
+    every lane, so the shared part of the snapshot is identical across the
+    three packages; the lane's own locks and assets are listed explicitly.
+    """
+    import hashlib
+    root = Path(root) if root is not None else REPO
+    listing = []
+    for relative in snapshot_files(lane):
+        path = root / relative
+        digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        listing.append({"path": relative, "sha256": digest})
+    missing = [item["path"] for item in listing if item["sha256"] is None]
+    if missing:
+        raise FileNotFoundError(f"snapshot files missing: {missing}")
+    body = "".join(f"{item['path']}\0{item['sha256']}\n" for item in listing)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest(), listing
+
+
+def shared_snapshot_digest(root: Path | None = None) -> str:
+    """The part of the snapshot every lane must agree on: sources, frontend, build code."""
+    import hashlib
+    root = Path(root) if root is not None else REPO
+    shared = set(application_module_names()) - {"backend/__init__.py"}
+    for _destination, sources in frontend_data_files():
+        shared.update(str(Path(source).relative_to(REPO)) for source in sources)
+    shared.update(BUILD_DEFINITION)
+    shared.update(("backend/requirements-runtime.lock", "backend/requirements-render.lock"))
+    body = "".join(f"{p}\0{hashlib.sha256((root / p).read_bytes()).hexdigest()}\n"
+                   for p in sorted(shared))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()

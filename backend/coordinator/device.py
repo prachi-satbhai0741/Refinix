@@ -117,6 +117,131 @@ def _sysctl(name: str) -> str | None:
     return result.stdout.strip() or None
 
 
+def _version_tuple(text: str | None) -> tuple[int, ...] | None:
+    parts = []
+    for piece in str(text or "").replace("-", ".").split("."):
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts) or None
+
+
+def os_version(platform: str | None = None) -> tuple[str | None, tuple[int, ...] | None]:
+    """The OS release as a person reads it, and as a comparable tuple."""
+    platform = sys.platform if platform is None else platform
+    if platform != sys.platform:
+        return None, None
+    if platform == "darwin":
+        release = _platform.mac_ver()[0] or None
+        return release, _version_tuple(release)
+    if platform == "win32":
+        build = _platform.version() or None       # e.g. 10.0.26200
+        return build, _version_tuple(build)
+    if platform.startswith("linux"):
+        try:
+            release = _platform.freedesktop_os_release()
+        except OSError:
+            return None, None
+        version = release.get("VERSION_ID")
+        name = release.get("ID")
+        return (f"{name} {version}" if name and version else version), _version_tuple(version)
+    return None, None
+
+
+def os_distribution(platform: str | None = None) -> str | None:
+    """The Linux distribution's own ID (`ubuntu`, `fedora`, …), lower case.
+
+    Kept as a structured fact because a version number alone does not say
+    which distribution it belongs to: Fedora 41 is not "Ubuntu 41". `ID_LIKE`
+    is deliberately not used: a derivative is a different system, with its own
+    packages, until it has its own evidence. None outside Linux or unknown.
+    """
+    platform = sys.platform if platform is None else platform
+    if platform != sys.platform or not platform.startswith("linux"):
+        return None
+    try:
+        identity = _platform.freedesktop_os_release().get("ID")
+    except OSError:
+        return None
+    return identity.strip().lower() if identity and identity.strip() else None
+
+
+def _cpu_brand(platform: str) -> str | None:
+    if platform == "darwin":
+        return _sysctl("machdep.cpu.brand_string")
+    if platform.startswith("linux"):
+        try:
+            with open("/proc/cpuinfo", encoding="utf-8") as handle:
+                for line in handle:
+                    if line.lower().startswith("model name"):
+                        return line.split(":", 1)[1].strip() or None
+        except OSError:
+            return None
+        return None
+    return _platform.processor() or None
+
+
+def _architecture(machine: str | None) -> str | None:
+    machine = (machine or "").lower()
+    return {"arm64": "arm64", "aarch64": "arm64", "x86_64": "x86_64",
+            "amd64": "x86_64"}.get(machine)
+
+
+def hardware(*, data_root=None, engine_devices=None) -> dict:
+    """What this computer offers, for matching a reviewed hardware tier.
+
+    Every value is an observation or None. Missing sensors and unknown GPUs
+    stay unknown; they are never reported as zero, and a product or brand name
+    is never used to decide anything.
+    """
+    platform = sys.platform
+    release, version = os_version(platform)
+    facts = {
+        "os_family": os_family(platform),
+        "os_version": release,
+        "os_version_tuple": list(version) if version else None,
+        "os_distribution": os_distribution(platform),
+        "architecture": _architecture(_platform.machine()),
+        "cpu_brand": _cpu_brand(platform),
+        "cpu_count": None,
+        "memory_total_bytes": None,
+        "memory_available_bytes": None,
+        "disk_free_bytes": None,
+        "engine_devices": engine_devices,
+    }
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        facts["memory_total_bytes"] = int(memory.total)
+        facts["memory_available_bytes"] = int(memory.available)
+        facts["cpu_count"] = psutil.cpu_count(logical=False) or psutil.cpu_count()
+    except Exception:                                      # noqa: BLE001
+        pass
+    if data_root is not None:
+        import shutil
+        try:
+            facts["disk_free_bytes"] = int(shutil.disk_usage(data_root).free)
+        except OSError:
+            pass
+    return facts
+
+
+def target_identities(facts: dict | None = None) -> list[str]:
+    """Every qualification target this computer can claim, exact device first.
+
+    The exact measured device keeps the developer-baseline Ollama profiles; the
+    hardware tiers carry the managed engine's presets and profiles.
+    """
+    targets = []
+    exact = qualified_target_profile()
+    if exact:
+        targets.append(exact)
+    if facts is not None:
+        targets.extend(tier.tier_id for tier in inference_profiles.matching_tiers(facts))
+    return targets
+
+
 def qualified_target_profile(*, platform: str | None = None,
                              machine: str | None = None,
                              hardware_model: str | None = None,

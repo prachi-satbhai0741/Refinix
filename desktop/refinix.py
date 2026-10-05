@@ -15,7 +15,7 @@ from desktop import lifecycle, shell
 
 
 def main() -> int:
-    instance = lifecycle.SingleInstance()
+    instance = lifecycle.SingleInstance.for_state(lifecycle.STATE_DB)
     existing = instance.acquire()
     if existing is not None:
         # LSMultipleInstancesProhibited normally prevents this; the lock covers
@@ -35,7 +35,7 @@ def main() -> int:
         return 0
     try:
         instance.record(port=None, mode="starting")
-        return shell.run(on_started=lambda startup: instance.record(
+        return shell.run(owner=instance, on_started=lambda startup: instance.record(
             port=startup.port, mode="bundle"))
     finally:
         instance.release()

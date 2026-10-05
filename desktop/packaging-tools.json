@@ -1,0 +1,32 @@
+{
+  "tools_version": 1,
+  "evidence": "Release metadata and SHA-256 digests read from the GitHub releases API on 2026-10-04; licence files read at the tagged commits.",
+  "appimagetool": {
+    "version": "1.9.1",
+    "commit": "8c8c91f762b412a19f4e8d2c4b35afb98f2d7c81",
+    "url": "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage",
+    "size": 15092216,
+    "sha256": "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
+    "licence": "MIT (repository LICENSE; dependencies may differ)",
+    "shipped": false
+  },
+  "appimage_runtime": {
+    "version": "20251108",
+    "commit": "dd6cebedcbddde9c82f89b011e8e1d40b6e43868",
+    "url": "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64",
+    "size": 944632,
+    "sha256": "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
+    "licence": "MIT (repository LICENSE). Statically links libfuse (LGPL-2.1); review its distribution terms before publication.",
+    "shipped": true
+  },
+  "macos_interpreter": {
+    "policy": "CPython 3.12 from actions/setup-python or a python.org framework build. The build fails unless every shipped Mach-O minos is at or below the declared LSMinimumSystemVersion, which is set from the highest shipped minos.",
+    "python_org_last_312_installer": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg"
+  },
+  "inno_setup": {
+    "minimum_version": "6.2",
+    "source": "Preinstalled on GitHub windows runners, or the official installer from jrsoftware.org on a native host",
+    "licence": "Inno Setup licence (free for commercial use)",
+    "shipped": false
+  }
+}

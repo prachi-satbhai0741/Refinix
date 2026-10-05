@@ -39,6 +39,22 @@ DIALOG_FILE_TYPES = ("Documents and images (*.pdf;*.png;*.jpg;*.jpeg;*.tif;"
                      "*.xlsx;*.pptx)", "All files (*.*)")
 
 
+def _native_message(title: str, text: str) -> None:
+    """A last-resort native message when no web window can be shown."""
+    try:
+        if sys.platform == "win32":
+            import ctypes                               # noqa: PLC0415
+            ctypes.windll.user32.MessageBoxW(None, text, title, 0x10)
+        elif sys.platform == "darwin":
+            import subprocess                           # noqa: PLC0415
+            script = ('display alert ' + json.dumps(title) + ' message '
+                      + json.dumps(text) + ' as critical')
+            subprocess.run(["/usr/bin/osascript", "-e", script], timeout=120,
+                           check=False)
+    except Exception:                                  # noqa: BLE001
+        pass
+
+
 class MissingToolkit(RuntimeError):
     """pywebview is not installed, so no native window can be opened."""
 
@@ -54,6 +70,95 @@ def _import_webview():
             "`python3 -m desktop --no-window` to start the local services only."
         ) from exc
     return webview
+
+
+# --------------------------------------------------------------------------
+# Window toolkit: pinned per OS, checked before use
+# --------------------------------------------------------------------------
+
+# The renderer each packaged build is qualified with. pywebview would otherwise
+# pick one itself and could fall back to a different, unqualified renderer.
+PINNED_GUI = {"darwin": "cocoa", "win32": "edgechromium", "linux": "gtk"}
+
+# Microsoft's documented WebView2 runtime registration (Evergreen client id).
+WEBVIEW2_CLIENT = r"{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+WEBVIEW2_KEYS = (
+    ("HKEY_LOCAL_MACHINE",
+     "SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\" + WEBVIEW2_CLIENT),
+    ("HKEY_LOCAL_MACHINE",
+     "SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\" + WEBVIEW2_CLIENT),
+    ("HKEY_CURRENT_USER",
+     "Software\\Microsoft\\EdgeUpdate\\Clients\\" + WEBVIEW2_CLIENT),
+)
+
+
+def _platform_key(platform: str) -> str:
+    return "linux" if platform.startswith("linux") else platform
+
+
+def webview2_version(registry=None) -> str | None:
+    """The installed WebView2 runtime version, or None when it is absent.
+
+    Follows Microsoft's distribution guidance: a `pv` value that is present and
+    not `0.0.0.0` under the runtime's client key means it is installed.
+    """
+    if registry is None:
+        try:
+            import winreg as registry                 # noqa: PLC0415
+        except ImportError:
+            return None
+    for hive_name, path in WEBVIEW2_KEYS:
+        try:
+            with registry.OpenKey(getattr(registry, hive_name), path) as key:
+                value, _kind = registry.QueryValueEx(key, "pv")
+        except OSError:
+            continue
+        if value and value != "0.0.0.0":
+            return str(value)
+    return None
+
+
+def toolkit_problem(platform: str | None = None, *, registry=None,
+                    gtk_probe=None) -> str | None:
+    """Why the pinned window toolkit cannot run here, or None when it can."""
+    platform = _platform_key(sys.platform if platform is None else platform)
+    if platform == "win32":
+        if webview2_version(registry) is None:
+            return ("Refinix needs the Microsoft Edge WebView2 Runtime to show its "
+                    "window, and it is not installed on this computer. It is part "
+                    "of Windows 11; on other systems install it from Microsoft, "
+                    "then open Refinix again.")
+        return None
+    if platform == "linux":
+        probe = gtk_probe or _gtk_webkit_available
+        if not probe():
+            return ("Refinix needs GTK and WebKitGTK 4.1 to show its window, and "
+                    "they are not available on this computer. On Ubuntu they are "
+                    "provided by the desktop packages libwebkit2gtk-4.1-0 and "
+                    "gir1.2-webkit2-4.1.")
+        return None
+    return None
+
+
+def _gtk_webkit_available() -> bool:
+    try:
+        import gi                                      # noqa: PLC0415
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("WebKit2", "4.1")
+        from gi.repository import Gtk, WebKit2          # noqa: F401,PLC0415
+    except Exception:                                  # noqa: BLE001
+        return False
+    return True
+
+
+def pinned_gui(requested: str | None, *, frozen: bool | None = None,
+               platform: str | None = None) -> str | None:
+    """The toolkit to start: an explicit request, else the pinned one when packaged."""
+    frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    if requested:
+        return requested
+    return PINNED_GUI.get(_platform_key(sys.platform if platform is None else platform)) \
+        if frozen else None
 
 
 # --------------------------------------------------------------------------
@@ -217,10 +322,47 @@ class Bridge:
             return {"cancelled": True}
         return self._app.connect_repository(str(chosen[0]))
 
+    def choose_model_files(self, model_id) -> dict:
+        """Import a catalogued model from files the person already has.
+
+        The page names which catalogue entry, never a path: the native picker
+        chooses the files, and the coordinator keeps only bytes that hash to
+        that entry's pinned files.
+        """
+        if not isinstance(model_id, str) or not 0 < len(model_id) <= 200:
+            return {"error": "Choose a model from the list.", "code": "unknown_model"}
+        window = self._app.window
+        if window is None:
+            return {"error": "Importing needs the Refinix application window.",
+                    "code": "no_window"}
+        webview = _import_webview()
+        chosen = window.create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=True,
+            file_types=("Model files (*.gguf)", "All files (*.*)"))
+        if not chosen:
+            return {"cancelled": True}
+        return self._app.import_model(model_id, [Path(p) for p in chosen])
+
+    def choose_update_bundle(self) -> dict:
+        """Import an offline update bundle chosen in the native picker."""
+        window = self._app.window
+        if window is None:
+            return {"error": "Importing an update needs the Refinix window.",
+                    "code": "no_window"}
+        webview = _import_webview()
+        chosen = window.create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=False,
+            file_types=("Refinix update bundle (*.zip)", "All files (*.*)"))
+        if not chosen:
+            return {"cancelled": True}
+        return self._app.import_update(Path(chosen[0]))
+
     def open_state_folder(self) -> dict:
         """Reveal the fixed application folder. No argument, no other path."""
         import subprocess
-        folder = lifecycle.STATE_DIR
+        # The workspace this window actually opened, including an explicit
+        # --state, not the platform's default root.
+        folder = Path(self._app.state_path).parent
         folder.mkdir(parents=True, exist_ok=True)
         opener = {"darwin": ["open"], "win32": ["explorer"]}.get(
             sys.platform, ["xdg-open"])
@@ -246,8 +388,10 @@ class Bridge:
 
 class DesktopApp:
     def __init__(self, *, state_path: Path = lifecycle.STATE_DB,
-                 port: int = lifecycle.DEFAULT_PORT, on_started=None):
+                 port: int = lifecycle.DEFAULT_PORT, on_started=None, owner=None):
         self.state_path = state_path
+        # The workspace lock the entry point took for this database.
+        self.owner = owner
         self.preferred_port = port
         self.progress = lifecycle.Progress()
         self.window = None
@@ -271,7 +415,8 @@ class DesktopApp:
             try:
                 startup = lifecycle.run_startup(
                     self.progress, state_path=self.state_path,
-                    preferred_port=self.preferred_port, cancelled=self._closing)
+                    preferred_port=self.preferred_port, cancelled=self._closing,
+                    owner=self.owner)
             except lifecycle.StartupCancelled:
                 return
             except lifecycle.StartupError as exc:
@@ -386,6 +531,35 @@ class DesktopApp:
         except Exception as exc:                       # noqa: BLE001
             return {"error": str(exc), "code": getattr(exc, "code", "failed")}
 
+    def import_update(self, path: Path) -> dict:
+        """Verify a natively chosen update bundle in this process's coordinator."""
+        if self.startup is None or self.startup.coordinator is None:
+            return {"error": "Importing an update needs the Refinix that owns this "
+                             "workspace. Quit any other copy and try again.",
+                    "code": "reused_coordinator"}
+        from backend.coordinator import updates
+        try:
+            return {"updates": self.startup.coordinator.updates.import_bundle(path)}
+        except updates.UpdateError as exc:
+            return {"error": str(exc), "code": exc.code}
+
+    def import_model(self, model_id: str, paths: list[Path]) -> dict:
+        """Hand natively chosen model files to this process's coordinator."""
+        if self.startup is None:
+            return {"error": "Refinix is still starting.", "code": "starting"}
+        coordinator = self.startup.coordinator
+        if coordinator is None:
+            # As for folders: no HTTP route accepts a filesystem path.
+            return {"error": "This window is showing a Refinix coordinator that "
+                             "another process started. Quit that one and open "
+                             "Refinix again to import a model.",
+                    "code": "reused_coordinator"}
+        from backend.coordinator import provisioning
+        try:
+            return {"operation": coordinator.provisioner.start_import(model_id, paths)}
+        except provisioning.ProvisioningError as exc:
+            return {"error": str(exc), "code": exc.code}
+
     def _current_chat(self) -> str:
         """Ask the page which conversation the selection belongs to."""
         try:
@@ -426,7 +600,9 @@ class DesktopApp:
             "engine_started_by_refinix": bool(
                 s and s.engine_supervisor and s.engine_supervisor.owned),
             "state_folder": str(self.state_path.parent),
-            "model_configured": runtime.MODEL,
+            "engine": runtime.engine_label(),
+            "model_configured": (s.coordinator.model_for("chat")
+                                 if s and s.coordinator is not None else None),
         }
 
     # -- shutdown ---------------------------------------------------------
@@ -545,8 +721,17 @@ class DesktopApp:
 
 
 def run(*, state_path: Path = lifecycle.STATE_DB, port: int = lifecycle.DEFAULT_PORT,
-        gui: str | None = None, debug: bool = False, on_started=None) -> int:
+        gui: str | None = None, debug: bool = False, on_started=None,
+        owner=None) -> int:
     """Open the window and block until it closes."""
+    gui = pinned_gui(gui)
+    if getattr(sys, "frozen", False):
+        problem = toolkit_problem()
+        if problem is not None:
+            # Said before anything starts; never a silent fall-back renderer.
+            print(problem, file=sys.stderr)
+            _native_message("Refinix cannot open its window", problem)
+            return 2
     webview = _import_webview()
     try:
         webview.settings.update({"ALLOW_DOWNLOADS": True,
@@ -555,7 +740,8 @@ def run(*, state_path: Path = lifecycle.STATE_DB, port: int = lifecycle.DEFAULT_
     except AttributeError:                             # pragma: no cover - old pywebview
         pass
 
-    app = DesktopApp(state_path=state_path, port=port, on_started=on_started)
+    app = DesktopApp(state_path=state_path, port=port, on_started=on_started,
+                     owner=owner)
     bridge = Bridge(app)
     window = webview.create_window(
         WINDOW_TITLE, html=startup_html(app.assets), js_api=bridge,

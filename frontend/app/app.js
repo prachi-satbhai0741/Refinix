@@ -2881,6 +2881,17 @@ let lastStatus = null;
 function renderReadyLine(s) {
   const line = $('ready-line');
   if (!line) return;
+  /* One typed answer from the coordinator: the specific cause and its fix,
+   * never one sentence for several different problems. */
+  if (s.readiness) {
+    line.dataset.state = s.readiness.state === 'ok' ? 'ok'
+      : s.readiness.state === 'failed' ? 'failed' : 'attention';
+    line.textContent = s.readiness.message;
+    line.title = s.readiness.detail || '';
+    line.dataset.code = s.readiness.code;
+    return;
+  }
+  // An older coordinator without typed readiness.
   const reachable = s.runtime.reachable;
   const available = s.model_available ?? s.model_installed;
   if (available && s.model_installed) {
@@ -2918,6 +2929,9 @@ function renderComputerCard(s) {
     ['Where your data is kept', shell.state_folder, 'not reported by the window'],
     ['Conversations saved', Object.values(s.jobs_by_state).reduce((a, b) => a + b, 0) + ' request(s) recorded'],
     ['Repaired when it last started', `${s.repaired_on_start} unfinished request(s)`],
+    // Never "available" in this build: the line names what this computer has
+    // and what is still missing, so a tester sees the real state.
+    ['Code sandbox', s.device?.code_validation?.detail, 'not checked'],
   ]);
   const list = [];
   if (window.pywebview && window.pywebview.api && window.pywebview.api.open_state_folder) {
@@ -2928,10 +2942,54 @@ function renderComputerCard(s) {
   actions($('c-computer-actions'), list);
 }
 
+function readinessActions(s) {
+  const action = s.readiness && s.readiness.action;
+  const list = [];
+  if (action && action.kind === 'open_settings') {
+    list.push({ label: action.label, run: () => {
+      const card = document.getElementById(action.target || 'models');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else location.href = '/control.html#' + (action.target || 'models');
+    } });
+  } else if (action && action.kind === 'reinstall') {
+    list.push({ label: action.label, run: () => notice(
+      'Repair Refinix', 'error',
+      'Install the same or a newer Refinix package from a verified download, '
+      + 'or restore it from the package you installed. Your conversations, '
+      + 'settings and models are kept outside the application and are not '
+      + 'changed by reinstalling.') });
+  }
+  list.push({ label: 'Check again', run: () => loadStatus().catch(() => {}) });
+  return list;
+}
+
 function renderEngineCard(s) {
   if (!$('c-engine-facts')) return;
   const r = s.runtime;
   const target = $('c-engine-chip');
+  const engine = s.engine || {};
+  if (engine.mode === 'managed') {
+    const ready = s.readiness || {};
+    chip(target, ready.code === 'ready' ? 'ready'
+      : ready.state === 'failed' ? 'needs repair' : 'needs attention',
+      ready.code === 'ready' ? 'enforced' : ready.state === 'failed' ? 'fault' : 'caution');
+    $('c-engine-lead').textContent = ready.code === 'ready'
+      ? 'Refinix runs its own verified engine on this computer. Updates to other '
+        + 'AI software installed here do not change it.'
+      : `${ready.message || ''} ${ready.detail || ''}`.trim();
+    facts($('c-engine-facts'), [
+      ['Engine', engine.release ? `Refinix engine ${engine.release} (${engine.backend})` : null,
+       'not part of this installation'],
+      ['Integrity', engine.verified === true ? 'verified before every start'
+        : (engine.problems || []).join('; ') || null, 'not verified'],
+      ['Running now', engine.running ? `yes — ${engine.model || 'model loading'}` : 'no; starts on first use'],
+      ['Model for Chat', s.model_configured],
+      ['Installed models', r.models && r.models.length ? r.models.join(', ') : null,
+       'none yet'],
+    ]);
+    actions($('c-engine-actions'), readinessActions(s));
+    return;
+  }
   const list = [];
   if (!r.reachable) {
     chip(target, 'not answering', 'fault');
@@ -3017,8 +3075,15 @@ function modelFactRows(model) {
   const p = model.provenance || {};
   const local = model.integrity?.local;
   const worker = model.integrity?.worker;
+  // Refinix's own engine also reports installed files that changed (no
+  // digest is published for them) and files not yet re-read this session.
+  const words = {
+    pending: 'installed sizes match; checked again before it loads',
+    mismatch: 'changed since it was installed, so it is not used',
+  };
   const integrity = [
-    local?.observed ? `this computer: ${local.state}` : null,
+    local?.observed || local?.state === 'mismatch'
+      ? `this computer: ${words[local.state] || local.state}` : null,
     worker?.observed ? `paired worker: ${worker.state}` : null,
   ].filter(Boolean).join('; ');
   return [
@@ -3169,6 +3234,26 @@ function renderModelsCard(s) {
       code.textContent = model.setup.command;
       row.append(code);
     }
+    // Refinix's own engine: download or import only when the person asks,
+    // and show a download or import that is running or just ended.
+    const operation = (s.provisioning || {})[model.id];
+    if (operation) row.append(provisioningLine(model.id, operation));
+    if (model.setup?.kind === 'download' && operation?.state !== 'running') {
+      const download = document.createElement('button');
+      download.type = 'button';
+      download.className = 'btn';
+      download.textContent = `Download (${gib(model.setup.download_bytes)} GB)`;
+      download.onclick = () => downloadModel(model.id, download);
+      row.append(download);
+      if (nativeBridge()?.choose_model_files) {
+        const importer = document.createElement('button');
+        importer.type = 'button';
+        importer.className = 'btn';
+        importer.textContent = 'Import files…';
+        importer.onclick = () => importModel(model.id, importer);
+        row.append(importer);
+      }
+    }
     for (const scope of model.selected_for || []) {
       if (!(s.selftest_scopes || []).includes(scope)) continue;
       const button = document.createElement('button');
@@ -3188,8 +3273,10 @@ function renderModelsCard(s) {
       const impact = document.createElement('button');
       impact.type = 'button';
       impact.className = 'btn';
-      impact.textContent = 'What removing this affects';
-      impact.onclick = () => showRemovalImpact(model.id, impact);
+      const removable = (s.engine?.mode === 'managed') && !!model.provenance?.known;
+      impact.textContent = removable ? 'Remove…' : 'What removing this affects';
+      impact.onclick = () => (removable ? removeModel(model.id, impact)
+                                        : showRemovalImpact(model.id, impact));
       row.append(toggle, impact);
     }
 
@@ -3200,11 +3287,195 @@ function renderModelsCard(s) {
   const note = $('c-models-note');
   if (note) {
     note.textContent =
-      'Refinix never downloads or removes a model on its own. Switching a '
+      'Refinix never downloads or removes a model on its own: only when you '
+      + 'choose to, after seeing its source, size and checksums. Switching a '
       + 'model off stops it being chosen for new work; it does not delete it, '
-      + 'and nothing you have written or generated is removed with it. A '
-      + 'self-test shows a capability ran once here — it is not a measure of '
-      + 'answer quality.';
+      + 'and nothing you have written or generated is removed with it — not '
+      + 'even when the model itself is removed. A self-test shows a capability '
+      + 'ran once here — it is not a measure of answer quality.';
+  }
+}
+
+const gib = (bytes) => (Number(bytes || 0) / 1024 ** 3).toFixed(1);
+
+/* Settings -> Updates. Nothing here checks on its own: the person presses
+ * Check for updates, and only a signed, verified offer is shown. There is no
+ * Install control in this build, so none is drawn; a verified package's
+ * folder is shown instead. */
+function renderUpdatesCard(s) {
+  if (!$('c-updates-facts')) return;
+  const u = s.updates || {};
+  const last = u.last_check;
+  const download = u.download;
+  const offer = u.offer;
+  let chipText = 'not checked';
+  let chipKind = 'unknown';
+  if (download?.state === 'verified') { chipText = 'package verified'; chipKind = 'enforced'; }
+  else if (download?.state === 'running') { chipText = 'downloading'; chipKind = 'caution'; }
+  else if (offer) { chipText = 'update available'; chipKind = 'caution'; }
+  else if (last?.result === 'up_to_date') { chipText = 'up to date'; chipKind = 'enforced'; }
+  else if (last?.result === 'failed') { chipText = 'check failed'; chipKind = 'fault'; }
+  chip($('c-updates-chip'), chipText, chipKind);
+  $('c-updates-lead').textContent = u.unavailable
+    || 'Refinix checks for updates only when you ask, and offers one only after '
+       + 'its signed details are verified.';
+  facts($('c-updates-facts'), [
+    ['Installed version', u.version ? `${u.version} (${u.channel})` : null, 'not reported'],
+    ['Last check', last ? `${last.at} — ${last.detail}` : null, 'not checked yet'],
+    ['Offered', offer ? `${offer.version}, ${gib(offer.size)} GB` : null,
+     last?.result === 'up_to_date' ? 'nothing newer' : 'nothing offered'],
+    ['What changed', offer?.notes || null, offer ? 'no notes' : '—'],
+    ['Download', download ? (download.state === 'running'
+      ? `${gib(download.bytes_done)} of ${gib(download.bytes_total)} GB`
+      : download.state === 'verified' ? `verified — ${download.path}`
+      : download.error || download.state) : null, 'not downloaded'],
+  ]);
+  const list = [];
+  if (u.can_check) {
+    list.push({ label: 'Check for updates', run: () => updateStep('/v1/updates/check') });
+  }
+  if (offer && u.can_check && download?.state !== 'running' && download?.state !== 'verified') {
+    list.push({ label: `Download ${offer.version}`, run: () => updateStep('/v1/updates/download') });
+  }
+  if (download?.state === 'running') {
+    list.push({ label: 'Cancel download', run: () => updateStep('/v1/updates/cancel') });
+  }
+  if (u.can_import && nativeBridge()?.choose_update_bundle) {
+    list.push({ label: 'Import update…', run: () => importUpdate() });
+  }
+  actions($('c-updates-actions'), list);
+  $('c-updates-note').textContent = download?.state === 'verified'
+    ? u.install_note
+    : 'Checking sends nothing about this computer, your work or your models.';
+}
+
+async function updateStep(path) {
+  try {
+    await postJson(path, {});
+  } catch (err) {
+    notice('That update step did not complete.', 'error', err.message);
+  }
+  await loadStatus().catch(() => {});
+}
+
+async function importUpdate() {
+  try {
+    const result = await nativeBridge().choose_update_bundle();
+    if (result?.error) notice('That update was not imported.', 'error', result.error);
+  } catch (err) {
+    notice('That update was not imported.', 'error', err.message);
+  }
+  await loadStatus().catch(() => {});
+}
+
+/* One line per download or import: how far, or why it stopped. */
+function provisioningLine(model, operation) {
+  const line = document.createElement('p');
+  line.className = 'provisioning-line';
+  const verb = operation.kind === 'import' ? 'Importing' : 'Downloading';
+  if (operation.state === 'running') {
+    const share = operation.bytes_total
+      ? Math.floor((100 * operation.bytes_done) / operation.bytes_total) : 0;
+    line.textContent = `${verb}${operation.file ? ` ${operation.file}` : ''}: `
+      + `${gib(operation.bytes_done)} of ${gib(operation.bytes_total)} GB (${share}%). `;
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = 'Cancel';
+    cancel.onclick = () => cancelProvisioning(model, cancel);
+    line.append(cancel);
+  } else if (operation.state === 'failed') {
+    line.textContent = `${verb} stopped: ${operation.error}`;
+  } else if (operation.state === 'cancelled') {
+    line.textContent = `${verb} cancelled. What was already downloaded is kept `
+      + 'and checked again if you start it later.';
+  } else {
+    line.textContent = `${verb} finished; every file matched its checksum.`;
+  }
+  return line;
+}
+
+const postJson = (path, body) => api(path, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+async function downloadModel(model, button) {
+  button.disabled = true;
+  try {
+    const plan = await api(`/v1/model/plan?model=${encodeURIComponent(model)}`);
+    if (!plan.enough_space) {
+      notice('There is not enough free space for this model.', 'error',
+             `About ${gib(plan.download_bytes)} GB, plus 1 GB to spare, is needed; `
+             + `${gib(plan.free_bytes)} GB is free.`);
+      return;
+    }
+    const files = plan.files.map(
+      (f) => `• ${f.name}: ${gib(f.size)} GB, SHA-256 ${f.sha256}`).join('\n');
+    const ok = window.confirm(
+      `Download ${plan.display_name}?\n\n`
+      + `From: ${plan.source}\n`
+      + `Licence: ${plan.licence || 'not recorded'}\n`
+      + `Revision: ${plan.revision || 'not recorded'}\n`
+      + `To download: ${gib(plan.download_bytes)} GB`
+      + (plan.already_staged_bytes
+        ? ` (${gib(plan.already_staged_bytes)} GB is already here)` : '')
+      + `\nSaved in: ${plan.location}\n\n${files}\n\n`
+      + 'Each file is checked against its SHA-256 before it is used. You can '
+      + 'cancel at any time.');
+    if (!ok) return;
+    await postJson('/v1/model/download', { model });
+    await loadStatus();
+  } catch (err) {
+    notice('The download could not start.', 'error', err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function importModel(model, button) {
+  button.disabled = true;
+  try {
+    const result = await nativeBridge().choose_model_files(model);
+    if (result?.error) notice('Those files could not be imported.', 'error', result.error);
+    await loadStatus();
+  } catch (err) {
+    notice('Those files could not be imported.', 'error', err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function cancelProvisioning(model, button) {
+  button.disabled = true;
+  try {
+    await postJson('/v1/model/provisioning/cancel', { model });
+    await loadStatus();
+  } catch (err) {
+    notice('That could not be cancelled.', 'error', err.message);
+    button.disabled = false;
+  }
+}
+
+/* Removal says what stops working first, and keeps everything written. */
+async function removeModel(model, button) {
+  button.disabled = true;
+  try {
+    const { impact } = await api(
+      `/v1/model/impact?model=${encodeURIComponent(model)}`);
+    const affected = impact.blocked_capabilities?.length
+      ? `This stops: ${impact.blocked_capabilities.join(', ')}.\n\n` : '';
+    const ok = window.confirm(
+      `Remove ${model} from this computer?\n\n${affected}${impact.detail}\n\n`
+      + 'Its files are deleted. Your chats, documents and history are kept.');
+    if (!ok) return;
+    await postJson('/v1/model/remove', { model });
+    notice(`${model} was removed.`, 'ok');
+    await loadStatus();
+  } catch (err) {
+    notice('The model could not be removed.', 'error', err.message);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -3213,7 +3484,17 @@ function renderModelsCard(s) {
  * fabricated health this card exists to avoid. */
 function renderOthersCard(s, worker) {
   if (!$('c-others-facts')) return;
+  /* Running work on other computers is post-Beta. An unfinished control must
+   * not look functional, so the whole card stays hidden unless the coordinator
+   * says the feature is switched on (development builds only). */
+  const factsEl = $('c-others-facts');
+  const card = factsEl.closest ? factsEl.closest('.card') : null;
+  const meshOn = !!(s.features && s.features.mesh);
+  if (card) card.hidden = !meshOn;
+  if (!meshOn) return;
   const form = $('pair-form');
+  const storeReady = !!(worker && worker.credential_store
+                        && worker.credential_store.available);
 
   if (!worker) {
     chip($('c-others-chip'), 'unavailable', 'unknown');
@@ -3248,12 +3529,10 @@ function renderOthersCard(s, worker) {
 
   if (!worker.paired) {
     chip($('c-others-chip'), 'none connected', 'unknown');
-    $('c-others-lead').textContent = worker.keychain_available
+    $('c-others-lead').textContent = storeReady
       ? 'Refinix can share work with another computer you connect. None is '
         + 'connected, so everything runs here.'
-      // The coordinator names this computer's own missing prerequisite. Only
-      // an older coordinator omits it, so the macOS wording is the fallback
-      // rather than the sentence every operating system is shown.
+      // The coordinator names this computer's own missing prerequisite.
       : 'Connecting another computer needs a protected credential store to '
         + 'hold its credential. '
         + ((worker.credential_store && worker.credential_store.detail)
@@ -3264,7 +3543,7 @@ function renderOthersCard(s, worker) {
       ['This computer', `${s.node_id.slice(0, 8)} — the only one in use`],
       ['Where requests run', 'on this computer'],
     ]);
-    actions($('c-others-actions'), worker.keychain_available
+    actions($('c-others-actions'), storeReady
       ? [{ label: 'Connect a computer', run: () => { if (form) form.hidden = false; } }]
       : []);
     return;
@@ -3550,7 +3829,12 @@ function renderProofCard(card) {
        entry.sources.pod],
       ['Pod image', proof.pod ? proof.pod.image_digest : null, entry.sources.pod],
       ['Approval', proof.approval_id, entry.sources.approval],
-      ['Network', null, entry.sources.network],
+      // Observed counts only when an observer recorded this attempt; the
+      // source line says what was and was not watched.
+      ['Network', proof.network && proof.network.observer
+        ? `${proof.network.public_outbound_flows} public, `
+          + `${proof.network.trusted_lan_connections} local-network connection(s) observed`
+        : null, entry.sources.network],
     ];
     for (const [label, value, source] of rows) proofRow(facts, label, value, source);
     block.append(facts);
@@ -3592,7 +3876,8 @@ function renderProofCard(card) {
   note.textContent = card.evidence_note;
   host.append(note);
   const network = document.createElement('p');
-  network.className = 'unavailable';
+  const observed = card.attempts.some((a) => a.proof.network && a.proof.network.observer);
+  network.className = observed ? 'proof-note' : 'unavailable';
   network.textContent = card.network;
   host.append(network);
 }
@@ -4102,6 +4387,7 @@ async function loadStatus() {
   renderComputerCard(s);
   renderEngineCard(s);
   renderModelsCard(s);
+  renderUpdatesCard(s);
   renderOthersCard(s, worker);
   renderWorkCard(s, jobs);
   renderCapabilityCard(s);
@@ -4992,6 +5278,13 @@ const TARGETS = [
 ];
 
 function appendTargetChoices(box) {
+  /* "Paired worker" is a post-Beta target: offered only when the coordinator
+   * reports the paired-computer feature on. */
+  const meshOn = !!(lastStatus && lastStatus.features && lastStatus.features.mesh);
+  if (!meshOn) {
+    executionTarget = 'this_device';
+    return;
+  }
   appendChoiceGroup(box, 'Run on', TARGETS, executionTarget, (id) => {
     executionTarget = id;
   });

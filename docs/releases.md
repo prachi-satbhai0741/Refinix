@@ -1,25 +1,43 @@
 # Releases, installation and application updates
 
-Status: release bands revised 2026-09-16; production architecture preserved.
-Beta publication and platform qualification remain unaccepted. [prd.md](prd.md) owns scope; [security.md](security.md)
+Status: standalone Beta scope revised 2026-10-03; distributed architecture retained for post-Beta work.
+Beta publication, platform qualification and updater acceptance remain unaccepted.
+[PROJECT.md](PROJECT.md) owns scope; [security.md](security.md)
 owns security boundaries. No build, signing, hosting or release action is authorised
 merely by this document.
 
 ## 1. Release readiness
 
 Release when the supported product passes acceptance, not on a calendar deadline.
-Beta 0.1 qualifies an install/use/manual-replacement path on each of Windows, macOS and Linux, using the bounded profiles in the PRD. In-app updates
-and broader upgrade matrices follow in Bands B and C; they remain production
-requirements, not prerequisites to the first Beta download. A downloadable source archive or a working development
-checkout is not an end-user installer. Publish the tested OS version/edition,
+Beta 0.1 qualifies standalone install/use/in-app-update/recovery on each of Windows, macOS and Linux,
+using the bounded profiles in [PROJECT.md](PROJECT.md#25-platform-support-and-beta-scope). Distributed
+execution and broader upgrade/peer matrices follow after Beta; they are not first-download gates.
+The in-app updater is a current Beta target, not a claim of implementation or acceptance.
+A downloadable source archive or a working development checkout is not an end-user installer.
+Publish the tested OS version/edition,
 architecture, GPU/CPU backend and capability matrix; do not promise every existing
-computer, driver or Linux distribution is compatible.
+computer, driver or Linux distribution is compatible. Publish supported minimum OS versions/ranges
+separately from exact observed builds. Linux initially targets Ubuntu. Bind the shipped
+[hardware/capability presets](model-catalog.md#reviewed-presets) to the package's engine/model manifests.
+
+Use public model/runtime benchmarks to prepare candidate hardware tiers without owning every laptop.
+Record external measurements and estimates separately from Refinix qualification. Obtain remaining
+platform-specific package, sandbox and update observations on representative available devices,
+appropriate CI environments or volunteer machines; ownership by the user is not a prerequisite.
+An inference benchmark cannot establish native installer, credential-store, update or recovery safety.
 
 Retain the current UI and harness. Package qualified application dependencies and
 provide graphical model selection/import. Normal end users should not configure
 Python, Kubernetes, certificates or package managers in a terminal. Explain required
 OS approvals and unsupported prerequisites. Sandbox installation must be qualified
-early; native peer inference does not establish safe local code execution.
+early; local inference does not establish safe local code execution. Beta must work without a peer,
+private server or managed Kubernetes/Redis backend. Retain existing distributed code for later work.
+
+The release team owns engine/model/workflow qualification. Ship a pinned, integrity-verified
+app-managed inference engine with its matching compatibility records and core dependency manifests.
+Normal customers must not separately maintain Ollama versions or create qualification profiles.
+Selected model weights remain explicitly provisioned/imported assets; one managed application does
+not mean downloading every optional model or capability.
 
 Current source boundary: [.github/workflows/ci.yml](../.github/workflows/ci.yml)
 checks main pull requests and pushes on a Linux runner. It does not implement the
@@ -30,8 +48,8 @@ is a prototype path, not evidence of signed public installers for all platforms.
 
 | Milestone | Required distribution scope |
 |---|---|
-| Beta 0.1 / SIH Reviewer Preview | Complete Band A on published profiles, authenticated immutable packages and tested manual replacement/recovery; no unfinished updater |
-| Beta 0.2 / 0.3 | Accepted incremental Band B improvements; each changed/new profile repeats affected install/workflow/security checks; P19 qualifies in-app updates before exposing them |
+| Beta 0.1 / SIH Reviewer Preview | Qualified standalone workflows on all three OS families, authenticated immutable packages, accepted in-app updates/offline import and tested manual recovery; no unfinished updater |
+| Beta 0.2 / 0.3 | Deferred mesh and incremental product improvements; each changed/new profile repeats affected install/workflow/security/update checks |
 | Finals candidate | A rehearsed version with a frozen, evidence-backed claim set; broader capabilities only when accepted |
 | Production-qualified release | Full advertised OS/backend, upgrade/recovery, interoperability and managed-deployment matrices, as applicable |
 
@@ -39,47 +57,53 @@ Use a clearly labelled **Beta/preview channel** initially. Add a stable channel
 only when its production gates pass; never label the reviewer preview stable.
 Display versions such as Beta 0.1 consistently, with one authoritative package
 version and explicit pre-release status. The prototype's existing `0.1.0` value
-is not itself a published Beta. Production scope and task mapping are in
-[PRD release bands](prd.md#release-bands) and [tasks](../tasks.md#numbered-execution-tasks).
+is not itself a published Beta. Current scope and sequencing are in
+[PROJECT.md](PROJECT.md#28-release-phases) and [tasks](../tasks.md).
+Historical release bands and P-task identifiers are not active publication gates.
 
 <a id="beta-01-publication"></a>
 ### Beta 0.1 publication acceptance
 
-The earliest Download Refinix Beta button is **P14**, after every Band A gate.
-No profile is accepted as of this review. Before enabling the button:
+Enable Download Refinix Beta only after the standalone Phase 5 gates in `tasks.md` pass and the user
+accepts the evidence. This scope change grants no profile or updater acceptance. Before enabling the button:
 
 1. Select and publish an exact OS/edition/architecture/backend/capability matrix,
    minimum measured resources, model/download sizes, prerequisites and limitations.
    Include at least one qualified desktop profile for each of Windows, macOS and
-   Linux. Each supports useful standalone Chat/Documents/Code; show which Code validation
-   route needs an eligible peer. A managed sandbox may be administrator-prepared,
-   but ordinary reviewers connect graphically and need no Kubernetes/queue/TLS setup.
+   Linux. Each supports useful standalone Chat/Documents/Code and the offered updater.
+   Qualify Code sandbox validation on at least one eligible local profile; disclose validation limits
+   on other profiles. No required Beta workflow or installation depends on a peer or managed sandbox.
 2. Build an immutable package for each selected OS profile from the designated commit/version. Verify final
    shipped source/resources, dependency and model manifests, notices, integrity,
    publisher authentication and platform signing/notarisation where required.
    An ad-hoc prototype signature is insufficient public distribution evidence.
 3. A nondeveloper completes website → download → install → hardware detection →
    model choice/download or supported offline import → self-test → real work.
-   Exercise later Settings → Models management and the entire
-   [Beta acceptance matrix](evaluation.md#beta-acceptance) on the shipped bytes.
+   Exercise later Settings → Models management and all applicable local install/workflow/security
+   cases from the
+   [Beta acceptance matrix](evaluation.md#beta-acceptance) on the shipped bytes. Historical mesh cases
+   remain post-Beta acceptance, not an override of the current standalone release scope.
 4. Test first launch/relaunch, denied OS permissions, missing runtime/model,
    insufficient disk, cancellation, unsupported capabilities and uninstall/data
    preservation. Package/runtime provisioning is complete before offline tests.
    Shared source-level checks may be reused only when the tested code and inputs
    are identical; they do not replace platform-specific installer, credential,
    state-preservation or recovery observations.
-5. Document and rehearse authenticated **manual full-package replacement** using
+5. Qualify the in-app update workflow and every case in
+   [updater acceptance](#update-acceptance) using two labelled builds on each published profile.
+   Also document and rehearse authenticated **manual full-package replacement** using
    two labelled test builds on **each published OS/architecture/backend profile**: stop/drain work, snapshot affected
    state, replace the app, reopen offline and verify chats, model references,
    credentials and artifacts. Prove recovery after a failed replacement without
-   opening an incompatible newer schema or losing newer user work. No automatic
-   updater or schema migration is required for 0.1; if a migration ships, its
-   failure/recovery checks are mandatory. The complete future matrix is deferred,
+   opening an incompatible newer schema or losing newer user work. An in-app updater is required
+   for the current Beta scope; manual replacement alone requires a separate user-approved scope
+   change. A schema migration is not compulsory; if one ships, its failure/recovery checks are
+   mandatory. The complete future matrix is deferred,
    not basic data safety. Users can remain on a working offline version.
 6. Release notes explain Beta limitations, supported models and execution targets,
    recovery/removal instructions and a support route that requires no automatic
    telemetry. Provide a local synthetic try-it workflow and expected outputs.
-7. Requester accepts the evidence and authorises publication. Upload verified
+7. The user accepts the evidence and authorises publication. Upload verified
    assets before publishing the website link; verify the link actually downloads
    the matching package without an account. Record version, hash, profile and
    review date with the evidence. A source archive does not satisfy this gate.
@@ -87,7 +111,9 @@ No profile is accepted as of this review. Before enabling the button:
 The website/PPT can describe sovereign local AI, trusted heterogeneous compute,
 model/device routing, sandboxing, recovery and organisation deployment. Every
 functional claim uses Working now / Beta-experimental / Planned labels under
-[PRD scope](prd.md#release-bands); no unsupported Download option is enabled.
+[current scope](PROJECT.md#25-platform-support-and-beta-scope); no unsupported Download option is
+enabled. Describe mesh execution as post-Beta direction unless a separately named prototype has
+observed evidence; do not present it as part of the standalone Beta package.
 
 ## 2. From source change to published version
 
@@ -141,10 +167,43 @@ GitHub supports tagged releases containing notes and binary assets; an Actions
 artifact used during a build is not automatically an end-user release.
 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 
+### Internal test artifacts
+
+Internal test packages are built by the same native driver
+([desktop/build.py](../desktop/build.py)) and manually dispatched package workflow from one
+reviewed source snapshot, for macOS, Windows and Ubuntu. They exist to produce test evidence on
+real devices before any Beta release; they are not releases.
+
+- **Unsigned and labelled.** Version `<app version>-internal.<n>` with a build-set id, channel
+  `internal`, signing `unsigned`. They carry no publisher signature or notarisation, so testers
+  follow the OS's documented unsigned-app step; this is never presented as normal installation.
+- **Identity records.** Each package embeds `refinix-build.json`: version, build set, channel,
+  source and input digests with their components, lock hashes, engine identity and trust-root
+  identity, and never the package's own hash. After packaging, `<artifact>.sha256`,
+  `<artifact>.manifest.json` (final name, size, SHA-256, embedded identity and its hash) and
+  `<artifact>.TESTING.md` are written beside it. The identity is read back from the finished
+  artifact and compared with the requested build. A Windows installer is read back only on a
+  disposable runner.
+- **Immutable and reused.** One label names one set of bytes. Unchanged inputs reuse a retained
+  artifact only after its SHA-256 is read again and matches its record; otherwise it is rebuilt
+  with a recorded reason. Old bytes are never relabelled. Separate N, N+1 and engine-change sets
+  are kept for updater tests.
+- **Separate trust.** Internal update metadata is signed by an internal test trust root whose
+  keys are held apart from production roots and signing keys. A package built for the internal
+  root does not accept production metadata as internal, and production builds never trust the
+  internal root.
+- **Test evidence only.** Observations made with these packages attach to the recorded SHA-256
+  and support qualification decisions. They do not, by themselves, accept a platform, the
+  updater or a release.
+- **Never offered as a Beta update.** Internal artifacts are not published as release assets and
+  never appear in the Beta update feed; a released Beta installation is never offered an
+  internal build.
+
 ## 3. User update workflow
 
-**Band B / P19 target.** Beta 0.1 uses the qualified manual path above unless
-this updater has separately passed acceptance. Do not render nonfunctional
+**Beta 0.1 qualification target.** Trace and reuse suitable existing update/packaging code before
+adding new implementation. Acceptance is required on each advertised OS profile; a merged source
+change, a release design or UI controls are insufficient. Do not render nonfunctional
 Check/Download/Install controls or claim “up to date” without evidence.
 
 Settings -> Updates shows the installed version, last check and Check for updates.
@@ -160,11 +219,20 @@ Settings -> Updates shows the installed version, last check and Check for update
 5. Verify authenticity and integrity before executing anything. Partial or failed
    verification never changes the installed app or advertises Ready to install.
 6. Offer Install and restart. Drain work or obtain explicit cancellation of affected
-   jobs; pause remote admissions and reconcile attempts before replacing processes.
+   jobs and reconcile local attempts before replacing processes. When later releases offer peer
+   execution, also pause remote admissions and reconcile accepted remote attempts.
 7. Back up affected durable state, perform the qualified platform installation and
    versioned migration, then start and check the new application.
 8. Confirm the installed version and preserved state. On failure use the tested
    recovery path and explain what happened, without claiming a successful update.
+
+If this release changes the inference engine, the release team qualifies the new exact build and
+supported model/workflow combinations before offering it. The app verifies and selects the managed
+engine and runs the appropriate local installation checks without asking the customer to manually
+requalify models. Unrelated system-engine updates must not change the installed Refinix engine.
+Reject a package/qualification mismatch with its actual reason; preserve or recover the last accepted
+compatible installation without losing newer work. A new available release does not disable the
+current working offline application.
 
 Being online briefly is sufficient only if the necessary transfer completes.
 Interrupted downloads leave the installed version usable. Failed/offline checks
@@ -216,13 +284,14 @@ required. The current ad-hoc signed Mac prototype is not equivalent evidence.
 | Boundary | Required behaviour |
 |---|---|
 | Application files | Replaceable package; do not store user data inside it |
+| App-managed inference engine | Pin executable/build, configuration and compatibility records to the release; external engines cannot silently replace it. Qualified app/dependency updates change it with tested recovery |
 | Chats, instructions, memory and corpus | Preserve outside installation directories; no automatic training or export during update |
 | Model weights | Separate versioned artifacts; preserve compatible installed weights, avoid redundant downloads |
 | New capabilities | Explain optional downloads, permissions, licence and hardware needs before enablement; no runtime fetching |
 | Database/config migrations | Record schema version; preflight storage; consistent snapshot and recoverable migration. Do not merge incompatible stores blindly |
 | Corpus/index changes | Preserve source data; rebuild derived indexes when embedding/extraction versions change; block stale/incompatible index use until ready |
-| Peer/server protocol | Advertise versions and capabilities; permit qualified mixed-version combinations and reject incompatible jobs before dispatch |
-| Worker upgrades | Drain admissions and reconcile accepted jobs; a dropped connection is not proof that work did not execute |
+| Peer/server protocol (post-Beta) | Advertise versions and capabilities; permit qualified mixed-version combinations and reject incompatible jobs before dispatch |
+| Worker upgrades (post-Beta) | Drain admissions and reconcile accepted jobs; a dropped connection is not proof that work did not execute |
 | Rollback | Restore a compatible binary and data state; never open a newer incompatible schema with an older binary |
 
 A rollback snapshot covers affected schemas/configuration and must be tested. Avoid
@@ -235,10 +304,12 @@ Snapshots and downloaded packages have visible retention/storage policies.
 ## 6. Update and production release acceptance
 
 The old “before first publication” anchor is retained for incoming links; it no
-longer requires the full matrix before Beta 0.1. Use the Beta gate above first.
+longer requires the full production matrix before Beta 0.1. Use the Beta gate and per-profile updater
+acceptance below first; broader historical-source-version and peer matrices remain later work.
 
 <a id="update-acceptance"></a>
-### In-app update acceptance — Band B
+<a id="in-app-update-acceptance--band-b"></a>
+### In-app update acceptance — Beta 0.1
 
 Before exposing an updater, use two built versions, N and N+1, on every profile
 for which that updater is offered. Record
@@ -248,15 +319,22 @@ fixture state and actual observations. Required cases:
 - Clean install, model setup/import, offline core workflows and first launch.
 - Explicit metadata check; no updater traffic before the user requests it.
 - Valid full update and verified offline import, followed by an offline restart.
+- Managed engine remains the recorded build after an unrelated system-runtime update or search-path
+  change; no external engine is selected silently and offline work remains usable.
+- A release transition changing the managed engine installs matching qualification records, runs
+  local installation checks and completes supported model/workflow work without customer profile edits.
+- Wrong/missing managed-engine bytes or mismatched qualification metadata produce a specific,
+  truthful blocker and approved graphical recovery; no version spoofing or unsupported admission.
 - Interrupted/cancelled download, offline host, missing asset and insufficient disk.
 - Modified package/metadata, wrong platform, incompatible version, stale replay and
   invalid signer; no partial installation or user-data changes on rejection.
-- Active local/remote jobs, orderly drain/cancel, restart and attempt reconciliation.
+- Active local jobs, orderly drain/cancel, restart and attempt reconciliation.
 - Chats, selected models, personal instructions, corpus permissions and credentials
   retained; derived indexes either valid or explicitly rebuilding.
 - Migration failure/crash and recovery with consistent state; later user work is
   not silently overwritten by rollback.
-- Supported mixed-version peers and explicit refusal of incompatible combinations.
+- After mesh is exposed: active remote jobs, worker drain/reconciliation, supported mixed-version
+  peers and explicit refusal of incompatible combinations. These are post-Beta checks.
 - Graphical install/update completed by a nontechnical operator; unsupported host
   prerequisites surfaced without terminal debugging.
 
@@ -265,7 +343,8 @@ Release manifests, evidence and end-user files must agree. The website publishes
 only qualified profiles and actually available artifacts with their release channel.
 
 <a id="production-release-acceptance"></a>
-### Full production release acceptance — Band C
+<a id="full-production-release-acceptance--band-c"></a>
+### Full production release acceptance
 
 Repeat the updater cases across every advertised OS/edition/backend and supported
 source-version/schema transition, including mixed-version peers and managed worker
@@ -273,4 +352,4 @@ upgrades. Exercise publisher-key rotation/recovery and unsupported upgrade refus
 preserve recoverable newer work on rollback. Record the supported transition matrix
 rather than promising arbitrary old-version rollback. Complete
 [production acceptance](evaluation.md#production-acceptance) before stable claims.
-This is P23/P26 maturity, not an additional Beta 0.1 prerequisite.
+This is later production maturity, not an additional Beta 0.1 prerequisite.

@@ -1,8 +1,16 @@
-"""Ollama adapter — the only inference path in C03.
+"""The inference runtime facade every caller uses.
 
-OD-03 selected Ollama; OD-05 selected one model. Bounded settings come from the
-model catalogue, including `think: false`, without which this model spends the
-whole output budget reasoning and returns an empty answer.
+Two engines sit behind the same functions — `probe`, `model_capabilities`,
+`model_state`, `stream_chat` — and the same normalised stream records:
+
+* the **managed engine** (`local_engine` + `runtime_llamacpp`), which an
+  installed Refinix always uses once `configure_managed` has been called; and
+* the **developer engine**, an external Ollama on loopback, kept for source
+  checkouts without a fetched engine and as the parity baseline.
+
+Bounded settings come from the qualified execution profile, including the
+reasoning switch, without which this model spends the whole output budget
+reasoning and returns an empty answer.
 
 Standard library only. Nothing here reaches beyond loopback.
 """
@@ -61,6 +69,27 @@ NUM_PREDICT = 2048
 # visible fails honestly rather than saving a blank reply.
 THINK = False
 KEEP_ALIVE = "10m"
+
+
+# The managed engine, when this process uses one. Set once at startup by the
+# desktop lifecycle; None keeps every function on the developer Ollama path.
+_MANAGED = None
+
+
+def configure_managed(backend) -> None:
+    """Route this process's inference through Refinix's own engine."""
+    global _MANAGED
+    _MANAGED = backend
+
+
+def managed_engine():
+    return _MANAGED
+
+
+def engine_label() -> str:
+    """How the engine is named to a person, on any OS."""
+    return ("the Refinix engine" if _MANAGED is not None
+            else f"the developer engine (external Ollama at {HOST})")
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -179,8 +208,11 @@ def _request(path: str, payload=None, timeout=10, *, watch=None):
 
 def probe() -> dict:
     """Read-only health probe. Reports what was observed, never a default."""
+    if _MANAGED is not None:
+        return _MANAGED.probe()
     state = {"reachable": False, "server_version": None, "models": [],
-             "digests": {}, "loaded": None, "endpoint": HOST, "error": None}
+             "digests": {}, "loaded": None, "endpoint": HOST, "error": None,
+             "runtime": "ollama"}
     try:
         with _request("/api/version", timeout=3) as resp:
             state["server_version"] = json.load(resp).get("version")
@@ -213,21 +245,6 @@ def probe() -> dict:
     return state
 
 
-def installed_models() -> dict:
-    """`{tag: manifest digest}` as the local runtime reports it, or `{}`.
-
-    Read-only. Listing what is installed cannot install anything, and an empty
-    result is reported as "could not observe", never as "nothing is installed".
-    """
-    try:
-        with _request("/api/tags", timeout=5) as resp:
-            listed = json.load(resp).get("models", [])
-    except Exception:                                  # noqa: BLE001
-        return {}
-    return {entry.get("model"): (entry.get("digest") or "").lower()
-            for entry in listed if entry.get("model")}
-
-
 def model_capabilities(model: str) -> list[str] | None:
     """What the runtime says this model can do, or `None` if unobservable.
 
@@ -235,6 +252,8 @@ def model_capabilities(model: str) -> list[str] | None:
     does not load the model. `None` means the question could not be answered
     here, which is deliberately not the same as "it can do nothing".
     """
+    if _MANAGED is not None:
+        return _MANAGED.capabilities(model)
     try:
         with _request("/api/show", {"model": model}, timeout=5) as resp:
             listed = json.load(resp).get("capabilities")
@@ -263,7 +282,7 @@ def model_state_from(health: dict, model: str, *, requires: str | None = None,
     if not health.get("reachable"):
         return {"state": "runtime_unavailable", "model": model, "digest": None,
                 "capabilities": None,
-                "detail": f"The local model runtime at {HOST} is not answering.",
+                "detail": f"{engine_label()[0].upper()}{engine_label()[1:]} is not answering.",
                 "runtime_version": None}
     installed = model in (health.get("models") or [])
     digest = (health.get("digests") or {}).get(model) or None
@@ -310,6 +329,23 @@ def model_state(model: str, *, requires: str | None = None) -> dict:
         observed = model_capabilities(model)
     return model_state_from(health, model, requires=requires,
                             capabilities=observed)
+
+
+def _check_images(images: list[bytes] | None) -> None:
+    """The same bounds for every engine: raw bytes, counted and capped."""
+    if not images:
+        return
+    if len(images) > MAX_IMAGES_PER_REQUEST:
+        raise RuntimeUnavailable(
+            f"at most {MAX_IMAGES_PER_REQUEST} image(s) may be sent in one request")
+    for item in images:
+        if not isinstance(item, (bytes, bytearray)):
+            raise RuntimeUnavailable("images must be supplied as raw bytes")
+        if not item:
+            raise RuntimeUnavailable("an empty image cannot be sent")
+        if len(item) > MAX_IMAGE_BYTES:
+            raise RuntimeUnavailable(
+                f"an image exceeded {MAX_IMAGE_BYTES // (1024 * 1024)} MB")
 
 
 def _with_images(messages: list[dict], images: list[bytes] | None) -> list[dict]:
@@ -361,6 +397,14 @@ def stream_chat(messages: list[dict], *, profile: v1.ExecutionProfile,
     period looks exactly like a stall. Raises RuntimeUnavailable rather than
     returning a plausible-looking empty answer.
     """
+    if _MANAGED is not None:
+        _check_images(images)
+        yield from _MANAGED.stream_chat(
+            messages, profile=profile, inference=inference,
+            should_cancel=should_cancel, images=images,
+            response_format=response_format, watch_class=_CancelWatch,
+            unavailable=RuntimeUnavailable)
+        return
     try:
         inference_profiles.validate_request(profile, inference, profile.model)
     except ValueError as exc:

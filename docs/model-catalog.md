@@ -7,6 +7,11 @@ recorded below. Other named components remain candidates unless an exact manifes
 and qualifying result says otherwise. Production recommendations require source,
 licence, integrity, compatibility and workload evidence, not model-name claims.
 
+[PROJECT.md](PROJECT.md#13-runtime-and-resource-policy) owns the current runtime contract.
+Engineering/release qualification is completed before a supported model/engine combination is
+offered. Normal customers choose capabilities and models graphically; they do not pin external
+Ollama versions, edit execution profiles or repeat qualification when unrelated software updates.
+
 The actual fleet and outstanding hardware checks are in
 [devicespecifications.md](devicespecifications.md).
 
@@ -41,17 +46,18 @@ and later changes, rather than two separate installers/catalogues.
 | Choose or revisit | Select another compatible model for eligible profiles; refresh recommendations when hardware, runtime or enabled capabilities change, on explicit inspection/self-test without silent public checks |
 | Download later | User explicitly starts an approved compatible download; show source, size, progress and cancellation. Stage partial files outside active model entries; failure/cancel leaves existing capabilities usable |
 | Import offline | Apply the approved bundle path below, including manifest, provenance/licence, compatibility and integrity; arbitrary files or runtime inventory names never auto-enter the trusted catalogue |
-| Verify and self-test | Verify exact files after download/import, then run the capability-specific local test; only successful eligible profiles become ready. Keep failure details and incomplete/unverified states visible |
+| Verify and self-test | The app verifies exact files and automatically runs the capability-specific local installation test after approved download/import/enablement; only successful eligible profiles become ready. No customer-authored qualification records; keep specific failure details and incomplete/unverified states visible |
 | Enable or disable | Change profile eligibility explicitly; prevent new placement on disabled models and explain affected queued/active jobs. Never silently change the model of an in-flight attempt |
 | Remove safely | Preview affected capabilities/defaults, model references and jobs; drain or explicitly cancel affected work before removal. Require confirmation; preserve shared files referenced by other models and do not delete externally owned runtime stores without a supported explicit removal operation |
 | Recover | Interrupted provisioning/removal cannot leave false Ready status or corrupt another model. Preserve catalogue/history; clear stale selections and offer compatible alternatives without overriding user choice |
 
-Band A / P04–P05 implements this for a small approved set, including at least two
-appropriate task/model combinations. A small supported set is sufficient; there
-is no requirement to invent six qualified choices. Additional models and calibrated
-scores are P17. [Workflows](workflows.md#models-after-onboarding) owns interaction;
-[evaluation](evaluation.md#beta-acceptance) owns evidence. The current inventory and
-per-scope selector do **not** yet implement this lifecycle.
+The standalone Beta requires this lifecycle for a small approved set, including at least two
+appropriate task/model combinations. A small supported set is sufficient; there is no requirement
+to invent six qualified choices. Additional models and calibrated scores follow later.
+[PROJECT.md](PROJECT.md#5-persistent-model-management) owns interaction and
+[tasks.md](../tasks.md) owns active sequencing; [evaluation](evaluation.md#beta-acceptance) records
+evidence. Historical P-task labels are not active gates. The current inventory and per-scope selector
+do **not** yet implement this lifecycle.
 
 ## 2. Baseline and conditional packs
 
@@ -236,6 +242,75 @@ Every approved entry records:
 - installation, verification, and benchmark state;
 - material local modifications.
 
+<a id="reviewed-presets"></a>
+### 4.1 Reviewed hardware and capability presets
+
+The catalogue pairs model entries with precomputed hardware/workflow presets. Engineering prepares
+the records from authoritative model/runtime data, reproducible published measurements and
+representative Refinix qualification. Setup matches detected facts to these records; it does not
+derive a new memory model, run automatic benchmarks or search the public Internet to choose settings.
+Use a small table in the existing catalogue/profile boundary, not a second recommendation framework.
+
+| Record group | Required fields |
+|---|---|
+| Identity and provenance | Preset ID/revision; category/workflow; recommended model ID and component hashes; upstream and quantizer identities; source/revision/licences; exact managed engine/build/configuration identity |
+| Hardware match | OS family and minimum supported version/range; architecture; CPU instructions/chip constraints; qualified backend and driver prerequisites; total RAM/unified-memory floor; current available-memory floor; dedicated VRAM where relevant |
+| Storage | Exact component/download and installed bytes; minimum free space for staging, import, update/backup and configured working space; shared components counted once; units explicit |
+| Execution | Context window; maximum input and output/reasoning budgets; tokenizer/template; K/V cache precision and any recurrent-state setting supported by that engine/model; cache reuse/persistence policy; backend/offload; threads/batch settings when material; resident-model and concurrent-slot limits |
+| Capacity and behavior | Reviewed peak RAM/VRAM and safety margin at those settings; current-capacity thresholds; approved lower tier or queue/failure behavior; load/unload policy; tested overflow, cancellation and structured-output behavior |
+| Evidence | Source URL/date and exact published hardware, model/quant, engine revision and settings when available; workload/sample size; measured externally, measured in Refinix or estimated values; missing information and derivation; qualification/acceptance references |
+
+Device names and brands such as MacBook, ASUS and HP may label representative examples. Match actual
+hardware/backend facts rather than vendor names. Apple M-series denotes chips; the OS field remains
+macOS. Linux initially means the supported Ubuntu range, not all distributions. Supported ranges
+must be justified; an observed OS version does not automatically become the minimum version.
+
+Maintain a recommended choice for each offered category/tier, and optional compatible alternatives
+where evidence exists. Chat, Code and document generation may reuse the same qualified model;
+OCR/vision, embeddings, speech and image generation retain separate capability requirements. Optional
+packs remain optional and later packs remain planned. A 4B model is a candidate, not a universal best
+choice across hardware and categories. Never treat a vision model's existence as document OCR proof.
+
+Perform development-side estimates with upstream metadata/tools where needed, publish the assumptions
+and use conservative bounds. Do not use advertised maximum context as a laptop default, model file
+size as peak memory, or a generic transformer KV formula for an unverified hybrid architecture.
+Public short-prompt speed results cannot establish long-context, OCR or sustained concurrent behavior.
+Missing measurements stay estimated/unknown; do not copy old engine qualification to a new build.
+
+At setup, compare the detected hardware to a reviewed tier, then check actual free memory/disk and
+backend/engine availability. Recheck capacity when admitting work; queue, unload or use an approved
+lower preset rather than silently changing qualified settings. Prefix-cache isolation, bounded
+context and refusal of unsafe/unsupported execution remain mandatory. Normal users do not create
+profiles or manually retune KV/context settings.
+
+Published evidence can establish a candidate tier without owning that laptop. Execution qualification
+still binds the shipped model/engine/workflow and supported class. Research, automatic installation
+checks and [package/release acceptance](releases.md#beta-01-publication) are separate states.
+Initial published findings and their gaps are in
+[the research record](evaluation.md#hardware-presets-20261004); no all-OS minimum matrix is accepted yet.
+
+### 4.2 Reuse before new infrastructure
+
+Integrate existing source and suitable maintained tools before building commodity functionality.
+These are options for evaluation, not approved new dependencies or permission to install them:
+
+| Need | Existing path or upstream option | Refinix integration still needed |
+|---|---|---|
+| Development-side preset preparation | Already-considered `llmfit`; documented [hardware profiles, context caps and JSON plans](https://github.com/AlexsJones/llmfit/blob/main/docs/cli.md) | Review estimates and community provenance, then freeze suitable settings into catalogue records. Internal planning only for Beta; no fit service or automatic benchmarks on customers' machines |
+| Hardware/capacity facts | Existing `device.py`; Python platform APIs and [psutil](https://psutil.readthedocs.io/stable/) for supported memory/disk/process metrics | Small backend-specific GPU probe; preset matching and truthful missing-data handling. psutil does not provide a universal GPU/VRAM detector |
+| Inference resources | Existing runtime adapter plus [llama-server controls](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) for context, output, KV precision, offload and slots | Explicit qualified settings, scheduling/admission policy and engine ownership. Upstream fit may adjust unset arguments; pin settings and disable it where supported when that would change qualification |
+| Model acquisition/cache | Existing model/provisioning boundaries; [Hugging Face Hub download APIs](https://huggingface.co/docs/huggingface_hub/en/guides/download) for pinned revisions and selected files | Review hosts/redirects, cancellation/progress, integrity, staging and offline import. Do not rewrite a download/cache stack without a demonstrated policy gap |
+| Update trust/application | Existing package/lifecycle boundary; [python-tuf client](https://theupdateframework.readthedocs.io/en/stable/api/tuf.ngclient.html) and evaluated platform tools such as [Sparkle](https://sparkle-project.org/documentation/) on macOS | TUF verifies update metadata/targets; it is not an installer or state-recovery engine. Compare platform replacement tools before writing swap helpers; preserve explicit checks and compatible-data recovery |
+
+Before adoption, pin and review source, licence, version, local changes and network behavior.
+For a Hub integration, evaluate its documented
+[offline and telemetry controls](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables):
+disable telemetry and implicit token forwarding, suppress CLI update checks if the CLI is used, and
+enforce offline/local-only behavior during normal work. Connected provisioning remains user initiated.
+Do not use runtime convenience flags that fetch models automatically during normal offline startup.
+For internal research tools, do not enable benchmark sharing/upload or provider downloads as a
+side effect of inspection. `llmfit` recommendations are planning inputs, not execution qualification.
+
 The application stores this manifest and a reference to runtime-owned weights.
 It does not duplicate weights already managed by Ollama, llama.cpp, MLX, or
 another approved runtime.
@@ -262,6 +337,10 @@ Hardware presentation uses:
 - Insufficient memory
 - Runtime unavailable
 - Installed but unverified
+
+For preset resources/performance, distinguish **Measured externally**, **Measured in Refinix**,
+**Estimated** and **Unavailable**, with a source/configuration reference. An externally measured
+model is not thereby a qualified Refinix package or workflow.
 
 Reported or estimated values never appear as measured.
 
@@ -341,6 +420,18 @@ a pinned app-managed [llama.cpp llama-server](https://github.com/ggml-org/llama.
 for qualified GGUF models, using Metal/CUDA/Vulkan/CPU builds only where tested.
 Provide a safe CPU fallback where it actually meets the supported profile.
 
+The installed Beta requires one app-managed, pinned and integrity-verified default engine per
+supported profile. The inference engine is an application dependency, not a separately administered
+customer prerequisite. External/system Ollama updates must not change the engine selected by
+Refinix. Upgrade the managed engine through the explicit qualified Refinix update path, with matching
+compatibility records and recovery; preserve reusable model assets and the existing development path.
+
+An exact-version qualification mismatch means the engine/model combination is unverified for that
+workflow; it does not establish that the model weights are missing. Show the actual cause and an
+approved graphical recovery action. Do not admit unsupported combinations by spoofing versions or
+copying old measurements. Local automatic self-tests check a qualified installation; they do not
+create workload qualification for arbitrary imports or new engine builds.
+
 Before replacing the default, compare exact model files and settings on supported
 OS/architectures: installation/startup, cold/warm latency, memory, cancellation,
 structured outputs, context handling, concurrent admission and document/vision
@@ -367,6 +458,11 @@ Refinix supplies the harness. [DeepSeek Harness](https://github.com/deepseek-ai/
 is not adopted; its developer-preview plugin approach is a research option only
 for a specific proven gap. Do not add it, LangChain, another router model or a
 plugin framework merely because the application is agentic.
+
+The current orchestration decision and LangGraph evaluation criteria are in
+[PROJECT.md](PROJECT.md#70-orchestration-choice-and-alternatives). Keep the existing harness for now.
+No dedicated orchestrator model is mandatory for obvious routing, and embeddings are required only
+when semantic retrieval is enabled. A workflow framework does not replace the inference runtime.
 
 The OD-03 record below explains the prototype choice. Its restriction to comparison
 work is superseded by the production qualification direction above; it does not
@@ -434,9 +530,13 @@ inventory constraint, not a limit on production users. Begin evaluation with:
 Advertised maximum context is not a supported context. Support comes from local
 quality, latency, and memory evidence. Record context/output limits, concurrent
 slots, cache precision/reuse settings and backend with each measurement. Follow
-the [KV-cache policy](architecture.md#kv-cache-and-runtime-resource-policy): the
+the [KV-cache policy](PROJECT.md#132-resource-and-context-policy): the
 engine owns allocation; Refinix admits work against a measured resource budget.
 PagedAttention is an optional engine capability, not a custom Refinix requirement.
+
+Use the [reviewed presets](#reviewed-presets) for setup defaults and current-capacity thresholds.
+Public research may support conservative candidate bounds; keep estimates and missing configuration
+details visible and do not declare a tier release-accepted from research alone.
 
 Historical device assignments remain hypotheses in
 [devicespecifications.md](devicespecifications.md). Onboarding must use detected

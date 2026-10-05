@@ -82,7 +82,10 @@ PLIST = {
     "CFBundleExecutable": "Refinix",
     "NSHumanReadableCopyright": "Refinix. Runs entirely on this computer.",
     "LSApplicationCategoryType": "public.app-category.productivity",
-    "LSMinimumSystemVersion": "12.0",
+    # Set from the highest minimum macOS of the shipped binaries by
+    # desktop/build.py (REFINIX_MIN_MACOS). It used to say 12.0 while the
+    # bundled interpreter needed 26.0 and the PDF renderer 13.0.
+    "LSMinimumSystemVersion": os.environ.get("REFINIX_MIN_MACOS", "13.3"),
     # One Refinix per login session; the lock file in ~/.aegisforge covers a
     # copy started from a terminal instead.
     "LSMultipleInstancesProhibited": True,
@@ -121,7 +124,13 @@ OPTIONS = {
                  # BSD-3-Clause/Apache-2.0).
                  "Quartz", "objc",
                  "backend.coordinator.pdfrender", "backend.coordinator.ocr",
-                 "backend.coordinator.proof"],
+                 "backend.coordinator.proof",
+                 # Imported lazily by the startup lifecycle and runtime facade.
+                 "backend.coordinator.engine", "backend.coordinator.local_engine",
+                 "backend.coordinator.runtime_llamacpp", "backend.coordinator.readiness",
+                 "backend.coordinator.build_info", "backend.coordinator.ownership",
+                 "psutil", "tuf.ngclient", "securesystemslib",
+                 "securesystemslib._vendor.ed25519.ed25519", "urllib3"],
     "excludes": ["tkinter", "test", "unittest", "pydoc_data", "py2app",
                  "setuptools", "pip"],
     # py2app 0.28.10's optimized mode creates a dangling legacy site.pyo
@@ -146,12 +155,22 @@ if __name__ == "__main__":
         # py2app get_bootstrap() prefers a same-named directory in cwd over
         # sys.path. Build here so its __file__ recipe cannot copy repo/backend.
         os.chdir(sources)
+        data_files = frontend_data_files()
+        identity = os.environ.get("REFINIX_BUILD_IDENTITY")
+        if identity:
+            # The embedded build identity, read by backend/coordinator/build_info.py.
+            data_files.append(("", [identity]))
+        # The update trust root and channel feed, when this build has them
+        # (backend/coordinator/updates.py). Absent means "cannot check".
+        for name in ("REFINIX_UPDATE_ROOT", "REFINIX_UPDATE_FEED"):
+            if os.environ.get(name):
+                data_files.append(("", [os.environ[name]]))
         distribution = setup(
             name="Refinix",
             version=VERSION,
             app=[{"script": str(REPO / "desktop" / "refinix.py"),
                   "dest_base": "Refinix", "plist": PLIST}],
-            data_files=frontend_data_files(),
+            data_files=data_files,
             options={"py2app": OPTIONS},
         )
         command = distribution.get_command_obj("py2app")

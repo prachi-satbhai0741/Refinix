@@ -1,5 +1,10 @@
 # Evaluation, Prototype Plan, and Demonstration
 
+Evidence snapshots below retain their recorded dates and scope. Current requirements and execution
+gates come from [PROJECT.md](PROJECT.md) and [tasks.md](../tasks.md), not historical PRD/P-task labels.
+The [2026-10-04 runtime finding](#runtime-ownership-20261004) is a user report plus current source
+inspection; it does not establish fresh device, inference, packaged-runtime or release acceptance.
+
 ## Current status
 
 Source and test bodies re-inspected on **2026-09-16**, at
@@ -1059,3 +1064,89 @@ Implementation, runtime qualification and release acceptance remain separate.
 | Create Pods | API/executor Deployments and bounded validation Job builder exist | Current readiness, resource/egress enforcement, termination and cleanup unqualified | Pending P07/P11/P12/P14 |
 | Service API | Versioned authenticated worker API and Service manifests exist | Current requester-to-worker integrated run unqualified; source or a Ready Pod alone is insufficient | Pending P08/P09/P11/P14 |
 | Redis | Streams, receipts, leases, cancellation/replay and executor paths exist | Component/mock and historical results do not prove current restart, retention or failure recovery | Pending P08/P11/P12/P14; fleet improvements P15 |
+
+
+<a id="runtime-ownership-20261004"></a>
+## 2026-10-04 — Runtime ownership and external-update usability finding
+
+**User-reported:** after an external Ollama update, Refinix showed “The selected model is unavailable
+for new work. Open Settings.” The updated runtime version, current selected model/digest, live status
+response and packaged application were not observed in this documentation task.
+
+**Source-inspected:**
+
+- [profiles.for_observation](../backend/contracts/profiles.py) matches model ID, digest, runtime name,
+  exact runtime version and target profile. An unmatched updated engine yields no matching profile.
+- [Coordinator._model_capability_blocker](../backend/coordinator/server.py) distinguishes no qualified
+  workflow profile for the observed Ollama version from a missing or disabled model.
+- [renderReadyLine](../frontend/app/app.js) uses the reported generic line when the runtime is reachable
+  and the model is installed but unavailable for new work. Several blockers can share this line;
+  version mismatch is a source-supported explanation, not a confirmed live diagnosis.
+
+**Product decision:** runtime/model/workflow qualification remains engineering/release work.
+Customers receive one managed app/engine setup, with explicit model provisioning and automatic local
+installation checks. An external engine update must not change Refinix's engine. A pinned app-managed
+llama.cpp build remains the preferred candidate, pending parity, packaging and recovery qualification;
+no runtime migration or admission change was made here. Unsupported engine combinations need their
+specific reason and an approved graphical recovery action, not instructions to edit profiles.
+
+**Orchestration decision:** keep the existing harness. LangGraph is an unadopted evaluation option for
+an evidenced workflow gap; no comparative Refinix integration/performance/maintenance result was
+established in this review.
+Framework orchestration and inference-engine ownership are separate decisions. See
+[PROJECT.md](PROJECT.md#70-orchestration-choice-and-alternatives) for the options and reconsideration criteria.
+
+**Verification boundary:** source inspection and documentation review only. No application tests,
+model calls, runtime probes, downloads, installs, migrations, framework adoption or Git writes.
+
+<a id="hardware-presets-20261004"></a>
+## 2026-10-04 — Published evidence for hardware/capability presets
+
+**User direction:** prepare category recommendations and runtime/context/cache/resource presets from
+existing research; collect hardware facts and match the reviewed records. Reuse existing tools and
+code. Device brands are labels, and owning every target laptop is not a research prerequisite.
+[PROJECT.md §4.3.1](PROJECT.md#431-reviewed-hardware-and-capability-presets) and
+[model-catalog.md §4.1](model-catalog.md#reviewed-presets) define the current contract.
+
+The following public primary records were inspected on 2026-10-04. These are externally reported
+results or artifact metadata, not fresh Refinix measurements:
+
+| Source | Reported observation | Appropriate use / limitation |
+|---|---|---|
+| [Benchmark author's Apple dataset](https://huggingface.co/datasets/enescingoz/humaneval-apple-silicon) | M1, 16 GB, macOS 26.3.1: Qwen3.5 4B Q4_K_M generation 14.05/13.49 tok/s at 128/256 output tokens; Gemma 3 4B Q4_K_M 21.34/20.69 tok/s. Rows dated 2026-04-07 | Candidate comparisons. Short prompts, full GPU offload and flash attention; no pinned engine commit identified on the card. Does not prove 8 GB, long context or OCR; its memory column is insufficient for total peak-memory qualification |
+| [Same benchmark record](https://huggingface.co/datasets/enescingoz/humaneval-apple-silicon) | M2 Max, 32 GB: Qwen3.5 4B Q4_K_M generation 48.35/48.07 tok/s at 128/256 tokens, 2026-04-07 | Evidence for this configuration only; not a forecast for base M2/M1 or Windows GPUs |
+| [Quantizer's Qwen3.5 files](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/tree/main) | Q4_K_M weights 2.74 GB; F16 multimodal projector 672 MB | Download/storage seed, not peak RAM. Different bytes from the historical 3,389,971,840-byte Ollama blob; provenance/hashes and parity must be established before substitution |
+| [Google's Gemma 3 QAT files](https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/tree/main) | Q4_0 weights 3.16 GB; F16 projector 851 MB; gated distribution | Alternative candidate with licence/access review needed. This QAT Q4_0 artifact is not the benchmark's Q4_K_M artifact |
+
+The [upstream CUDA benchmark discussion](https://github.com/ggml-org/llama.cpp/discussions/15013)
+provides additional GPU observations. No matching RTX 2050/Qwen3.5 4B result was established in this
+review; do not invent that minimum or transfer another GPU's measured speed. Use exact comparable
+rows where available; label conservative estimates and their missing inputs otherwise.
+
+**Starting points, not accepted defaults:** retain Qwen3.5 4B as the existing reuse baseline. Compare
+Gemma against the actual Chat/Code/document fixtures before selecting it. The historical Mac path
+records context 8192 and Chat output 2048; Ubuntu context 4096 remains separate evidence in
+[the first-model record](model-catalog.md#bounded-execution-settings-for-the-first-path).
+These are not new-engine or all-device qualification. Specify and justify cache types, actual peak
+resources, available-memory/storage floors and engine build before promoting a complete preset.
+Do not synthesize missing KV values or minimum macOS versions from these short benchmarks.
+
+**Reuse finding:** existing upstream runtime, Hub download/cache and platform-metric libraries cover
+substantial commodity functionality; the catalogue's [reuse inventory](model-catalog.md#42-reuse-before-new-infrastructure)
+records integration and offline-policy gaps. No single inspected package supplies all Refinix
+workflow qualification, native packaging, sandbox enforcement and update/state recovery.
+
+The already-considered `llmfit` has
+[documented target-hardware profiles and JSON plans](https://github.com/AlexsJones/llmfit/blob/main/docs/cli.md),
+including context caps and storage estimates. This can support internal preset preparation without
+the physical computer. Outputs include estimates and limitations; they do not prove workflow quality
+or actual peak resource use. No tool was installed, run or adopted as a shipped dependency here.
+
+**Plan review:** the implementation-owner proposal needs correction for preset matching/evidence,
+reuse choices, compatible-data rollback, sandbox resource enforcement and sampled-observer claims.
+See the [consolidated review](beta-execution-handoff.md#review-agent-assessment-20261004).
+The owner must review these doc changes and reconcile the proposal before joint PASS or implementation.
+
+**Verification boundary:** documentation and source/public-record inspection only; no application
+tests, benchmarks, model weights, installers, live runtime calls or Git writes. Published research
+does not accept Refinix packages, supported OS ranges, security controls or the updater.

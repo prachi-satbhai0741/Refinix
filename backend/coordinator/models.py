@@ -47,6 +47,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 import re
 
 # Workflow scopes a model can be selected for. The same strings `MODEL_DEFAULTS`
@@ -72,6 +73,37 @@ NOT_OBSERVED = "not_observed"
 
 
 @dataclass(frozen=True)
+class ModelFile:
+    """One file of a managed-engine model, pinned by size and SHA-256."""
+
+    role: str            # "weights" | "projector"
+    name: str
+    size: int
+    sha256: str
+    url: str
+
+    def as_dict(self) -> dict:
+        return {"role": self.role, "name": self.name, "size": self.size,
+                "sha256": self.sha256, "url": self.url}
+
+
+def manifest_digest(model_id: str, revision: str | None,
+                    files: tuple[ModelFile, ...]) -> str:
+    """The Refinix model-manifest identity: exact files, not a name.
+
+    Canonical JSON (sorted keys, no whitespace) of the model id, its pinned
+    source revision and every file's role, name, size and SHA-256. The GGUF
+    hashes cover the embedded tokenizer and chat template; a template override
+    would have to join this list.
+    """
+    body = {"model_id": model_id, "revision": revision,
+            "files": [{"role": f.role, "name": f.name, "size": f.size,
+                       "sha256": f.sha256} for f in files]}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"))
+                          .encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
 class Entry:
     """One curated model, with the provenance that was actually recorded.
 
@@ -93,6 +125,13 @@ class Entry:
     evidence: str
     evidence_state: str = VERIFIED
     setup_command: str = ""
+    # Which engine can run these bytes. The developer baseline is an Ollama
+    # registry artifact; the managed engine loads pinned upstream GGUF files.
+    engine: str = "ollama"
+    files: tuple[ModelFile, ...] = ()
+    revision: str | None = None
+    display_name: str | None = None
+    sampling: tuple[tuple[str, float], ...] = ()
 
     def as_dict(self) -> dict:
         return {
@@ -103,10 +142,34 @@ class Entry:
             "minimum_runtime": self.minimum_runtime,
             "evidence": self.evidence, "evidence_state": self.evidence_state,
             "setup_command": self.setup_command or None,
+            "engine": self.engine, "revision": self.revision,
+            "display_name": self.display_name or self.id,
+            "files": [f.as_dict() for f in self.files],
+            "download_bytes": sum(f.size for f in self.files) or None,
         }
 
 
-# The supported catalogue. One entry, because one artifact has been inspected.
+# The managed engine's first model: the same Qwen3.5-4B family as the baseline,
+# as pinned upstream-format GGUF files. Upstream llama.cpp b11390 refuses the
+# Ollama registry blob (`qwen35.rope.dimension_sections has wrong array length`,
+# observed 2026-10-04), so the managed engine cannot reuse it. No official Qwen
+# or ggml-org GGUF exists; these are the quantizer's files for the official
+# Apache-2.0 weights, pinned by repository commit, size and SHA-256 read from
+# the Hugging Face API on 2026-10-04.
+MANAGED_MAIN_REVISION = "e87f176479d0855a907a41277aca2f8ee7a09523"
+_MANAGED_MAIN_BASE = ("https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/"
+                      + MANAGED_MAIN_REVISION + "/")
+MANAGED_MAIN_FILES = (
+    ModelFile("weights", "Qwen3.5-4B-Q4_K_M.gguf", 2_740_937_888,
+              "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+              _MANAGED_MAIN_BASE + "Qwen3.5-4B-Q4_K_M.gguf"),
+    ModelFile("projector", "mmproj-F16.gguf", 672_423_616,
+              "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864",
+              _MANAGED_MAIN_BASE + "mmproj-F16.gguf"),
+)
+MANAGED_MAIN = "qwen3.5-4b-q4_k_m"
+
+# The supported catalogue. One artifact per engine, each inspected.
 CATALOGUE: tuple[Entry, ...] = (
     Entry(
         id="qwen3.5:4b-q4_K_M",
@@ -126,7 +189,48 @@ CATALOGUE: tuple[Entry, ...] = (
         evidence_state=VERIFIED,
         setup_command="ollama pull qwen3.5:4b-q4_K_M",
     ),
+    Entry(
+        id=MANAGED_MAIN,
+        display_name="Qwen3.5 4B (Q4_K_M)",
+        role="Main engine",
+        scopes=(CHAT, CODE, DOCUMENTS_GENERATE),
+        source=("huggingface.co/unsloth/Qwen3.5-4B-GGUF at " + MANAGED_MAIN_REVISION
+                + " — a quantization of Qwen/Qwen3.5-4B at "
+                "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"),
+        licence="Apache-2.0 (base model LICENSE; the quantization repository "
+                "declares Apache-2.0)",
+        manifest_sha256=manifest_digest(MANAGED_MAIN, MANAGED_MAIN_REVISION,
+                                        MANAGED_MAIN_FILES),
+        format="GGUF Q4_K_M weights with an F16 vision projector",
+        parameters="4B (upstream model card)",
+        storage_bytes=sum(f.size for f in MANAGED_MAIN_FILES),
+        minimum_runtime="Refinix engine (llama.cpp b11390, pinned)",
+        evidence=("Integrity verified: both files were downloaded from the pinned "
+                  "revision on 2026-10-04 and re-hashed locally, matching the "
+                  "published sizes and SHA-256. Every later download or import is "
+                  "re-hashed the same way. Third-party quantization of the official "
+                  "weights, because no official GGUF is published. Workflow "
+                  "qualification is recorded separately per engine build and "
+                  "hardware tier."),
+        evidence_state=VERIFIED,
+        engine="llama.cpp",
+        files=MANAGED_MAIN_FILES,
+        revision=MANAGED_MAIN_REVISION,
+        # The sampling the baseline ran with (Ollama params layer for this
+        # model), so engine parity compares the same decoding.
+        sampling=(("temperature", 1.0), ("top_k", 20), ("top_p", 0.95),
+                  ("presence_penalty", 1.5)),
+    ),
 )
+
+# The defaults the managed engine starts with, per workflow scope.
+MANAGED_DEFAULTS = {CHAT: MANAGED_MAIN, CODE: MANAGED_MAIN,
+                    DOCUMENTS_GENERATE: MANAGED_MAIN, DOCUMENTS_OCR: MANAGED_MAIN}
+
+
+def entries_for(engine_kind: str) -> tuple[Entry, ...]:
+    """Catalogue entries the given engine can run."""
+    return tuple(entry for entry in CATALOGUE if entry.engine == engine_kind)
 
 # Models Refinix has looked at and deliberately does **not** offer. Used only
 # to annotate one that is already installed, so the interface can say why it is
@@ -312,6 +416,16 @@ def setup_action(model: str) -> dict | None:
     exact step, in the open, performed by the person.
     """
     entry = BY_ID.get(model)
+    if entry is not None and entry.files:
+        # Refinix's own engine: downloaded by Refinix only when the person
+        # confirms, after seeing what, from where and how much; or imported
+        # from files they already have.
+        size = sum(f.size for f in entry.files)
+        return {"kind": "download", "label": "Download",
+                "model": entry.id, "download_bytes": size,
+                "detail": (f"About {size / 1024 ** 3:.1f} GB from {entry.source}, "
+                           "checked against its pinned SHA-256. Or import the same "
+                           "files from this computer.")}
     if entry is None or not entry.setup_command:
         return None
     return {"kind": "command", "label": "Install it yourself",

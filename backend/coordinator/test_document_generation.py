@@ -776,5 +776,54 @@ class StructuredRouteUnchanged(GenerationHarness):
         self.assertEqual(self.artifacts()[0]["workflow"], docflow.WORKFLOW_GENERAL)
 
 
+class ReasoningQualifiedPerWorkflow(GenerationHarness):
+    """Reasoning is chosen per model; Documents may qualify only one mode.
+
+    The managed engine's Documents profile claims reasoning off, because with
+    it on the model spent its whole allowance thinking. A person who turned
+    reasoning on for Chat still gets a document, run in the qualified mode,
+    and the route says so.
+    """
+
+    def setUp(self):
+        super().setUp()
+        original = next(p for p in profiles.PROFILES
+                        if p.workflow_mode == profiles.DOCUMENTS
+                        and p.target_profile_id == profiles.MAC_M5_16GB
+                        and p.model.runtime_version == "0.32.14")
+        narrowed = profiles._profile(
+            runtime_version="0.32.14", target=profiles.MAC_M5_16GB,
+            workflow=profiles.DOCUMENTS, context=original.qualified_context_tokens,
+            default_output=original.default_output_tokens,
+            max_output=original.max_output_tokens, reasoning=("disabled",),
+            decoder=("json_schema",), evidence_ref="test")
+        registry = tuple(narrowed if p is original else p for p in profiles.PROFILES)
+        patcher = patch.object(profiles, "PROFILES", registry)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _attempt(self, job):
+        return self.c.conn.execute(
+            "SELECT a.reasoning_json, a.route_reason FROM jobs j JOIN attempts a"
+            " ON a.attempt_id = j.active_attempt_id WHERE j.job_id=?", (job,)).fetchone()
+
+    def test_reasoning_on_runs_documents_in_the_qualified_mode_and_says_so(self):
+        db.set_reasoning(self.c.conn, self.c.model_for("documents.generate"), True)
+        job, stream = self.generate(body())
+        self.assertEqual(self.job_state(job), "completed")
+        self.assertEqual(stream.thinking, [False])
+        row = self._attempt(job)
+        self.assertFalse(json.loads(row["reasoning_json"])["reasoning_enabled"])
+        self.assertIn("ran with reasoning off", row["route_reason"])
+        # The person's choice for the model is unchanged.
+        self.assertTrue(db.get_reasoning(self.c.conn,
+                                         self.c.model_for("documents.generate")))
+
+    def test_reasoning_off_needs_no_note(self):
+        job, stream = self.generate(body())
+        self.assertEqual(stream.thinking, [False])
+        self.assertNotIn("ran with reasoning", self._attempt(job)["route_reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

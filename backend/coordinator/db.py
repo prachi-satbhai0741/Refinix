@@ -17,14 +17,22 @@ import sqlite3
 import stat
 import threading
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from unicodedata import category
 
 from backend.contracts import v1
+from backend.coordinator import build_info, ownership
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
+
+# SQLite's header field for "which application owns this file" (offset 68).
+# "RFNX". Written on every open from now on; a legacy Refinix store still has 0
+# and is recognised by its `meta` table instead. Any other nonzero value is a
+# file that belongs to some other program.
+APPLICATION_ID = 0x52464E58
 
 # ponytail: one coordinator database; use per-database locks if hosting several.
 LOCK = threading.RLock()
@@ -36,6 +44,267 @@ def serialized(operation):
         with LOCK:
             return operation(*args, **kwargs)
     return call
+
+
+# --------------------------------------------------------------------------
+# Admission: may this build open this store at all?
+# --------------------------------------------------------------------------
+#
+# Opening an SQLite file is not a neutral read. A read-only connection to a WAL
+# database may still create or update the `-shm` and `-wal` files, and
+# `connect` below changes permissions, the journal mode and the schema. So the
+# decision is made first, on a coherent private copy, while the caller owns the
+# workspace and no writer can run. The canonical main, `-wal`, `-shm` and
+# `-journal` files are only ever read here; a refusal leaves each of them with
+# its existence, size, modification time and bytes unchanged.
+
+ADMISSION_DIRECTORY = "tmp"
+_ADMISSION_PREFIX = "admission-"
+
+
+class AdmissionRefused(RuntimeError):
+    """This build must not open the store. Nothing was changed."""
+
+    def __init__(self, code: str, message: str, detail: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.detail = detail
+
+
+@dataclass(frozen=True)
+class Admission:
+    """The outcome of checking one store before it is opened for writing."""
+
+    path: Path
+    kind: str                         # "new" | "existing"
+    schema_version: int | None
+    workspace_id: str | None
+    application_id: int | None
+    fingerprint: tuple
+
+
+def _sidecars(path: Path) -> dict[str, Path]:
+    return {"wal": Path(f"{path}-wal"), "shm": Path(f"{path}-shm"),
+            "journal": Path(f"{path}-journal")}
+
+
+def _stat(path: Path):
+    try:
+        status = path.stat()
+    except FileNotFoundError:
+        return None
+    return (status.st_size, status.st_mtime_ns)
+
+
+def _fingerprint(path: Path) -> tuple:
+    files = _sidecars(path)
+    return (_stat(path), _stat(files["wal"]), _stat(files["journal"]))
+
+
+def _recovery_pending(root: Path) -> str | None:
+    """An unfinished update recovery owns the store; no ordinary open may run."""
+    journal = root / "recovery" / "update-journal.json"
+    try:
+        record = json.loads(journal.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        return "the update journal could not be read"
+    state = record.get("state") if isinstance(record, dict) else None
+    if state in (None, "staged", "committed", "rolled_back",
+                 "rolled_back_with_data", "discarded"):
+        return None
+    if state in ("set_aside", "verifying") \
+            and record.get("to_version") == build_info.describe()["version"]:
+        return None              # the version being verified opens its own update
+    if state == "recovery_blocked":
+        return ("an update recovery stopped before it could finish safely: "
+                f"{record.get('blocked') or 'no reason was recorded'}")
+    return f"an update or recovery step is still in progress ({state})"
+
+
+def clear_stale_admissions(root: Path) -> None:
+    """Remove private copies left by an admission that was interrupted."""
+    folder = Path(root) / ADMISSION_DIRECTORY
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return
+    import shutil
+    for entry in entries:
+        if entry.name.startswith(_ADMISSION_PREFIX) and entry.is_dir() \
+                and not entry.is_symlink():
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def admit(path: Path, *, owner=None) -> Admission:
+    """Decide from a private copy whether this build may open `path`.
+
+    `owner`, when given, must be the lock that guards `path`; production entry
+    points always pass it. Raises `AdmissionRefused` with a code the interface
+    can explain: `recovery_pending`, `alias`, `ambiguous`, `hot_journal`,
+    `insufficient_space`, `active_writer`, `corrupt`, `foreign`, `metadata` or
+    `schema_newer`.
+
+    `path` is reduced to the real database first, so the copy, the sidecars and
+    the returned `Admission.path` all name the file SQLite will open.
+    """
+    import shutil
+    import tempfile
+
+    path = ownership.canonical_database(path)
+    if owner is not None:
+        ownership.require(owner, path)
+    root = path.parent
+    files = _sidecars(path)
+    pending = _recovery_pending(root)
+    if pending:
+        blocked = pending.startswith("an update recovery stopped")
+        raise AdmissionRefused(
+            "recovery_blocked" if blocked else "recovery_pending",
+            ("An update recovery for this workspace stopped before it could finish."
+             if blocked else
+             "Refinix is finishing an update recovery for this workspace."),
+            f"Nothing was opened: {pending}. " + (
+                "The previous and the newer data are both kept in the workspace's "
+                "recovery folder; nothing will open this workspace until that is "
+                "resolved." if blocked else
+                "Open Refinix again to let the recovery finish, or restart the "
+                "computer if it does not."))
+    try:
+        links = path.stat().st_nlink
+    except FileNotFoundError:
+        links = 1
+    if links > 1:
+        # A hard link is a second name with its own folder and its own lock.
+        # Nothing can tell which name another writer is using, so neither is
+        # opened.
+        raise AdmissionRefused(
+            "alias",
+            "The workspace database is reachable under more than one name.",
+            f"It has {links} hard links, so another copy of Refinix could open it "
+            "under a different name at the same time. Keep one copy of the file "
+            "and remove the other names. Nothing was changed.")
+
+    if not path.exists() or path.stat().st_size == 0:
+        stray = [name for name in ("wal", "journal")
+                 if files[name].exists() and files[name].stat().st_size > 0]
+        if stray:
+            raise AdmissionRefused(
+                "ambiguous",
+                "The workspace database is missing but its write log is not.",
+                "Refinix will not start a new workspace over a "
+                f"{' and '.join(stray)} file that belongs to a store it cannot "
+                "see. Nothing was changed.")
+        return Admission(path, "new", None, None, None, _fingerprint(path))
+
+    journal = files["journal"]
+    if journal.exists() and journal.stat().st_size > 0:
+        raise AdmissionRefused(
+            "hot_journal",
+            "The workspace database has an unfinished write from another program.",
+            "A rollback journal is next to it, which Refinix itself never "
+            "creates. Nothing was changed.")
+
+    before = _fingerprint(path)
+    wal = files["wal"]
+    wal_size = wal.stat().st_size if wal.exists() else 0
+    needed = path.stat().st_size + wal_size
+    staging_root = root / ADMISSION_DIRECTORY
+    try:
+        free = shutil.disk_usage(root).free
+    except OSError:
+        free = 0
+    if free < needed * 2 + 16 * 1024 * 1024:
+        raise AdmissionRefused(
+            "insufficient_space",
+            "There is not enough free disk space to check the workspace safely.",
+            f"About {(needed * 2) // (1024 * 1024) + 16} MB is needed beside the "
+            "workspace. Nothing was changed.")
+
+    staging_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    workdir = Path(tempfile.mkdtemp(prefix=_ADMISSION_PREFIX, dir=staging_root))
+    try:
+        copy = workdir / path.name
+        shutil.copyfile(path, copy)
+        if wal_size:
+            shutil.copyfile(wal, Path(f"{copy}-wal"))
+        if _fingerprint(path) != before:
+            raise AdmissionRefused(
+                "active_writer",
+                "Another program changed the workspace while Refinix checked it.",
+                "Close any other copy of Refinix or tool using this folder, then "
+                "open Refinix again. Nothing was changed.")
+        try:
+            conn = sqlite3.connect(copy, timeout=5)
+        except sqlite3.Error as exc:
+            raise AdmissionRefused("corrupt", "The workspace database cannot be read.",
+                                   str(exc)) from exc
+        try:
+            try:
+                check = conn.execute("PRAGMA quick_check").fetchone()
+                objects = conn.execute(
+                    "SELECT type, name FROM sqlite_master").fetchall()
+                application_id = conn.execute("PRAGMA application_id").fetchone()[0]
+                user_version = conn.execute("PRAGMA user_version").fetchone()[0]
+            except sqlite3.DatabaseError as exc:
+                raise AdmissionRefused(
+                    "corrupt", "The workspace database is not a readable SQLite "
+                    "database.", str(exc)) from exc
+            if not check or check[0] != "ok":
+                raise AdmissionRefused(
+                    "corrupt", "The workspace database failed its integrity check.",
+                    str(check[0] if check else "no result"))
+            if application_id not in (0, APPLICATION_ID):
+                raise AdmissionRefused(
+                    "foreign", "This file belongs to another application.",
+                    f"Its SQLite application id is {application_id:#x}. "
+                    "Nothing was changed.")
+            tables = {name for kind, name in objects if kind == "table"}
+            if not objects and application_id == 0:
+                # Empty is new only when nothing else has claimed the file: a
+                # versioned empty database was made by some other program.
+                if user_version != 0:
+                    raise AdmissionRefused(
+                        "foreign", "This file belongs to another application.",
+                        f"It is an empty SQLite database marked with format "
+                        f"{user_version} by another program. Nothing was changed.")
+                return Admission(path, "new", None, None, application_id, before)
+            if "meta" not in tables:
+                raise AdmissionRefused(
+                    "foreign", "This file is not a Refinix workspace database.",
+                    "It has no Refinix metadata. Nothing was changed.")
+            try:
+                meta = {str(key): value for key, value in conn.execute(
+                    "SELECT key, value FROM meta").fetchall()}
+            except sqlite3.Error as exc:
+                raise AdmissionRefused(
+                    "metadata", "The workspace database's Refinix metadata cannot "
+                    "be read.", f"{exc}. Nothing was changed.") from exc
+        finally:
+            conn.close()
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+    raw = meta.get("schema_version")
+    try:
+        version = int(raw)
+    except (TypeError, ValueError):
+        version = None
+    if version is None or version < 1:
+        raise AdmissionRefused(
+            "metadata", "The workspace database has no valid format version.",
+            f"Recorded value: {raw!r}. Nothing was changed.")
+    if version > SCHEMA_VERSION:
+        raise AdmissionRefused(
+            "schema_newer",
+            "This workspace was saved by a newer version of Refinix.",
+            f"Its data format is {version}; this version reads up to "
+            f"{SCHEMA_VERSION}. Nothing was changed. Open it with the newer "
+            "version, or use its Settings → Updates to restore the previous "
+            "version together with its saved data.")
+    return Admission(path, "existing", version, meta.get("workspace_id"),
+                     application_id, before)
 
 # WAL lets the event reader see committed writes while a generation is running.
 _SCHEMA = """
@@ -407,6 +676,19 @@ CREATE TABLE IF NOT EXISTS artifacts (
     created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS artifacts_by_chat ON artifacts(chat_id, created_at);
+-- Schema 13: models installed for the managed engine. One row per catalogue
+-- entry; the files live content-addressed under the data root's `models/`
+-- folder and are never inside the application package. A row is written only
+-- after every file was hashed and matched the catalogue.
+CREATE TABLE IF NOT EXISTS model_installs (
+    model_id        TEXT PRIMARY KEY,
+    manifest_sha256 TEXT NOT NULL,
+    engine          TEXT NOT NULL,
+    files_json      TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    installed_at    TEXT NOT NULL,
+    verified_at     TEXT NOT NULL
+);
 """
 
 
@@ -419,7 +701,20 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
-def connect(path: Path) -> sqlite3.Connection:
+def connect(path: Path, *, owner=None,
+            admitted: Admission | None = None) -> sqlite3.Connection:
+    """Open the canonical store for writing, after admission.
+
+    `admitted` lets a caller that has just admitted this path under the same
+    ownership skip a second copy; it is re-checked against the files'
+    fingerprint so a store that changed since is admitted again.
+    """
+    path = ownership.canonical_database(path)
+    if owner is not None:
+        ownership.require(owner, path)
+    if (admitted is None or Path(admitted.path) != path
+            or admitted.fingerprint != _fingerprint(path)):
+        admitted = admit(path, owner=owner)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
         path.parent.chmod(0o700)
@@ -497,6 +792,11 @@ def connect(path: Path) -> sqlite3.Connection:
         # carried.
         conn.execute(
             "ALTER TABLE attempts ADD COLUMN requested_inference_json TEXT")
+    if "network_json" not in existing:
+        # What Refinix's own processes connected to while this attempt ran
+        # (`observer.Window`). NULL means nothing observed it, which is what
+        # every attempt before the observer was.
+        conn.execute("ALTER TABLE attempts ADD COLUMN network_json TEXT")
     if "actual_profile_json" not in existing:
         # Snapshot the profile actually used; do not resolve a mutable current
         # registry when auditing an old attempt.
@@ -563,11 +863,20 @@ def connect(path: Path) -> sqlite3.Connection:
                 "INSERT INTO document_pages_fts(document_pages_fts) VALUES ('rebuild')")
     except sqlite3.Error:
         pass
+    # Never lowered: admission has already refused a newer store, and this
+    # keeps the rule true even if a caller reached here some other way.
     conn.execute(
         "INSERT INTO meta(key, value) VALUES ('schema_version', ?)"
         " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (str(SCHEMA_VERSION),),
+        (str(max(previous_version, SCHEMA_VERSION)),),
     )
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES ('app_version', ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (build_info.APP_VERSION,),
+    )
+    conn.execute(f"PRAGMA application_id = {APPLICATION_ID}")
+    conn.execute(f"PRAGMA user_version = {max(previous_version, SCHEMA_VERSION)}")
     conn.execute(
         "INSERT INTO meta(key, value) VALUES ('contract_version', ?)"
         " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -1030,19 +1339,6 @@ def bind_attachments(conn, draft_chat_id: str, chat_id: str, message_id: str) ->
 
 
 @serialized
-def clear_attachments(conn, root: Path, chat_id: str) -> int:
-    rows = conn.execute(
-        "SELECT attachment_id, stored_name FROM attachments"
-        " WHERE chat_id=? AND state='received'", (chat_id,)).fetchall()
-    for row in rows:
-        _unlink_stored(root, row["stored_name"])
-    with conn:
-        conn.execute("DELETE FROM attachments WHERE chat_id=? AND state='received'",
-                     (chat_id,))
-    return len(rows)
-
-
-@serialized
 def add_message(conn, chat_id: str, role: str, text: str, job_id=None) -> str:
     message_id, stamp = new_id(), now()
     with conn:
@@ -1184,6 +1480,23 @@ def set_attempt_reasoning(conn, attempt_id: str, model: str, enabled: bool) -> N
         conn.execute("UPDATE attempts SET reasoning_json=? WHERE attempt_id=?",
                      (json.dumps({"model": model, "reasoning_enabled": bool(enabled)}),
                       attempt_id))
+
+
+@serialized
+def set_attempt_network(conn, attempt_id: str, observation: dict) -> None:
+    """Record one bounded observation window against one attempt."""
+    with conn:
+        conn.execute("UPDATE attempts SET network_json=? WHERE attempt_id=?",
+                     (json.dumps(observation, sort_keys=True), attempt_id))
+
+
+@serialized
+def set_job_network(conn, job_id: str, node_id: str, observation: dict) -> None:
+    """Record a job's observation window against its attempts on this computer."""
+    with conn:
+        conn.execute("UPDATE attempts SET network_json=? WHERE job_id=? AND node_id=?"
+                     " AND network_json IS NULL",
+                     (json.dumps(observation, sort_keys=True), job_id, node_id))
 
 
 @serialized
@@ -2016,6 +2329,54 @@ def artifacts_root(state_path: Path) -> Path:
     return state_path.parent / "artifacts"
 
 
+def models_root(state_path: Path) -> Path:
+    """Where managed-engine model files live, outside any application package."""
+    return Path(state_path).parent / "models"
+
+
+@serialized
+def record_model_install(conn, *, model_id: str, manifest_sha256: str, engine: str,
+                         files: list[dict], source: str) -> dict:
+    """Record a model whose every file was already verified on disk.
+
+    `files` holds role, name, path (relative to the models root), size and
+    sha256 for each file. Replaces an earlier record for the same model.
+    """
+    now_ = now()
+    with conn:
+        conn.execute(
+            "INSERT INTO model_installs(model_id, manifest_sha256, engine, files_json,"
+            " source, installed_at, verified_at) VALUES (?,?,?,?,?,?,?)"
+            " ON CONFLICT(model_id) DO UPDATE SET manifest_sha256=excluded.manifest_sha256,"
+            " engine=excluded.engine, files_json=excluded.files_json,"
+            " source=excluded.source, verified_at=excluded.verified_at",
+            (model_id, manifest_sha256, engine, json.dumps(files, sort_keys=True),
+             source, now_, now_))
+    return get_model_install(conn, model_id)
+
+
+def get_model_install(conn, model_id: str) -> dict | None:
+    row = conn.execute("SELECT * FROM model_installs WHERE model_id=?",
+                       (model_id,)).fetchone()
+    if row is None:
+        return None
+    record = dict(row)
+    record["files"] = json.loads(record.pop("files_json"))
+    return record
+
+
+def model_installs(conn, engine: str | None = None) -> list[dict]:
+    rows = conn.execute("SELECT model_id FROM model_installs ORDER BY model_id").fetchall()
+    records = [get_model_install(conn, row["model_id"]) for row in rows]
+    return [r for r in records if engine is None or r["engine"] == engine]
+
+
+@serialized
+def delete_model_install(conn, model_id: str) -> None:
+    with conn:
+        conn.execute("DELETE FROM model_installs WHERE model_id=?", (model_id,))
+
+
 def backups_root(state_path: Path) -> Path:
     """Where originals are kept before a local write.
 
@@ -2288,21 +2649,7 @@ def get_sources(conn, workspace_id: str, source_ids: list[str]) -> list[dict]:
     return found
 
 
-@serialized
-def sources_for_message(conn, workspace_id: str, message_id: str) -> list[dict]:
-    rows = [r["source_id"] for r in conn.execute(
-        "SELECT source_id FROM document_sources WHERE workspace_id=? AND message_id=?"
-        " ORDER BY created_at, rowid", (workspace_id, message_id))]
-    return get_sources(conn, workspace_id, rows)
-
-
 # ---- artifacts ------------------------------------------------------------
-
-class ArtifactRejected(ValueError):
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-
 
 @serialized
 def record_artifact(conn, *, workspace_id, chat_id, job_id, attempt_id, workflow,

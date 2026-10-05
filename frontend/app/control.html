@@ -50,6 +50,7 @@
       <a class="nav-item" href="#engine">AI engine</a>
       <a class="nav-item" href="#others">Connected computers</a>
       <a class="nav-item" href="#work">Current work</a>
+      <a class="nav-item" href="#updates">Updates</a>
       <a class="nav-item" href="#advanced">Advanced</a>
     </div>
     <div class="nav-foot">
@@ -164,8 +165,8 @@
                    autocomplete="off" spellcheck="false">
             <p class="card-note" id="pair-note">
               The code is single-use and expires. The credential the worker
-              returns is stored in your macOS Keychain, never in Refinix's
-              database.
+              returns is stored in this computer's protected credential store,
+              never in Refinix's database.
             </p>
             <div class="card-actions">
               <button type="submit" class="btn" id="pair-submit">Connect</button>
@@ -200,6 +201,19 @@
              this computer…</p>
           <ul class="model-list" id="c-model-list"></ul>
           <p class="card-note" id="c-models-note"></p>
+        </section>
+
+        <!-- Settings -> Updates. Checked only when the person asks; nothing
+             is offered unless signed metadata verified it. -->
+        <section class="card span-2" id="updates">
+          <div class="card-head">
+            <h2>Updates</h2>
+            <span class="chip chip-unknown" id="c-updates-chip">checking</span>
+          </div>
+          <p class="card-lead" id="c-updates-lead">Reading this installation's version…</p>
+          <dl class="facts" id="c-updates-facts"></dl>
+          <div class="card-actions" id="c-updates-actions"></div>
+          <p class="card-note" id="c-updates-note"></p>
         </section>
 
         <!-- Off the UI, not out of the build: renderCapabilityCard() still
