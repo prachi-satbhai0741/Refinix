@@ -373,6 +373,21 @@ class Bridge:
             return {"opened": False, "error": str(exc), "path": str(folder)}
         return {"opened": True, "path": str(folder)}
 
+    # Links the page may ask the system browser to open. Fixed, so a page
+    # (or text a model wrote into it) cannot open an arbitrary address.
+    OPENABLE_URLS = frozenset({runtime.OLLAMA_DOWNLOAD_URL})
+
+    def open_url(self, url) -> dict:
+        """Open one fixed, known link in the system browser, on request."""
+        if url not in self.OPENABLE_URLS:
+            return {"opened": False, "error": "that link is not one Refinix opens"}
+        import webbrowser
+        try:
+            opened = webbrowser.open(url)
+        except Exception as exc:                            # noqa: BLE001
+            return {"opened": False, "error": str(exc)}
+        return {"opened": bool(opened)}
+
     # -- window / services
     def shell_info(self) -> dict:
         return self._app.shell_info()

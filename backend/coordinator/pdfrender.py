@@ -49,9 +49,13 @@ from dataclasses import dataclass
 # Bounds. Visible in the refusals, so a stop explains itself.
 MAX_PDF_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 40
-# The longest edge of the rendered page, in pixels. 1600 keeps a 200 dpi A4
-# scan legible while staying far below the pixel ceiling below.
-TARGET_LONG_EDGE = 1600
+# The longest edge of the rendered page, in pixels. 2200 reads small print on
+# an A4 or Letter scan (about 265 dpi) that 1600 blurred: in an earlier run on
+# the C07 fixture a 1600-pixel render read NG-2026-0417 as MG-…, while 2200
+# read every identifier. That is history, not a measurement of accuracy. A page
+# whose shape would exceed the pixel ceiling below at this size is drawn
+# smaller to fit it rather than refused.
+TARGET_LONG_EDGE = 2200
 MAX_PIXELS_PER_PAGE = 4_000_000          # ~2000x2000
 MAX_IMAGE_BYTES = 8 * 1024 * 1024        # encoded PNG per page
 MAX_RENDER_SECONDS = 120.0
@@ -128,6 +132,11 @@ def _target_size(width: float, height: float) -> tuple[int, int, float]:
     if width <= 0 or height <= 0:
         raise RenderError("malformed", "A page in that PDF has no usable size.")
     scale = TARGET_LONG_EDGE / max(width, height)
+    # Fit to the pixel ceiling: a square or unusually wide page is drawn at the
+    # largest size the ceiling allows instead of being refused.
+    ceiling = (MAX_PIXELS_PER_PAGE / (width * height)) ** 0.5
+    if scale > ceiling:
+        scale = ceiling * 0.999
     pixels_w = max(1, int(round(width * scale)))
     pixels_h = max(1, int(round(height * scale)))
     if pixels_w * pixels_h > MAX_PIXELS_PER_PAGE:

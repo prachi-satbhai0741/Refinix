@@ -74,9 +74,14 @@ NOT_OBSERVED = "not_observed"
 
 @dataclass(frozen=True)
 class ModelFile:
-    """One file of a managed-engine model, pinned by size and SHA-256."""
+    """One file of a managed-engine model, pinned by size and SHA-256.
 
-    role: str            # "weights" | "projector"
+    A model split across several GGUF files lists every part, in order, with
+    its original name: the first is `weights`, the rest `weights-part`. The
+    engine is given the first and finds the others beside it by name.
+    """
+
+    role: str            # "weights" | "weights-part" | "projector"
     name: str
     size: int
     sha256: str
@@ -132,6 +137,19 @@ class Entry:
     revision: str | None = None
     display_name: str | None = None
     sampling: tuple[tuple[str, float], ...] = ()
+    # Library metadata, read from the publisher's repository; never inferred
+    # from a model's name.
+    publisher: str | None = None
+    base_model: str | None = None
+    quantizer: str | None = None
+    repo: str | None = None
+    architecture: str | None = None
+    context_length: int | None = None
+    # Task strengths the publisher's own model card states, with that card.
+    # Routing may prefer them; they are published claims, not measurements.
+    hints: tuple[str, ...] = ()
+    hint_source: str | None = None
+    gated: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -146,7 +164,18 @@ class Entry:
             "display_name": self.display_name or self.id,
             "files": [f.as_dict() for f in self.files],
             "download_bytes": sum(f.size for f in self.files) or None,
+            "publisher": self.publisher, "base_model": self.base_model,
+            "quantizer": self.quantizer, "repo": self.repo,
+            "architecture": self.architecture,
+            "context_length": self.context_length,
+            "hints": list(self.hints), "hint_source": self.hint_source,
+            "gated": self.gated,
         }
+
+    def weights_bytes(self) -> int | None:
+        """The model's weight files, without a vision projector."""
+        size = sum(f.size for f in self.files if f.role != "projector")
+        return size or self.storage_bytes
 
 
 # The managed engine's first model: the same Qwen3.5-4B family as the baseline,
@@ -220,8 +249,149 @@ CATALOGUE: tuple[Entry, ...] = (
         # model), so engine parity compares the same decoding.
         sampling=(("temperature", 1.0), ("top_k", 20), ("top_p", 0.95),
                   ("presence_penalty", 1.5)),
+        publisher="Qwen", base_model="Qwen/Qwen3.5-4B", quantizer="unsloth",
+        repo="unsloth/Qwen3.5-4B-GGUF", architecture="qwen35",
+        context_length=262144, hints=("general", "vision"),
+        hint_source="https://huggingface.co/Qwen/Qwen3.5-4B",
     ),
 )
+
+# --------------------------------------------------------------------------
+# The download library
+# --------------------------------------------------------------------------
+#
+# Further Refinix-engine downloads, chosen across publishers and sizes so a
+# person can pick beyond the first recommendation. Every revision, file name,
+# size and SHA-256 below was read from the Hugging Face API
+# (`/api/models/<repo>?blobs=true`) on 2026-10-06 and copied exactly; none was
+# typed from memory. Listing one is not a claim that it was downloaded,
+# loaded, measured or that it fits a given computer: those are separate facts
+# the interface reports as they become known. Qwen, Gemma, GLM, DeepSeek and
+# GPT-OSS are examples, not a closed list — Browse finds others.
+
+LISTED = "listed"
+LIBRARY_READ_ON = "2026-10-06"
+
+
+def _hf(repo: str, revision: str, *files: tuple[str, str, int, str]) \
+        -> tuple[ModelFile, ...]:
+    base = f"https://huggingface.co/{repo}/resolve/{revision}/"
+    return tuple(ModelFile(role, name, size, sha, base + name)
+                 for role, name, size, sha in files)
+
+
+def _listed(model_id: str, display: str, repo: str, revision: str, *,
+            files: tuple[ModelFile, ...], licence: str, publisher: str,
+            base_model: str, quantizer: str | None, architecture: str,
+            context_length: int, parameters: str, fmt: str,
+            hints: tuple[str, ...], hint_source: str,
+            scopes: tuple[str, ...] = (CHAT, CODE, DOCUMENTS_GENERATE)) -> Entry:
+    converter = (f" — a {quantizer} quantization of {base_model}" if quantizer
+                 else f" — {publisher}'s own GGUF of {base_model}")
+    return Entry(
+        id=model_id, display_name=display, role="Library model", scopes=scopes,
+        source=f"huggingface.co/{repo} at {revision}{converter}",
+        licence=licence, manifest_sha256=manifest_digest(model_id, revision, files),
+        format=fmt, parameters=parameters,
+        storage_bytes=sum(f.size for f in files), minimum_runtime=None,
+        evidence=(f"Listed from the Hugging Face API at revision {revision}, read "
+                  f"{LIBRARY_READ_ON}: file sizes and SHA-256 as published. Not "
+                  "downloaded, loaded or measured by Refinix. A download is "
+                  "re-hashed against these values before it is used."),
+        evidence_state=LISTED, engine="llama.cpp", files=files, revision=revision,
+        publisher=publisher, base_model=base_model, quantizer=quantizer,
+        repo=repo, architecture=architecture, context_length=context_length,
+        hints=hints, hint_source=hint_source)
+
+
+LIBRARY: tuple[Entry, ...] = (
+    _listed(
+        "gemma-3-4b-it-q4_k_m", "Gemma 3 4B instruct (Q4_K_M)",
+        "ggml-org/gemma-3-4b-it-GGUF", "d0976223747697cb51e056d85c532013931fe52e",
+        files=_hf("ggml-org/gemma-3-4b-it-GGUF", "d0976223747697cb51e056d85c532013931fe52e",
+                  ("weights", "gemma-3-4b-it-Q4_K_M.gguf", 2_489_757_856,
+                   "882e8d2db44dc554fb0ea5077cb7e4bc49e7342a1f0da57901c0802ea21a0863"),
+                  ("projector", "mmproj-model-f16.gguf", 851_251_104,
+                   "8c0fb064b019a6972856aaae2c7e4792858af3ca4561be2dbf649123ba6c40cb")),
+        licence="Gemma Terms of Use (repository licence tag: gemma) — not an "
+                "OSI open-source licence; read it before use",
+        publisher="Google", base_model="google/gemma-3-4b-it", quantizer="ggml-org",
+        architecture="gemma3", context_length=131072, parameters="3.9B (GGUF metadata)",
+        fmt="GGUF Q4_K_M weights with an F16 vision projector",
+        hints=("general", "vision"),
+        hint_source="https://huggingface.co/google/gemma-3-4b-it"),
+    _listed(
+        "qwen2.5-coder-7b-instruct-q4_k_m", "Qwen2.5 Coder 7B instruct (Q4_K_M)",
+        "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF", "13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+        files=_hf("Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+                  "13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+                  ("weights", "qwen2.5-coder-7b-instruct-q4_k_m.gguf", 4_683_073_536,
+                   "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c")),
+        licence="Apache-2.0", publisher="Qwen",
+        base_model="Qwen/Qwen2.5-Coder-7B-Instruct", quantizer=None,
+        architecture="qwen2", context_length=131072, parameters="7.6B (GGUF metadata)",
+        fmt="GGUF Q4_K_M", hints=("code",),
+        hint_source="https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct"),
+    _listed(
+        "qwen3-1.7b-q8_0", "Qwen3 1.7B (Q8_0)",
+        "Qwen/Qwen3-1.7B-GGUF", "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+        files=_hf("Qwen/Qwen3-1.7B-GGUF", "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+                  ("weights", "Qwen3-1.7B-Q8_0.gguf", 1_834_426_016,
+                   "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a")),
+        licence="Apache-2.0", publisher="Qwen", base_model="Qwen/Qwen3-1.7B",
+        quantizer=None, architecture="qwen3", context_length=40960,
+        parameters="1.7B (GGUF metadata)", fmt="GGUF Q8_0",
+        hints=("general", "reasoning"),
+        hint_source="https://huggingface.co/Qwen/Qwen3-1.7B"),
+    _listed(
+        "glm-4-9b-0414-q4_k_m", "GLM-4 9B 0414 (Q4_K_M)",
+        "unsloth/GLM-4-9B-0414-GGUF", "40a17a0c8f24664ddd851dafd03935553c25a57e",
+        files=_hf("unsloth/GLM-4-9B-0414-GGUF", "40a17a0c8f24664ddd851dafd03935553c25a57e",
+                  ("weights", "GLM-4-9B-0414-Q4_K_M.gguf", 6_166_574_944,
+                   "8027e1089273e8817b2df0d91c9aa17c5ea467246dcdacac34989f8919fe6540")),
+        licence="MIT", publisher="THUDM (Z.ai)", base_model="THUDM/GLM-4-9B-0414",
+        quantizer="unsloth", architecture="glm4", context_length=32768,
+        parameters="9.4B (GGUF metadata)", fmt="GGUF Q4_K_M",
+        hints=("general",), hint_source="https://huggingface.co/THUDM/GLM-4-9B-0414"),
+    _listed(
+        "deepseek-r1-0528-qwen3-8b-q4_k_m", "DeepSeek R1 0528 Qwen3 8B (Q4_K_M)",
+        "unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF",
+        "eb48357c179d34dbf515983f798dfb8752a0f261",
+        files=_hf("unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF",
+                  "eb48357c179d34dbf515983f798dfb8752a0f261",
+                  ("weights", "DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf", 5_027_785_216,
+                   "a86349a4180c4e6bb43f874c29c404fa2be3f90b15509bd6d86f697dba724ec1")),
+        licence="MIT", publisher="DeepSeek",
+        base_model="deepseek-ai/DeepSeek-R1-0528-Qwen3-8B", quantizer="unsloth",
+        architecture="qwen3", context_length=131072,
+        parameters="8.2B (GGUF metadata)", fmt="GGUF Q4_K_M",
+        hints=("reasoning",),
+        hint_source="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"),
+    _listed(
+        "gpt-oss-20b-mxfp4", "gpt-oss 20B (MXFP4)",
+        "ggml-org/gpt-oss-20b-GGUF", "ef9b12f2ff56c69cf32153a02784e7a3c88bf524",
+        files=_hf("ggml-org/gpt-oss-20b-GGUF", "ef9b12f2ff56c69cf32153a02784e7a3c88bf524",
+                  ("weights", "gpt-oss-20b-MXFP4.gguf", 12_109_566_624,
+                   "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901")),
+        licence="Apache-2.0", publisher="OpenAI", base_model="openai/gpt-oss-20b",
+        quantizer="ggml-org", architecture="gpt-oss", context_length=131072,
+        parameters="20.9B (GGUF metadata)", fmt="GGUF MXFP4",
+        hints=("reasoning", "general"),
+        hint_source="https://huggingface.co/openai/gpt-oss-20b"),
+    _listed(
+        "gpt-oss-120b-mxfp4", "gpt-oss 120B (MXFP4)",
+        "ggml-org/gpt-oss-120b-GGUF", "238abdd290bb874b90a5da1b4549881b7d05c091",
+        files=_hf("ggml-org/gpt-oss-120b-GGUF", "238abdd290bb874b90a5da1b4549881b7d05c091",
+                  ("weights", "gpt-oss-120b-MXFP4.gguf", 63_387_346_208,
+                   "582bd40f6886200101f4c4ed9f25f3fe80cc14c86e9e2b37746cd8904a0c622d")),
+        licence="Apache-2.0", publisher="OpenAI", base_model="openai/gpt-oss-120b",
+        quantizer="ggml-org", architecture="gpt-oss", context_length=131072,
+        parameters="116.8B (GGUF metadata)", fmt="GGUF MXFP4",
+        hints=("reasoning",),
+        hint_source="https://huggingface.co/openai/gpt-oss-120b"),
+)
+
+CATALOGUE = CATALOGUE + LIBRARY
 
 # The defaults the managed engine starts with, per workflow scope.
 MANAGED_DEFAULTS = {CHAT: MANAGED_MAIN, CODE: MANAGED_MAIN,
@@ -351,13 +521,135 @@ def entry_for(model: str) -> Entry | None:
     return BY_ID.get(model)
 
 
-def provenance(model: str) -> dict:
+def entry_for_origin(model_id: str, origin: str | None) -> Entry | None:
+    """The catalogue entry for these bytes only when it names the same runtime.
+
+    The Ollama tag `qwen3.5:4b-q4_K_M` and the Refinix engine's
+    `qwen3.5-4b-q4_k_m` are different artifacts; an entry never describes a
+    model from another runtime because the names look alike.
+    """
+    entry = BY_ID.get(model_id)
+    if entry is None or (origin is not None and entry.engine != origin):
+        return None
+    return entry
+
+
+# --------------------------------------------------------------------------
+# Identity across runtimes
+# --------------------------------------------------------------------------
+
+AUTO = "auto"
+
+
+def legacy_origins(model_id: str, *, install_engines: dict[str, str],
+                   observed: dict[str, dict]) -> set[str]:
+    """Which runtimes a bare stored model name could mean.
+
+    Selections and preferences saved before identities carried their origin
+    hold only a name. Its origin comes from what was recorded — an install
+    record's engine, a catalogue entry's engine — and from which runtime
+    actually reports that name now. One answer resolves it; none means the
+    model is gone; two means the name is ambiguous and the person chooses
+    again. Catalogue membership alone never decides it: the catalogue holds
+    entries for both runtimes.
+    """
+    origins = set()
+    if model_id in install_engines:
+        origins.add(install_engines[model_id])
+    entry = BY_ID.get(model_id)
+    if entry is not None:
+        origins.add(entry.engine)
+    origins.update(item["origin"] for item in observed.values()
+                   if item.get("model_id") == model_id)
+    return origins
+
+
+_SLUG = re.compile(r"[^a-z0-9._-]+")
+
+
+def managed_id_for(repo: str, filename: str, revision: str,
+                   taken: set[str] | frozenset = frozenset()) -> str:
+    """A collision-safe id for a model resolved from a repository.
+
+    Lower-case letters, digits, dot, dash and underscore only, so it can never
+    contain Ollama's tag separator or the origin separator. Checked against
+    every recorded id; a clash gains a counter rather than replacing a model.
+    """
+    stem = filename[:-5] if filename.lower().endswith(".gguf") else filename
+    stem = re.sub(r"-0*1-of-0*\d+$", "", stem)
+    owner = repo.split("/", 1)[0]
+    base = _SLUG.sub("-", f"hf-{owner}-{stem}-{revision[:7]}".lower()).strip("-")[:110]
+    candidate, counter = base, 2
+    while candidate in taken or candidate in BY_ID:
+        candidate, counter = f"{base}-{counter}", counter + 1
+    return candidate
+
+
+def entry_from_record(record: dict) -> Entry | None:
+    """The library entry a resolved download recorded with its install.
+
+    Only Refinix-engine installs carry one. Older rows hold a plain-text
+    source and stay readable; they simply have no resolved metadata.
+    """
+    if record is None:
+        return None
+    catalogued = BY_ID.get(record.get("model_id"))
+    if catalogued is not None:
+        return catalogued
+    try:
+        meta = json.loads(record.get("source") or "")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(meta, dict) or meta.get("kind") != "resolved":
+        return None
+    try:
+        files = tuple(ModelFile(str(f["role"]), str(f["name"]), int(f["size"]),
+                                str(f["sha256"]), str(f.get("url") or ""))
+                      for f in meta.get("files") or ())
+        return Entry(
+            id=record["model_id"], display_name=meta.get("display_name"),
+            role="Library model", scopes=(CHAT, CODE, DOCUMENTS_GENERATE),
+            source=str(meta.get("source") or ""), licence=meta.get("licence"),
+            manifest_sha256=record.get("manifest_sha256"), format=meta.get("format"),
+            parameters=meta.get("parameters"),
+            storage_bytes=sum(f.size for f in files) or None, minimum_runtime=None,
+            evidence=str(meta.get("evidence") or ""), evidence_state=LISTED,
+            engine="llama.cpp", files=files, revision=meta.get("revision"),
+            publisher=meta.get("publisher"), base_model=meta.get("base_model"),
+            quantizer=meta.get("quantizer"), repo=meta.get("repo"),
+            architecture=meta.get("architecture"),
+            context_length=meta.get("context_length"),
+            hints=tuple(meta.get("hints") or ()), hint_source=meta.get("hint_source"))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def record_source(entry: Entry, how: str) -> str:
+    """The `model_installs.source` text for a resolved entry: versioned JSON."""
+    if entry.id in BY_ID:
+        return f"{how} {entry.source}"
+    return json.dumps({
+        "kind": "resolved", "version": 1, "how": how,
+        "display_name": entry.display_name, "source": entry.source,
+        "licence": entry.licence, "format": entry.format,
+        "parameters": entry.parameters, "evidence": entry.evidence,
+        "revision": entry.revision, "publisher": entry.publisher,
+        "base_model": entry.base_model, "quantizer": entry.quantizer,
+        "repo": entry.repo, "architecture": entry.architecture,
+        "context_length": entry.context_length, "hints": list(entry.hints),
+        "hint_source": entry.hint_source,
+        "files": [f.as_dict() for f in entry.files]}, sort_keys=True)
+
+
+def provenance(model: str, *, origin: str | None = None,
+               entry: Entry | None = None) -> dict:
     """What Refinix records about one model id, whatever its state.
 
     Three answers, and they are different claims: a recorded manifest, a
-    recorded refusal to vouch for it, or nothing recorded at all.
+    recorded refusal to vouch for it, or nothing recorded at all. With an
+    `origin`, a catalogue entry for another runtime's artifact does not count.
     """
-    entry = BY_ID.get(model)
+    entry = entry or (entry_for_origin(model, origin) if origin else BY_ID.get(model))
     if entry is not None:
         return {"known": True, **entry.as_dict()}
     if model in NOTED:
@@ -385,8 +677,49 @@ def integrity(model: str, digest: str | None) -> dict:
 
 
 def digest_eligible(model: str, digest: str | None) -> bool:
-    """Known models must match their recorded manifest; unlisted models do not."""
+    """Known models must match their recorded manifest; unlisted models do not.
+
+    Strict, for a paired worker's advertised model. Local models use
+    `local_integrity`, which treats a person's own Ollama copy differently.
+    """
     return integrity(model, digest)["eligible"]
+
+
+DIFFERS = "differs"
+
+
+def local_integrity(model_id: str, digest: str | None, origin: str) -> dict:
+    """Integrity of a model on this computer, by who owns its files.
+
+    Refinix-engine files are Refinix's: a mismatch means they changed and the
+    model is not used (the engine re-hashes them before every load). Ollama's
+    store is the person's: if their copy of a catalogued tag has other bytes
+    than Refinix recorded, it is still their model, usable and labelled as
+    differing — not refused as though it were tampered Refinix property.
+    """
+    entry = entry_for_origin(model_id, origin)
+    if origin != OLLAMA_ORIGIN or entry is None or entry.manifest_sha256 is None:
+        if origin == OLLAMA_ORIGIN:
+            return {"state": UNVERIFIED, "expected": None, "observed": digest,
+                    "eligible": bool(digest)}
+        return integrity(model_id, digest) if entry is not None else \
+            {"state": UNVERIFIED, "expected": None, "observed": digest,
+             "eligible": bool(digest)}
+    if not digest:
+        return {"state": NOT_OBSERVED, "expected": entry.manifest_sha256,
+                "observed": None, "eligible": False}
+    if digest == entry.manifest_sha256:
+        return {"state": VERIFIED, "expected": entry.manifest_sha256,
+                "observed": digest, "eligible": True}
+    return {"state": DIFFERS, "expected": entry.manifest_sha256, "observed": digest,
+            "eligible": True,
+            "detail": ("Ollama holds different bytes under this name than the copy "
+                       "Refinix recorded, so it is treated as your own model rather "
+                       "than the recorded one.")}
+
+
+OLLAMA_ORIGIN = "ollama"
+MANAGED_ORIGIN = "llama.cpp"
 
 
 def lifecycle_state(model: str, *, installed_here: bool, installed_elsewhere: bool,
@@ -567,7 +900,8 @@ def run_selftest(scope: str, model: str, *, generate=None, artifact=None,
 
 
 def selftest_view(records: list[dict], *, model: str,
-                  digest: str | None) -> dict:
+                  digest: str | None, fingerprints: dict | None = None,
+                  legacy: str | None = None) -> dict:
     """One model's stored self-test results, against what is installed now.
 
     Three outcomes, kept apart because they are three different claims:
@@ -584,13 +918,26 @@ def selftest_view(records: list[dict], *, model: str,
 
     The record itself is always kept. Deleting it would lose the fact that a
     check was once run, which is true regardless of what is installed today.
+
+    `fingerprints` maps each scope to the settings fingerprint a check would
+    run with now (`admission.check_fingerprint`). When given, a pass is
+    current only if it ran with exactly those settings; a result recorded
+    without a fingerprint, or with other settings, is history. `legacy` is a
+    bare model name whose older rows (saved before identities carried their
+    runtime) belong to this model; they never carry a fingerprint.
     """
     shown = {}
     for record in records:
-        if record["model"] != model:
+        if record["model"] != model and (legacy is None or record["model"] != legacy):
+            continue
+        if record["model"] != model and record["scope"] in shown:
             continue
         recorded = record.get("digest")
         matches = bool(digest and recorded and recorded == digest)
+        expected = (fingerprints or {}).get(record["scope"]) if fingerprints is not None else None
+        settings_match = (fingerprints is None
+                          or (expected is not None
+                              and record.get("check_fingerprint") == expected))
         shown[record["scope"]] = {
             "scope": record["scope"],
             "state": record["state"],
@@ -598,9 +945,12 @@ def selftest_view(records: list[dict], *, model: str,
             "ran_at": record["ran_at"],
             "runtime_version": record.get("runtime_version"),
             "superseded": bool(digest and recorded and recorded != digest),
+            "settings_changed": bool(fingerprints is not None and matches
+                                     and not settings_match),
             # A pass is current only when it was observed against the bytes
-            # installed now. An unobservable digest is not a match.
-            "current": record["state"] == PASSED and matches,
+            # installed now, with the settings a check would use now. An
+            # unobservable digest or an unrecorded setting is not a match.
+            "current": record["state"] == PASSED and matches and settings_match,
         }
     for scope, check in SELFTESTS.items():
         shown.setdefault(scope, {

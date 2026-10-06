@@ -26,12 +26,30 @@ def assess(**overrides):
 
 
 class TestCodes(unittest.TestCase):
-    def test_an_external_runtime_upgrade_is_named_not_called_unavailable(self):
+    def test_a_newer_runtime_alone_is_never_a_refusal(self):
+        """A version nobody measured is not a reason Chat cannot run."""
+        newer = {"reachable": True, "models": ["m"], "server_version": "0.99.0"}
+        self.assertEqual(assess(runtime_state=newer)["code"], readiness.READY)
+
+    def test_a_model_that_cannot_run_chat_says_so_with_a_graphical_action(self):
         result = assess(chat_profile_found=False)
-        self.assertEqual(result["code"], "no_qualified_profile")
-        self.assertIn("Ollama 0.34.4", result["message"])
+        self.assertEqual(result["code"], "no_usable_model")
+        self.assertNotIn("qualified", result["message"])
         self.assertNotIn("unavailable for new work", result["message"])
         self.assertEqual(result["action"]["kind"], "open_settings")
+
+    def test_an_old_ollama_recommends_an_update_it_never_performs(self):
+        result = assess(chat_profile_found=False, chat_row=None,
+                        ollama={"update_recommended": True, "version": "0.11.0",
+                                "baseline": {"minimum": "0.12.6"}})
+        self.assertEqual(result["code"], "ollama_update_recommended")
+        self.assertIn("0.12.6", result["message"])
+        self.assertEqual(result["action"]["kind"], "open_url")
+
+    def test_a_cloud_model_is_excluded_by_name(self):
+        row = dict(ROW, locality="remote")
+        self.assertEqual(assess(chat_row=row, chat_profile_found=False)["code"],
+                         "cloud_model_excluded")
 
     def test_ready_is_ready(self):
         self.assertEqual(assess()["code"], readiness.READY)
@@ -93,10 +111,11 @@ class TestCodes(unittest.TestCase):
         self.assertEqual(assess(chat_row=dict(ROW, enabled=False))["code"],
                          "model_disabled")
 
-    def test_an_unmatched_computer_under_the_managed_engine(self):
+    def test_an_unmatched_computer_under_the_managed_engine_is_still_ready(self):
+        """A hardware class nobody measured is a description, not a refusal."""
         result = assess(managed=True, engine={"release": "b11390", "problems": []},
                         device_tier=None)
-        self.assertEqual(result["code"], "device_unsupported")
+        self.assertEqual(result["code"], readiness.READY)
 
     def test_no_managed_action_is_a_terminal_command(self):
         for result in (assess(managed=True, engine={"problems": ["x"]}),

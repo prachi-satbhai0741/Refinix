@@ -376,6 +376,53 @@ test('the managed engine card names the engine and never offers a terminal comma
   assert.doesNotMatch(p.text('c-engine-actions') + p.text('c-engine-facts'), /ollama pull/);
 });
 
+// The preview finding: the engine card printed origin-qualified keys, and a
+// model Auto was choosing said no workflow used it.
+const TWO_RUNTIMES = {
+  models: [
+    { key: 'llama.cpp|qwen3.5-4b-q4_k_m', id: 'qwen3.5-4b-q4_k_m', installed: true,
+      display_name: 'Qwen3.5 4B (Q4_K_M)', runtime_label: 'Refinix engine',
+      locations: ['this computer'], selected_for: [] },
+    { key: 'ollama|qwen3.5:4b-q4_K_M', id: 'qwen3.5:4b-q4_K_M', installed: true,
+      display_name: 'qwen3.5:4b-q4_K_M', runtime_label: 'Ollama',
+      locations: ['this computer'], selected_for: ['code'] },
+  ],
+  model_choices: {
+    chat: { key: 'llama.cpp|qwen3.5-4b-q4_k_m', pinned: false, refusal: null },
+    code: { key: 'ollama|qwen3.5:4b-q4_K_M', pinned: true, refusal: null },
+    'documents.generate': { key: 'llama.cpp|qwen3.5-4b-q4_k_m', pinned: false, refusal: null },
+    'documents.ocr': { key: null, pinned: false, refusal: 'no installed model reads pages' },
+  },
+};
+
+test('the engine card names models and runtimes, not internal keys', () => {
+  const p = page();
+  const status = {
+    ...READY_STATUS, ...TWO_RUNTIMES, model_configured: 'llama.cpp|qwen3.5-4b-q4_k_m',
+    engine: { mode: 'managed', release: 'b11390', backend: 'metal', verified: true,
+      problems: [], running: false },
+    readiness: { code: 'ready', state: 'ok', message: 'Ready.', detail: '', action: null },
+  };
+  p.run(`renderEngineCard(${JSON.stringify(status)})`);
+  const facts = p.text('c-engine-facts');
+  assert.match(facts, /Auto, now Qwen3\.5 4B \(Q4_K_M\) \(Refinix engine\)/);
+  assert.match(facts, /qwen3\.5:4b-q4_K_M \(Ollama\)/);
+  assert.doesNotMatch(facts, /llama\.cpp\||ollama\|/);
+});
+
+test('used-for names pinned workflows and what Auto picks right now', () => {
+  const p = page();
+  const [managed, ollama] = TWO_RUNTIMES.models;
+  const used = (model) => p.run(`modelFactRows(${JSON.stringify(model)}, ${JSON.stringify(
+    TWO_RUNTIMES.model_choices)})`).find((row) => row[0] === 'Used for');
+  assert.equal(used(managed)[1], 'Chat (Auto, right now), Documents (Auto, right now)');
+  assert.equal(used(ollama)[1], 'Code (pinned)');
+  const idle = p.run(`modelFactRows(${JSON.stringify({ ...managed, key: 'llama.cpp|other' })}, ${
+    JSON.stringify(TWO_RUNTIMES.model_choices)})`).find((row) => row[0] === 'Used for');
+  assert.equal(idle[1], null);
+  assert.equal(idle[2], 'not chosen for any workflow right now');
+});
+
 // Refinix's own engine reports changed model files without a digest, and
 // files not yet re-read this session as pending; both must read plainly.
 test('a changed model file is named as changed, not hidden as unobserved', () => {

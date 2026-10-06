@@ -93,7 +93,8 @@ class Base(unittest.TestCase):
 UNAVAILABLE_RUNTIME = {"reachable": False, "server_version": None,
                        "models": [], "digests": {}, "loaded": None,
                        "endpoint": "http://127.0.0.1:11434", "error": "fake"}
-INSTALLED_RUNTIME = {"reachable": True, "server_version": "0.0.0-fake",
+# A version at or above Ollama's 0.12.6 baseline, so locality is readable.
+INSTALLED_RUNTIME = {"reachable": True, "server_version": "0.34.2",
                      "models": [runtime.OCR_MODEL],
                      "digests": {runtime.OCR_MODEL: "b" * 64},
                      "loaded": None, "endpoint": "http://127.0.0.1:11434",
@@ -168,7 +169,7 @@ class TestCapabilityProbe(unittest.TestCase):
         # The unqualified model may be named only in the refusal to use it.
         for item in summary["unavailable"]:
             if "paddleocr" in item["detail"].lower():
-                self.assertIn("will not send a page image to it", item["detail"])
+                self.assertIn("no page image is sent to it", item["detail"])
 
     def test_a_present_renderer_alone_does_not_advertise_scan_reading(self):
         """Both halves, or neither. A renderer with no model reads nothing."""
@@ -377,7 +378,7 @@ class TestExtraction(Base):
                                   expected_sha256=record["sha256"],
                                   ocr_profile=test_ocr_profile())
         self.assertEqual(caught.exception.code, "no_ocr_model")
-        self.assertIn("does not download models", str(caught.exception))
+        self.assertIn("is not installed on this computer", str(caught.exception))
         self.assertEqual(calls, [])
 
     def test_a_png_is_read_directly_as_one_page(self):
@@ -479,7 +480,7 @@ class TestExtraction(Base):
         self.assertEqual(caught.exception.code, "no_ocr_profile")
         self.assertIn("scan.pdf has no usable text layer (scanned pages)",
                       str(caught.exception))
-        self.assertIn("no qualified reading profile", str(caught.exception))
+        self.assertIn("cannot read page images", str(caught.exception))
 
     def test_a_page_over_the_ceiling_is_recorded_as_partly_read(self):
         with patch.object(documents.pdfrender, "MAX_TEXT_CHARS_PER_PAGE", 10):
@@ -1207,6 +1208,31 @@ class TestSkillsInsideChat(Base):
         self.assertIn("sop.txt — line 1", messages[-1]["text"])
         self.assertEqual(self.c.job_detail(job)["job"]["state"], "completed")
 
+    def test_search_reads_a_scan_with_the_vision_model_auto_picks(self):
+        """Review finding: Search skipped the runtime observation, so a scan
+        was refused as if no page-reading model were installed."""
+        vision = {"reachable": True, "server_version": "0.34.2", "runtime": "ollama",
+                  "models": [runtime.MODEL], "tags_read": True,
+                  "digests": {runtime.MODEL:
+                              models.entry_for(runtime.MODEL).manifest_sha256},
+                  "capabilities": {runtime.MODEL: ["completion", "vision"]},
+                  "loaded": None, "loaded_all": [], "remote": [], "error": None}
+        record = self.attach("scan.pdf", b"%PDF-1.4 scanned pages only")
+        job = self.send("valve sealed", skill_id=docflow.SEARCH_SKILL)
+        self.attach_to_request(job, record)
+        asked = []
+
+        def extract(_path, **kwargs):
+            asked.append((kwargs.get("ocr_model"), kwargs.get("ocr_chat")))
+            raise documents.DocumentError("scan", "stopped after the choice")
+
+        with patch.object(runtime, "probe", return_value=vision), \
+                patch.object(documents, "extract", extract):
+            self.c._run(job, self.chat, docflow.SEARCH_SKILL)
+        self.assertEqual([model for model, _call in asked], [f"ollama|{runtime.MODEL}"])
+        # Page reads go through the job's admitted call, not the bare runtime.
+        self.assertTrue(callable(asked[0][1]))
+
     def test_an_unavailable_skill_is_refused_at_submit(self):
         with patch.object(Coordinator, "capabilities", return_value=[
                 {"id": docflow.READ_SKILL, "kind": "document", "state": "blocked",
@@ -1229,10 +1255,14 @@ class TestSkillsInsideChat(Base):
         self.assertEqual(rows[docflow.READ_SKILL]["state"], "blocked")
 
 
+# Ollama 0.34.2 with a measured Chat profile, and a declared window too small
+# for the structured Documents reply: reading takes the limited Chat-backed
+# route over deterministically extracted, fenced text.
 RUNTIME_0342 = {"reachable": True, "server_version": "0.34.2",
                 "models": [runtime.MODEL],
                 "digests": {runtime.MODEL:
-                            models.entry_for(runtime.MODEL).manifest_sha256}}
+                            models.entry_for(runtime.MODEL).manifest_sha256},
+                "context_lengths": {runtime.MODEL: 2048}}
 
 
 class TestChatBackedReading(Base):
@@ -1289,7 +1319,7 @@ class TestChatBackedReading(Base):
         self.assertIn("report.docx (docx (openxml))", answer)
         self.assertIn("Page references matched to supplied pages: report.docx p.1",
                       answer)
-        self.assertIn("qualified Chat profile", answer)
+        self.assertIn("as plain Chat", answer)
         self.assertNotIn("PaddleOCR", answer)
         attempt = self.c.conn.execute(
             "SELECT a.* FROM jobs j JOIN attempts a"
@@ -1299,7 +1329,7 @@ class TestChatBackedReading(Base):
         requested = json.loads(attempt["requested_inference_json"])
         self.assertEqual(profile["workflow_mode"], profiles.CHAT)
         self.assertEqual(requested["decoder"], "text")
-        self.assertIn("qualified Chat profile", attempt["route_reason"])
+        self.assertIn("answers as plain Chat", attempt["route_reason"])
         self.assertNotIn(profiles.DOCUMENTS, json.dumps([profile, requested]))
 
     def test_a_reference_to_a_page_that_was_not_supplied_is_unverified(self):

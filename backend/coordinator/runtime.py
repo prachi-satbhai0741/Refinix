@@ -1,16 +1,29 @@
 """The inference runtime facade every caller uses.
 
-Two engines sit behind the same functions — `probe`, `model_capabilities`,
-`model_state`, `stream_chat` — and the same normalised stream records:
+Two runtimes sit behind the same functions — `probe`, `model_capabilities`,
+`model_state`, `stream_chat` — and the same normalised stream records, and
+both may serve the same process at once:
 
-* the **managed engine** (`local_engine` + `runtime_llamacpp`), which an
-  installed Refinix always uses once `configure_managed` has been called; and
-* the **developer engine**, an external Ollama on loopback, kept for source
-  checkouts without a fetched engine and as the parity baseline.
+* the **Refinix engine** (`local_engine` + `runtime_llamacpp`), a pinned,
+  integrity-verified llama.cpp that Refinix starts itself on loopback; and
+* **Ollama**, when the person has it, used through its official local API so
+  the models they already pulled run where they are, without copying weights.
 
-Bounded settings come from the qualified execution profile, including the
-reasoning switch, without which this model spends the whole output budget
-reasoning and returns an empty answer.
+Which one runs a request is decided by the model's origin, recorded in its
+`ModelRef.runtime`, never by a process-wide switch. Model identity across both
+is an origin-qualified key (`model_key`), because one model name may exist in
+each runtime and a bare name cannot say which.
+
+Bounded settings come from the execution profile, including the reasoning
+switch, without which some models spend the whole output budget reasoning and
+return an empty answer.
+
+Ollama is used only when its API meets `OLLAMA_BASELINE`: the request fields
+that make it refuse an oversized prompt instead of silently trimming it
+(`truncate`, `shift`; v0.12.6) and the model fields that say whether a model
+runs on another host (`remote_host`, `remote_model`; v0.12.0). Both dates are
+read from the official `api/types.go` at those tags. A newer version is never
+refused for being new.
 
 Standard library only. Nothing here reaches beyond loopback.
 """
@@ -71,25 +84,108 @@ THINK = False
 KEEP_ALIVE = "10m"
 
 
-# The managed engine, when this process uses one. Set once at startup by the
-# desktop lifecycle; None keeps every function on the developer Ollama path.
+OLLAMA = "ollama"
+LLAMA_CPP = "llama.cpp"
+ORIGINS = (OLLAMA, LLAMA_CPP)
+KEY_SEPARATOR = "|"
+
+# The oldest Ollama whose API carries everything Refinix relies on: overflow
+# refusal (`truncate`/`shift` on /api/chat, added in v0.12.6) and model
+# locality (`remote_host`/`remote_model` on /api/tags and /api/show, added in
+# v0.12.0). Below it a long prompt could be trimmed without saying so, and a
+# cloud model could not be told apart from a local one.
+OLLAMA_BASELINE = (0, 12, 6)
+OLLAMA_BASELINE_LABEL = "0.12.6"
+OLLAMA_DOWNLOAD_URL = "https://ollama.com/download"
+
+# Locality answers. "unknown" is never treated as local.
+LOCAL, REMOTE, UNKNOWN = "local", "remote", "unknown"
+
+# How long a capability/locality read is reused by status pages. The read made
+# immediately before input is sent is always fresh.
+SHOW_CACHE_SECONDS = 30.0
+
+# The Refinix engine, when this process has one. Set once at startup by the
+# desktop lifecycle.
 _MANAGED = None
+# Whether Ollama is consulted beside the Refinix engine. Without a Refinix
+# engine Ollama is the only runtime and is always consulted; with one, the
+# desktop lifecycle turns this on so a person's existing Ollama models stay
+# usable. Tests that configure a fake engine leave it off and stay isolated
+# from whatever Ollama happens to be running on the developer's computer.
+_OLLAMA_ALONGSIDE = False
+_SHOW_CACHE: dict[str, tuple[float, dict | None]] = {}
+_SHOW_LOCK = threading.Lock()
 
 
 def configure_managed(backend) -> None:
-    """Route this process's inference through Refinix's own engine."""
+    """Make Refinix's own engine available to this process."""
     global _MANAGED
     _MANAGED = backend
+
+
+def configure_ollama(enabled: bool) -> None:
+    """Consult the person's Ollama beside the Refinix engine."""
+    global _OLLAMA_ALONGSIDE
+    _OLLAMA_ALONGSIDE = bool(enabled)
 
 
 def managed_engine():
     return _MANAGED
 
 
-def engine_label() -> str:
-    """How the engine is named to a person, on any OS."""
-    return ("the Refinix engine" if _MANAGED is not None
-            else f"the developer engine (external Ollama at {HOST})")
+def ollama_active() -> bool:
+    return _MANAGED is None or _OLLAMA_ALONGSIDE
+
+
+def model_key(origin: str, model_id: str) -> str:
+    """One model's identity across runtimes: its origin, then its exact name."""
+    return f"{origin}{KEY_SEPARATOR}{model_id}"
+
+
+def split_key(value: str) -> tuple[str | None, str]:
+    """`(origin, model_id)`, or `(None, value)` for a bare legacy name.
+
+    Ollama names cannot contain the separator and Refinix chooses its own
+    engine's ids, so a value only splits when it starts with a known origin.
+    """
+    origin, separator, rest = (value or "").partition(KEY_SEPARATOR)
+    if separator and origin in ORIGINS and rest:
+        return origin, rest
+    return None, value
+
+
+def version_tuple(text) -> tuple[int, ...] | None:
+    """`0.34.2-rc1` -> (0, 34, 2); None when no leading version is readable."""
+    parts = []
+    for piece in str(text or "").strip().lstrip("v").split("."):
+        digits = ""
+        for char in piece:
+            if not char.isdigit():
+                break
+            digits += char
+        if not digits:
+            break
+        parts.append(int(digits))
+        if len(digits) != len(piece):
+            break
+    return tuple(parts) if len(parts) >= 2 else None
+
+
+def ollama_baseline_met(version) -> bool | None:
+    """True/False against `OLLAMA_BASELINE`; None when the version is unreadable."""
+    parsed = version_tuple(version)
+    if parsed is None:
+        return None
+    padded = parsed + (0,) * (3 - len(parsed))
+    return padded >= OLLAMA_BASELINE
+
+
+def engine_label(origin: str | None = None) -> str:
+    """How a runtime is named to a person, on any OS."""
+    if origin == OLLAMA or (origin is None and _MANAGED is None):
+        return "Ollama"
+    return "the Refinix engine"
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -206,13 +302,32 @@ def _request(path: str, payload=None, timeout=10, *, watch=None):
     return opener.open(req, timeout=timeout)
 
 
-def probe() -> dict:
-    """Read-only health probe. Reports what was observed, never a default."""
-    if _MANAGED is not None:
-        return _MANAGED.probe()
+def _is_remote(record: dict) -> bool:
+    """Whether Ollama says this model runs on another host (v0.12.0 fields)."""
+    return bool(record.get("remote_host") or record.get("remote_model"))
+
+
+def ollama_running(timeout: float = 5) -> list[dict]:
+    """Every model Ollama holds resident now (`/api/ps`), whoever loaded it."""
+    with _request("/api/ps", timeout=timeout) as resp:
+        running = json.load(resp).get("models", [])
+    return [{
+        "model": item.get("model"),
+        "digest": (item.get("digest") or "").lower() or None,
+        "size_bytes": item.get("size"),
+        "size_vram_bytes": item.get("size_vram"),
+        "context_length": item.get("context_length"),
+        "expires_at": item.get("expires_at"),
+    } for item in running if item.get("model")]
+
+
+def probe_ollama() -> dict:
+    """Read-only Ollama health probe. Reports what was observed, never a default."""
     state = {"reachable": False, "server_version": None, "models": [],
-             "digests": {}, "loaded": None, "endpoint": HOST, "error": None,
-             "runtime": "ollama"}
+             "digests": {}, "loaded": None, "loaded_all": [], "endpoint": HOST,
+             "error": None, "runtime": OLLAMA, "remote": [], "capabilities": {},
+             "sizes": {}, "details": {}, "tags_read": False,
+             "baseline": {"minimum": OLLAMA_BASELINE_LABEL, "met": None}}
     try:
         with _request("/api/version", timeout=3) as resp:
             state["server_version"] = json.load(resp).get("version")
@@ -220,29 +335,222 @@ def probe() -> dict:
     except Exception as exc:
         state["error"] = f"{type(exc).__name__}: {exc}"
         return state
+    state["baseline"]["met"] = ollama_baseline_met(state["server_version"])
     try:
         with _request("/api/tags", timeout=5) as resp:
             listed = json.load(resp).get("models", [])
-        state["models"] = [m.get("model") for m in listed]
+        state["models"] = [m.get("model") for m in listed if m.get("model")]
         # The real manifest digest, observed here rather than looked up again,
         # so a ModelRef carries integrity evidence instead of a placeholder.
         state["digests"] = {m.get("model"): (m.get("digest") or "").lower()
                             for m in listed if m.get("model")}
+        state["remote"] = [m["model"] for m in listed
+                           if m.get("model") and _is_remote(m)]
+        state["capabilities"] = {
+            m["model"]: [c for c in m["capabilities"] if isinstance(c, str)]
+            for m in listed if m.get("model") and isinstance(m.get("capabilities"), list)}
+        state["sizes"] = {m["model"]: m["size"] for m in listed
+                          if m.get("model") and isinstance(m.get("size"), int)}
+        state["details"] = {m["model"]: m["details"] for m in listed
+                            if m.get("model") and isinstance(m.get("details"), dict)}
+        state["tags_read"] = True
     except Exception as exc:
         state["error"] = f"tags unavailable: {exc}"
+    # Each local model's own description (cached briefly): what it can do,
+    # how long a context it declares, and a second locality answer.
+    state["context_lengths"] = {}
+    state["show_read"] = {}
+    if state["baseline"]["met"]:
+        for model_id in state["models"]:
+            if model_id in state["remote"]:
+                continue
+            facts = show_model(model_id)
+            state["show_read"][model_id] = facts is not None
+            if facts is None:
+                continue
+            if facts["locality"] == REMOTE:
+                state["remote"].append(model_id)
+                continue
+            if facts.get("capabilities") is not None:
+                state["capabilities"][model_id] = facts["capabilities"]
+            if facts.get("context_length"):
+                state["context_lengths"][model_id] = facts["context_length"]
     try:
-        with _request("/api/ps", timeout=5) as resp:
-            running = json.load(resp).get("models", [])
-            if running:
-                state["loaded"] = {
-                    "model": running[0].get("model"),
-                    "size_bytes": running[0].get("size"),
-                    "size_vram_bytes": running[0].get("size_vram"),
-                    "expires_at": running[0].get("expires_at"),
-                }
+        # Every resident model, including ones other applications loaded:
+        # Refinix counts their memory and never unloads them.
+        state["loaded_all"] = ollama_running()
+        if state["loaded_all"]:
+            first = state["loaded_all"][0]
+            state["loaded"] = {key: first[key] for key in
+                               ("model", "size_bytes", "size_vram_bytes", "expires_at")}
     except Exception as exc:
         state["error"] = f"ps unavailable: {exc}"
     return state
+
+
+def probe() -> dict:
+    """Read-only health probe of every runtime this process uses.
+
+    One runtime keeps its own flat shape. With both, the answer carries each
+    runtime under `runtimes` plus origin-qualified `models` and `digests`.
+    Callers read either through `entries`, never by assuming a shape.
+    """
+    if _MANAGED is None:
+        return probe_ollama()
+    managed = _MANAGED.probe()
+    if not _OLLAMA_ALONGSIDE:
+        return managed
+    return merge({LLAMA_CPP: managed, OLLAMA: probe_ollama()})
+
+
+def merge(states: dict[str, dict]) -> dict:
+    """Combine per-runtime probes into one origin-qualified view."""
+    view = {"runtimes": states, "runtime": None, "server_version": None,
+            "reachable": any(s.get("reachable") for s in states.values()),
+            "endpoint": "loopback runtimes", "loaded": None}
+    found = entries(view)
+    view["models"] = sorted(found)
+    view["digests"] = {key: item["digest"] for key, item in found.items()
+                       if item["digest"]}
+    managed = states.get(LLAMA_CPP) or {}
+    view["engine"] = managed.get("engine")
+    view["file_checks"] = {model_key(LLAMA_CPP, model_id): check for model_id, check
+                           in (managed.get("file_checks") or {}).items()}
+    errors = [f"{origin}: {s['error']}" for origin, s in states.items()
+              if s.get("error")]
+    view["error"] = "; ".join(errors) or None
+    return view
+
+
+def substate(state: dict | None, origin: str) -> dict:
+    """One runtime's own probe out of either shape; {} when it was not probed."""
+    if not state:
+        return {}
+    if "runtimes" in state:
+        return state["runtimes"].get(origin) or {}
+    return state if (state.get("runtime") or OLLAMA) == origin else {}
+
+
+def _entries_one(sub: dict, origin: str) -> dict[str, dict]:
+    if not sub or not sub.get("reachable"):
+        return {}
+    version = sub.get("server_version")
+    remote = set(sub.get("remote") or ())
+    capabilities = sub.get("capabilities") or {}
+    digests = sub.get("digests") or {}
+    baseline = ollama_baseline_met(version) if origin == OLLAMA else True
+    found = {}
+    for model_id in sub.get("models") or []:
+        if not model_id:
+            continue
+        if origin == LLAMA_CPP:
+            # Started by Refinix from its verified binary, on loopback, with
+            # --offline: local by construction rather than by a metadata read.
+            locality = LOCAL
+        elif model_id in remote:
+            locality = REMOTE
+        elif baseline and sub.get("tags_read", True):
+            # Under the v0.12+ response contract an absent remote field is a
+            # statement that the model is local, not a gap in the reading.
+            locality = LOCAL
+        else:
+            locality = UNKNOWN
+        key = model_key(origin, model_id)
+        found[key] = {
+            "key": key, "origin": origin, "model_id": model_id,
+            "digest": (digests.get(model_id) or "").lower() or None,
+            "runtime_version": version, "locality": locality,
+            "capabilities": capabilities.get(model_id),
+            "context_length": (sub.get("context_lengths") or {}).get(model_id),
+            "reasoning_hint": bool((sub.get("reasoning_hints") or {}).get(model_id)),
+            "hints": tuple((sub.get("hints") or {}).get(model_id) or ()),
+            "size_bytes": (sub.get("sizes") or {}).get(model_id),
+            "details": (sub.get("details") or {}).get(model_id),
+        }
+    return found
+
+
+def entries(state: dict | None) -> dict[str, dict]:
+    """Every observed model, by origin-qualified key, from either probe shape."""
+    if not state:
+        return {}
+    if "runtimes" in state:
+        found = {}
+        for origin, sub in (state.get("runtimes") or {}).items():
+            found.update(_entries_one(sub, origin))
+        return found
+    return _entries_one(state, state.get("runtime") or OLLAMA)
+
+
+def find(state: dict | None, model: str) -> dict | None:
+    """One observed model by key, or by a bare name only when it is unambiguous."""
+    found = entries(state)
+    origin, model_id = split_key(model or "")
+    if origin is not None:
+        return found.get(model)
+    matches = [item for item in found.values() if item["model_id"] == model_id]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _show(model_id: str) -> dict | None:
+    """One `/api/show` read: capabilities, locality and declared context."""
+    try:
+        with _request("/api/show", {"model": model_id}, timeout=5) as resp:
+            body = json.load(resp)
+    except Exception:                                  # noqa: BLE001
+        return None
+    listed = body.get("capabilities")
+    info = body.get("model_info") if isinstance(body.get("model_info"), dict) else {}
+    architecture = info.get("general.architecture")
+    context = info.get(f"{architecture}.context_length") if architecture else None
+    return {
+        "capabilities": ([item for item in listed if isinstance(item, str)]
+                         if isinstance(listed, list) else None),
+        "locality": REMOTE if _is_remote(body) else LOCAL,
+        "context_length": context if isinstance(context, int) and context > 0 else None,
+        "architecture": architecture if isinstance(architecture, str) else None,
+        "details": body.get("details") if isinstance(body.get("details"), dict) else {},
+        "requires": body.get("requires") if isinstance(body.get("requires"), str) else None,
+    }
+
+
+def show_model(model_id: str, *, fresh: bool = False) -> dict | None:
+    """Cached `/api/show` facts for status reads; `fresh` always asks again."""
+    import time
+    now = time.monotonic()
+    if not fresh:
+        with _SHOW_LOCK:
+            cached = _SHOW_CACHE.get(model_id)
+        if cached is not None and now - cached[0] < SHOW_CACHE_SECONDS:
+            return cached[1]
+    observed = _show(model_id)
+    with _SHOW_LOCK:
+        _SHOW_CACHE[model_id] = (now, observed)
+    return observed
+
+
+def model_facts(model: str) -> dict | None:
+    """Capabilities, locality and declared context for one model key or name."""
+    origin, model_id = split_key(model)
+    if origin is None:
+        origin = (LLAMA_CPP if _MANAGED is not None and not _OLLAMA_ALONGSIDE
+                  else OLLAMA)
+        if _MANAGED is not None and _OLLAMA_ALONGSIDE:
+            try:
+                if model_id in _MANAGED.registry():
+                    origin = LLAMA_CPP
+            except Exception:                          # noqa: BLE001
+                pass
+    if origin == LLAMA_CPP:
+        if _MANAGED is None:
+            return None
+        listed = _MANAGED.capabilities(model_id)
+        facts = getattr(_MANAGED, "facts", None)
+        extra = facts(model_id) if callable(facts) else {}
+        return {"capabilities": listed, "locality": LOCAL, **(extra or {})}
+    if not ollama_active():
+        return None
+    return show_model(model_id)
 
 
 def model_capabilities(model: str) -> list[str] | None:
@@ -252,16 +560,58 @@ def model_capabilities(model: str) -> list[str] | None:
     does not load the model. `None` means the question could not be answered
     here, which is deliberately not the same as "it can do nothing".
     """
-    if _MANAGED is not None:
-        return _MANAGED.capabilities(model)
+    facts = model_facts(model)
+    return None if facts is None else facts.get("capabilities")
+
+
+def confirm_ollama(model: v1.ModelRef) -> dict:
+    """Re-read one Ollama model's identity and locality right before use.
+
+    The digest comes from `/api/tags` (`/api/show` has none) and locality from
+    both reads. A changed version, digest or locality means the model is no
+    longer the one this attempt was admitted with, so nothing is sent.
+    Returns the fresh `/api/show` facts.
+    """
     try:
-        with _request("/api/show", {"model": model}, timeout=5) as resp:
-            listed = json.load(resp).get("capabilities")
-    except Exception:                                  # noqa: BLE001
-        return None
-    if not isinstance(listed, list):
-        return None
-    return [item for item in listed if isinstance(item, str)]
+        with _request("/api/version", timeout=3) as resp:
+            version = json.load(resp).get("version")
+    except Exception as exc:
+        raise RuntimeUnavailable(f"Ollama did not answer: {exc}") from exc
+    if ollama_baseline_met(version) is not True:
+        raise RuntimeUnavailable(
+            f"Ollama {version or '(version unreadable)'} is older than "
+            f"{OLLAMA_BASELINE_LABEL}, which Refinix needs so long prompts are refused "
+            f"rather than silently trimmed. Update Ollama ({OLLAMA_DOWNLOAD_URL}).")
+    if version != model.runtime_version:
+        raise RuntimeUnavailable(
+            f"Ollama changed from {model.runtime_version} to {version} after this "
+            "request was prepared, so it was not sent. Try again.")
+    try:
+        with _request("/api/tags", timeout=5) as resp:
+            listed = json.load(resp).get("models", [])
+    except Exception as exc:
+        raise RuntimeUnavailable(f"Ollama's model list could not be read: {exc}") from exc
+    record = next((item for item in listed if item.get("model") == model.model_id), None)
+    if record is None:
+        raise RuntimeUnavailable(f"{model.model_id} is no longer installed in Ollama.")
+    if (record.get("digest") or "").lower() != model.manifest_sha256:
+        raise RuntimeUnavailable(
+            f"{model.model_id} changed in Ollama after this request was prepared, "
+            "so it was not sent. Try again.")
+    if _is_remote(record):
+        raise RuntimeUnavailable(
+            f"{model.model_id} runs on another host through Ollama, so Refinix "
+            "does not send your work to it.")
+    facts = show_model(model.model_id, fresh=True)
+    if facts is None:
+        raise RuntimeUnavailable(
+            f"Ollama did not describe {model.model_id}, so its locality could not "
+            "be confirmed and nothing was sent.")
+    if facts["locality"] != LOCAL:
+        raise RuntimeUnavailable(
+            f"{model.model_id} runs on another host through Ollama, so Refinix "
+            "does not send your work to it.")
+    return facts
 
 
 def model_state_from(health: dict, model: str, *, requires: str | None = None,
@@ -279,19 +629,31 @@ def model_state_from(health: dict, model: str, *, requires: str | None = None,
     folding it into `absent` or `runtime_unavailable` would send someone to
     fix the wrong thing.
     """
-    if not health.get("reachable"):
+    origin, model_id = split_key(model or "")
+    if not health.get("reachable") or (origin is not None
+                                       and not substate(health, origin).get("reachable")):
+        label = engine_label(origin)
         return {"state": "runtime_unavailable", "model": model, "digest": None,
                 "capabilities": None,
-                "detail": f"{engine_label()[0].upper()}{engine_label()[1:]} is not answering.",
+                "detail": f"{label[0].upper()}{label[1:]} is not answering.",
                 "runtime_version": None}
-    installed = model in (health.get("models") or [])
-    digest = (health.get("digests") or {}).get(model) or None
-    version = health.get("server_version")
-    if not installed:
+    entry = find(health, model) if model else None
+    version = (entry or {}).get("runtime_version") or health.get("server_version")
+    if entry is None:
         return {"state": "absent", "model": model, "digest": None,
                 "capabilities": None,
-                "detail": (f"{model} is not installed on this computer. Refinix "
-                           "does not download models."),
+                "detail": (f"{model_id} is not installed on this computer. Choose "
+                           "or download a model in Settings → Models."),
+                "runtime_version": version}
+    model = model_id
+    digest = entry["digest"]
+    if entry["locality"] != LOCAL:
+        return {"state": "not_local", "model": model, "digest": digest,
+                "capabilities": None,
+                "detail": (f"{model} runs on another host through Ollama, so Refinix "
+                           "does not use it." if entry["locality"] == REMOTE else
+                           f"Whether {model} runs on this computer could not be "
+                           "confirmed, so Refinix does not use it."),
                 "runtime_version": version}
     if requires is not None:
         if capabilities is None:
@@ -324,9 +686,9 @@ def model_state(model: str, *, requires: str | None = None) -> dict:
     """
     health = probe()
     observed = None
-    if requires is not None and health.get("reachable") \
-            and model in (health.get("models") or []):
-        observed = model_capabilities(model)
+    entry = find(health, model) if health.get("reachable") else None
+    if requires is not None and entry is not None:
+        observed = model_capabilities(entry["key"])
     return model_state_from(health, model, requires=requires,
                             capabilities=observed)
 
@@ -397,7 +759,9 @@ def stream_chat(messages: list[dict], *, profile: v1.ExecutionProfile,
     period looks exactly like a stall. Raises RuntimeUnavailable rather than
     returning a plausible-looking empty answer.
     """
-    if _MANAGED is not None:
+    if profile.model.runtime == LLAMA_CPP:
+        if _MANAGED is None:
+            raise RuntimeUnavailable("The Refinix engine is not part of this installation.")
         _check_images(images)
         yield from _MANAGED.stream_chat(
             messages, profile=profile, inference=inference,
@@ -405,10 +769,18 @@ def stream_chat(messages: list[dict], *, profile: v1.ExecutionProfile,
             response_format=response_format, watch_class=_CancelWatch,
             unavailable=RuntimeUnavailable)
         return
+    if profile.model.runtime != OLLAMA or not ollama_active():
+        raise RuntimeUnavailable(
+            f"{profile.model.runtime} is not a runtime this installation uses.")
+    # Local policy: this function only ever runs on the computer that owns the
+    # workspace. Workers validate with the strict measured-only check.
     try:
-        inference_profiles.validate_request(profile, inference, profile.model)
+        inference_profiles.validate_local(profile, inference, profile.model)
     except ValueError as exc:
         raise RuntimeUnavailable(str(exc)) from exc
+    # The model must still be the exact local bytes this attempt was admitted
+    # with. Nothing is sent when it changed or runs elsewhere.
+    confirm_ollama(profile.model)
     if response_format is None and inference.decoder != "text":
         raise RuntimeUnavailable("the selected profile requires structured output")
     if response_format is not None:

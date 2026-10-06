@@ -25,11 +25,12 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
-from backend.coordinator import (build_info, code_service, codeflow, context, db,
-                                 device, dispatch, docflow, docgen, documents,
-                                 identity, models, ownership, pairing, pdfgen, policy,
-                                 observer, proof, provisioning, readiness, repo,
-                                 retrieval, runtime, sandbox_probe, updates)
+from backend.coordinator import (admission, build_info, capacity, code_service,
+                                 codeflow, context, db, device, dispatch, docflow,
+                                 docgen, documents, hub, identity, models, ocr,
+                                 ownership, pairing, pdfgen, policy, observer, proof,
+                                 provisioning, readiness, repo, retrieval, router,
+                                 runtime, sandbox_probe, updates)
 from backend.coordinator import engine as engine_module
 
 repo_errors = repo.RepositoryError
@@ -62,11 +63,13 @@ MEDIA = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
 # contract's MAX_REQUEST_BYTES still governs every contract route.
 MAX_UPLOAD_BYTES = 28 * 1024 * 1024
 
+# The workflows a model is chosen for. Each defaults to automatic assignment;
+# a person may pin one model per workflow instead.
 MODEL_DEFAULTS = {
-    "chat": runtime.MODEL,
-    "code": runtime.MODEL,
-    "documents.generate": runtime.MODEL,
-    "documents.ocr": runtime.OCR_MODEL,
+    "chat": models.AUTO,
+    "code": models.AUTO,
+    "documents.generate": models.AUTO,
+    "documents.ocr": models.AUTO,
 }
 
 # What this build can actually do, with the reason when it cannot. Nothing here
@@ -232,6 +235,14 @@ class Coordinator:
         self.provisioner = provisioning.Provisioner(
             self.conn, self.state_path, unload=self._unload_model,
             busy=lambda: bool(self.active_jobs()))
+        # Refinix-owned memory decisions across both runtimes, one at a time.
+        self.ledger = capacity.Ledger(observe=self._available_memory)
+        # The last observation of every runtime's models, for resolving
+        # legacy bare names without probing again.
+        self._observed_cache: dict | None = None
+        # Starts or stops an installed Ollama when the person asks; supplied
+        # by the desktop lifecycle, absent in a headless coordinator.
+        self.ollama_control = None
 
     def _identity(self, key) -> str:
         row = self.conn.execute(
@@ -244,19 +255,24 @@ class Coordinator:
                               (key, workspace_id))
         return workspace_id
 
-    # The developer baseline's model and the managed engine's artifact of the
-    # same model. Used only to read an old selection under the other engine;
-    # the stored choice itself is never rewritten.
-    ENGINE_EQUIVALENTS = {runtime.MODEL: models.MANAGED_MAIN}
+    # ------------------------------------------------------------------
+    # Model identity, observation and local admission
+    # ------------------------------------------------------------------
+    #
+    # A model is named by its origin-qualified key (`runtime.model_key`):
+    # `ollama|qwen3.5:4b-q4_K_M` and `llama.cpp|qwen3.5-4b-q4_k_m` are two
+    # artifacts in two runtimes. Selections and preferences saved before keys
+    # existed hold a bare name; `resolve_key` reads them through the recorded
+    # install engine, the catalogue entry's engine and what each runtime
+    # reports now, and an ambiguous name is never silently given a runtime.
 
     @staticmethod
     def _engine_kind() -> str:
         return "llama.cpp" if runtime.managed_engine() is not None else "ollama"
 
     def default_model(self, scope: str) -> str:
-        if self._engine_kind() == "llama.cpp":
-            return models.MANAGED_DEFAULTS[scope]
-        return MODEL_DEFAULTS[scope]
+        """Every workflow defaults to automatic assignment."""
+        return models.AUTO
 
     def code_validation(self) -> dict:
         """Which sandbox controls this computer has; observed once per run."""
@@ -275,20 +291,23 @@ class Coordinator:
             backend.unload(model_id)
 
     def installed_models(self) -> dict:
-        """Managed-engine install records, with each file's recorded identity.
+        """Refinix-engine install records, with each file's recorded identity.
 
-        The size and SHA-256 recorded at install travel with the record so the
-        engine boundary can compare them with the files as they are now.
+        Every file is kept in recorded order — a split model's parts included —
+        so the engine boundary hashes all of them, and the first `weights` file
+        is the one the engine is given.
         """
         from backend.coordinator import local_engine
         root = db.models_root(self.state_path)
         found = {}
         for record in db.model_installs(self.conn, engine="llama.cpp"):
             components = []
-            for item in record["files"]:
+            for item in sorted(record["files"],
+                               key=lambda f: (f.get("order", 0)
+                                              if isinstance(f.get("order"), int) else 0)):
                 try:
                     relative = Path(item["path"])
-                    if not relative.is_absolute() and ".." in relative.parts:
+                    if relative.is_absolute() or ".." in relative.parts:
                         raise ValueError("path leaves the models folder")
                     components.append(local_engine.ModelComponent(
                         str(item["role"]), root / relative, int(item["size"]),
@@ -296,62 +315,166 @@ class Coordinator:
                 except (KeyError, TypeError, ValueError):
                     components = None
                     break
-            roles = {c.role: c for c in components or ()}
-            if components is None or "weights" not in roles:
+            if not components:
                 continue
-            entry = models.entry_for(record["model_id"])
+            weights = next((c for c in components if c.role == "weights"), None)
+            projector = next((c for c in components if c.role == "projector"), None)
+            if weights is None:
+                continue
+            entry = models.entry_from_record(record)
+            measured_reasoning = any(
+                profile.model.model_id == record["model_id"]
+                and profile.model.manifest_sha256 == record["manifest_sha256"]
+                and "enabled" in profile.reasoning_modes
+                for profile in inference_profiles.PROFILES)
             found[record["model_id"]] = local_engine.InstalledModel(
-                record["model_id"], record["manifest_sha256"], roles["weights"].path,
-                roles["projector"].path if "projector" in roles else None,
-                dict(entry.sampling) if entry else {}, tuple(components))
+                record["model_id"], record["manifest_sha256"], weights.path,
+                projector.path if projector else None,
+                dict(entry.sampling) if entry else {}, tuple(components),
+                context_length=entry.context_length if entry else None,
+                reasoning_hint=bool(measured_reasoning
+                                    or (entry and "reasoning" in entry.hints)),
+                hints=tuple(entry.hints) if entry else ())
         return found
 
-    def model_for(self, scope: str, *, new_work: bool = False) -> str:
-        if scope not in MODEL_DEFAULTS:
-            raise RequestError("that model scope does not exist")
-        model = db.get_model_selection(self.conn, scope, self.default_model(scope))
-        entry = models.entry_for(model)
-        if entry is not None and entry.engine != self._engine_kind():
-            model = self.ENGINE_EQUIVALENTS.get(model) or next(
-                (k for k, v in self.ENGINE_EQUIVALENTS.items() if v == model),
-                self.default_model(scope))
-        if new_work and not db.get_model_enabled(self.conn, model):
-            raise RequestError(
-                f"The selected model {model} is switched off for new work.", 409)
-        return model
+    def _install_engines(self) -> dict[str, str]:
+        return {record["model_id"]: record["engine"]
+                for record in db.model_installs(self.conn)}
 
-    def enabled_model_for(self, scope: str) -> str | None:
-        """The selected model only when it may receive a new request."""
-        model = self.model_for(scope)
-        return model if db.get_model_enabled(self.conn, model) else None
+    def resolve_key(self, value: str, observed: dict | None = None, *,
+                    install_engines: dict[str, str] | None = None) \
+            -> tuple[str | None, str]:
+        """`(key, status)` for a stored value: auto, key, resolved, ambiguous or unknown."""
+        if not value or value == models.AUTO:
+            return None, "auto"
+        origin, model_id = runtime.split_key(value)
+        if origin is not None:
+            return value, "key"
+        if observed is None:
+            # Never a fresh probe: the last observation, or what is recorded.
+            observed = getattr(self, "_observed_cache", None) or {}
+        if install_engines is None:
+            install_engines = self._install_engines()
+        origins = models.legacy_origins(model_id, install_engines=install_engines,
+                                        observed=observed)
+        if len(origins) == 1:
+            return runtime.model_key(origins.pop(), model_id), "resolved"
+        return None, ("ambiguous" if origins else "unknown")
+
+    def _pref(self, key: str) -> dict | None:
+        row = db.model_pref(self.conn, key)
+        if row is not None:
+            return row
+        origin, model_id = runtime.split_key(key)
+        if origin is None:
+            return None
+        legacy = db.model_pref(self.conn, model_id)
+        if legacy is None:
+            return None
+        resolved, _status = self.resolve_key(model_id)
+        return legacy if resolved == key else None
+
+    def model_enabled(self, model: str) -> bool:
+        key, _status = self.resolve_key(model)
+        row = self._pref(key) if key else None
+        return bool(row["enabled"]) if row else True
+
+    def reasoning_for(self, model: str) -> bool:
+        key, _status = self.resolve_key(model)
+        row = self._pref(key) if key else None
+        return bool(row["reasoning"]) if row else db.DEFAULT_REASONING
+
+    def _targets(self) -> list[str]:
+        return [target for target in [self.target_profile_id, *self.tier_ids] if target]
+
+    def observations(self, runtime_state: dict | None = None) -> dict[str, dict]:
+        """Every observed model with what Refinix knows about it, by key."""
+        state = runtime_state if runtime_state is not None else runtime.probe()
+        found = runtime.entries(state)
+        installs = {record["model_id"]: record for record in db.model_installs(self.conn)}
+        checks = state.get("file_checks") or {}
+        measured_reasoning = {
+            (profile.model.model_id, profile.model.manifest_sha256, profile.model.runtime)
+            for profile in inference_profiles.PROFILES if "enabled" in profile.reasoning_modes}
+        memory = capacity.pool(self.hardware_facts)
+        for key, item in found.items():
+            origin, model_id = item["origin"], item["model_id"]
+            entry = models.entry_for_origin(model_id, origin)
+            if entry is None and origin == runtime.LLAMA_CPP:
+                entry = models.entry_from_record(installs.get(model_id))
+            item["entry"] = entry
+            integrity = models.local_integrity(model_id, item["digest"], origin)
+            check = checks.get(key) or (checks.get(model_id)
+                                        if origin == runtime.LLAMA_CPP else None) or {}
+            if check.get("state") == models.MISMATCH:
+                integrity = {"state": models.MISMATCH, "expected": integrity.get("expected"),
+                             "observed": None, "eligible": False,
+                             "detail": check.get("detail")}
+            elif check.get("state") == "pending" and integrity["eligible"]:
+                integrity = {**integrity, "state": "pending", "detail": check.get("detail")}
+            item["integrity"] = integrity
+            item["hints"] = tuple(item.get("hints") or (entry.hints if entry else ()))
+            if not item.get("context_length") and entry is not None:
+                item["context_length"] = entry.context_length
+            item["reasoning_hint"] = bool(
+                item.get("reasoning_hint")
+                or (entry is not None and "reasoning" in entry.hints)
+                or (model_id, item["digest"], origin) in measured_reasoning)
+            item["display"] = (entry.display_name if entry is not None and entry.display_name
+                               else model_id)
+            item["weights_bytes"] = (item.get("size_bytes")
+                                     or (entry.weights_bytes() if entry else None))
+            item["fit"] = capacity.fit(item["weights_bytes"], memory)
+            loaded = self._loaded(state, item)
+            item["resident"] = loaded is not None
+            item["loaded_window"] = loaded.get("context_length") if loaded else None
+        self._observed_cache = found
+        return found
+
+    @staticmethod
+    def _loaded(state: dict, item: dict) -> dict | None:
+        """The loaded instance of this model a fresh observation shows, if any."""
+        sub = runtime.substate(state, item["origin"])
+        if item["origin"] == runtime.OLLAMA:
+            return next((loaded for loaded in sub.get("loaded_all") or []
+                         if loaded.get("model") == item["model_id"]), None)
+        loaded = sub.get("loaded") or {}
+        return loaded if loaded.get("model") == item["model_id"] else None
+
+    def _find(self, observed: dict, model: str | None) -> dict | None:
+        if not model:
+            return None
+        origin, _model_id = runtime.split_key(model)
+        if origin is not None:
+            return observed.get(model)
+        key, _status = self.resolve_key(model, observed)
+        return observed.get(key) if key else None
+
+    @staticmethod
+    def _usable(item: dict | None) -> bool:
+        return bool(item and item["locality"] == runtime.LOCAL
+                    and item["integrity"]["eligible"]
+                    and len(item.get("digest") or "") == 64)
 
     def local_model_ref(self, model: str,
                         runtime_state: dict | None = None) -> dict | None:
-        state = runtime_state if runtime_state is not None else runtime.probe()
-        digest = (state.get("digests") or {}).get(model) or ""
-        if (not state.get("reachable") or len(digest) != 64
-                or not models.digest_eligible(model, digest)):
+        item = self._find(self.observations(runtime_state), model)
+        if not self._usable(item):
             return None
-        return {"model_id": model, "manifest_sha256": digest,
-                "runtime": state.get("runtime") or "ollama",
-                "runtime_version": state.get("server_version") or "unknown"}
+        return {"model_id": item["model_id"], "manifest_sha256": item["digest"],
+                "runtime": item["origin"],
+                "runtime_version": item["runtime_version"] or "unknown"}
 
-    def local_profiles(self, runtime_state: dict | None = None) \
-            -> list[v1.ExecutionProfile]:
-        state = runtime_state if runtime_state is not None else runtime.probe()
-        refs = []
-        for model, digest in (state.get("digests") or {}).items():
-            if model and isinstance(digest, str) and len(digest) == 64:
-                try:
-                    refs.append(v1.ModelRef(
-                        model_id=model, manifest_sha256=digest,
-                        runtime=state.get("runtime") or "ollama",
-                        runtime_version=state.get("server_version") or "unknown"))
-                except ValueError:
-                    continue
-        targets = [t for t in [self.target_profile_id, *self.tier_ids] if t]
-        return inference_profiles.for_observation(
-            target_profile_id=targets, models=refs)
+    def local_profiles(self, runtime_state: dict | None = None, *,
+                       observed: dict | None = None) -> list[v1.ExecutionProfile]:
+        """Measured profiles where they exist, honest local candidates otherwise."""
+        observed = observed if observed is not None else self.observations(runtime_state)
+        targets = self._targets()
+        result = []
+        for item in observed.values():
+            if self._usable(item):
+                result.extend(admission.profiles_for(item, targets))
+        return result
 
     def refresh_hardware(self) -> dict:
         """Observe this computer once and match it to reviewed hardware tiers."""
@@ -364,8 +487,13 @@ class Coordinator:
         self.tier_ids = [tier.tier_id for tier in inference_profiles.matching_tiers(facts)]
         return facts
 
-    def engine_settings_for(self, model_id: str):
-        """The reviewed engine preset for this model's installed bytes here."""
+    def engine_settings_for(self, model_id: str, profile: v1.ExecutionProfile | None = None):
+        """Engine settings for this model's installed bytes at a request's window.
+
+        A measured preset is used exactly as reviewed when the request is that
+        measured profile. Any other window — or a model nobody measured — gets
+        upstream fitting with the window fixed at what the request was promised.
+        """
         backend = runtime.managed_engine()
         if backend is None:
             return None
@@ -375,81 +503,277 @@ class Coordinator:
         preset = inference_profiles.preset_for(
             model_id=model_id, manifest_sha256=record.manifest_sha256,
             runtime_version=backend.selection.runtime_version, tier_ids=self.tier_ids)
-        if preset is None:
+        window = profile.qualified_context_tokens if profile is not None else None
+        # A reviewed preset fixes how these exact bytes are launched at its
+        # window, whichever workflow asks: using it for every request at that
+        # window keeps one engine for Chat, Documents and page reading instead
+        # of restarting between them. Another window gets upstream fitting.
+        if preset is not None and (window is None or window == preset.context_tokens):
+            return engine_module.LaunchSettings(
+                context_tokens=preset.context_tokens, slots=preset.slots,
+                gpu_layers=preset.gpu_layers, cache_type_k=preset.cache_type_k,
+                cache_type_v=preset.cache_type_v, flash_attention=preset.flash_attention,
+                min_available_memory_bytes=preset.min_available_memory_bytes,
+                min_free_disk_bytes=preset.min_free_disk_bytes)
+        if window is None:
             return None
-        return engine_module.LaunchSettings(
-            context_tokens=preset.context_tokens, slots=preset.slots,
-            gpu_layers=preset.gpu_layers, cache_type_k=preset.cache_type_k,
-            cache_type_v=preset.cache_type_v, flash_attention=preset.flash_attention,
-            min_available_memory_bytes=preset.min_available_memory_bytes,
-            min_free_disk_bytes=preset.min_free_disk_bytes)
+        return engine_module.fitted_settings(window)
 
     def local_profile(self, *, workflow: str, model_id: str, reasoning: str,
                       decoder: str, runtime_state: dict | None = None,
                       output_allowance: int | None = None,
-                      context_window: int | None = None) \
+                      context_window: int | None = None,
+                      observed: dict | None = None) \
             -> v1.ExecutionProfile | None:
-        return next((profile for profile in self.local_profiles(runtime_state)
-                     if inference_profiles.compatible(
-                         profile, model_id=model_id, workflow=workflow,
-                         reasoning=reasoning, decoder=decoder,
-                         output_allowance=output_allowance,
-                         context_window=context_window)), None)
+        """The profile one local request runs under, or None.
+
+        `context_window` larger than the default asks for a widened candidate,
+        bounded by what the model declares; the window used is recorded.
+        """
+        observed = observed if observed is not None else self.observations(runtime_state)
+        item = self._find(observed, model_id)
+        if not self._usable(item):
+            return None
+        profiles = [profile for profile in self.local_profiles(observed=observed)
+                    if profile.model.model_id == item["model_id"]
+                    and profile.model.runtime == item["origin"]]
+        for profile in profiles:
+            if inference_profiles.compatible_local(
+                    profile, model_id=item["model_id"], workflow=workflow,
+                    reasoning=reasoning, decoder=decoder,
+                    output_allowance=output_allowance, context_window=context_window):
+                return profile
+        if context_window is not None:
+            widened = admission.candidate(item, workflow, window=context_window)
+            if widened is not None and inference_profiles.compatible_local(
+                    widened, model_id=item["model_id"], workflow=workflow,
+                    reasoning=reasoning, decoder=decoder,
+                    output_allowance=output_allowance, context_window=context_window):
+                return widened
+        return None
 
     def _offered_reasoning(self, model_id: str, workflow: str, decoder: str,
-                           runtime_state: dict | None = None) -> set[str]:
-        """Reasoning modes any local profile qualifies for this model and workflow."""
-        return {mode for profile in self.local_profiles(runtime_state)
-                if profile.model.model_id == model_id
+                           runtime_state: dict | None = None,
+                           observed: dict | None = None) -> set[str]:
+        """Reasoning modes any local profile offers for this model and workflow."""
+        observed = observed if observed is not None else self.observations(runtime_state)
+        item = self._find(observed, model_id)
+        if item is None:
+            return set()
+        return {mode for profile in self.local_profiles(observed=observed)
+                if profile.model.model_id == item["model_id"]
+                and profile.model.runtime == item["origin"]
                 and profile.workflow_mode == workflow
                 and decoder in profile.decoder_modes
                 for mode in profile.reasoning_modes}
 
-    def _document_execution(self, model_id: str,
-                            runtime_state: dict | None = None) \
+    def _document_execution(self, model_id: str | None,
+                            runtime_state: dict | None = None,
+                            observed: dict | None = None) \
             -> tuple[str, str | None, str | None]:
         """How model-backed document work may run here: (mode, workflow, decoder).
 
-        `structured` when the model selected for Documents has an exact
-        `documents.structured` profile on this computer — the strict JSON
-        workflows, unchanged. `chat_backed` when it has none but has an exact
-        Chat profile: a limited fallback that runs as an ordinary bounded Chat
-        call with the text decoder, and never claims the structured workflow.
-        Otherwise `blocked`. The model identity is never swapped, and the exact
-        reasoning/window/output match is still made by `_local_route` at run
-        time, so this only chooses which qualified workflow is asked for.
-
-        Deliberately request-independent: whether a request is a conversion or
-        a search is decided from the request, not here.
+        `structured` when the model can produce schema-constrained output under
+        a Documents profile; `chat_backed` when it has only a plain-text Chat
+        profile — a limited route that never claims the structured workflow;
+        otherwise `blocked`. The model identity is never swapped.
         """
-        state = runtime_state if runtime_state is not None else runtime.probe()
-        if (not db.get_model_enabled(self.conn, model_id)
-                or self.local_model_ref(model_id, state) is None):
+        observed = observed if observed is not None else self.observations(runtime_state)
+        item = self._find(observed, model_id)
+        if not self._usable(item) or not self.model_enabled(item["key"]):
             return "blocked", None, None
-        workflows = {profile.workflow_mode for profile in self.local_profiles(state)
-                     if profile.model.model_id == model_id}
+        workflows = {profile.workflow_mode for profile in self.local_profiles(observed=observed)
+                     if profile.model.model_id == item["model_id"]
+                     and profile.model.runtime == item["origin"]}
         if inference_profiles.DOCUMENTS in workflows:
             return "structured", inference_profiles.DOCUMENTS, "json_schema"
         if inference_profiles.CHAT in workflows:
             return "chat_backed", inference_profiles.CHAT, "text"
         return "blocked", None, None
 
-    def ocr_profile(self, runtime_state: dict | None = None):
-        """The qualified profile for reading pixels here, or `None`.
+    # ---- automatic assignment ------------------------------------------
 
-        `None` is the current and expected answer: no OCR profile is
-        registered, because the installed vision candidate's licence and
-        provenance are unresolved and it did not declare `vision` when it was
-        observed. Every reading path treats `None` as a named refusal rather
-        than as a reason to fall back to another workflow's profile.
+    SCOPE_WORKFLOWS = {
+        "chat": inference_profiles.CHAT, "code": inference_profiles.CODE,
+        "documents.generate": inference_profiles.DOCUMENTS,
+        "documents.ocr": inference_profiles.OCR,
+    }
+
+    def _candidates(self, observed: dict, workflow: str, *, reasoning: str = "disabled",
+                    decoder: str | None = None) -> list:
+        profiles = self.local_profiles(observed=observed)
+        decoder = decoder or admission.WORKFLOWS[workflow][0][0]
+        found = []
+        for item in observed.values():
+            blocked = None
+            if item["locality"] != runtime.LOCAL:
+                blocked = ("runs on another host" if item["locality"] == runtime.REMOTE
+                           else "its locality could not be confirmed")
+            elif not item["integrity"]["eligible"]:
+                blocked = "its files do not match what was installed"
+            elif not self.model_enabled(item["key"]):
+                blocked = "switched off for new work"
+            profile = next((p for p in profiles
+                            if p.model.model_id == item["model_id"]
+                            and p.model.runtime == item["origin"]
+                            and p.workflow_mode == workflow
+                            and decoder in p.decoder_modes), None)
+            found.append(router.Candidate(
+                key=item["key"], model_id=item["model_id"], origin=item["origin"],
+                profile=profile, capabilities=item.get("capabilities"),
+                hints=item.get("hints") or (), resident=item.get("resident", False),
+                fit=item.get("fit", "unknown"),
+                measured=bool(profile and profile.evidence_kind == "measured"),
+                display=item.get("display") or item["model_id"], blocked=blocked))
+        return found
+
+    def preview_model(self, scope: str, observed: dict | None = None) -> str | None:
+        """The model a generic request in this workflow would use now, as a key."""
+        choice = self.choose_model(scope, observed=observed)
+        return choice["key"]
+
+    def choose_model(self, scope: str, *, task: router.Task | None = None,
+                     observed: dict | None = None, text: str = "") -> dict:
+        """The model for one request: the person's pinned choice, or Auto's.
+
+        Returns `{key, reason, pinned, refusal}`. A pinned model that cannot do
+        this task is refused with the reason — never swapped for another.
         """
-        model = self.enabled_model_for("documents.ocr")
+        if scope not in self.SCOPE_WORKFLOWS:
+            raise RequestError("that model scope does not exist")
+        observed = observed if observed is not None else self.observations()
+        workflow = self.SCOPE_WORKFLOWS[scope]
+        task = task or router.classify(text, workflow=workflow)
+        choice = self._choose_for(scope, workflow, task, observed)
+        if (choice["refusal"] and workflow == inference_profiles.DOCUMENTS
+                and choice.get("code") in ("none", "cannot")):
+            # No structured Documents profile anywhere (or not for the pinned
+            # model): the limited Chat-backed route still writes and reads
+            # documents as plain Chat, and says so.
+            chat_task = router.Task(inference_profiles.CHAT, task.needs_vision,
+                                    task.labels, task.estimated_tokens)
+            limited = self._choose_for(scope, inference_profiles.CHAT, chat_task, observed)
+            if not limited["refusal"]:
+                limited["reason"] = (limited["reason"].replace("Chat →", "Documents (limited, as plain Chat) →", 1)
+                                     if limited["reason"].startswith("Auto:")
+                                     else limited["reason"] + " (limited: as plain Chat)")
+                return limited
+        return choice
+
+    def _choose_for(self, scope: str, workflow: str, task, observed: dict) -> dict:
+        stored = db.get_model_selection(self.conn, scope, models.AUTO)
+        key, status = self.resolve_key(stored, observed)
+        if status == "ambiguous":
+            return {"key": None, "pinned": True, "reason": "", "code": "ambiguous",
+                    "refusal": (f"The saved model choice {stored} exists in both Ollama "
+                                "and the Refinix engine. Choose it again in the model "
+                                "selector, or choose Auto.")}
+        if status == "unknown":
+            return {"key": None, "pinned": True, "reason": "", "code": "not_installed",
+                    "refusal": (f"The selected model {stored} is not installed on this "
+                                "computer. Choose another model, or Auto.")}
+        candidates = self._candidates(observed, workflow)
+        if status in ("key", "resolved"):
+            pinned = next((c for c in candidates if c.key == key), None)
+            if pinned is None:
+                _origin, model_id = runtime.split_key(key)
+                return {"key": key, "pinned": True, "reason": "", "code": "not_installed",
+                        "refusal": (f"The selected model {model_id} is not installed on "
+                                    "this computer. Choose another model, or Auto.")}
+            single = router.choose(task, [pinned])
+            if single.candidate is None:
+                why = single.skipped[0][1] if single.skipped else "it cannot do this task"
+                code = ("disabled" if pinned.blocked == "switched off for new work"
+                        else "cannot")
+                return {"key": key, "pinned": True, "reason": "", "code": code,
+                        "refusal": (f"The selected model {pinned.display} {why}. "
+                                    "Choose another model, or Auto.")}
+            return {"key": key, "pinned": True, "refusal": None, "code": None,
+                    "reason": f"Chosen by you: {pinned.display}"}
+        choice = router.choose(task, candidates)
+        if choice.candidate is None:
+            off = [c for c in candidates if c.blocked == "switched off for new work"]
+            code = "disabled" if off and len(off) == len(candidates) else "none"
+            return {"key": None, "pinned": False, "reason": "", "code": code,
+                    "refusal": choice.reason}
+        return {"key": choice.candidate.key, "pinned": False, "refusal": None,
+                "code": None, "reason": choice.reason}
+
+    def worker_model(self, scope: str) -> str | None:
+        """The model to offer a paired worker when nothing here can run it.
+
+        The deferred paired-computer path (`REFINIX_ENABLE_MESH`, source
+        checkouts only): a worker may hold a model this computer lacks. The
+        worker's own strict measured-profile check decides whether it runs;
+        nothing here relaxes it. None when no worker is paired.
+        """
+        if self.paired_worker() is None:
+            return None
+        stored = db.get_model_selection(self.conn, scope, models.AUTO)
+        if stored != models.AUTO:
+            key, _status = self.resolve_key(stored)
+            if key:
+                return key
+        return runtime.model_key(runtime.OLLAMA, runtime.MODEL)
+
+    def _precheck(self, scope: str) -> None:
+        observed = self._observed_cache
+        if observed is not None:
+            choice = self.choose_model(scope, observed=observed)
+            if choice["refusal"]:
+                raise RequestError(choice["refusal"], 409)
+            return
+        stored = db.get_model_selection(self.conn, scope, models.AUTO)
+        key, status = self.resolve_key(stored, {})
+        if status == "ambiguous":
+            raise RequestError(f"The saved model choice {stored} exists in both Ollama "
+                               "and the Refinix engine. Choose it again, or choose "
+                               "Auto.", 409)
+        if key is not None and not self.model_enabled(key):
+            raise RequestError(f"The selected model {runtime.split_key(key)[1]} is "
+                               "switched off for new work.", 409)
+
+    def model_for(self, scope: str, *, new_work: bool = False) -> str:
+        """The model this workflow would use now, as a key (or the stored value).
+
+        A display helper for status and readiness. Real requests call
+        `choose_model` with their task so Auto can see what they need.
+        """
+        if scope not in MODEL_DEFAULTS:
+            raise RequestError("that model scope does not exist")
+        choice = self.choose_model(scope)
+        if new_work and choice["refusal"] and choice["pinned"]:
+            raise RequestError(choice["refusal"], 409)
+        if choice["key"]:
+            return choice["key"]
+        return db.get_model_selection(self.conn, scope, models.AUTO)
+
+    def enabled_model_for(self, scope: str) -> str | None:
+        """The model this workflow would use now, only when it may receive work."""
+        choice = self.choose_model(scope)
+        return choice["key"] if choice["key"] and not choice["refusal"] else None
+
+    def ocr_profile(self, runtime_state: dict | None = None, *,
+                    observed: dict | None = None, model: str | None = None):
+        """The local profile for reading page images here, or `None`.
+
+        Any local model that declares `vision` and offers schema output can
+        read pages; reasoning stays off. A model that does not declare
+        `vision` — like the installed PaddleOCR conversion — gets none.
+        """
+        observed = observed if observed is not None else self.observations(runtime_state)
+        model = model or self.enabled_model_for_observed("documents.ocr", observed)
         if model is None:
             return None
         return self.local_profile(
             workflow=inference_profiles.OCR, model_id=model,
-            reasoning="disabled", decoder="json_schema",
-            runtime_state=runtime_state)
+            reasoning="disabled", decoder="json_schema", observed=observed)
+
+    def enabled_model_for_observed(self, scope: str, observed: dict) -> str | None:
+        task = router.Task(self.SCOPE_WORKFLOWS[scope],
+                           needs_vision=scope == "documents.ocr")
+        choice = self.choose_model(scope, task=task, observed=observed)
+        return choice["key"] if choice["key"] and not choice["refusal"] else None
 
     def _identity_message(self, model_id, runtime_state=None):
         """The product-identity block for one Chat turn.
@@ -469,27 +793,41 @@ class Coordinator:
             # An unreachable engine or worker is a reason to say the inventory
             # is unavailable, never a reason to fail the person's message.
             installed = None
-        return identity.system_message(engine=model_id, models=installed)
+        _origin, name = runtime.split_key(model_id or "")
+        return identity.system_message(engine=name, models=installed)
+
+    # ---- inventory -----------------------------------------------------
+
+    def _check_settings(self, scope: str) -> dict:
+        if scope == models.DOCUMENTS_OCR:
+            from backend.coordinator import pdfrender
+            return {"render_long_edge": pdfrender.TARGET_LONG_EDGE,
+                    "max_pixels": pdfrender.MAX_PIXELS_PER_PAGE}
+        return {}
+
+    def _selftest_profile(self, scope: str, key: str, observed: dict):
+        workflow, decoder = self.SELFTEST_WORKFLOWS[scope]
+        return self.local_profile(workflow=workflow, model_id=key, reasoning="disabled",
+                                  decoder=decoder, observed=observed)
+
+    def check_fingerprints(self, key: str, observed: dict) -> dict:
+        return {scope: admission.check_fingerprint(
+            self._selftest_profile(scope, key, observed), scope,
+            self._check_settings(scope)) for scope in models.SELFTESTS}
 
     def model_inventory(self, runtime_state: dict | None = None) -> list[dict]:
         """Every model this installation knows about, and its state here.
 
-        Four states rather than a list of names: installed, supported but not
-        installed, installed without recorded provenance, and unknown because
-        the engine did not answer. A model the person disabled keeps its row —
-        it is simply no longer eligible for new work, which is a different
-        fact from being absent.
+        One row per artifact: each runtime's own copy of a family is its own
+        row, named by its origin-qualified key. Installed, offered for
+        download, cloud or of unknown locality, and unknown because a runtime
+        did not answer are kept apart. A model the person switched off keeps
+        its row; it is simply not chosen for new work.
         """
         state = runtime_state if runtime_state is not None else runtime.probe()
-        reachable = bool(state.get("reachable"))
-        digests = state.get("digests") or {}
-        local = {model: digests.get(model) for model in (state.get("models") or [])
-                 if model}
-        # Refinix's own engine says whether installed files still match their
-        # install record; an external Ollama reports only its own digests.
-        file_checks = state.get("file_checks") or {}
-        remote = {}
-        remote_profiles = []
+        observed = self.observations(state)
+        local_profiles = self.local_profiles(observed=observed)
+        remote, remote_profiles = {}, []
         try:
             node = self.preflight()
         except pairing.IdentityMismatch:
@@ -502,191 +840,271 @@ class Coordinator:
                 remote_profiles.append(v1.ExecutionProfile.model_validate(item))
             except ValueError:
                 continue
-        local_profiles = self.local_profiles(state)
-        selected = {scope: self.model_for(scope) for scope in MODEL_DEFAULTS}
-        enablement = db.model_enablement(self.conn)
+        selections = {scope: db.get_model_selection(self.conn, scope, models.AUTO)
+                      for scope in MODEL_DEFAULTS}
+        engines = self._install_engines()
+        resolved = {scope: self.resolve_key(value, observed, install_engines=engines)[0]
+                    for scope, value in selections.items()}
         recorded = db.selftests(self.conn)
-        defaults = {self.default_model(scope) for scope in MODEL_DEFAULTS}
-        names = sorted(set(local) | set(remote) | defaults
-                       | {entry.id for entry in models.entries_for(self._engine_kind())})
+        memory = capacity.pool(self.hardware_facts)
+        scope_of = {inference_profiles.CHAT: "chat", inference_profiles.CODE: "code",
+                    inference_profiles.DOCUMENTS: "documents.generate",
+                    inference_profiles.OCR: "documents.ocr"}
         rows = []
-        for model in names:
-            # Named by role, not by operating system: the same words are true
-            # on Windows, macOS and Linux, and this installation cannot know a
-            # peer's OS beyond what that peer reports of itself.
-            locations = ([device.location_label(local=True)] if model in local else []) + \
-                        ([device.location_label(local=False)] if model in remote else [])
-            enabled = enablement.get(model, True)
-            local_integrity = models.integrity(model, local.get(model))
-            check = file_checks.get(model) or {}
-            if check.get("state") == models.MISMATCH:
-                local_integrity = {"state": models.MISMATCH,
-                                   "expected": local_integrity["expected"],
-                                   "observed": None, "eligible": False,
-                                   "detail": check.get("detail")}
-            elif check.get("state") == "pending" and local_integrity["eligible"]:
-                local_integrity = {**local_integrity, "state": "pending",
-                                   "detail": check.get("detail")}
-            worker_integrity = models.integrity(
-                model, (remote.get(model) or {}).get("manifest_sha256"))
-            local_eligible = (model in local and local_integrity["eligible"]
-                              and any(p.model.model_id == model
-                                      for p in local_profiles))
-            remote_eligible = (model in remote and worker_integrity["eligible"]
-                               and any(p.model.model_id == model
-                                       for p in remote_profiles))
+        seen = set()
+        for key, item in sorted(observed.items()):
+            seen.add(key)
+            origin, model_id = item["origin"], item["model_id"]
+            enabled = self.model_enabled(key)
+            mine = [p for p in local_profiles if p.model.model_id == model_id
+                    and p.model.runtime == origin]
             eligible = []
-            profile_scopes = {
-                inference_profiles.CHAT: "chat",
-                inference_profiles.CODE: "code",
-                inference_profiles.DOCUMENTS: "documents.generate",
-            }
-            if enabled:
-                for profile in [*local_profiles, *remote_profiles]:
-                    scope = profile_scopes.get(profile.workflow_mode)
-                    if profile.model.model_id == model and scope and scope not in eligible:
+            if enabled and self._usable(item):
+                for profile in mine:
+                    scope = scope_of.get(profile.workflow_mode)
+                    if scope and scope not in eligible:
                         eligible.append(scope)
-            # Reading pixels needs a qualified OCR profile, exactly as every
-            # other scope needs one. Declaring `vision` is a runtime
-            # observation about an installed file; it is not a licence, a
-            # provenance record or a measured envelope, so on its own it never
-            # made this model selectable for real work.
-            if enabled and local_eligible and any(
-                    p.workflow_mode == inference_profiles.OCR
-                    and p.model.model_id == model for p in local_profiles):
-                if runtime.VISION_CAPABILITY in \
-                        (runtime.model_capabilities(model) or []):
-                    eligible.append("documents.ocr")
-            lifecycle = models.lifecycle_state(
-                model, installed_here=model in local,
-                installed_elsewhere=model in remote, runtime_reachable=reachable)
+            fingerprints = self.check_fingerprints(key, observed)
+            legacy_key, _status = self.resolve_key(model_id, observed,
+                                                   install_engines=engines)
+            views = models.selftest_view(
+                recorded, model=key, digest=item["digest"], fingerprints=fingerprints,
+                legacy=model_id if legacy_key == key else None)
+            evidence = {}
+            for scope in ("chat", "code", "documents.generate", "documents.ocr"):
+                profile = next((p for p in mine if scope_of.get(p.workflow_mode) == scope), None)
+                checked = bool((views.get(scope) or {}).get("current"))
+                evidence[scope] = admission.evidence_label(
+                    profile if (self._usable(item) and enabled) else None, checked=checked)
+            entry = item.get("entry")
+            if item["locality"] == runtime.REMOTE:
+                lifecycle = "cloud"
+            elif item["locality"] != runtime.LOCAL:
+                lifecycle = "locality_unknown"
+            else:
+                lifecycle = models.INSTALLED if entry is not None else models.UNLISTED
             rows.append({
-                "id": model, "installed": bool(locations), "locations": locations,
-                "state": lifecycle,
-                "enabled": enabled,
+                "key": key, "id": model_id, "origin": origin,
+                "runtime_label": router.ORIGIN_LABEL.get(origin, origin),
+                "display_name": item.get("display") or model_id,
+                "installed": True, "locations": [device.location_label(local=True)],
+                "state": lifecycle, "locality": item["locality"], "enabled": enabled,
                 "eligible_scopes": eligible,
-                "supported_scopes": list(
-                    (models.entry_for(model).scopes if models.entry_for(model)
-                     else ())),
-                "provenance": models.provenance(model),
-                "setup": models.setup_action(model) if lifecycle == models.ABSENT
-                         else None,
-                "selftests": models.selftest_view(
-                    recorded, model=model, digest=local.get(model)),
-                "selected_for": [scope for scope, chosen in selected.items()
-                                 if chosen == model],
-                "reasoning": db.get_reasoning(self.conn, model),
+                "supported_scopes": list(entry.scopes if entry else ()),
+                "provenance": models.provenance(model_id, origin=origin, entry=entry),
+                "setup": None,
+                "selftests": views,
+                "evidence": evidence,
+                "evidence_labels": admission.LABELS,
+                "selected_for": [scope for scope, chosen in resolved.items() if chosen == key],
+                "reasoning": self.reasoning_for(key),
                 "reasoning_note": "Reasoning may improve difficult work but is slower.",
-                "digests": {"local": local.get(model),
-                            "worker": (remote.get(model) or {}).get("manifest_sha256")},
-                "integrity": {"local": local_integrity,
-                              "worker": worker_integrity},
+                "digests": {"local": item["digest"],
+                            "worker": (remote.get(model_id) or {}).get("manifest_sha256")},
+                "integrity": {"local": item["integrity"],
+                              "worker": models.integrity(
+                                  model_id, (remote.get(model_id) or {}).get("manifest_sha256"))},
                 "execution_profiles": {
-                    "local": [p.model_dump() for p in local_profiles
-                              if p.model.model_id == model],
+                    "local": [p.model_dump() for p in mine],
                     "worker": [p.model_dump() for p in remote_profiles
-                               if p.model.model_id == model],
+                               if p.model.model_id == model_id],
                 },
+                "hints": list(item.get("hints") or ()),
+                "fit": item.get("fit"), "fit_label": capacity.FIT_LABELS.get(item.get("fit")),
+                "weights_bytes": item.get("weights_bytes"),
+                "context_length": item.get("context_length"),
+                "capabilities": item.get("capabilities"),
+                "resident": item.get("resident", False),
+                "managed_by": "Ollama" if origin == runtime.OLLAMA else "Refinix",
+                "removable": origin == runtime.LLAMA_CPP,
+            })
+        # Downloadable Refinix-engine models not installed yet, and the
+        # recorded Ollama artifacts when Ollama is the only runtime.
+        offered = [entry for entry in models.CATALOGUE
+                   if (entry.engine == runtime.LLAMA_CPP and entry.files
+                       and runtime.managed_engine() is not None)
+                   or (entry.engine == runtime.OLLAMA and runtime.managed_engine() is None)]
+        reachable = {origin: bool(runtime.substate(state, origin).get("reachable"))
+                     for origin in runtime.ORIGINS}
+        for entry in offered:
+            key = runtime.model_key(entry.engine, entry.id)
+            if key in seen:
+                continue
+            if not reachable.get(entry.engine) and entry.engine == runtime.OLLAMA:
+                lifecycle = models.UNAVAILABLE
+            else:
+                lifecycle = models.ABSENT
+            rows.append({
+                "key": key, "id": entry.id, "origin": entry.engine,
+                "runtime_label": router.ORIGIN_LABEL.get(entry.engine, entry.engine),
+                "display_name": entry.display_name or entry.id,
+                "installed": bool(entry.id in remote), "locations":
+                    [device.location_label(local=False)] if entry.id in remote else [],
+                "state": lifecycle, "locality": None,
+                "enabled": self.model_enabled(key), "eligible_scopes": [],
+                "supported_scopes": list(entry.scopes),
+                "provenance": models.provenance(entry.id, origin=entry.engine, entry=entry),
+                "setup": (models.setup_action(entry.id)
+                          if lifecycle == models.ABSENT else None),
+                "selftests": models.selftest_view(recorded, model=key, digest=None),
+                "evidence": {}, "evidence_labels": admission.LABELS,
+                "selected_for": [scope for scope, chosen in resolved.items() if chosen == key],
+                "reasoning": self.reasoning_for(key),
+                "reasoning_note": "Reasoning may improve difficult work but is slower.",
+                "digests": {"local": None,
+                            "worker": (remote.get(entry.id) or {}).get("manifest_sha256")},
+                "integrity": {"local": models.local_integrity(entry.id, None, entry.engine),
+                              "worker": models.integrity(
+                                  entry.id, (remote.get(entry.id) or {}).get("manifest_sha256"))},
+                "execution_profiles": {"local": [], "worker": [
+                    p.model_dump() for p in remote_profiles if p.model.model_id == entry.id]},
+                "hints": list(entry.hints),
+                "fit": capacity.fit(entry.weights_bytes(), memory),
+                "fit_label": capacity.FIT_LABELS[capacity.fit(entry.weights_bytes(), memory)],
+                "weights_bytes": entry.weights_bytes(),
+                "context_length": entry.context_length, "capabilities": None,
+                "resident": False,
+                "managed_by": "Ollama" if entry.engine == runtime.OLLAMA else "Refinix",
+                "removable": False,
             })
         return rows
+
+    def _row(self, model: str, inventory: list[dict] | None = None) -> dict | None:
+        inventory = inventory if inventory is not None else self.model_inventory()
+        key, _status = self.resolve_key(model)
+        if key is None:
+            return None
+        return next((row for row in inventory if row["key"] == key), None)
 
     def select_model(self, scope: str, model: str) -> dict:
         if scope not in MODEL_DEFAULTS:
             raise RequestError("that model scope does not exist")
-        if model == "auto":
-            raise RequestError("automatic model choice is not enabled yet", 409)
-        row = next((item for item in self.model_inventory() if item["id"] == model),
-                   None)
+        if model == models.AUTO:
+            db.set_model_selection(self.conn, scope, models.AUTO)
+            return {"scope": scope, "model": models.AUTO}
+        key, status = self.resolve_key(model)
+        if status == "ambiguous":
+            raise RequestError("that model name exists in both Ollama and the Refinix "
+                               "engine; choose the exact one", 409)
+        row = self._row(key) if key else None
         if row is None or scope not in row["eligible_scopes"]:
             # Ordered from the most fundamental reason outwards, so the message
-            # names the thing that actually has to change. A model that is both
-            # absent and switched off is absent first: turning it back on would
-            # not make it selectable.
+            # names the thing that actually has to change.
             if row is None or not row["installed"]:
-                raise RequestError("that model is not available for this workflow",
-                                   409)
+                raise RequestError("that model is not available for this workflow", 409)
+            if row["locality"] not in (None, runtime.LOCAL):
+                raise RequestError("that model runs on another host or its locality "
+                                   "could not be confirmed", 409)
             if not row["enabled"]:
                 raise RequestError(
-                    "that model is switched off for new work; turn it back on first",
-                    409)
+                    "that model is switched off for new work; turn it back on first", 409)
             if scope == "documents.ocr":
                 raise RequestError(
-                    "the runtime did not confirm that model accepts document images",
-                    409)
+                    "the runtime did not confirm that model accepts document images", 409)
             raise RequestError("that model is not available for this workflow", 409)
-        db.set_model_selection(self.conn, scope, model)
-        return {"scope": scope, "model": model}
+        db.set_model_selection(self.conn, scope, key)
+        return {"scope": scope, "model": key}
 
     def set_model_enabled(self, model: str, enabled: bool) -> dict:
         """Turn one model on or off for new work.
 
         Nothing is deleted and no running attempt changes: a job already
-        under way keeps the model it was dispatched with, because silently
-        swapping it would make the recorded attempt describe work that did not
-        happen. A disabled model simply stops being eligible for the next one.
+        under way keeps the model it was dispatched with. A disabled model
+        simply stops being eligible for the next one.
         """
-        row = next((item for item in self.model_inventory() if item["id"] == model),
-                   None)
+        row = self._row(model)
         if row is None:
             raise RequestError("that model is not known to this installation", 404)
-        db.set_model_enabled(self.conn, model, bool(enabled))
-        return {"model": model, "enabled": bool(enabled),
-                "impact": self.removal_impact(model)}
+        db.set_model_enabled(self.conn, row["key"], bool(enabled))
+        return {"model": row["key"], "enabled": bool(enabled),
+                "impact": self.removal_impact(row["key"])}
 
     def removal_impact(self, model: str) -> dict:
         """What a removal would and would not break, before it happens."""
-        return models.removal_impact(
-            model,
-            selections={scope: self.model_for(scope) for scope in MODEL_DEFAULTS},
-            enabled=db.model_enablement(self.conn))
+        key, _status = self.resolve_key(model)
+        key = key or model
+        selections = {}
+        for scope in MODEL_DEFAULTS:
+            chosen, _ = self.resolve_key(db.get_model_selection(self.conn, scope, models.AUTO))
+            selections[scope] = chosen
+        impact = models.removal_impact(key, selections=selections,
+                                       enabled={key: self.model_enabled(key)})
+        origin, model_id = runtime.split_key(key)
+        impact["model"] = key
+        if origin == runtime.OLLAMA:
+            # Ollama's store belongs to the person; Refinix neither removes
+            # from it nor hands out terminal commands for it.
+            impact["command"] = None
+            impact["managed_by"] = "Ollama"
+            impact["detail"] += (" This model belongs to your Ollama installation; "
+                                 "Refinix does not remove it.")
+        else:
+            impact["managed_by"] = "Refinix"
+            impact["command"] = None
+        return impact
 
-    def run_model_selftest(self, scope: str,
-                           runtime_state: dict | None = None) -> dict:
+    def run_model_selftest(self, scope: str, runtime_state: dict | None = None,
+                           model: str | None = None) -> dict:
         """Run one capability's smallest representative check and record it.
 
-        Named apart from `run_selftest`, which is the *worker* round-trip: the
-        two answer different questions and must never be confused for one
-        another in a status line.
-
-        The result is stored against the manifest digest observed at the time,
-        so replacing a model's bytes under the same tag cannot inherit a pass.
-        A check that could not run is recorded as unavailable with its reason,
+        The result is stored against the manifest digest observed at the time
+        and the settings fingerprint the check ran with, so replacing a model's
+        bytes or changing what the check exercises cannot inherit a pass. A
+        check that could not run is recorded as unavailable with its reason,
         never as a failure of the model.
         """
         if scope not in models.SELFTESTS:
             raise RequestError("there is no self-test for that workflow", 404)
         state = runtime_state if runtime_state is not None else runtime.probe()
-        model = self.model_for(scope, new_work=True)
+        observed = self.observations(state)
+        if model:
+            key, status = self.resolve_key(model, observed)
+            if key is None:
+                raise RequestError("that model is not known to this installation", 404)
+        else:
+            task = router.Task(self.SELFTEST_WORKFLOWS[scope][0],
+                               needs_vision=scope == models.DOCUMENTS_OCR)
+            choice = self.choose_model(scope, task=task, observed=observed)
+            if choice["refusal"] and not choice["key"]:
+                # Auto found nothing to check, so there is no model to record
+                # a result against.
+                raise RequestError(choice["refusal"], 409)
+            key = choice["key"]
+        item = observed.get(key)
+        origin, model_id = runtime.split_key(key)
+        profile = self._selftest_profile(scope, key, observed) if item else None
+        fingerprint = admission.check_fingerprint(profile, scope, self._check_settings(scope))
         try:
-            if not state.get("reachable"):
+            if origin is not None and not runtime.substate(state, origin).get("reachable"):
+                label = runtime.engine_label(origin)
+                raise models.SelfTestError(f"{label[0].upper()}{label[1:]} did not answer.")
+            if item is None:
+                raise models.SelfTestError(f"{model_id} is not installed on this computer.")
+            if item["locality"] != runtime.LOCAL:
                 raise models.SelfTestError(
-                    f"{runtime.engine_label()[0].upper()}"
-                    f"{runtime.engine_label()[1:]} did not answer.")
-            if model not in (state.get("models") or []):
-                raise models.SelfTestError(
-                    f"{model} is not installed on this computer.")
-            # Asked only by the one check that needs a modality, so the other
-            # three do not pay for a round trip whose answer they ignore.
-            capabilities = (runtime.model_capabilities(model)
+                    f"{model_id} runs on another host or its locality could not be "
+                    "confirmed, so it was not checked.")
+            if not self.model_enabled(key):
+                raise models.SelfTestError(f"{model_id} is switched off for new work.")
+            capabilities = (runtime.model_capabilities(key)
                             if models.SELFTESTS[scope].needs_vision else None)
             result = models.run_selftest(
-                scope, model, generate=self._selftest_generate,
+                scope, key, generate=self._selftest_generate,
                 artifact=docgen.selftest, capabilities=capabilities)
         except models.SelfTestError as exc:
-            result = {"scope": scope, "model": model, "state": "unavailable",
+            result = {"scope": scope, "model": key, "state": "unavailable",
                       "detail": str(exc)}
+        detail = str(result["detail"]).replace(key, model_id)
         return db.record_selftest(
-            conn=self.conn, model=model, scope=scope, state=result["state"],
-            detail=result["detail"],
-            digest=(state.get("digests") or {}).get(model),
-            runtime_version=state.get("server_version"))
+            conn=self.conn, model=key, scope=scope, state=result["state"],
+            detail=detail, digest=(item or {}).get("digest"),
+            runtime_version=(item or {}).get("runtime_version"),
+            check_fingerprint=fingerprint if result["state"] != "unavailable" else None)
 
-    #: Which qualified workflow each self-test scope actually exercises.
-    #: Taken from the scope that was asked for, never inferred from the shape
-    #: of the response format: reading a page and writing a document are two
-    #: different workflows that both happen to decode JSON, and admitting one
-    #: under the other's profile would defeat the point of binding a request
-    #: to an exact qualified workflow.
+    #: Which workflow each self-test scope actually exercises. Taken from the
+    #: scope that was asked for, never inferred from the shape of the response
+    #: format: reading a page and writing a document are two different
+    #: workflows that both happen to decode JSON.
     SELFTEST_WORKFLOWS = {
         "chat": (inference_profiles.CHAT, "text"),
         "code": (inference_profiles.CODE, "json_schema"),
@@ -700,12 +1118,9 @@ class Coordinator:
 
         Each caller supplies the same messages and decoder constraint as its
         real workflow. The allowance stays bounded, so this remains a
-        capability check rather than a benchmark.
-
-        It watches the coordinator's stopping flag for the same reason every
-        other streaming path does: without it, quitting while a self-test is
-        loading a cold model would wait out the runtime's whole request
-        timeout instead of closing.
+        capability check rather than a benchmark. It watches the coordinator's
+        stopping flag so quitting during a cold load does not wait out the
+        runtime's whole request timeout.
         """
         response_format = options.pop("response_format", None)
         output_allowance = options.pop("num_predict", None)
@@ -713,34 +1128,124 @@ class Coordinator:
             workflow, decoder = self.SELFTEST_WORKFLOWS[scope]
         except KeyError:
             raise models.SelfTestError(
-                f"there is no qualified workflow for the {scope} self-test") from None
+                f"there is no workflow for the {scope} self-test") from None
         state = runtime.probe()
+        observed = self.observations(state)
         profile = self.local_profile(
             workflow=workflow, model_id=model, reasoning="disabled",
-            decoder=decoder, runtime_state=state,
-            output_allowance=output_allowance)
+            decoder=decoder, observed=observed, output_allowance=output_allowance)
         if profile is None:
             raise models.SelfTestError(
-                "this model/runtime/device combination has no qualified execution profile")
-        inference = inference_profiles.request(
+                "this model cannot run this check on this computer")
+        inference = inference_profiles.request_local(
             profile, reasoning="disabled", decoder=decoder,
             output_allowance=output_allowance,
             decoder_schema_sha256=(inference_profiles.schema_sha256(response_format)
                                    if response_format is not None else None))
-        collected, done = [], None
-        for kind, payload in runtime.stream_chat(
-                messages, profile=profile, inference=inference,
-                response_format=response_format,
-                should_cancel=self.stopping.is_set, **options):
-            if kind == "delta":
-                collected.append(payload)
-            elif kind == "cancelled":
-                raise models.SelfTestError("the self-test was stopped")
-            elif kind == "done":
-                done = payload
+        token = f"selftest-{db.new_id()}"
+        item = self._find(observed, model)
+        decision = self._admit(token, item, profile.qualified_context_tokens,
+                               should_cancel=self.stopping.is_set)
+        if decision.outcome != "admit":
+            raise models.SelfTestError(decision.reason)
+        try:
+            collected, done = [], None
+            for kind, payload in runtime.stream_chat(
+                    messages, profile=profile, inference=inference,
+                    response_format=response_format,
+                    should_cancel=self.stopping.is_set, **options):
+                if kind == "delta":
+                    collected.append(payload)
+                elif kind == "cancelled":
+                    raise models.SelfTestError("the self-test was stopped")
+                elif kind == "done":
+                    done = payload
+        finally:
+            self.ledger.release(token)
         if not done or done.get("done_reason") != "stop":
             raise models.SelfTestError("the model's self-test reply was incomplete")
         return "".join(collected)
+
+    # ---- capacity --------------------------------------------------------
+
+    @staticmethod
+    def _available_memory() -> int | None:
+        try:
+            import psutil
+            return int(psutil.virtual_memory().available)
+        except Exception:                                  # noqa: BLE001
+            return None
+
+    def _admit(self, token: str, item: dict | None, window: int, *,
+               should_cancel=None, group: str | None = None):
+        """One reservation for Refinix-owned work, before the attempt is frozen."""
+        if item is None:
+            return capacity.Decision("admit", "")
+        loaded = {key: other.get("loaded_window")
+                  for key, other in (self._observed_cache or {}).items()
+                  if other.get("resident")}
+        if item.get("resident"):
+            loaded[item["key"]] = item.get("loaded_window")
+        self.ledger.mark_resident(loaded)
+        return self.ledger.acquire(
+            job_id=token, key=item["key"], origin=item["origin"],
+            weights_bytes=item.get("weights_bytes"), window=window,
+            resident=bool(item.get("resident")), loaded_window=item.get("loaded_window"),
+            group=group, memory=capacity.pool(self.hardware_facts),
+            enforce_wait=item["origin"] == runtime.LLAMA_CPP,
+            should_cancel=should_cancel, refresh=lambda: self._residency(item))
+
+    @staticmethod
+    def _residency(item: dict) -> dict | None:
+        """A fresh, light reading of whether this model is loaded, and its window."""
+        try:
+            if item["origin"] == runtime.OLLAMA:
+                loaded = next((other for other in runtime.ollama_running(timeout=2)
+                               if other.get("model") == item["model_id"]), None)
+            else:
+                backend = runtime.managed_engine()
+                loaded = backend.loaded() if backend is not None else None
+                if loaded and loaded.get("model") != item["model_id"]:
+                    loaded = None
+        except Exception:                                  # noqa: BLE001
+            return None
+        return {"resident": loaded is not None,
+                "loaded_window": loaded.get("context_length") if loaded else None}
+
+    def _page_reading_call(self, job_id: str, ocr_model: str | None):
+        """The page-reading call for this job, admitted like any other model use.
+
+        Each page is one bounded reservation in the job's own group, so a job
+        that reads pages with the model that will also write its answer is
+        not counted twice, while one that reads them with another model
+        reserves that model too.
+        """
+        def call(messages, **kwargs):
+            item = self._find(self._observed_cache or {}, ocr_model)
+            if item is not None:
+                # Read again for every page: the first page usually loads the
+                # model, and the job's other reservations then stop counting
+                # memory the reading already shows in use.
+                fresh = self._residency(item)
+                if fresh:
+                    item = {**item, **fresh}
+            profile = kwargs.get("profile")
+            window = (profile.qualified_context_tokens if profile is not None
+                      else admission.DEFAULT_WINDOW)
+            token = f"{job_id}:ocr"
+            decision = self._admit(token, item, window,
+                                   should_cancel=kwargs.get("should_cancel"),
+                                   group=job_id)
+            if decision.outcome == "cancelled":
+                yield "cancelled", {}
+                return
+            if decision.outcome != "admit":
+                raise ocr.OcrError("unavailable", decision.reason)
+            try:
+                yield from runtime.stream_chat(messages, **kwargs)
+            finally:
+                self.ledger.release(token)
+        return call
 
     @db.serialized
     def request_cancel(self, job_id: str):
@@ -801,8 +1306,8 @@ class Coordinator:
                 # approval note is a strict, citation-checked JSON workflow and
                 # is not offered on a profile that cannot decode it.
                 raise RequestError(
-                    "The inspection approval note needs a qualified structured "
-                    "Documents profile, which this computer does not have. "
+                    "The inspection approval note needs the structured Documents "
+                    "profile, which the model for Documents cannot run here. "
                     "Choose General document instead.", 409)
         # The document choices are made against this request and stored with
         # it, so a reopened conversation reports the file and workflow that
@@ -816,7 +1321,11 @@ class Coordinator:
         scope = ("documents.generate" if skill_id in docflow.DOCUMENT_SKILLS
                  else "chat")
         if skill_id != docflow.SEARCH_SKILL and not conversion_request:
-            self.model_for(scope, new_work=True)
+            # Refused before a job exists when nothing here can run it: the
+            # pinned model cannot, or no installed model can (Auto). Decided
+            # from the last observation, without probing on every message; a
+            # request whose needs only show at run time is decided there.
+            self._precheck(scope)
         for source_id in reuse_source_ids:
             self._reused_source(chat_id, source_id)
         if reuse_source_ids and len(reuse_source_ids) + len(db.list_attachments(
@@ -895,83 +1404,161 @@ class Coordinator:
                     request_text, has_attachments=False))
             uses_model = (skill_id != docflow.SEARCH_SKILL
                           and not conversion_request)
-            model_id = self.model_for(scope) if uses_model else None
-            reasoning = db.get_reasoning(self.conn, model_id) if uses_model else False
-            reasoning_mode = "enabled" if reasoning else "disabled"
             if (skill_id not in docflow.DOCUMENT_SKILLS and not request_files
                     and docflow.requests_transcription(request_text)):
                 raise docflow.WorkflowError("source_selection_required",
                     "Choose the earlier source with + → Reuse, or attach it again. No file was reread; earlier answer text is not the original source.")
-            # Probed once and shared. Routing needs the model reference and the
-            # Chat identity block needs the installed list, and both used to ask
-            # separately — three extra loopback calls on every message for an
-            # answer the turn already had.
-            runtime_state = runtime.probe() if uses_model else None
-            # A document skill whose model has no structured Documents profile
-            # but an exact Chat profile runs as an ordinary bounded Chat call.
-            # Blocked stays on the Documents workflow, so `_local_route` finds
-            # no profile and the existing refusal below names that.
+            # Probed once and shared. Routing, admission and the Chat identity
+            # block all read this one observation. Search answers without a
+            # model but may still read a scanned page, so it observes too.
+            observes = uses_model or bool(request_files)
+            runtime_state = runtime.probe() if observes else None
+            observed = self.observations(runtime_state) if observes else {}
+            history = self.chat_messages(chat_id)
+            # Everything that decides what this attempt is — the model, its
+            # locality and identity, the memory it may use and its context
+            # window — is settled here, before the attempt is created. After
+            # that it is never changed in place (`docs/PROJECT.md` 7.0).
+            model_id, choice_reason, wanted_window = None, "", None
+            if uses_model:
+                default_output = admission.DEFAULT_OUTPUT[workflow_mode]
+                _preview_messages, preview = context.select(
+                    history, window=admission.DEFAULT_WINDOW,
+                    output_allowance=default_output)
+                image_only = (skill_id is None and len(request_files) == 1
+                              and Path(request_files[0]["filename"]).suffix.lower()
+                              in documents.IMAGE_SUFFIXES)
+                task = router.classify(
+                    request_text, workflow=workflow_mode, prefers_vision=image_only,
+                    estimated_tokens=preview.estimated_input_tokens,
+                    default_budget=preview.input_budget_tokens)
+                choice = self.choose_model(scope, task=task, observed=observed)
+                fallback = (self.worker_model(scope)
+                            if choice["refusal"] and skill_id is None
+                            and not request_files else None)
+                if choice["refusal"] and fallback is None:
+                    self._refuse_before_run(job_id, choice["refusal"])
+                    return
+                model_id = choice["key"] if not choice["refusal"] else fallback
+                choice_reason = choice["reason"]
+                # A conversation longer than the default window may use more of
+                # the window the model declares, when this computer has room.
+                if not preview.newest_fits or preview.omitted_count:
+                    declared = (observed.get(model_id) or {}).get("context_length") or 0
+                    needed = preview.estimated_input_tokens + default_output + 512
+                    for size in (16384, 32768):
+                        if needed <= size <= declared:
+                            wanted_window = size
+                            break
+            model_name = runtime.split_key(model_id)[1] if model_id else None
+            reasoning = self.reasoning_for(model_id) if uses_model else False
+            reasoning_mode = "enabled" if reasoning else "disabled"
+            # A document skill whose model offers no structured Documents
+            # profile but a plain Chat profile runs as an ordinary bounded Chat
+            # call. Blocked stays on the Documents workflow, so `_local_route`
+            # finds no profile and the refusal below names that.
             chat_backed = False
             if skill_id in docflow.DOCUMENT_SKILLS and uses_model:
                 document_mode, mode_workflow, mode_decoder = \
-                    self._document_execution(model_id, runtime_state)
+                    self._document_execution(model_id, observed=observed)
                 if document_mode == "chat_backed":
                     chat_backed = True
                     workflow_mode, decoder_mode = mode_workflow, mode_decoder
             structured_document = (skill_id in docflow.DOCUMENT_SKILLS
                                    and not chat_backed)
             reasoning_note = ""
-            if structured_document and uses_model:
-                # Reasoning is chosen per model, but qualified per workflow. A
-                # structured document whose profile here offers only the other
-                # mode runs in that mode and says so, rather than being refused
-                # for a setting the person chose for Chat.
+            if uses_model:
+                # Reasoning is chosen per model, but offered per workflow and
+                # model. A request whose profile here offers only the other
+                # mode runs in that mode; a structured document says so.
                 offered = self._offered_reasoning(model_id, workflow_mode,
-                                                  decoder_mode, runtime_state)
+                                                  decoder_mode, observed=observed)
                 if offered and reasoning_mode not in offered:
                     reasoning_mode = "disabled" if "disabled" in offered else "enabled"
                     reasoning = reasoning_mode == "enabled"   # what the attempt records
-                    reasoning_note = (
-                        f"; ran with reasoning {'off' if reasoning_mode == 'disabled' else 'on'}"
-                        ", the only mode qualified for Documents on this computer")
-            if skill_id in docflow.DOCUMENT_SKILLS:
-                route = self._local_route(
-                    dispatch.Route(
-                        "local",
-                        "local coordinator: Documents (limited) runs on this "
-                        "computer — files are extracted here and the selected "
-                        "model answers with its qualified Chat profile; the "
-                        "structured Documents workflow is not qualified here"
-                        if chat_backed else
-                        "local coordinator: Documents runs on this computer"
-                        + reasoning_note),
-                    model_id, uses_model, runtime_state,
-                    workflow=workflow_mode, reasoning=reasoning_mode,
-                    decoder=decoder_mode, context_window=None,
-                    output_allowance=None)
-            elif request_files:
-                route = self._local_route(
-                    dispatch.Route(
-                        "local", "local coordinator: this request has attached "
-                        "files, which are read on this computer"),
-                    model_id, uses_model, runtime_state,
-                    workflow=workflow_mode, reasoning=reasoning_mode,
-                    decoder=decoder_mode, context_window=None,
-                    output_allowance=None)
-            else:
-                route = self.choose_route(model_id=model_id,
-                                          runtime_state=runtime_state,
-                                          workflow=workflow_mode,
-                                          reasoning=reasoning_mode,
-                                          decoder=decoder_mode)
+                    if structured_document:
+                        reasoning_note = (
+                            f"; ran with reasoning {'off' if reasoning_mode == 'disabled' else 'on'}"
+                            ", the only mode offered for Documents on this computer")
+
+            def routed(window):
+                if skill_id in docflow.DOCUMENT_SKILLS:
+                    return self._local_route(
+                        dispatch.Route(
+                            "local",
+                            "local coordinator: Documents (limited) — files are "
+                            "extracted here and the model answers as plain Chat, "
+                            "not the structured workflow"
+                            if chat_backed else
+                            "local coordinator: Documents runs on this computer"
+                            + reasoning_note),
+                        model_id, uses_model, runtime_state,
+                        workflow=workflow_mode, reasoning=reasoning_mode,
+                        decoder=decoder_mode, context_window=window,
+                        output_allowance=None, observed=observed)
+                if request_files:
+                    return self._local_route(
+                        dispatch.Route(
+                            "local", "local coordinator: this request has attached "
+                            "files, which are read on this computer"),
+                        model_id, uses_model, runtime_state,
+                        workflow=workflow_mode, reasoning=reasoning_mode,
+                        decoder=decoder_mode, context_window=window,
+                        output_allowance=None, observed=observed)
+                return self.choose_route(model_id=model_id,
+                                         runtime_state=runtime_state,
+                                         workflow=workflow_mode,
+                                         reasoning=reasoning_mode,
+                                         decoder=decoder_mode,
+                                         context_window=window, observed=observed)
+
+            route = routed(wanted_window)
+            if wanted_window is not None and route.profile is None:
+                wanted_window = None
+                route = routed(None)
             profile = (v1.ExecutionProfile.model_validate(route.profile)
                        if route.profile else None)
+            # Memory for Refinix's own work, reserved before the attempt
+            # exists. A Refinix-engine load that does not fit yet waits here,
+            # visibly queued and cancellable; a larger window that does not
+            # fit falls back to the default one, and the window used is what
+            # the attempt records.
+            if uses_model and profile is not None and not route.remote:
+                stopping = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
+                decision = self._admit(job_id, observed.get(model_id),
+                                       profile.qualified_context_tokens,
+                                       should_cancel=stopping)
+                if decision.outcome != "admit" and wanted_window is not None:
+                    self.ledger.release(job_id)
+                    wanted_window = None
+                    route = routed(None)
+                    profile = (v1.ExecutionProfile.model_validate(route.profile)
+                               if route.profile else None)
+                    decision = (self._admit(job_id, observed.get(model_id),
+                                            profile.qualified_context_tokens,
+                                            should_cancel=stopping)
+                                if profile is not None else decision)
+                if decision.outcome == "cancelled":
+                    self._stop(job_id, None, "cancelled", None, {
+                        "code": "cancelled_by_user",
+                        "message": "cancelled while waiting for memory",
+                        "retryable": True})
+                    return
+                if decision.outcome == "refuse":
+                    self._refuse_before_run(job_id, decision.reason)
+                    return
+            if choice_reason:
+                # The route's own sentence first: it says where and how the
+                # work runs, and the model choice follows within the limit.
+                route = dispatch.Route(
+                    route.kind, f"{route.reason}; {choice_reason}"[:256],
+                    node_id=route.node_id, relationship_id=route.relationship_id,
+                    model=route.model, profile=route.profile)
             inference = None
-            history = self.chat_messages(chat_id)
-            # Context selection consumes the chosen qualified profile. A
-            # remote worker with a smaller measured window therefore receives
-            # a different explicit pre-execution selection, never a hidden
-            # runtime truncation.
+            # Context selection consumes the chosen profile. A remote worker
+            # with a smaller measured window therefore receives a different
+            # explicit pre-execution selection, never a hidden runtime
+            # truncation.
             window = (profile.qualified_context_tokens if profile
                       else runtime.NUM_CTX)
             allowance = (profile.default_output_tokens if profile
@@ -988,7 +1575,7 @@ class Coordinator:
                 db.set_attempt_relationship(self.conn, attempt_id,
                                             route.relationship_id)
             if uses_model:
-                db.set_attempt_reasoning(self.conn, attempt_id, model_id, reasoning)
+                db.set_attempt_reasoning(self.conn, attempt_id, model_name, reasoning)
             self._emit(job_id, attempt_id, {"kind": "attempt.state",
                                             "previous": None, "current": "queued"})
             db.set_attempt_selection(self.conn, attempt_id, selection.as_dict())
@@ -1019,11 +1606,11 @@ class Coordinator:
                     "requested_profile_id": (route.profile or {}).get("profile_id"),
                     "actual_profile_id": None,
                     "route": "remote" if route.remote else "local",
-                    "refusal_reason": "no compatible qualified execution profile"})
+                    "refusal_reason": "no compatible execution profile"})
                 self._stop(job_id, attempt_id, "failed", "running", {
                     "code": "unavailable",
-                    "message": (f"the selected model {model_id} has no compatible "
-                                "qualified execution profile at this target")[:256],
+                    "message": (f"the selected model {model_name} cannot run this "
+                                "workflow at this target")[:256],
                     "retryable": True})
                 return
             if route.remote and skill_id is None:
@@ -1036,7 +1623,7 @@ class Coordinator:
                     output_allowance=selection.output_allowance,
                     context_window=selection.context_window)
                 logical_messages = [identity.system_message(
-                    engine=model_id, models=None,
+                    engine=model_name, models=None,
                     location="the paired worker"), *messages]
                 db.set_attempt_inference(
                     self.conn, attempt_id, inference.model_dump())
@@ -1050,7 +1637,7 @@ class Coordinator:
                 # reasoning choice are re-recorded against it, so the local
                 # attempt states what it actually ran with rather than
                 # inheriting the remote attempt's record by implication.
-                db.set_attempt_reasoning(self.conn, attempt_id, model_id, reasoning)
+                db.set_attempt_reasoning(self.conn, attempt_id, model_name, reasoning)
                 db.set_attempt_selection(self.conn, attempt_id,
                                          selection.as_dict())
 
@@ -1059,7 +1646,7 @@ class Coordinator:
                 # this request's attachments, then answers or writes from them.
                 messages, prepared, extra = self._document_stage(
                     job_id, chat_id, skill_id, messages,
-                    ocr_model=self.enabled_model_for("documents.ocr"),
+                    ocr_model=self.enabled_model_for_observed("documents.ocr", observed),
                     profile=profile)
                 if messages is None:
                     # The skill produced its own answer without the model.
@@ -1131,8 +1718,11 @@ class Coordinator:
             # they are passed only when a route actually set them, so an
             # ordinary Chat turn is called exactly as it was before.
             response_format = (extra or {}).get("response_format")
+            # From here the attempt runs on this computer (a remote attempt has
+            # either finished or fallen back to a new local attempt), so the
+            # local policy applies: a measured profile or an honest candidate.
             if structured_document:
-                inference = inference_profiles.request(
+                inference = inference_profiles.request_local(
                     profile, reasoning=reasoning_mode, decoder="json_schema",
                     output_allowance=(extra or {}).get(
                         "num_predict", profile.default_output_tokens),
@@ -1140,7 +1730,7 @@ class Coordinator:
                     decoder_schema_sha256=inference_profiles.schema_sha256(
                         response_format))
             elif inference is None:
-                inference = inference_profiles.request(
+                inference = inference_profiles.request_local(
                     profile, reasoning=reasoning_mode, decoder="text",
                     output_allowance=selection.output_allowance,
                     context_window=selection.context_window)
@@ -1200,7 +1790,7 @@ class Coordinator:
                 try:
                     answer = self._document_answer(
                         job_id, chat_id, attempt_id, skill_id, answer, prepared,
-                        extra, model_id=model_id)
+                        extra, model_id=model_name)
                 except docflow.Cancelled:
                     self._stop(job_id, attempt_id, "cancelled", "running", {
                         "code": "cancelled_by_user",
@@ -1307,6 +1897,10 @@ class Coordinator:
                 "code": "internal_error",
                 "message": f"{type(exc).__name__}: {exc}"[:256], "retryable": False})
         finally:
+            # A job's own working-memory reservations end with it, its
+            # page-reading ones included. A model it loaded stays counted by
+            # the next fresh observation until that model is actually unloaded.
+            self.ledger.release_group(job_id)
             with self._cancel_lock:
                 self._cancelled.discard(job_id)
 
@@ -1437,7 +2031,8 @@ class Coordinator:
         # whether image bytes may be attached at all.
         if native_images and len(attachments) == len(image_attachments) == 1 \
                 and runtime.VISION_CAPABILITY in (
-                runtime.model_capabilities(profile.model.model_id) or []):
+                runtime.model_capabilities(runtime.model_key(
+                    profile.model.runtime, profile.model.model_id)) or []):
             item = image_attachments[0]
             full = db.attachment_record(
                 self.conn, item["attachment_id"], self.workspace_id)
@@ -1476,13 +2071,14 @@ class Coordinator:
                     }
         if not attachments:
             return messages, direct
+        ocr_model = self.enabled_model_for("documents.ocr")
         prepared = docflow.prepare_sources(
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
-            attachments=attachments, should_cancel=cancel,
-            ocr_model=self.enabled_model_for("documents.ocr"),
+            attachments=attachments, should_cancel=cancel, ocr_model=ocr_model,
             # The turn already observed the runtime; reuse it rather than
             # adding a second loopback probe to every attachment request.
-            ocr_profile=self.ocr_profile(runtime_state))
+            ocr_profile=self.ocr_profile(runtime_state),
+            ocr_chat=self._page_reading_call(job_id, ocr_model))
         if any(a.get("reused") for a in attachments) and prepared.skipped:
             reasons = "; ".join(f"{s['filename']}: {s['reason']}" for s in prepared.skipped)
             raise docflow.WorkflowError("source_unavailable", reasons)
@@ -1673,7 +2269,8 @@ class Coordinator:
         prepared = docflow.prepare_sources(
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
             attachments=attachments, should_cancel=cancel, ocr_model=ocr_model,
-            ocr_profile=self.ocr_profile())
+            ocr_profile=self.ocr_profile(model=ocr_model),
+            ocr_chat=self._page_reading_call(job_id, ocr_model))
         if not attachments:
             raise docflow.WorkflowError("no_attachments", docflow.NO_ATTACHMENTS)
         if not prepared.usable:
@@ -2199,7 +2796,8 @@ class Coordinator:
                      workflow: str = inference_profiles.CHAT,
                      reasoning: str = "disabled", decoder: str = "text",
                      context_window: int | None = None,
-                     output_allowance: int | None = None) -> dispatch.Route:
+                     output_allowance: int | None = None,
+                     observed: dict | None = None) -> dispatch.Route:
         """Where one attempt should run, and the sentence explaining why.
 
         `required` names the capabilities the step actually needs, so Code asks
@@ -2217,7 +2815,8 @@ class Coordinator:
                                      runtime_state, workflow=workflow,
                                      reasoning=reasoning, decoder=decoder,
                                      context_window=context_window,
-                                     output_allowance=output_allowance)
+                                     output_allowance=output_allowance,
+                                     observed=observed)
         try:
             node = self.preflight(relationship)
         except pairing.IdentityMismatch as exc:
@@ -2229,10 +2828,13 @@ class Coordinator:
                     "local", f"local coordinator: incompatible worker contract ({exc})"),
                 model_id, require_model, runtime_state, workflow=workflow,
                 reasoning=reasoning, decoder=decoder,
-                context_window=context_window, output_allowance=output_allowance)
+                context_window=context_window, output_allowance=output_allowance,
+                observed=observed)
+        # A paired worker names models by their bare id within its own runtime.
         route = dispatch.choose_route(
             relationship=relationship, node=node,
-            required=required or ["text.generate"], model_id=model_id,
+            required=required or ["text.generate"],
+            model_id=runtime.split_key(model_id)[1] if model_id else None,
             require_model=require_model, workflow=workflow,
             reasoning=reasoning, decoder=decoder,
             context_window=context_window,
@@ -2246,28 +2848,34 @@ class Coordinator:
         return self._local_route(
             route, model_id, require_model, runtime_state, workflow=workflow,
             reasoning=reasoning, decoder=decoder,
-            context_window=context_window, output_allowance=output_allowance)
+            context_window=context_window, output_allowance=output_allowance,
+            observed=observed)
 
     def _local_route(self, route: dispatch.Route, model_id: str | None,
                      require_model: bool,
                      runtime_state: dict | None = None, *, workflow: str,
                      reasoning: str, decoder: str,
                      context_window: int | None,
-                     output_allowance: int | None) -> dispatch.Route:
+                     output_allowance: int | None,
+                     observed: dict | None = None) -> dispatch.Route:
         if route.remote or not require_model:
             return route
-        model = (self.local_model_ref(model_id, runtime_state)
-                 if model_id else None)
+        observed = observed if observed is not None else self.observations(runtime_state)
+        item = self._find(observed, model_id) if model_id else None
+        model = ({"model_id": item["model_id"], "manifest_sha256": item["digest"],
+                  "runtime": item["origin"],
+                  "runtime_version": item["runtime_version"] or "unknown"}
+                 if self._usable(item) else None)
         profile = (self.local_profile(
             workflow=workflow, model_id=model_id, reasoning=reasoning,
-            decoder=decoder, runtime_state=runtime_state,
+            decoder=decoder, observed=observed,
             context_window=context_window, output_allowance=output_allowance)
                    if model_id and model else None)
         if model is None:
             reason = route.reason + "; the selected model is not installed locally"
         elif profile is None:
             reason = route.reason + \
-                "; this computer has no compatible qualified execution profile"
+                "; this model cannot run this workflow on this computer"
         else:
             reason = route.reason
         return dispatch.Route(
@@ -2394,7 +3002,7 @@ class Coordinator:
                 output_allowance=inference.output_allowance_tokens)
             if local_profile is None:
                 return None, None
-            local_request = inference_profiles.request(
+            local_request = inference_profiles.request_local(
                 local_profile, reasoning=inference.reasoning,
                 decoder=inference.decoder,
                 context_window=inference.context_window_tokens,
@@ -2575,6 +3183,20 @@ class Coordinator:
         return local
 
     @db.serialized
+    def _refuse_before_run(self, job_id: str, reason: str) -> None:
+        """A request nothing here can run, recorded like any other failure.
+
+        No model was called, so the attempt carries no model reference; its
+        route reason and typed error say why, and the job card shows both.
+        """
+        attempt_id = db.create_attempt(
+            self.conn, job_id=job_id, node_id=self.node_id,
+            route_reason=f"local coordinator: {reason}"[:256], model=None)
+        self._emit(job_id, attempt_id, {"kind": "attempt.state",
+                                        "previous": None, "current": "queued"})
+        self._stop(job_id, attempt_id, "failed", "queued", {
+            "code": "unavailable", "message": reason[:256], "retryable": True})
+
     def _stop(self, job_id, attempt_id, state, previous, error):
         """One typed reason per stopped attempt, as the contract requires."""
         try:
@@ -2685,39 +3307,42 @@ class Coordinator:
             e["data"] = json.loads(e.pop("data_json"))
         return {"job": dict(job), "attempts": attempts, "events": events}
 
+    def _choices(self, observed: dict) -> dict:
+        """What each workflow would use now, for status and capability rows."""
+        return {scope: self.choose_model(
+                    scope, observed=observed,
+                    task=router.Task(self.SCOPE_WORKFLOWS[scope],
+                                     needs_vision=scope == "documents.ocr"))
+                for scope in MODEL_DEFAULTS}
+
     def capabilities(self, runtime_state: dict | None = None,
                      inventory: list[dict] | None = None, *,
                      reading: dict | None = None,
-                     searchable: bool | None = None) -> list[dict]:
+                     searchable: bool | None = None,
+                     choices: dict | None = None) -> list[dict]:
         """Observed capability state. `available` requires every observation.
 
         A document skill is available only when the parsers it needs exist on
-        this computer. A missing parser, OCR engine or search index disables
+        this computer. A missing parser, OCR model or search index disables
         that one skill and nothing else — Chat and Code stay usable.
         """
         state = runtime_state if runtime_state is not None else runtime.probe()
         inventory = inventory if inventory is not None else self.model_inventory(state)
-        usable = {(row["id"], scope) for row in inventory
-                  for scope in row["eligible_scopes"]}
-        chat_model = self.model_for("chat")
-        code_model = self.model_for("code")
-        document_model = self.model_for("documents.generate")
-        ocr_model = self.model_for("documents.ocr")
-        code_profile = next((profile for item in inventory
-                             if item["id"] == code_model
-                             for profile in item["execution_profiles"]["local"]
-                             if profile["workflow_mode"] == inference_profiles.CODE), None)
-        # The runtime was already observed above; reuse it rather than probing
-        # once more per capability row.
+        observed = self._observed_cache if self._observed_cache is not None \
+            else self.observations(state)
+        choices = choices if choices is not None else self._choices(observed)
+        by_key = {row["key"]: row for row in inventory}
+        document_model = choices["documents.generate"]["key"]
+        ocr_model = choices["documents.ocr"]["key"] \
+            if not choices["documents.ocr"]["refusal"] else None
         if reading is None:
             reading = documents.capability_summary(
-                state, ocr_model=self.enabled_model_for("documents.ocr"),
-                ocr_profile=self.ocr_profile(state))
+                state, ocr_model=ocr_model,
+                ocr_profile=self.ocr_profile(observed=observed, model=ocr_model))
         if searchable is None:
             searchable = retrieval.fts_available(self.conn)
-        recorded = db.selftests(self.conn)
         document_mode, _workflow, _decoder = self._document_execution(
-            document_model, state)
+            document_model, observed=observed)
         rows = []
         for entry in CAPABILITIES:
             row = dict(entry)
@@ -2728,7 +3353,7 @@ class Coordinator:
                 blocked = self._document_blockers(
                     entry, reading, searchable,
                     self._model_capability_blocker(
-                        state, inventory, document_model, "Documents or Chat",
+                        state, choices["documents.generate"], "Documents or Chat",
                         document_mode != "blocked"))
                 row["formats"] = reading["supported"]
                 row["unavailable_reasons"] = reading["unavailable"]
@@ -2739,19 +3364,16 @@ class Coordinator:
                     row["conversion_only"] = True
                     row["generation_blocker"] = blocked[0]
                     row["summary"] = ("Save a completed answer as a Word or PDF file. "
-                                      "Creating new documents needs a qualified "
-                                      "Documents or Chat profile for the selected "
-                                      "model.")
+                                      "Creating new documents needs an installed local "
+                                      "model that can write them.")
                     row["detail"] = ("Ask to save or export the previous answer. "
                                      "New model-written documents are unavailable.")
                 elif (not blocked and entry.get("needs_runtime")
                       and document_mode == "chat_backed"):
-                    # Available, but only as the limited Chat-backed route. Said
-                    # in the row itself, and the model pill is pointed at the
-                    # Chat scope this route is actually admitted under.
+                    # Available, but only as the limited Chat-backed route.
                     row["model_scope"] = "chat"
                     row.update(self._chat_backed_text(
-                        entry["id"], document_model, reading))
+                        entry["id"], runtime.split_key(document_model or "")[1], reading))
                 else:
                     row["detail"] = blocked[0] if blocked else entry["detail_available"]
                 if blocked and not conversion_only:
@@ -2759,60 +3381,48 @@ class Coordinator:
             elif entry.get("kind") == "surface":
                 # Two prerequisites, reported separately because they need
                 # different fixes: this computer must be able to keep a folder
-                # bounded at all, and the model must be ready. Collapsing them
-                # would send a Windows user to the model picker for something
-                # no model can solve.
+                # bounded at all, and a model must be able to write proposals.
                 if not repo.containment_supported():
                     row["state"] = "unavailable"
                     row["detail"] = repo.PLATFORM_NOTE
                     row["setup"] = repo.PLATFORM_NOTE
                 else:
+                    choice = choices["code"]
                     blocker = self._model_capability_blocker(
-                        state, inventory, code_model, "Code",
-                        (code_model, "code") in usable)
+                        state, choice, "Code", not choice["refusal"])
                     row["state"] = "blocked" if blocker else "available"
-                    if (not blocker and code_profile
-                            and code_profile["evidence_ref"].endswith(
-                                "-code-proposal.json")):
+                    if not blocker:
                         row["experimental"] = True
                         row["detail"] = ("Experimental: small reviewable existing-file "
-                                         "proposals only. Full-program and sandbox "
-                                         "validation are not qualified.")
+                                         "proposals only; full-program and sandbox "
+                                         "validation are not available. "
+                                         + entry["detail_available"])
                     else:
-                        row["detail"] = blocker or entry["detail_available"]
-            elif (chat_model, "chat") not in usable and not state.get("reachable"):
-                row["state"] = "blocked"
-                row["detail"] = ("The AI engine on this computer did not answer, "
-                                 "so nothing can run yet.")
-                row["setup"] = "Open Settings to see what this computer needs."
-            elif (chat_model, "chat") not in usable:
-                row["state"] = "blocked"
-                row["detail"] = (f"The selected model {chat_model} is not available "
-                                 "on the coordinator or paired worker.")
-                row["setup"] = "Choose an installed model in the model selector."
+                        row["detail"] = blocker
             else:
-                row["state"] = "available"
-                row["detail"] = "Runs on this computer."
+                choice = choices["chat"]
+                if choice["refusal"] and not state.get("reachable"):
+                    row["state"] = "blocked"
+                    row["detail"] = ("No AI runtime on this computer answered, so "
+                                     "nothing can run yet.")
+                    row["setup"] = "Open Settings to see what this computer needs."
+                elif choice["refusal"]:
+                    row["state"] = "blocked"
+                    row["detail"] = choice["refusal"]
+                    row["setup"] = "Open Settings → Models to choose or download a model."
+                else:
+                    row["state"] = "available"
+                    row["detail"] = "Runs on this computer."
             # The self-test is reported beside the state, not folded into it.
-            # "This can run" and "this was checked here" are different claims,
-            # and `docs/PROJECT.md` 4.5 asks for the second to be visible.
+            # "This can run" and "this was checked here" are different claims.
             scope = CAPABILITY_SELFTEST_SCOPE.get(entry["id"])
-            if scope and row.get("model_scope") == "chat":
-                # The Chat-backed route runs the model selected for Documents
-                # under its Chat profile, so that model's Chat self-test is the
-                # check that describes it — not the Documents or OCR one, and
-                # not whatever model is separately selected for Chat.
-                model = document_model
-                digest = next((r["digests"]["local"] for r in inventory
-                               if r["id"] == model), None)
-                row["selftest"] = models.selftest_view(
-                    recorded, model=model, digest=digest)[models.CHAT]
-            elif scope:
-                model = self.model_for(scope)
-                digest = next((r["digests"]["local"] for r in inventory
-                               if r["id"] == model), None)
-                row["selftest"] = models.selftest_view(
-                    recorded, model=model, digest=digest)[scope]
+            if scope:
+                key = document_model if row.get("model_scope") == "chat" \
+                    else choices[scope]["key"]
+                view_scope = models.CHAT if row.get("model_scope") == "chat" else scope
+                model_row = by_key.get(key) if key else None
+                row["selftest"] = ((model_row or {}).get("selftests") or models.selftest_view(
+                    [], model=key or "", digest=None))[view_scope]
             rows.append(row)
         return rows
 
@@ -2823,41 +3433,34 @@ class Coordinator:
             kinds = "Word, text" + (" and text-layer PDF" if reading.get("reads_pdf_text")
                                     else "")
             detail = (f"Limited: {kinds} files are read on this computer and "
-                      f"answered by {model_id} with its qualified Chat profile, "
-                      "not the structured Documents workflow. Page references "
-                      "are checked against the pages supplied.")
+                      f"answered by {model_id} as plain Chat, not the structured "
+                      "Documents workflow. Page references are checked against the "
+                      "pages supplied.")
             if not reading.get("reads_scans"):
                 detail += (" Scanned PDFs and pictures cannot be read here: no "
-                           "OCR profile is qualified.")
+                           "installed local model reads page images.")
             return {"summary": (f"Read the {kinds} files you attach and answer "
                                 "from them, with page references."),
                     "detail": detail}
         return {"summary": ("Create a Word or PDF document from your request or "
                             "attached files, or save a previous answer."),
-                "detail": (f"Limited: new documents are written by {model_id} "
-                           "with its qualified Chat profile and converted on this "
-                           "computer. The structured Documents workflow and the "
-                           "inspection approval note are not qualified here. The "
-                           "result stays on this computer until you approve an "
-                           "export.")}
+                "detail": (f"Limited: new documents are written by {model_id} as "
+                           "plain Chat and converted on this computer. The structured "
+                           "Documents workflow and the inspection approval note are "
+                           "not available for this model. The result stays on this "
+                           "computer until you approve an export.")}
 
     @staticmethod
-    def _model_capability_blocker(state, inventory, model_id, workflow,
-                                  qualified) -> str | None:
-        if qualified:
+    def _model_capability_blocker(state, choice, workflow, usable) -> str | None:
+        if usable:
             return None
         if not state.get("reachable"):
-            return "The AI engine on this computer did not answer."
-        row = next((item for item in inventory if item["id"] == model_id), None)
-        if row is None or not row["digests"]["local"]:
-            return f"The selected model {model_id} is not installed on this computer."
-        if not row["enabled"]:
-            return f"The selected model {model_id} is switched off for new work."
-        version = state.get("server_version") or "this runtime"
-        engine_name = ("the Refinix engine" if state.get("runtime") == "llama.cpp"
-                       else "Ollama")
-        return (f"The selected model {model_id} has no qualified {workflow} "
-                f"execution profile for {engine_name} {version} on this computer.")
+            return "No AI runtime on this computer answered."
+        if choice and choice.get("refusal"):
+            return choice["refusal"]
+        key = (choice or {}).get("key") or ""
+        name = runtime.split_key(key)[1] if key else "the selected model"
+        return f"{name} cannot run {workflow} on this computer."
 
     @staticmethod
     def _document_blockers(entry, reading, searchable, model_blocker) -> list[str]:
@@ -2876,34 +3479,92 @@ class Coordinator:
 
     @staticmethod
     def engine_state(runtime_state: dict) -> dict:
-        """Which engine answers inference here, as the status and readiness see it."""
+        """Which runtimes answer inference here, as status and readiness see it."""
         if runtime.managed_engine() is not None:
-            return runtime_state.get("engine") or {}
-        return {"mode": "developer", "kind": "ollama",
-                "label": "Developer engine: external Ollama",
-                "release": runtime_state.get("server_version"),
+            return (runtime.substate(runtime_state, runtime.LLAMA_CPP).get("engine")
+                    or runtime_state.get("engine") or {})
+        sub = runtime.substate(runtime_state, runtime.OLLAMA)
+        return {"mode": "ollama", "kind": "ollama", "label": "Ollama",
+                "release": sub.get("server_version"),
                 "verified": None, "problems": []}
 
+    def ollama_state(self, runtime_state: dict) -> dict:
+        """The person's Ollama as Refinix sees it: present, current enough, local."""
+        sub = runtime.substate(runtime_state, runtime.OLLAMA)
+        active = runtime.ollama_active()
+        reachable = bool(sub.get("reachable"))
+        baseline = (sub.get("baseline") or {}).get("met") if reachable else None
+        if reachable and baseline is None:
+            baseline = runtime.ollama_baseline_met(sub.get("server_version"))
+        control = self.ollama_control
+        return {
+            "active": active, "reachable": reachable,
+            "version": sub.get("server_version"),
+            "baseline": {"minimum": runtime.OLLAMA_BASELINE_LABEL, "met": baseline},
+            "update_url": runtime.OLLAMA_DOWNLOAD_URL,
+            "update_recommended": bool(reachable and baseline is False),
+            # None when this coordinator has no way to look (headless, no
+            # desktop lifecycle): unknown is not "not installed".
+            "installed": (True if reachable else
+                          (control.installed() if control is not None else None)),
+            "startable": bool(active and not reachable and control is not None
+                              and control.installed()),
+            "started_by_refinix": bool(control is not None and control.owned),
+            "cloud_models": list(sub.get("remote") or []),
+            "note": ("Models you already have in Ollama run through Ollama, without "
+                     "copying them. Cloud models are not used."),
+        }
+
+    def start_ollama(self) -> dict:
+        """Start the person's installed Ollama, only because they asked."""
+        control = self.ollama_control
+        if control is None or not control.installed():
+            raise RequestError("Ollama is not installed on this computer.", 409)
+        try:
+            control.ensure()
+        except Exception as exc:                           # noqa: BLE001
+            raise RequestError(f"Ollama did not start: {exc}", 409) from exc
+        return self.ollama_state(runtime.probe())
+
     def chat_readiness(self, runtime_state: dict | None = None,
-                       inventory: list[dict] | None = None) -> dict:
+                       inventory: list[dict] | None = None,
+                       choices: dict | None = None) -> dict:
         """The one typed answer to "can ordinary Chat run here?".
 
-        Shared by the status read and the desktop startup sequence, so an
-        installed model never reads as ready when its selection, enablement,
-        file identity, hardware tier or qualified profile says otherwise.
+        Shared by the status read and the desktop startup sequence, so a model
+        never reads as ready when its selection, enablement, file identity,
+        locality or runtime version says otherwise.
         """
         state = runtime_state if runtime_state is not None else runtime.probe()
         inventory = inventory if inventory is not None else self.model_inventory(state)
-        chat_model = self.model_for("chat")
-        chat_row = next((row for row in inventory if row["id"] == chat_model), None)
-        chat_profile = next((p for p in self.local_profiles(state)
-                             if p.model.model_id == chat_model
-                             and p.workflow_mode == inference_profiles.CHAT), None)
+        observed = self._observed_cache if self._observed_cache is not None \
+            else self.observations(state)
+        choice = (choices or {}).get("chat") or self.choose_model("chat", observed=observed)
+        stored = db.get_model_selection(self.conn, "chat", models.AUTO)
+        key = choice["key"] or (self.resolve_key(stored, observed)[0])
+        chat_row = next((row for row in inventory if key and row["key"] == key), None)
+        if chat_row is None and choice["refusal"] and not choice["pinned"]:
+            # Auto found nothing. Name the installed model whose own problem
+            # explains it — changed files first, then a switched-off model —
+            # rather than a generic "nothing can run".
+            installed = [row for row in inventory
+                         if row.get("installed") and row.get("locality") is not None]
+            chat_row = (next((row for row in installed
+                              if (row["integrity"]["local"] or {}).get("state") == "mismatch"),
+                             None)
+                        or next((row for row in installed if not row["enabled"]), None)
+                        or (installed[0] if len(installed) == 1 else None))
+            key = chat_row["key"] if chat_row else None
+        name = runtime.split_key(key)[1] if key else "a model"
+        ollama = self.ollama_state(state)
         return readiness.assess(
             runtime_state=state, engine=self.engine_state(state), chat_row=chat_row,
-            model_id=chat_model, chat_profile_found=chat_profile is not None,
+            model_id=name, chat_profile_found=not choice["refusal"],
             device_tier=(self.tier_ids[0] if self.tier_ids else None),
-            managed=runtime.managed_engine() is not None)
+            managed=runtime.managed_engine() is not None,
+            refusal=choice["refusal"], ollama=ollama,
+            usable_models=sum(1 for row in inventory
+                              if row.get("installed") and row.get("locality") == runtime.LOCAL))
 
     def status(self):
         with db.LOCK:
@@ -2911,25 +3572,36 @@ class Coordinator:
                 "SELECT state, COUNT(*) AS n FROM jobs GROUP BY state")}
         runtime_state = runtime.probe()
         inventory = self.model_inventory(runtime_state)
-        chat_model = self.model_for("chat")
-        chat_row = next((row for row in inventory if row["id"] == chat_model), None)
+        observed = self._observed_cache or {}
+        choices = self._choices(observed)
+        chat_model = choices["chat"]["key"]
+        chat_row = next((row for row in inventory if chat_model and row["key"] == chat_model),
+                        None)
+        ocr_model = choices["documents.ocr"]["key"] \
+            if not choices["documents.ocr"]["refusal"] else None
         # Computed once per status read and shared with the capability rows.
         reading = documents.capability_summary(
-            runtime_state, ocr_model=self.enabled_model_for("documents.ocr"),
-            ocr_profile=self.ocr_profile(runtime_state))
+            runtime_state, ocr_model=ocr_model,
+            ocr_profile=self.ocr_profile(observed=observed, model=ocr_model))
         searchable = retrieval.fts_available(self.conn)
-        local_profiles = self.local_profiles(runtime_state)
-        chat_profile = next((p for p in local_profiles
-                             if p.model.model_id == chat_model
-                             and p.workflow_mode == inference_profiles.CHAT), None)
+        chat_profile = (self.local_profile(
+            workflow=inference_profiles.CHAT, model_id=chat_model, reasoning="disabled",
+            decoder="text", observed=observed) if chat_model else None)
         engine_state = self.engine_state(runtime_state)
-        chat_ready = self.chat_readiness(runtime_state, inventory)
+        chat_ready = self.chat_readiness(runtime_state, inventory, choices)
+        memory = capacity.pool(self.hardware_facts)
+        offered = ([entry for entry in models.CATALOGUE
+                    if entry.engine == runtime.LLAMA_CPP and entry.files]
+                   if runtime.managed_engine() is not None else [])
+        installed_managed = {row["id"] for row in inventory
+                             if row["origin"] == runtime.LLAMA_CPP and row["installed"]}
         return {
             "product": {"name": "Refinix", "surface": "local"},
             "build": build_info.describe(),
             "readiness": chat_ready,
             "engine": engine_state,
-            "hardware": {"facts": self.hardware_facts, "tiers": list(self.tier_ids)},
+            "hardware": {"facts": self.hardware_facts, "tiers": list(self.tier_ids),
+                         "memory": memory},
             "desktop": dict(self.desktop),
             # What this computer is, observed rather than assumed. Nothing here
             # claims the profile is qualified: that is evidence held elsewhere.
@@ -2949,12 +3621,24 @@ class Coordinator:
                 chat_row and chat_row["integrity"]["local"]["eligible"]),
             "model_available": bool(
                 chat_row and "chat" in chat_row["eligible_scopes"]),
-            "model_selections": {scope: self.model_for(scope)
+            "model_selections": {scope: db.get_model_selection(self.conn, scope, models.AUTO)
                                  for scope in MODEL_DEFAULTS},
-            "auto_model": {"enabled": False,
-                           "detail": ("Automatic model choice is not available in "
-                                      "this build; choose a model per workflow.")},
+            # What each workflow would use for a request right now, and why.
+            "model_choices": choices,
+            "auto_model": {"enabled": True,
+                           "detail": ("Refinix chooses a suitable installed model for "
+                                      "each request from what it needs, what each "
+                                      "model can do and what this computer has free. "
+                                      "You can pin a model per workflow instead.")},
             "models": inventory,
+            "ollama": self.ollama_state(runtime_state),
+            # Starting choices for this computer, then everything else. Never
+            # an allowlist: every entry can be chosen, larger ones with a warning.
+            "recommendations": capacity.recommend(
+                offered, memory,
+                free_disk=(self.hardware_facts or {}).get("disk_free_bytes"),
+                installed=installed_managed),
+            "reservations": self.ledger.snapshot(),
             # Which workflows have a smallest representative check the person
             # can run. Sent so the interface offers only the checks that exist.
             "selftest_scopes": sorted(models.SELFTESTS),
@@ -2963,7 +3647,8 @@ class Coordinator:
             # Version, last check, any verified offer; never checked from here.
             "updates": self.updates.describe(),
             "capabilities": self.capabilities(runtime_state, inventory,
-                                              reading=reading, searchable=searchable),
+                                              reading=reading, searchable=searchable,
+                                              choices=choices),
             "attachments": {
                 "max_bytes": db.MAX_ATTACHMENT_BYTES,
                 "max_files": db.MAX_ATTACHMENTS_PER_REQUEST,
@@ -2992,7 +3677,7 @@ class Coordinator:
                 "workflow": docflow.WORKFLOW,
             },
             "execution_profiles": [profile.model_dump()
-                                   for profile in local_profiles],
+                                   for profile in self.local_profiles(observed=observed)],
             "bounded": {
                 "profile_id": chat_profile.profile_id if chat_profile else None,
                 "num_ctx": (chat_profile.qualified_context_tokens
@@ -3174,6 +3859,18 @@ class Handler(BaseHTTPRequestHandler):
         except updates.UpdateError as exc:
             self._json({"error": str(exc), "code": exc.code}, 409)
 
+    def _hub(self, operation):
+        """One explicit Hugging Face step; refusals keep their code and reason."""
+        try:
+            self._json(operation())
+        except hub.HubError as exc:
+            self._json({"error": str(exc), "code": exc.code}, 409)
+        except provisioning.ProvisioningError as exc:
+            self._json({"error": str(exc), "code": exc.code}, 409)
+        except Exception as exc:                           # noqa: BLE001
+            self._json({"error": f"Hugging Face could not be reached: {exc}",
+                        "code": "unreachable"}, 502)
+
     def _provision(self, operation, status: int = 200):
         """Run one model download/import/removal step; refusals keep their code."""
         try:
@@ -3255,13 +3952,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"capabilities": c.capabilities()})
             elif route == "/v1/model/impact":
                 self._json({"impact": c.removal_impact(
-                    self._text(_as_payload(query), "model", 200))})
+                    self._text(_as_payload(query), "model", 300))})
             elif route == "/v1/updates":
                 self._json(c.updates.describe())
             elif route == "/v1/model/plan":
                 # What a download would fetch, from where, and whether it fits.
                 self._provision(lambda: c.provisioner.plan(
-                    self._text(_as_payload(query), "model", 200)))
+                    runtime.split_key(self._text(_as_payload(query), "model", 300))[1]))
             elif route == "/v1/attachments":
                 self._json({"attachments": db.list_attachments(
                     c.conn, chat_id=query["chat_id"][0])})
@@ -3425,27 +4122,48 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "/v1/model/reasoning":
                 # Request-scoped switch, stored per model by the coordinator so
                 # it survives a restart and a fallback port.
-                model = self._text(payload, "model", 200)
-                record = next((row for row in c.model_inventory()
-                               if row["id"] == model), None)
+                model = self._text(payload, "model", 300)
+                record = c._row(model)
                 if record is None or not set(record["eligible_scopes"]) & {
                         "chat", "code", "documents.generate"}:
                     raise RequestError("that model is not available for generation", 404)
                 enabled = payload.get("enabled")
                 if not isinstance(enabled, bool):
                     raise RequestError("enabled must be true or false")
-                db.set_reasoning(c.conn, model, enabled)
-                self._json({"model": model, "reasoning": enabled})
+                db.set_reasoning(c.conn, record["key"], enabled)
+                self._json({"model": record["key"], "reasoning": enabled})
             elif route == "/v1/model/select":
                 self._json(c.select_model(
                     self._text(payload, "scope", 64),
-                    self._text(payload, "model", 200)))
+                    self._text(payload, "model", 300)))
             elif route == "/v1/model/enabled":
                 enabled = payload.get("enabled")
                 if not isinstance(enabled, bool):
                     raise RequestError("enabled must be true or false")
                 self._json(c.set_model_enabled(
-                    self._text(payload, "model", 200), enabled))
+                    self._text(payload, "model", 300), enabled))
+            elif route == "/v1/hub/search":
+                # Connected, and only because the person pressed Search.
+                self._hub(lambda: {"results": hub.search(self._text(payload, "query", 100))})
+            elif route == "/v1/hub/repository":
+                self._hub(lambda: hub.repository(self._text(payload, "repo", 200)))
+            elif route == "/v1/hub/resolve":
+                # Pins one choice (revision, files, sizes, SHA-256) and returns
+                # the same download plan every other model shows first.
+                def resolve():
+                    entry = hub.resolve(
+                        self._text(payload, "repo", 200), self._text(payload, "file", 300),
+                        self._text(payload, "revision", 40),
+                        projector=(self._text(payload, "projector", 300)
+                                   if payload.get("projector") else None),
+                        projector_confirmed=payload.get("projector_confirmed") is True,
+                        taken=c.provisioner.known_ids())
+                    c.provisioner.add_plan(entry)
+                    return {"plan": c.provisioner.plan(entry.id),
+                            "entry": entry.as_dict()}
+                self._hub(resolve)
+            elif route == "/v1/runtime/ollama/start":
+                self._json(c.start_ollama())
             elif route == "/v1/updates/check":
                 # Only when the person presses Check for updates.
                 self._update(c.updates.check)
@@ -3456,19 +4174,21 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "/v1/model/download":
                 # Started only by the person, after the plan was shown.
                 self._provision(lambda: c.provisioner.start_download(
-                    self._text(payload, "model", 200)), 202)
+                    runtime.split_key(self._text(payload, "model", 300))[1]), 202)
             elif route == "/v1/model/provisioning/cancel":
                 self._provision(lambda: c.provisioner.cancel(
-                    self._text(payload, "model", 200)))
+                    runtime.split_key(self._text(payload, "model", 300))[1]))
             elif route == "/v1/model/remove":
                 self._provision(lambda: c.provisioner.remove(
-                    self._text(payload, "model", 200)))
+                    runtime.split_key(self._text(payload, "model", 300))[1]))
             elif route == "/v1/model/selftest":
-                # A self-test asks the local engine one bounded question. It
+                # A self-test asks a local runtime one bounded question. It
                 # downloads nothing and installs nothing, and it is only ever
                 # started by the person.
                 self._json({"selftest": c.run_model_selftest(
-                    self._text(payload, "scope", 64))})
+                    self._text(payload, "scope", 64),
+                    model=(self._text(payload, "model", 300)
+                           if payload.get("model") else None))})
             elif route == "/v1/code/mode":
                 self._code(lambda: c.code.set_mode(
                     self._text(payload, "repo_id", 36),

@@ -20,7 +20,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.contracts import profiles
-from backend.coordinator import db, models, runtime
+from backend.coordinator import db, fake_ollama, models, runtime
 from backend.coordinator.server import (MAX_UPLOAD_BYTES, Coordinator, Handler,
                                         RequestError)
 
@@ -198,8 +198,7 @@ class TestCapabilities(Base):
         rows = self.c.capabilities({"reachable": True, "models": ["other:1b"]})
         chat = next(r for r in rows if r["id"] == "chat")
         self.assertEqual(chat["state"], "blocked")
-        self.assertEqual(chat["setup"],
-                         "Choose an installed model in the model selector.")
+        self.assertIn("Settings → Models", chat["setup"])
 
     def test_execution_three_document_skills_are_available_when_ready(self):
         rows = self.c.capabilities({
@@ -238,46 +237,46 @@ class TestCapabilities(Base):
         self.assertEqual(by_id["code"]["state"], "available")
         self.assertTrue(by_id["code"]["experimental"])
         self.assertIn("small reviewable", by_id["code"]["detail"])
-        self.assertIn("not qualified", by_id["code"]["detail"])
-        # Reading and writing run on the limited Chat-backed route: available,
-        # said to be limited, and never presented as structured Documents.
+        self.assertIn("not available", by_id["code"]["detail"])
+        # Documents runs the structured workflow under a local candidate
+        # profile: no team measurement of 0.34.2 Documents is needed for that.
         for skill in ("read-document", "write-document"):
             row = by_id[skill]
             self.assertEqual(row["state"], "available", skill)
-            self.assertEqual(row["model_scope"], "chat", skill)
+            self.assertNotIn("model_scope", row, skill)
             self.assertNotIn("conversion_only", row, skill)
-            self.assertIn("Limited", row["detail"], skill)
-            self.assertIn("qualified Chat profile", row["detail"], skill)
-            self.assertIn("not", row["detail"], skill)
-        self.assertIn("approval note are not qualified",
-                      by_id["write-document"]["detail"])
         self.assertIn("docx", by_id["read-document"]["formats"])
-        # Scans stay unavailable, named; nothing claims PaddleOCR ran.
-        self.assertIn("no OCR profile is qualified", by_id["read-document"]["detail"])
+        # Scans stay unavailable, named: this observation reports no model
+        # that accepts images, and nothing claims PaddleOCR ran.
         scan = [item for item in by_id["read-document"]["unavailable_reasons"]
                 if item["kind"] == "pdf_scan"]
         self.assertEqual(len(scan), 1)
-        self.assertIn("no qualified reading profile", scan[0]["detail"])
-        # The unqualified OCR model may be *named* only inside the refusal that
-        # says nothing is sent to it; no text anywhere claims it read anything.
+        self.assertIn("reads page images", scan[0]["detail"])
+        # The OCR conversion may be *named* only inside the refusal that says
+        # nothing is sent to it; no text anywhere claims it read anything.
         texts = [row.get(key, "") for row in rows for key in ("summary", "detail")]
         texts += [item["detail"] for row in rows
                   for item in row.get("unavailable_reasons", [])]
         for text in texts:
             if "paddleocr" in text.lower():
-                self.assertIn("will not send a page image to it", text)
+                self.assertIn("no page image is sent to it", text)
         self.assertNotIn("model_scope", by_id["search-documents"])
 
     def test_the_chat_backed_rows_show_the_documents_models_chat_selftest(self):
         """The route runs the model selected for Documents under its Chat
         profile, so that model's Chat self-test describes it — even when a
         different model is selected for Chat."""
+        # A model whose declared window is too small for the structured
+        # Documents reply still writes documents through the limited
+        # Chat-backed route.
         state = {"reachable": True, "server_version": "0.34.2",
                  "models": [runtime.MODEL, "other:1b"],
                  "digests": {runtime.MODEL:
                              models.entry_for(runtime.MODEL).manifest_sha256,
-                             "other:1b": "f" * 64}}
+                             "other:1b": "f" * 64},
+                 "context_lengths": {runtime.MODEL: 2048}}
         db.set_model_selection(self.c.conn, "chat", "other:1b")
+        db.set_model_selection(self.c.conn, "documents.generate", runtime.MODEL)
         digest = models.entry_for(runtime.MODEL).manifest_sha256
         db.record_selftest(conn=self.c.conn, model=runtime.MODEL, scope=models.CHAT,
                            state="passed", detail="chat ok", digest=digest,
@@ -287,18 +286,28 @@ class TestCapabilities(Base):
             self.assertEqual(rows[skill]["selftest"]["state"], "passed", skill)
             self.assertEqual(rows[skill]["selftest"]["detail"], "chat ok", skill)
 
-    def test_an_unmeasured_runtime_leaves_reading_blocked_and_writing_conversion_only(self):
+    def test_a_newer_runtime_nobody_measured_keeps_documents_usable(self):
+        """A newer Ollama alone never disables ordinary work."""
         rows = self.c.capabilities({
             "reachable": True, "server_version": "0.99.0",
             "models": [runtime.MODEL],
             "digests": {runtime.MODEL:
                         models.entry_for(runtime.MODEL).manifest_sha256}})
         by_id = {row["id"]: row for row in rows}
-        self.assertEqual(by_id["read-document"]["state"], "blocked")
-        self.assertIn("no qualified Documents or Chat execution profile",
-                      by_id["read-document"]["detail"])
-        self.assertTrue(by_id["write-document"]["conversion_only"])
-        self.assertNotIn("model_scope", by_id["read-document"])
+        for skill in ("chat", "code", "read-document", "write-document"):
+            self.assertEqual(by_id[skill]["state"], "available", skill)
+        self.assertNotIn("conversion_only", by_id["write-document"])
+
+    def test_an_ollama_below_the_baseline_is_not_used(self):
+        """Below 0.12.6 an over-long prompt could be trimmed silently and a
+        cloud model could not be told apart, so its models are not used."""
+        rows = self.c.capabilities({
+            "reachable": True, "server_version": "0.11.0",
+            "models": [runtime.MODEL],
+            "digests": {runtime.MODEL:
+                        models.entry_for(runtime.MODEL).manifest_sha256}})
+        by_id = {row["id"]: row for row in rows}
+        self.assertEqual(by_id["chat"]["state"], "blocked")
 
     def test_the_structured_profile_rows_carry_no_chat_scope(self):
         rows = self.c.capabilities({
@@ -481,8 +490,13 @@ class TestCancelAgainstARealStalledSocket(unittest.TestCase):
         def log_message(self, *_a):
             pass
 
+        def do_GET(self):
+            fake_ollama.answer(self, CHAT_PROFILE.model)
+
         def do_POST(self):
             self.rfile.read(int(self.headers["Content-Length"]))
+            if fake_ollama.answer(self, CHAT_PROFILE.model):
+                return
             type(self).received.set()
             if type(self).before_headers:
                 type(self).release.wait(10)

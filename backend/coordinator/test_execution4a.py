@@ -292,7 +292,10 @@ class TestDirectImage(Harness):
         self.bind(job, record)
         reply = json.dumps({"title": "Scan report", "sections": [
             {"heading": "Reading", "paragraphs": ["The scan records 7.9 mm/s."]}]})
-        with patch.object(documents.ocr, "image_probe", return_value=VISION_READY), \
+        # Auto's page-reading choice: an installed model that reads images.
+        with patch.object(self.c, "enabled_model_for_observed",
+                          return_value="ollama|test-vision"), \
+                patch.object(documents.ocr, "image_probe", return_value=VISION_READY), \
                 patch.object(documents.ocr, "extract_image", return_value=reading), \
                 patch.object(runtime, "stream_chat", fake_stream(reply)):
             self.c._run(job, self.chat, docflow.WRITE_SKILL)

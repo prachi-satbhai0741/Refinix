@@ -26,7 +26,7 @@ from unicodedata import category
 from backend.contracts import v1
 from backend.coordinator import build_info, ownership
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 # SQLite's header field for "which application owns this file" (offset 68).
 # "RFNX". Written on every open from now on; a legacy Refinix store still has 0
@@ -839,6 +839,14 @@ def connect(path: Path, *, owner=None,
     if "enabled" not in pref_columns:
         conn.execute("ALTER TABLE model_prefs ADD COLUMN enabled INTEGER NOT NULL"
                      " DEFAULT 1")
+    # Schema 14: the settings a self-test actually exercised (profile, check
+    # definition and render settings, `admission.check_fingerprint`). Older
+    # results keep NULL: nothing recorded what they ran with, so they are shown
+    # as history and never count as a current check.
+    selftest_columns = {r["name"] for r in conn.execute(
+        "PRAGMA table_info(model_selftests)")}
+    if "check_fingerprint" not in selftest_columns:
+        conn.execute("ALTER TABLE model_selftests ADD COLUMN check_fingerprint TEXT")
     # Full-text search is created only where this SQLite build has FTS5. Its
     # absence disables document search and says so; it never fails a startup.
     try:
@@ -1422,31 +1430,53 @@ def model_enablement(conn) -> dict:
 
 @serialized
 def record_selftest(conn, *, model: str, scope: str, state: str, detail: str,
-                    digest: str | None, runtime_version: str | None) -> dict:
-    """Store one capability check against the manifest it was observed on."""
+                    digest: str | None, runtime_version: str | None,
+                    check_fingerprint: str | None = None) -> dict:
+    """Store one capability check against the manifest and settings it ran on."""
     if not isinstance(model, str) or not model.strip() or len(model) > 200:
         raise ValueError("a model name is required")
     if not isinstance(scope, str) or not scope or len(scope) > 64:
         raise ValueError("a model scope is required")
+    if check_fingerprint is not None and (
+            not isinstance(check_fingerprint, str) or len(check_fingerprint) != 64):
+        raise ValueError("a check fingerprint is a SHA-256 hex digest")
     ran_at = now()
     with conn:
         conn.execute(
             "INSERT INTO model_selftests(model, scope, state, detail, digest,"
-            " runtime_version, ran_at) VALUES (?,?,?,?,?,?,?)"
+            " runtime_version, ran_at, check_fingerprint) VALUES (?,?,?,?,?,?,?,?)"
             " ON CONFLICT(model, scope) DO UPDATE SET state=excluded.state,"
             " detail=excluded.detail, digest=excluded.digest,"
-            " runtime_version=excluded.runtime_version, ran_at=excluded.ran_at",
-            (model, scope, state, detail[:2000], digest, runtime_version, ran_at))
+            " runtime_version=excluded.runtime_version, ran_at=excluded.ran_at,"
+            " check_fingerprint=excluded.check_fingerprint",
+            (model, scope, state, detail[:2000], digest, runtime_version, ran_at,
+             check_fingerprint))
     return {"model": model, "scope": scope, "state": state,
             "detail": detail[:2000], "digest": digest,
-            "runtime_version": runtime_version, "ran_at": ran_at}
+            "runtime_version": runtime_version, "ran_at": ran_at,
+            "check_fingerprint": check_fingerprint}
 
 
 @serialized
 def selftests(conn) -> list[dict]:
     return [dict(row) for row in conn.execute(
-        "SELECT model, scope, state, detail, digest, runtime_version, ran_at"
-        " FROM model_selftests ORDER BY model, scope")]
+        "SELECT model, scope, state, detail, digest, runtime_version, ran_at,"
+        " check_fingerprint FROM model_selftests ORDER BY model, scope")]
+
+
+@serialized
+def model_pref(conn, model: str) -> dict | None:
+    """One stored preference row, or None when nothing was ever stored for it."""
+    row = conn.execute("SELECT model, reasoning, enabled FROM model_prefs WHERE model=?",
+                       (model,)).fetchone()
+    return dict(row) if row else None
+
+
+@serialized
+def model_selections(conn) -> dict:
+    """Every stored per-workflow selection, including legacy bare names."""
+    return {row["scope"]: row["model"]
+            for row in conn.execute("SELECT scope, model FROM model_selections")}
 
 
 @serialized
@@ -2355,19 +2385,23 @@ def record_model_install(conn, *, model_id: str, manifest_sha256: str, engine: s
     return get_model_install(conn, model_id)
 
 
-def get_model_install(conn, model_id: str) -> dict | None:
-    row = conn.execute("SELECT * FROM model_installs WHERE model_id=?",
-                       (model_id,)).fetchone()
-    if row is None:
-        return None
+def _model_install(row) -> dict:
     record = dict(row)
     record["files"] = json.loads(record.pop("files_json"))
     return record
 
 
+@serialized
+def get_model_install(conn, model_id: str) -> dict | None:
+    row = conn.execute("SELECT * FROM model_installs WHERE model_id=?",
+                       (model_id,)).fetchone()
+    return None if row is None else _model_install(row)
+
+
+@serialized
 def model_installs(conn, engine: str | None = None) -> list[dict]:
-    rows = conn.execute("SELECT model_id FROM model_installs ORDER BY model_id").fetchall()
-    records = [get_model_install(conn, row["model_id"]) for row in rows]
+    rows = conn.execute("SELECT * FROM model_installs ORDER BY model_id").fetchall()
+    records = [_model_install(row) for row in rows]
     return [r for r in records if engine is None or r["engine"] == engine]
 
 

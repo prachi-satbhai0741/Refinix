@@ -1,5 +1,14 @@
 # Refinix Beta — user direction and planning handoff, 5 October 2026
 
+## README ownership — preserve the teammate's final README
+
+Do not update the repository-root `README.md` during this Beta work. A teammate is preparing
+the final README for `main`; the current README must not overwrite or replace that version.
+Wait for the user to confirm that the final README is on `main`. With the user's Git authorization,
+bring over only `README.md` from `main` into the Beta member branch (`aditya`), then integrate
+the complete Beta through `aditya -> dev -> main` using the repository's normal review flow,
+preserving the teammate's final README. This note does not authorize Git changes now.
+
 This report was requested by the user. The two statements below are preserved verbatim,
 including voice-typing spellings, punctuation and whitespace. Do not replace them with
 an agent summary or treat factual assertions inside them as independently verified facts.

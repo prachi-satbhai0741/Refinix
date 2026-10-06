@@ -624,7 +624,7 @@ class TestAdapter(AdapterBase):
     def test_no_reviewed_preset_means_no_launch(self):
         with self.assertRaises(runtime.RuntimeUnavailable) as caught:
             self.run_stream(self.backend(settings=False))
-        self.assertIn("no reviewed engine preset", str(caught.exception))
+        self.assertIn("no engine settings", str(caught.exception))
         self.assertFalse(self.managed.running)
 
     def test_probe_reports_installed_records_and_the_engine_identity(self):
@@ -844,12 +844,25 @@ class TestCoordinatorRecords(EngineBase):
         self._record(path="../outside.gguf")
         self.assertEqual(self.coordinator.installed_models(), {})
 
-    def test_installed_files_alone_never_make_chat_ready(self):
+    def test_verified_files_without_a_measured_preset_run_with_upstream_fitting(self):
+        """No team measurement for this computer is not a refusal: the model
+        runs under an honest candidate profile with upstream fitting at a fixed
+        window, and nothing about it is labelled measured."""
         self._record()
         self._configure()
         ready = self.coordinator.chat_readiness()
-        self.assertNotEqual(ready["code"], "ready")
-        self.assertIn(ready["code"], ("device_unsupported", "no_qualified_profile"))
+        self.assertEqual(ready["code"], "ready")
+        profile = self.coordinator.local_profile(
+            workflow=inference_profiles.CHAT, model_id=self.entry.id,
+            reasoning="disabled", decoder="text")
+        self.assertEqual(profile.qualification_state, "candidate")
+        self.assertFalse(profile.eligible)
+        settings = self.coordinator.engine_settings_for(self.entry.id, profile)
+        self.assertEqual((settings.fit, settings.gpu_layers, settings.measured),
+                         ("on", "auto", False))
+        self.assertEqual(settings.context_tokens, profile.qualified_context_tokens)
+        self.assertIn("-c", settings.arguments())
+        self.assertIn("--fit-target", settings.arguments())
 
     def test_changed_files_are_reported_as_changed_not_absent(self):
         self._record()
@@ -879,12 +892,14 @@ class TestCoordinatorRecords(EngineBase):
         self.assertEqual((settings.context_tokens, settings.slots, settings.gpu_layers),
                          (8192, 1, "all"))
 
-    def test_another_tier_has_no_preset_and_is_not_ready(self):
+    def test_another_tier_has_no_preset_and_still_runs(self):
         self._record()
         self._configure()
         self.coordinator.tier_ids = ["linux-x64-cpu-16g"]
+        # No measured preset to apply as-is...
         self.assertIsNone(self.coordinator.engine_settings_for(self.entry.id))
-        self.assertEqual(self.coordinator.chat_readiness()["code"], "no_qualified_profile")
+        # ...yet the model still runs, with upstream fitting, not refused.
+        self.assertEqual(self.coordinator.chat_readiness()["code"], "ready")
 
     def test_status_and_startup_share_one_readiness_answer(self):
         self._record()

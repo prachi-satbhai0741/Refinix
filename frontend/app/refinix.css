@@ -2230,3 +2230,17 @@
   .app:has(.rail-conversation) { --rail-w: 380px; }
   .rail-conversation { width: min(400px, 92vw); }
 }
+
+/* Settings -> Models: how models are chosen, Ollama, recommendations, Browse. */
+.subhead { margin: var(--sp-4) 0 var(--sp-1); font-size: 13px; font-weight: 600;
+  color: var(--text); }
+.ollama-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  margin: var(--sp-2) 0; font-size: 12px; color: var(--text-dim); }
+.ollama-line:empty { display: none; }
+.evidence-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.evidence-list .chip { font-size: 10.5px; }
+.hub-search { display: flex; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.hub-search input { flex: 1 1 auto; min-width: 0; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+  color: var(--text); font: inherit; }
+.fit-note { font-size: 11.5px; color: var(--text-faint); }

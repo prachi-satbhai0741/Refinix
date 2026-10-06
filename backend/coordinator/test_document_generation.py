@@ -546,7 +546,10 @@ MARKDOWN = ("# Deep learning, summarised\n\n## Overview\n\nNeural networks "
 
 
 class ChatBackedGeneration(GenerationHarness):
-    RUNTIME_0342 = ConversionUnaffected.RUNTIME_0342
+    # A declared window too small for the structured Documents reply: new
+    # documents are written as plain Chat and converted here.
+    RUNTIME_0342 = {**ConversionUnaffected.RUNTIME_0342,
+                    "context_lengths": {runtime.MODEL: 2048}}
     REQUEST = "create a document of deep learning summarised"
 
     def setUp(self):
@@ -609,7 +612,7 @@ class ChatBackedGeneration(GenerationHarness):
         self.assertEqual(requested["decoder"], "text")
         self.assertLessEqual(requested["output_allowance_tokens"],
                              actual["max_output_tokens"])
-        self.assertIn("qualified Chat profile", attempt["route_reason"])
+        self.assertIn("answers as plain Chat", attempt["route_reason"])
         self.assertNotIn(profiles.DOCUMENTS, json.dumps(
             [actual, requested, self.last_answer()]))
 
@@ -714,6 +717,7 @@ class ChatBackedGeneration(GenerationHarness):
         with self.assertRaises(RequestError) as refused:
             self.send_write(doc_workflow=docflow.WORKFLOW_APPROVAL_NOTE)
         self.assertIn("structured Documents profile", str(refused.exception))
+        self.assertNotIn("qualified", str(refused.exception))
 
     def test_an_unavailable_word_writer_refuses_before_any_work(self):
         with patch("backend.coordinator.server.docgen_available",
@@ -738,9 +742,10 @@ class ChatBackedGeneration(GenerationHarness):
 
 
 class NoChatProfileBlocksGeneration(GenerationHarness):
-    """An unmeasured runtime has neither profile: new documents stay refused."""
+    """An Ollama below the 0.12.6 baseline is not used: no model can write a
+    new document, while converting a previous answer still needs none."""
 
-    UNMEASURED = {**ConversionUnaffected.RUNTIME_0342, "server_version": "0.99.0"}
+    UNMEASURED = {**ConversionUnaffected.RUNTIME_0342, "server_version": "0.11.0"}
 
     def test_new_documents_are_refused_but_conversion_still_works(self):
         self.completed_answer("The pump exceeded its vibration limit.")
@@ -750,8 +755,7 @@ class NoChatProfileBlocksGeneration(GenerationHarness):
                           skill_id=docflow.WRITE_SKILL,
                           output_format=docflow.FORMAT_DOCX,
                           doc_workflow=docflow.WORKFLOW_GENERAL)
-            self.assertIn("no qualified Documents or Chat execution profile",
-                          str(refused.exception))
+            self.assertIn("No installed local model", str(refused.exception))
             job = self.send("save your previous answer as a docx",
                             skill_id=docflow.WRITE_SKILL,
                             output_format=docflow.FORMAT_DOCX)

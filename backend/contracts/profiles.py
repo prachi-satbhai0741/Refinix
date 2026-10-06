@@ -1,9 +1,14 @@
 """Measured inference profiles shared by coordinator and worker.
 
-This is deliberately the only production registry.  A route never creates a
-profile and a remote request never supplies raw worker settings: both sides
-resolve the same immutable identity and the execution target checks it again
-against its current model digest and runtime version immediately before use.
+This is the only registry of *measured* profiles.  A remote request never
+supplies raw worker settings: both sides resolve the same immutable identity
+and the execution target checks it again against its current model digest and
+runtime version immediately before use.
+
+The coordinator may also derive a local `candidate` profile for a model the
+team has not measured (`backend/coordinator/admission.py`). Candidates run only
+on the computer that owns the workspace, through the separately named local
+functions at the end of this module; they are never advertised or dispatched.
 """
 
 from __future__ import annotations
@@ -435,6 +440,85 @@ def validate_request(profile: v1.ExecutionProfile, request: v1.InferenceRequest,
     if request.profile_id != profile.profile_id or model != profile.model:
         raise ValueError("requested profile is stale or bound to another model")
     if not compatible(
+            profile, model_id=model.model_id, workflow=request.workflow_mode,
+            reasoning=request.reasoning, decoder=request.decoder,
+            context_window=request.context_window_tokens,
+            output_allowance=request.output_allowance_tokens):
+        raise ValueError("requested inference semantics are incompatible")
+
+
+# --------------------------------------------------------------------------
+# Local compatibility policy (this computer only)
+# --------------------------------------------------------------------------
+#
+# A model the team has not measured may still run on the computer that owns
+# the workspace, under the bounds its runtime reports. Such a profile is a
+# `candidate`: `eligible` stays False and its evidence is `documented` or
+# `estimated`, so nothing here can present it as measured or qualified.
+#
+# These functions are separate on purpose. `compatible`, `request` and
+# `validate_request` above keep their exact signatures and strict meaning, and
+# every worker, envelope, node-advertisement and remote-dispatch path keeps
+# calling them. A local caller opts into this policy by name; there is no flag
+# a remote path could pass to borrow it.
+
+LOCAL_EVIDENCE = ("documented", "estimated")
+
+
+def local_admissible(profile: v1.ExecutionProfile) -> bool:
+    """A measured qualified profile, or an honest local candidate."""
+    if profile.qualification_state == "qualified":
+        return bool(profile.eligible and profile.evidence_kind == "measured")
+    return bool(profile.qualification_state == "candidate"
+                and not profile.eligible
+                and profile.evidence_kind in LOCAL_EVIDENCE)
+
+
+def compatible_local(profile: v1.ExecutionProfile, *, model_id: str, workflow: str,
+                     reasoning: str, decoder: str, context_window: int | None = None,
+                     output_allowance: int | None = None) -> bool:
+    """Pre-run check for this computer; the same bounds, without measurement."""
+    return bool(
+        local_admissible(profile)
+        and profile.model.model_id == model_id
+        and profile.workflow_mode == workflow
+        and reasoning in profile.reasoning_modes
+        and decoder in profile.decoder_modes
+        and (context_window is None
+             or context_window <= profile.qualified_context_tokens)
+        and (output_allowance is None
+             or output_allowance <= profile.max_output_tokens)
+    )
+
+
+def request_local(profile: v1.ExecutionProfile, *, reasoning: str,
+                  decoder: str, output_allowance: int | None = None,
+                  context_window: int | None = None,
+                  decoder_schema_sha256: str | None = None) -> v1.InferenceRequest:
+    """Build the actual semantics requested from a local profile."""
+    output = (profile.default_output_tokens if output_allowance is None
+              else output_allowance)
+    window = (profile.qualified_context_tokens if context_window is None
+              else context_window)
+    if not compatible_local(profile, model_id=profile.model.model_id,
+                            workflow=profile.workflow_mode, reasoning=reasoning,
+                            decoder=decoder, context_window=window,
+                            output_allowance=output):
+        raise ValueError("requested inference semantics are outside this local profile")
+    return v1.InferenceRequest(
+        profile_id=profile.profile_id, workflow_mode=profile.workflow_mode,
+        context_window_tokens=window, output_allowance_tokens=output,
+        reasoning=reasoning, decoder=decoder,
+        decoder_schema_sha256=decoder_schema_sha256)
+
+
+def validate_local(profile: v1.ExecutionProfile, request: v1.InferenceRequest,
+                   model: v1.ModelRef) -> None:
+    """Final local check immediately before inference on this computer."""
+    if request.profile_id != profile.profile_id or model != profile.model \
+            or profile.profile_id != v1.execution_profile_id(profile):
+        raise ValueError("requested profile is stale or bound to another model")
+    if not compatible_local(
             profile, model_id=model.model_id, workflow=request.workflow_mode,
             reasoning=request.reasoning, decoder=request.decoder,
             context_window=request.context_window_tokens,

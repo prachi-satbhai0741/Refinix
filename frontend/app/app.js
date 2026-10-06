@@ -728,7 +728,22 @@ function refreshSend() {
  * flipping the switch afterwards cannot change work already running. */
 let models = [];
 let modelSelections = {};
+// What each workflow would use for a request right now, and why (status
+// `model_choices`). Auto is the default; a stored key is a pinned model.
+let modelChoices = {};
 let modelPopover = null;
+
+/* A model is named by its origin-qualified key ("ollama|qwen3.5:4b-q4_K_M",
+ * "llama.cpp|gemma-3-4b-it-q4_k_m"): one family can be installed in both
+ * runtimes, and the bare name cannot say which. Older rows carry only an id. */
+const modelKey = (model) => (model && (model.key || model.id)) || null;
+const modelLabel = (model) => (model && (model.display_name || model.id)) || '';
+const isAuto = (scope) => !modelSelections[scope] || modelSelections[scope] === 'auto';
+
+function chosenKey(scope = modelScope()) {
+  if (!isAuto(scope)) return modelSelections[scope];
+  return modelChoices[scope]?.key || null;
+}
 
 function modelScope() {
   if ($('code-composer')) return 'code';
@@ -738,21 +753,30 @@ function modelScope() {
 }
 
 function activeModel(scope = modelScope()) {
-  return models.find((model) => model.id === modelSelections[scope]) || null;
+  const key = chosenKey(scope);
+  return models.find((model) => modelKey(model) === key || model.id === key) || null;
 }
 
 function renderModelPill() {
   const pill = $('model-pill');
   if (!pill) return;
   const model = activeModel();
-  pill.hidden = !model;
-  if (!model) return;
-  $('model-name').textContent = model.id;
+  const auto = isAuto(modelScope());
+  pill.hidden = !model && !(auto && modelScope());
+  if (pill.hidden) return;
+  const name = model ? modelLabel(model) : 'no model yet';
+  $('model-name').textContent = auto ? `Auto · ${name}` : name;
   const mark = $('model-reasoning');
-  mark.hidden = !model.reasoning;
+  mark.hidden = !model?.reasoning;
+  if (!model) {
+    pill.setAttribute?.('aria-label',
+                        'Model: Auto, no installed model can run this yet. Change it.');
+    pill.title = modelChoices[modelScope()]?.refusal || '';
+    return;
+  }
   pill.setAttribute('aria-label', model.reasoning
-    ? `Model ${model.id}, reasoning on. Change it.`
-    : `Model ${model.id}, reasoning off. Change it.`);
+    ? `Model ${auto ? 'Auto, now ' : ''}${modelLabel(model)}, reasoning on. Change it.`
+    : `Model ${auto ? 'Auto, now ' : ''}${modelLabel(model)}, reasoning off. Change it.`);
   // A document skill running on the Chat-backed route is admitted under the
   // model's Chat profile, and the capability row says so with `model_scope`.
   const scope = (modelScope() === 'documents.generate'
@@ -776,7 +800,7 @@ function openModelPopover() {
   closeModelPopover(false);
   const model = activeModel();
   const pill = $('model-pill');
-  if (!model || !pill) return;
+  if (!pill || (!model && !isAuto(modelScope()))) return;
 
   const box = document.createElement('div');
   box.className = 'model-popover';
@@ -811,21 +835,24 @@ function openModelPopover() {
   toggle.className = 'mp-switch';
   toggle.setAttribute('role', 'switch');
   toggle.setAttribute('aria-labelledby', 'mp-reasoning-label');
-  toggle.setAttribute('aria-checked', String(!!model.reasoning));
-  toggle.disabled = !model.eligible_scopes?.includes(modelScope());
+  toggle.setAttribute('aria-checked', String(!!model?.reasoning));
+  toggle.disabled = !model?.eligible_scopes?.includes(modelScope());
   const state = document.createElement('span');
   state.className = 'mp-state';
-  state.textContent = model.reasoning ? 'On' : 'Off';
+  state.textContent = model?.reasoning ? 'On' : 'Off';
   toggle.append(state);
   row.append(label, toggle);
   box.append(row);
 
   const note = document.createElement('p');
   note.className = 'mp-note';
-  note.textContent = model.eligible_scopes?.includes(modelScope())
+  note.textContent = model?.eligible_scopes?.includes(modelScope())
     ? 'On lets the model work through the problem first. Slower, and it can use '
-      + 'the whole reply budget before answering.'
-    : 'This model is not available for this workflow, so reasoning cannot change.';
+      + 'the whole reply budget before answering. Models without a reasoning '
+      + 'switch run without one.'
+    : model ? 'This model is not available for this workflow, so reasoning cannot change.'
+      : 'No installed model can run this workflow yet. Settings → Models '
+        + 'lists what can be downloaded or imported.';
   box.append(note);
 
   toggle.addEventListener('click', async () => {
@@ -834,7 +861,7 @@ function openModelPopover() {
     try {
       const saved = await api('/v1/model/reasoning', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: model.id, enabled: next }),
+        body: JSON.stringify({ model: modelKey(model), enabled: next }),
       });
       model.reasoning = saved.reasoning;
       toggle.setAttribute('aria-checked', String(saved.reasoning));
@@ -843,7 +870,7 @@ function openModelPopover() {
     } catch (err) {
       notice('That setting could not be saved.', 'error', err.message);
     } finally {
-      toggle.disabled = !model.eligible_scopes?.includes(modelScope());
+      toggle.disabled = !model?.eligible_scopes?.includes(modelScope());
     }
   });
 
@@ -1042,35 +1069,61 @@ function appendModelChoices(box, scope, labelText) {
   label.textContent = labelText;
   group.append(label);
 
+  // Auto: Refinix chooses an installed model for each request from what it
+  // needs. The tag says what Auto would use now, or why nothing can run.
   const auto = document.createElement('button');
   auto.type = 'button';
   auto.className = 'mp-model';
   auto.setAttribute('role', 'radio');
-  auto.setAttribute('aria-checked', 'false');
-  appendModelChoiceParts(auto, false, 'Auto model', 'after internal hackathon');
-  auto.disabled = true;
+  const autoSelected = isAuto(scope);
+  auto.dataset.selected = String(autoSelected);
+  auto.setAttribute('aria-checked', String(autoSelected));
+  const now = models.find((m) => modelKey(m) === modelChoices[scope]?.key);
+  appendModelChoiceParts(auto, autoSelected, 'Auto',
+    now ? `now ${modelLabel(now)}` : 'no installed model fits yet');
+  auto.title = modelChoices[scope]?.reason || modelChoices[scope]?.refusal || '';
+  auto.onclick = async () => {
+    auto.disabled = true;
+    try {
+      await api('/v1/model/select', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope, model: 'auto' }),
+      });
+      await loadStatus();
+      closeModelPopover(true);
+    } catch (err) {
+      notice('Auto could not be chosen.', 'error', err.message);
+      auto.disabled = false;
+    }
+  };
   group.append(auto);
 
   for (const candidate of models) {
+    // Only models on this computer (or a paired worker) are choices; a model
+    // offered for download is chosen in Settings → Models instead.
+    if (!candidate.installed) continue;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'mp-model';
-    const selected = modelSelections[scope] === candidate.id;
+    const selected = !isAuto(scope) && modelSelections[scope] === modelKey(candidate);
     const unavailable = !candidate.eligible_scopes?.includes(scope);
     button.dataset.selected = String(selected);
     button.setAttribute('role', 'radio');
     button.setAttribute('aria-checked', String(selected));
-    const location = locationLabel(candidate.locations);
-    appendModelChoiceParts(button, selected, candidate.id,
-      candidate.installed && unavailable
-        ? `${location} — unavailable for this workflow` : location);
+    const location = locationLabel(candidate.locations)
+      + (candidate.runtime_label ? ` · ${candidate.runtime_label}` : '');
+    const why = candidate.locality === 'remote' ? 'runs on another host'
+      : candidate.locality === 'unknown' ? 'locality not confirmed'
+      : !candidate.enabled ? 'switched off' : 'unavailable for this workflow';
+    appendModelChoiceParts(button, selected, modelLabel(candidate),
+      unavailable ? `${location} — ${why}` : location);
     button.disabled = unavailable;
     button.onclick = async () => {
       button.disabled = true;
       try {
         await api('/v1/model/select', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope, model: candidate.id }),
+          body: JSON.stringify({ scope, model: modelKey(candidate) }),
         });
         await loadStatus();
         closeModelPopover(true);
@@ -2942,10 +2995,32 @@ function renderComputerCard(s) {
   actions($('c-computer-actions'), list);
 }
 
+async function startOllama() {
+  try {
+    await postJson('/v1/runtime/ollama/start', {});
+    notice('Ollama started.', 'ok', 'Refinix stops it when you quit, because it started it.');
+  } catch (err) {
+    notice('Ollama did not start.', 'error', err.message);
+  }
+  await loadStatus().catch(() => {});
+}
+
+function openLink(url) {
+  // The desktop shell opens links in the system browser; a browser tab
+  // opens them itself. Either way the person chose to go there.
+  const bridge = nativeBridge();
+  if (bridge?.open_url) bridge.open_url(url);
+  else if (typeof window.open === 'function') window.open(url, '_blank', 'noopener');
+}
+
 function readinessActions(s) {
   const action = s.readiness && s.readiness.action;
   const list = [];
-  if (action && action.kind === 'open_settings') {
+  if (action && action.kind === 'start_ollama') {
+    list.push({ label: action.label, run: startOllama });
+  } else if (action && action.kind === 'open_url') {
+    list.push({ label: action.label, run: () => openLink(action.url) });
+  } else if (action && action.kind === 'open_settings') {
     list.push({ label: action.label, run: () => {
       const card = document.getElementById(action.target || 'models');
       if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2961,6 +3036,27 @@ function readinessActions(s) {
   }
   list.push({ label: 'Check again', run: () => loadStatus().catch(() => {}) });
   return list;
+}
+
+// Names a person recognises, with the runtime that serves each one; the
+// origin-qualified key stays in tooltips and requests, not in sentences.
+function modelWords(s, key) {
+  const row = (s.models || []).find((m) => modelKey(m) === key);
+  if (!row) return key || null;
+  return row.runtime_label ? `${modelLabel(row)} (${row.runtime_label})` : modelLabel(row);
+}
+
+function chatModelWords(s) {
+  const choice = s.model_choices?.chat;
+  const key = choice ? choice.key : s.model_configured;
+  if (!key || choice?.refusal) return null;
+  return `${choice && !choice.pinned ? 'Auto, now ' : ''}${modelWords(s, key)}`;
+}
+
+function installedModelWords(s) {
+  const here = (s.models || []).filter((m) => m.installed
+    && (m.locations || []).includes('this computer'));
+  return here.length ? here.map((m) => modelWords(s, modelKey(m))).join(', ') : null;
 }
 
 function renderEngineCard(s) {
@@ -2983,9 +3079,8 @@ function renderEngineCard(s) {
       ['Integrity', engine.verified === true ? 'verified before every start'
         : (engine.problems || []).join('; ') || null, 'not verified'],
       ['Running now', engine.running ? `yes — ${engine.model || 'model loading'}` : 'no; starts on first use'],
-      ['Model for Chat', s.model_configured],
-      ['Installed models', r.models && r.models.length ? r.models.join(', ') : null,
-       'none yet'],
+      ['Model for Chat', chatModelWords(s), 'no installed model fits yet'],
+      ['Installed models', installedModelWords(s), 'none yet'],
     ]);
     actions($('c-engine-actions'), readinessActions(s));
     return;
@@ -3071,7 +3166,7 @@ function selftestSummary(model) {
   return SELFTEST_CHIP.not_run;
 }
 
-function modelFactRows(model) {
+function modelFactRows(model, choices = {}) {
   const p = model.provenance || {};
   const local = model.integrity?.local;
   const worker = model.integrity?.worker;
@@ -3089,16 +3184,45 @@ function modelFactRows(model) {
   return [
     ['Where', model.locations?.length ? model.locations.join(' and ') : null,
      'not installed anywhere Refinix can see'],
+    ...(model.runtime_label ? [['Runs in', model.runtime_label
+      + (model.managed_by === 'Ollama' ? ' (managed by your Ollama)' : ''), null]] : []),
     ['Source', p.source, 'not recorded by Refinix'],
     ['Licence', p.licence, 'not recorded by Refinix'],
     ['Format', p.format, 'not recorded'],
     ['Integrity', integrity, 'not observed'],
     ['Expected manifest', p.manifest_sha256, 'not recorded by Refinix'],
     ['Observed here', model.digests?.local, 'not observed on this computer'],
-    ['Used for', model.selected_for?.length ? model.selected_for.join(', ') : null,
-     'no workflow is set to use it'],
+    ['Used for', usedForWords(model, choices), 'not chosen for any workflow right now'],
     ['Evidence', p.evidence || p.note, 'nothing recorded'],
+    ...(model.evidence && Object.keys(model.evidence).length
+      ? [['Here', evidenceLine(model), null]] : []),
+    ...(model.fit_label ? [['Fit', model.fit_label, null]] : []),
   ];
+}
+
+/* One line per workflow: compatible, checked here, measured, or not usable.
+ * Never stronger than what was observed. */
+const EVIDENCE_WORDS = {
+  compatible: 'compatible, not yet run here', checked_here: 'checked here',
+  measured: 'measured in Refinix', not_usable: 'not usable',
+};
+const SCOPE_WORDS = { chat: 'Chat', code: 'Code', 'documents.generate': 'Documents',
+                      'documents.ocr': 'Page reading' };
+// Pinned workflows, then the ones Auto would give this model right now.
+function usedForWords(model, choices) {
+  const pinned = (model.selected_for || []).map((scope) => `${SCOPE_WORDS[scope] || scope} (pinned)`);
+  const auto = Object.entries(choices || {})
+    .filter(([scope, c]) => c && !c.pinned && !c.refusal && c.key === modelKey(model)
+      && !(model.selected_for || []).includes(scope))
+    .map(([scope]) => `${SCOPE_WORDS[scope] || scope} (Auto, right now)`);
+  const all = [...pinned, ...auto];
+  return all.length ? all.join(', ') : null;
+}
+
+function evidenceLine(model) {
+  return Object.entries(model.evidence || {})
+    .map(([scope, label]) => `${SCOPE_WORDS[scope] || scope}: ${EVIDENCE_WORDS[label] || label}`)
+    .join(' · ');
 }
 
 async function setModelEnabled(model, enabled, button) {
@@ -3139,14 +3263,15 @@ async function showRemovalImpact(model, button) {
   }
 }
 
-async function runSelfTest(scope, button) {
+async function runSelfTest(scope, button, model = null) {
   button.disabled = true;
   const original = button.textContent;
   button.textContent = 'Checking…';
   try {
+    // A row's check runs on that row's own model, whatever Auto would pick.
     const { selftest } = await api('/v1/model/selftest', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope }),
+      body: JSON.stringify(model ? { scope, model } : { scope }),
     });
     notice(selftest.state === 'passed' ? 'Self-test passed.'
       : selftest.state === 'failed' ? 'Self-test failed.'
@@ -3193,7 +3318,8 @@ function renderModelsCard(s) {
     const name = document.createElement('span');
     const id = document.createElement('span');
     id.className = 'model-id';
-    id.textContent = model.id;
+    id.textContent = modelLabel(model);
+    id.title = model.id;
     const where = document.createElement('span');
     where.className = 'model-where';
     // Where it is, not what state it is in: the chip beside it already says
@@ -3201,6 +3327,8 @@ function renderModelsCard(s) {
     where.textContent = (model.locations?.length
       ? model.locations.join(' and ')
       : 'not installed on this computer')
+      + (model.runtime_label && model.installed ? ` · ${model.runtime_label}` : '')
+      + (model.state === 'cloud' ? ' — runs on another host, not used' : '')
       + (model.enabled ? '' : ' — switched off for new work');
     name.append(id, where);
     const badge = document.createElement('span');
@@ -3212,7 +3340,7 @@ function renderModelsCard(s) {
 
     const dl = document.createElement('dl');
     dl.className = 'model-facts';
-    for (const [key, value, fallback] of modelFactRows(model)) {
+    for (const [key, value, fallback] of modelFactRows(model, s.model_choices)) {
       const row = document.createElement('div');
       const dt = document.createElement('dt');
       dt.textContent = key;
@@ -3228,11 +3356,14 @@ function renderModelsCard(s) {
     test.textContent = testText;
     row.append(test);
 
-    if (model.setup?.command) {
-      const code = document.createElement('p');
-      code.className = 'setup-command';
-      code.textContent = model.setup.command;
-      row.append(code);
+    if (model.setup?.kind === 'command') {
+      // Refinix gives no terminal steps. An Ollama model is installed with
+      // Ollama itself; Refinix uses it once it is there.
+      const note = document.createElement('p');
+      note.className = 'fit-note';
+      note.textContent = 'Available through Ollama: once Ollama has it, Refinix '
+        + 'uses it without copying it.';
+      row.append(note);
     }
     // Refinix's own engine: download or import only when the person asks,
     // and show a download or import that is running or just ended.
@@ -3254,29 +3385,36 @@ function renderModelsCard(s) {
         row.append(importer);
       }
     }
-    for (const scope of model.selected_for || []) {
+    // Checks run on this row's model. With Auto as the default, "the model
+    // selected for a workflow" is no longer the only one worth checking.
+    const checkable = model.installed && model.locality !== 'remote'
+      && (model.eligible_scopes?.length || model.selected_for?.length);
+    const scopes = checkable
+      ? (model.eligible_scopes?.length ? model.eligible_scopes : model.selected_for) : [];
+    for (const scope of scopes) {
       if (!(s.selftest_scopes || []).includes(scope)) continue;
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'btn';
       button.textContent = `Self-test ${scope}`;
-      button.onclick = () => runSelfTest(scope, button);
+      button.onclick = () => runSelfTest(scope, button, model.key || null);
       row.append(button);
     }
-    if (model.installed) {
+    if (model.installed && model.state !== 'cloud') {
       const toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.className = 'btn';
       toggle.textContent = model.enabled ? 'Switch off for new work'
                                          : 'Switch back on';
-      toggle.onclick = () => setModelEnabled(model.id, !model.enabled, toggle);
+      toggle.onclick = () => setModelEnabled(modelKey(model), !model.enabled, toggle);
       const impact = document.createElement('button');
       impact.type = 'button';
       impact.className = 'btn';
-      const removable = (s.engine?.mode === 'managed') && !!model.provenance?.known;
+      const removable = model.removable !== undefined ? model.removable
+        : (s.engine?.mode === 'managed') && !!model.provenance?.known;
       impact.textContent = removable ? 'Remove…' : 'What removing this affects';
-      impact.onclick = () => (removable ? removeModel(model.id, impact)
-                                        : showRemovalImpact(model.id, impact));
+      impact.onclick = () => (removable ? removeModel(modelKey(model), impact)
+                                        : showRemovalImpact(modelKey(model), impact));
       row.append(toggle, impact);
     }
 
@@ -3302,6 +3440,295 @@ const gib = (bytes) => (Number(bytes || 0) / 1024 ** 3).toFixed(1);
  * Check for updates, and only a signed, verified offer is shown. There is no
  * Install control in this build, so none is drawn; a verified package's
  * folder is shown instead. */
+/* How requests pick a model, in one sentence per workflow. */
+function renderModelChoiceNote(s) {
+  const host = $('c-auto-note');
+  if (!host) return;
+  const choices = s.model_choices || {};
+  const parts = Object.entries(SCOPE_WORDS).map(([scope, word]) => {
+    const choice = choices[scope] || {};
+    const pinned = s.model_selections?.[scope] && s.model_selections[scope] !== 'auto';
+    const row = (s.models || []).find((m) => modelKey(m) === choice.key);
+    const name = row ? modelLabel(row) : null;
+    if (choice.refusal) return `${word}: ${pinned ? 'your pinned model cannot run it' : 'no installed model fits yet'}`;
+    return `${word}: ${pinned ? 'pinned to' : 'Auto, now'} ${name || 'a model'}`;
+  });
+  host.textContent = (s.auto_model?.detail ? s.auto_model.detail + ' ' : '')
+    + parts.join(' · ') + '.';
+}
+
+/* The person's Ollama: version, whether it meets the baseline, Start, update. */
+function renderOllamaLine(s) {
+  const host = $('c-ollama');
+  if (!host) return;
+  host.replaceChildren();
+  const o = s.ollama;
+  if (!o || !o.active) return;
+  const text = document.createElement('span');
+  if (o.reachable) {
+    text.textContent = `Ollama ${o.version || ''} is answering`
+      + (o.update_recommended
+        ? ` — older than ${o.baseline?.minimum}, so its models are not used until it is updated.`
+        : '. Its models run through Ollama, without copying them.')
+      + (o.cloud_models?.length
+        ? ` Cloud models (${o.cloud_models.join(', ')}) run on another host and are not used.`
+        : '');
+  } else if (o.installed) {
+    text.textContent = 'Ollama is installed but not running. Start it to use the '
+      + 'models you already have there.';
+  } else if (o.installed === null) {
+    text.textContent = 'Ollama is not answering on this computer.';
+  } else {
+    text.textContent = 'Ollama is not installed. That is fine: Refinix can download '
+      + 'and run models itself.';
+  }
+  host.append(text);
+  if (o.startable) {
+    const start = document.createElement('button');
+    start.type = 'button';
+    start.className = 'btn';
+    start.textContent = 'Start Ollama';
+    start.onclick = () => { start.disabled = true; startOllama(); };
+    host.append(start);
+  }
+  if (o.update_recommended) {
+    const update = document.createElement('button');
+    update.type = 'button';
+    update.className = 'btn';
+    update.textContent = 'Get the current Ollama';
+    update.onclick = () => openLink(o.update_url);
+    host.append(update);
+  }
+}
+
+/* Up to six starting choices, then Show more. Estimates, never an allowlist. */
+function recommendationRow(item, s) {
+  const entry = (s.models || []).find((m) => m.id === item.id) || {};
+  const li = document.createElement('li');
+  li.dataset.state = item.installed ? 'installed' : 'absent';
+  const head = document.createElement('div');
+  head.className = 'model-head';
+  const name = document.createElement('span');
+  const id = document.createElement('span');
+  id.className = 'model-id';
+  id.textContent = entry.display_name || item.id;
+  const sub = document.createElement('span');
+  sub.className = 'model-where';
+  const p = entry.provenance || {};
+  sub.textContent = [p.publisher, p.quantizer && p.quantizer !== p.publisher
+    ? `quantized by ${p.quantizer}` : null, `${gib(item.storage_bytes)} GB`,
+  p.licence].filter(Boolean).join(' · ');
+  name.append(id, sub);
+  const badge = document.createElement('span');
+  badge.className = 'chip chip-' + (item.fit === 'good' ? 'enforced'
+    : item.fit === 'too_large' ? 'fault' : 'caution');
+  badge.textContent = item.fit_label;
+  head.append(name, badge);
+  const row = document.createElement('div');
+  row.className = 'model-actions';
+  if (item.hints?.length) {
+    const hints = document.createElement('span');
+    hints.className = 'fit-note';
+    hints.textContent = `Publisher lists: ${item.hints.join(', ')}`;
+    row.append(hints);
+  }
+  if (item.installed) {
+    const done = document.createElement('span');
+    done.className = 'fit-note';
+    done.textContent = 'Installed';
+    row.append(done);
+  } else if (item.disk_short) {
+    const short = document.createElement('span');
+    short.className = 'fit-note';
+    short.textContent = 'Not enough free disk space for this download.';
+    row.append(short);
+  } else {
+    const download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'btn';
+    download.textContent = `Download (${gib(item.storage_bytes)} GB)`;
+    download.onclick = () => downloadModel(item.id, download);
+    row.append(download);
+  }
+  li.append(head, row);
+  return li;
+}
+
+function renderRecommendations(s) {
+  const host = $('c-recommend');
+  if (!host) return;
+  const rec = s.recommendations || { initial: [], more: [] };
+  host.replaceChildren(...rec.initial.map((item) => recommendationRow(item, s)));
+  const more = $('c-recommend-more');
+  more.replaceChildren(...rec.more.map((item) => recommendationRow(item, s)));
+  const toggle = $('c-recommend-toggle');
+  toggle.hidden = !rec.more.length;
+  toggle.textContent = more.hidden ? `Show more (${rec.more.length})` : 'Show fewer';
+  toggle.onclick = () => {
+    more.hidden = !more.hidden;
+    toggle.textContent = more.hidden ? `Show more (${rec.more.length})` : 'Show fewer';
+  };
+  const note = $('c-recommend-note');
+  if (note) {
+    note.textContent = rec.initial.length || rec.more.length
+      ? rec.note || ''
+      : 'Downloads run in the Refinix engine, which this copy does not include.';
+  }
+}
+
+/* Browse Hugging Face: search, pick a file, see the pinned plan, then download. */
+async function hubSearch(event) {
+  event?.preventDefault?.();
+  const query = ($('c-hub-query').value || '').trim();
+  const host = $('c-hub-results');
+  if (!query) return;
+  host.replaceChildren();
+  try {
+    const { results } = await postJson('/v1/hub/search', { query });
+    if (!results.length) {
+      const li = document.createElement('li');
+      li.textContent = 'No GGUF repositories matched.';
+      host.append(li);
+    }
+    for (const item of results) host.append(hubRepositoryRow(item));
+  } catch (err) {
+    notice('Hugging Face could not be searched.', 'error', err.message);
+  }
+}
+
+function hubRepositoryRow(item) {
+  const li = document.createElement('li');
+  const head = document.createElement('div');
+  head.className = 'model-head';
+  const name = document.createElement('span');
+  const id = document.createElement('span');
+  id.className = 'model-id';
+  id.textContent = item.repo;
+  const sub = document.createElement('span');
+  sub.className = 'model-where';
+  sub.textContent = item.gated ? 'needs a Hugging Face account — not supported'
+    : `${item.downloads ?? 0} downloads`;
+  name.append(id, sub);
+  head.append(name);
+  const row = document.createElement('div');
+  row.className = 'model-actions';
+  if (!item.gated && !item.private) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn';
+    open.textContent = 'See files';
+    open.onclick = () => hubFiles(item.repo, row, open);
+    row.append(open);
+  }
+  li.append(head, row);
+  return li;
+}
+
+async function hubFiles(repo, row, button) {
+  button.disabled = true;
+  try {
+    const listing = await postJson('/v1/hub/repository', { repo });
+    renderHubFiles(repo, listing, row);
+  } catch (err) {
+    notice('That repository could not be read.', 'error', err.message);
+    button.disabled = false;
+  }
+}
+
+// The coordinator says which projectors belong to each file's model. One named
+// for exactly that model, and only one, is added on its own, with text only
+// beside it; several, or one the repository does not tie to this file, are
+// the person's choice, text only included. A projector is never paired by its
+// position in the listing.
+function hubPairingPlan(choice) {
+  const projectors = choice.projectors || [];
+  if (!projectors.length) return { mode: 'text', projector: null };
+  if (projectors.length === 1 && choice.pairing !== 'ambiguous') {
+    return { mode: 'paired', projector: projectors[0].file };
+  }
+  return { mode: 'choose', projector: null };
+}
+
+const HUB_PLAN_WORDS = { text: 'text only', paired: 'with its image projector',
+  choose: 'choose image support' };
+
+function hubButton(text, onclick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn';
+  button.textContent = text;
+  button.onclick = () => onclick(button);
+  return button;
+}
+
+function renderHubFiles(repo, listing, row) {
+  row.replaceChildren();
+  const meta = document.createElement('p');
+  meta.className = 'fit-note';
+  meta.textContent = [`revision ${listing.revision.slice(0, 12)}…`,
+    listing.licence ? `licence tag: ${listing.licence}` : 'no licence stated',
+    listing.base_model ? `base: ${listing.base_model}` : null,
+    listing.architecture ? `architecture: ${listing.architecture}` : null]
+    .filter(Boolean).join(' · ');
+  row.append(meta);
+  for (const choice of listing.choices) {
+    const plan = hubPairingPlan(choice);
+    const pick = hubButton(`${choice.file}${choice.parts.length > 1
+      ? ` (+${choice.parts.length - 1} parts)` : ''} — ${gib(choice.size)} GB · `
+      + HUB_PLAN_WORDS[plan.mode], (button) => (plan.mode === 'choose'
+      ? renderHubProjectors(repo, listing, choice, row)
+      : hubResolve(repo, choice.file, listing.revision, plan.projector, button)));
+    if (plan.projector) pick.title = plan.projector;
+    row.append(pick);
+    if (plan.mode === 'paired') {
+      row.append(hubButton(`${choice.file} · text only`,
+        (button) => hubResolve(repo, choice.file, listing.revision, null, button)));
+    }
+  }
+}
+
+function renderHubProjectors(repo, listing, choice, row) {
+  row.replaceChildren();
+  const note = document.createElement('p');
+  note.className = 'fit-note';
+  note.textContent = choice.pairing === 'ambiguous'
+    ? `${choice.file}: nothing in this repository ties these image projectors to `
+      + 'this exact model — one may be for a related model or another model '
+      + 'here. Add one only if you know it belongs to this model.'
+    : `${choice.file}: more than one image projector is published for this `
+      + 'model. Choose one, or text only.';
+  row.append(note);
+  // Chosen here, by the person: that is what `projector_confirmed` records.
+  for (const projector of choice.projectors) {
+    row.append(hubButton(`With ${projector.file} — ${gib(projector.size)} GB`,
+      (button) => hubResolve(repo, choice.file, listing.revision, projector.file, button,
+                             true)));
+  }
+  row.append(
+    hubButton('Text only (no image input)',
+      (button) => hubResolve(repo, choice.file, listing.revision, null, button)),
+    hubButton('Back to files', () => renderHubFiles(repo, listing, row)));
+}
+
+async function hubResolve(repo, file, revision, projector, button, confirmed = false) {
+  button.disabled = true;
+  try {
+    const { entry } = await postJson('/v1/hub/resolve', {
+      repo, file, revision, projector, projector_confirmed: Boolean(projector && confirmed),
+    });
+    await downloadModel(entry.id, button);
+  } catch (err) {
+    notice('That model could not be prepared for download.', 'error', err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function initHubBrowse() {
+  const form = $('c-hub-form');
+  if (form && form.addEventListener) form.addEventListener('submit', hubSearch);
+}
+
 function renderUpdatesCard(s) {
   if (!$('c-updates-facts')) return;
   const u = s.updates || {};
@@ -4366,6 +4793,7 @@ async function loadStatus() {
   if (Array.isArray(s.models)) {
     models = s.models;
     modelSelections = s.model_selections || modelSelections;
+    modelChoices = s.model_choices || modelChoices;
     renderModelPill();
   }
   renderReadyLine(s);
@@ -4387,6 +4815,9 @@ async function loadStatus() {
   renderComputerCard(s);
   renderEngineCard(s);
   renderModelsCard(s);
+  renderModelChoiceNote(s);
+  renderOllamaLine(s);
+  renderRecommendations(s);
   renderUpdatesCard(s);
   renderOthersCard(s, worker);
   renderWorkCard(s, jobs);
@@ -4808,6 +5239,7 @@ window.addEventListener('DOMContentLoaded', () => {
     setInterval(() => loadStatus().catch(() => {}), 15000);
   } else if ($('refresh')) {
     $('refresh').onclick = () => loadStatus().catch(() => {});
+    initHubBrowse();
     setInterval(() => loadStatus().catch(() => {}), 10000);
   }
 });

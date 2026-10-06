@@ -126,7 +126,7 @@ class Prepared:
 def prepare_sources(coordinator, *, chat_id, message_id, job_id,
                     attachments: list[dict], should_cancel=None,
                     ocr_model: str = runtime.OCR_MODEL,
-                    ocr_profile=None) -> Prepared:
+                    ocr_profile=None, ocr_chat=None) -> Prepared:
     """Read exactly the attachments that travelled with this request."""
     prepared = Prepared()
     if not attachments:
@@ -157,7 +157,7 @@ def prepare_sources(coordinator, *, chat_id, message_id, job_id,
                 path, source_id=full["attachment_id"], filename=full["filename"],
                 media_type=full["media_type"], expected_sha256=full["sha256"],
                 should_cancel=should_cancel, ocr_model=ocr_model,
-                ocr_profile=ocr_profile)
+                ocr_profile=ocr_profile, ocr_chat=ocr_chat)
         except documents.DocumentError as exc:
             if exc.code == "cancelled":
                 # A stop is not a skipped file. Raising here keeps a cancelled
@@ -1692,7 +1692,7 @@ def reference_footer(answer: str, sent_sources: list[dict], *,
     indistinguishable here from one that points nowhere. A filename two
     supplied files share is ambiguous, so it never resolves to either.
     """
-    route = ([f"Answered by {answered_by} with its qualified Chat profile from "
+    route = ([f"Answered by {answered_by} as plain Chat from "
               "text extracted on this computer; not a structured Documents "
               "result."] if answered_by else [])
     names = [source["filename"] for source in sent_sources]

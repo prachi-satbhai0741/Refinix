@@ -48,6 +48,7 @@ Thumbs.db
 /weights/
 
 # --- Generated installers and release binaries  (docs/security.md) --------
+/desktop/out/
 *.dmg
 *.pkg
 *.exe

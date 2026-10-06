@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.contracts import profiles
-from backend.coordinator import db, models, runtime
+from backend.coordinator import db, fake_ollama, models, runtime
 from backend.coordinator.server import Coordinator, RequestError
 
 CHAT_PROFILE = next(
@@ -38,8 +38,13 @@ class FakeOllama(BaseHTTPRequestHandler):
     def log_message(self, *_a):
         pass
 
+    def do_GET(self):
+        fake_ollama.answer(self, CHAT_PROFILE.model)
+
     def do_POST(self):
         body = self.rfile.read(int(self.headers["Content-Length"]))
+        if fake_ollama.answer(self, CHAT_PROFILE.model):
+            return
         type(self).seen.append(json.loads(body))
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
@@ -344,11 +349,11 @@ class TestThinkingOnlyCompletion(CoordinatorBase):
 
 
 class TestStatusSurface(CoordinatorBase):
-    def test_configured_models_are_visible_before_setup(self):
+    def test_known_models_are_visible_before_setup_and_auto_is_the_default(self):
         status = self.c.status()
-        self.assertEqual({m["id"] for m in status["models"]},
-                         {runtime.MODEL, runtime.OCR_MODEL})
-        self.assertEqual(status["model_selections"]["chat"], runtime.MODEL)
+        self.assertIn(runtime.MODEL, {m["id"] for m in status["models"]})
+        self.assertEqual(status["model_selections"]["chat"], models.AUTO)
+        self.assertTrue(status["auto_model"]["enabled"])
 
     def test_the_status_reflects_the_stored_choice(self):
         db.set_reasoning(self.c.conn, runtime.MODEL, True)
@@ -385,10 +390,10 @@ class TestStatusSurface(CoordinatorBase):
             with self.assertRaises(RequestError):
                 self.c.select_model("documents.ocr", runtime.MODEL)
 
-    def test_auto_is_visible_as_a_future_choice_but_not_selectable(self):
-        with self.assertRaises(RequestError) as caught:
-            self.c.select_model("chat", "auto")
-        self.assertEqual(caught.exception.status, 409)
+    def test_auto_can_be_chosen_again_after_pinning(self):
+        self.assertEqual(self.c.select_model("chat", "auto"),
+                         {"scope": "chat", "model": "auto"})
+        self.assertEqual(db.get_model_selection(self.c.conn, "chat", "x"), "auto")
 
 
 if __name__ == "__main__":

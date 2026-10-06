@@ -29,7 +29,9 @@ from backend.coordinator.test_pdfrender import minimal_pdf
 
 SCAN_FIXTURE = "fixtures/c07/documents/inspection-report-scan.pdf"
 
-RUNTIME_READY = {"reachable": True, "server_version": "0.0.0-fake",
+# A version at or above Ollama's 0.12.6 baseline, so locality is readable;
+# what these checks exercise is the capability logic, not the version.
+RUNTIME_READY = {"reachable": True, "server_version": "0.34.2",
                  "models": [runtime.OCR_MODEL],
                  "digests": {runtime.OCR_MODEL: "c" * 64},
                  "loaded": None, "endpoint": runtime.HOST, "error": None}
@@ -1006,7 +1008,7 @@ class TestNoQualifiedProfileRefusal(unittest.TestCase):
         state = ocr.probe(profile=None)
         self.assertFalse(state["available"])
         self.assertEqual(state["model"]["state"], ocr.NO_PROFILE_STATE)
-        self.assertIn("no qualified reading profile", state["detail"])
+        self.assertIn("cannot read page images", state["detail"])
 
     def test_the_image_probe_refuses_and_names_the_prerequisite(self):
         state = ocr.image_probe(profile=None)
@@ -1051,7 +1053,7 @@ class TestNoQualifiedProfileRefusal(unittest.TestCase):
         summary = documents.capability_summary(RUNTIME_READY, ocr_profile=None)
         self.assertFalse(summary["reads_scans"])
         self.assertFalse(summary["detail"]["ocr"]["available"])
-        self.assertIn("no qualified reading profile",
+        self.assertIn("cannot read page images",
                       summary["detail"]["ocr"]["detail"])
 
     def test_text_and_word_attachments_are_unaffected_by_the_ocr_refusal(self):

@@ -146,6 +146,32 @@ class Provisioner:
         self._lock = threading.Lock()
         self._operations: dict[str, Operation] = {}
         self._thread: threading.Thread | None = None
+        # Entries resolved from a repository this session (Browse), pinned to
+        # a revision, files, sizes and SHA-256 before any byte is fetched.
+        self._plans: dict[str, models.Entry] = {}
+
+    # -- resolved entries --------------------------------------------------
+    def add_plan(self, entry: models.Entry) -> models.Entry:
+        """Remember a pinned entry resolved from a repository, for download."""
+        if entry.engine != ENGINE or not entry.files:
+            raise ProvisioningError("unknown_model", "That is not a downloadable model.")
+        for item in entry.files:
+            if urlsplit(item.url).scheme != "https" or len(item.sha256) != 64:
+                raise ProvisioningError("unsafe_source",
+                                        f"{item.name} has no pinned HTTPS source and SHA-256.")
+        with self._lock:
+            self._plans[entry.id] = entry
+        folder = self.root / STAGING / entry.id
+        folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+        temporary = folder / "plan.json.part"
+        temporary.write_text(models.record_source(entry, "download from"), encoding="utf-8")
+        os.replace(temporary, folder / "plan.json")
+        return entry
+
+    def known_ids(self) -> set[str]:
+        with self._lock:
+            planned = set(self._plans)
+        return planned | {r["model_id"] for r in db.model_installs(self.conn)}
 
     # -- what the interface reads ------------------------------------------
     def state(self) -> dict:
@@ -193,17 +219,38 @@ class Provisioner:
     def start_import(self, model_id: str, paths: list[Path]) -> dict:
         entry = self._entry(model_id)
         candidates = []
+        sizes = {f.size for f in entry.files}
+        unmatched = []
         for path in paths:
             path = Path(path)
             if path.is_symlink() or not path.is_file():
                 raise ProvisioningError("not_a_file",
                                         f"{path.name} is not an ordinary file.")
+            # A file whose size matches no pinned file cannot be one of them,
+            # so it is refused before a single byte is copied.
+            if path.stat().st_size not in sizes:
+                unmatched.append(path.name)
+                continue
             candidates.append(path)
         if not candidates:
-            raise ProvisioningError("no_files", "No files were chosen.")
-        operation = Operation(entry.id, "import",
-                              bytes_total=sum(p.stat().st_size for p in candidates))
-        self._begin(operation, lambda: self._import(entry, candidates, operation))
+            raise ProvisioningError(
+                "no_files", ("None of the chosen files is one of this model's files"
+                             + (f" ({', '.join(unmatched)})" if unmatched else "") + "."
+                             if unmatched else "No files were chosen."))
+        total = sum(p.stat().st_size for p in candidates)
+        try:
+            free = int(self._disk_usage(self.root if self.root.exists()
+                                        else self.root.parent).free)
+        except OSError:
+            free = None
+        if free is not None and free < total + DISK_MARGIN_BYTES:
+            raise ProvisioningError(
+                "insufficient_space",
+                f"About {(total + DISK_MARGIN_BYTES) // 1024 ** 2} MB of free space is "
+                f"needed to import; {free // 1024 ** 2} MB is free.")
+        operation = Operation(entry.id, "import", bytes_total=total)
+        self._begin(operation, lambda: self._import(entry, candidates, operation,
+                                                    rejected=unmatched))
         return operation.as_dict()
 
     def cancel(self, model_id: str) -> dict:
@@ -234,7 +281,14 @@ class Provisioner:
         folder = self.root / model_id
         if db.get_model_install(self.conn, model_id) is None and not folder.exists():
             raise ProvisioningError("not_installed", f"{model_id} is not installed.")
-        self.unload(model_id)
+        try:
+            self.unload(model_id)
+        except Exception as exc:                           # noqa: BLE001
+            # Removing files from under an engine that would not stop would
+            # report a removal that did not happen. Nothing is changed.
+            raise ProvisioningError(
+                "unload_failed",
+                f"{model_id} could not be unloaded, so nothing was removed: {exc}") from exc
         # Record first: a crash after this leaves an unreferenced folder, which
         # removing the model again deletes; never a record without its files.
         # Nothing deletes model folders on its own: a folder without a record
@@ -250,11 +304,36 @@ class Provisioner:
 
     # -- internals ---------------------------------------------------------
     def _entry(self, model_id: str) -> models.Entry:
+        """A catalogue entry, a plan resolved this session, or a recorded one."""
         entry = models.entry_for(model_id)
+        if entry is None:
+            with self._lock:
+                entry = self._plans.get(model_id)
+        if entry is None:
+            entry = models.entry_from_record(db.get_model_install(self.conn, model_id))
+        if entry is None:
+            entry = self._staged_plan(model_id)
         if entry is None or entry.engine != ENGINE or not entry.files:
             raise ProvisioningError("unknown_model",
                                     f"{model_id} is not a model Refinix can install.")
         return entry
+
+    def _staged_plan(self, model_id: str) -> models.Entry | None:
+        """A resolved plan kept beside its partial download, after a restart."""
+        if not model_id or any(c in model_id for c in "/\\") or model_id.startswith("."):
+            return None
+        path = self.root / STAGING / model_id / "plan.json"
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        entry = models.entry_from_record({"model_id": model_id, "source": text,
+                                          "manifest_sha256": None})
+        if entry is None:
+            return None
+        manifest = models.manifest_digest(model_id, entry.revision, entry.files)
+        from dataclasses import replace
+        return replace(entry, manifest_sha256=manifest)
 
     def _begin(self, operation: Operation, work) -> None:
         with self._lock:
@@ -319,11 +398,19 @@ class Provisioner:
         return False
 
     def _record(self, entry: models.Entry, source: str) -> None:
+        # Every file, in recorded order: a split model's parts are all kept,
+        # and the first `weights` file is the one the engine is given.
         files = [{"role": f.role, "name": f.name, "path": f"{entry.id}/{f.name}",
-                  "size": f.size, "sha256": f.sha256} for f in entry.files]
+                  "size": f.size, "sha256": f.sha256, "order": index}
+                 for index, f in enumerate(entry.files)]
+        if models.entry_for(entry.id) is None:
+            # A resolved entry keeps its metadata in the same column, as
+            # versioned JSON; older plain-text rows stay readable as before.
+            source = models.record_source(entry, source)
         db.record_model_install(self.conn, model_id=entry.id,
                                 manifest_sha256=entry.manifest_sha256, engine=ENGINE,
                                 files=files, source=source)
+        shutil.rmtree(self.root / STAGING / entry.id, ignore_errors=True)
 
     def _download(self, entry: models.Entry, operation: Operation) -> None:
         (self.root / entry.id).mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -415,13 +502,14 @@ class Provisioner:
                 f"{item.name} did not match its pinned SHA-256 and was discarded.")
         return True
 
-    def _import(self, entry: models.Entry, paths: list[Path], operation: Operation) -> None:
+    def _import(self, entry: models.Entry, paths: list[Path], operation: Operation,
+                rejected: list[str] | None = None) -> None:
         """Copy chosen files in, keeping each only if it is one of the pinned files."""
         (self.root / entry.id).mkdir(parents=True, exist_ok=True, mode=0o700)
         by_hash = {f.sha256: f for f in entry.files}
         staging = self.root / STAGING / entry.id
         staging.mkdir(parents=True, exist_ok=True, mode=0o700)
-        unmatched, placed = [], set()
+        unmatched, placed = list(rejected or ()), set()
         for path in paths:
             operation.file = path.name
             temporary = staging / (f"import-{os.getpid()}-{path.name}.part")

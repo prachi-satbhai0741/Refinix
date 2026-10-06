@@ -139,8 +139,10 @@ def stream_chat(endpoint: Endpoint, messages: list[dict], *,
                 response_format: dict | None = None, sampling: dict | None = None,
                 watch_class=None, unavailable=RuntimeError):
     """Yield stream records from the managed engine, honouring Stop."""
+    # The Refinix engine only serves the computer that owns the workspace, so
+    # the local policy applies: a measured profile, or an honest candidate.
     try:
-        inference_profiles.validate_request(profile, inference, profile.model)
+        inference_profiles.validate_local(profile, inference, profile.model)
     except ValueError as exc:
         raise unavailable(str(exc)) from exc
     if response_format is None and inference.decoder != "text":

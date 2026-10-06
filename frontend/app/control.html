@@ -199,8 +199,38 @@
           </div>
           <p class="card-lead" id="c-models-lead">Reading what is installed on
              this computer…</p>
+          <!-- How each request picks a model: Auto by default, or a model the
+               person pinned. Filled from status; nothing here is a setting
+               the interface invents. -->
+          <p class="card-note" id="c-auto-note"></p>
+          <!-- The person's Ollama: used through its own local API, never
+               installed, updated or started without them asking. -->
+          <div class="ollama-line" id="c-ollama"></div>
           <ul class="model-list" id="c-model-list"></ul>
           <p class="card-note" id="c-models-note"></p>
+
+          <!-- Starting choices for this computer. Recommendations, never an
+               allowlist: everything below them can be chosen too. -->
+          <h3 class="subhead">Recommended for this computer</h3>
+          <p class="card-note" id="c-recommend-note"></p>
+          <ul class="model-list" id="c-recommend"></ul>
+          <div class="card-actions">
+            <button type="button" class="btn" id="c-recommend-toggle" hidden>Show more</button>
+          </div>
+          <ul class="model-list" id="c-recommend-more" hidden></ul>
+
+          <!-- Connected, and only when the person searches. -->
+          <h3 class="subhead">Browse Hugging Face</h3>
+          <p class="card-note">Searches Hugging Face for GGUF models only when
+             you press Search. Nothing is downloaded until you confirm the exact
+             files, sizes and checksums.</p>
+          <form class="hub-search" id="c-hub-form">
+            <input type="search" id="c-hub-query" maxlength="100"
+                   placeholder="e.g. qwen3, gemma 3, glm-4, deepseek r1, gpt-oss"
+                   aria-label="Search Hugging Face for models">
+            <button type="submit" class="btn" id="c-hub-search">Search</button>
+          </form>
+          <ul class="model-list" id="c-hub-results"></ul>
         </section>
 
         <!-- Settings -> Updates. Checked only when the person asks; nothing

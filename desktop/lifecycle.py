@@ -353,6 +353,10 @@ class EngineSupervisor:
         self.owned = False
         self.last = {}
 
+    def installed(self) -> bool:
+        """Whether an Ollama binary exists here. Never installs anything."""
+        return self._locate() is not None
+
     def ready(self, state: dict) -> bool:
         """Real readiness: the server answered *and* listed its models."""
         return bool(state.get("reachable")) and isinstance(state.get("models"), list) \
@@ -442,8 +446,11 @@ class ManagedEngineControl:
 
     owned = True
 
-    def __init__(self, backend):
+    def __init__(self, backend, ollama=None):
         self.backend = backend
+        # The person's Ollama, when Refinix started it on their request. It is
+        # stopped at quit only in that case; one already running is left alone.
+        self.ollama = ollama
         self.last = {}
 
     def stop(self, timeout: float = 5.0) -> bool:
@@ -453,6 +460,11 @@ class ManagedEngineControl:
         next launch refuses to start a second engine until it is gone.
         """
         from backend.coordinator import engine as engine_module
+        if self.ollama is not None:
+            try:
+                self.ollama.stop(timeout)
+            except Exception:                              # noqa: BLE001
+                pass
         try:
             return self.backend.stop()
         except engine_module.EngineError:
@@ -466,6 +478,14 @@ def configure_managed_engine(selection, coordinator, state_path: Path):
         selection, Path(state_path).parent, registry=coordinator.installed_models,
         settings_for=coordinator.engine_settings_for)
     runtime.configure_managed(backend)
+    # Models the person already has in Ollama stay usable through Ollama's own
+    # local API, beside Refinix's engine. Ollama is read and run, never
+    # installed, updated or started without the person asking.
+    runtime.configure_ollama(True)
+    if getattr(coordinator, "ollama_control", None) is None:
+        # Ollama alone: the combined probe answers for the Refinix engine too,
+        # which would read as a running Ollama and never start the real one.
+        coordinator.ollama_control = EngineSupervisor(probe=runtime.probe_ollama)
     if backend.engine is not None:
         # A crash may have left the previous engine running. It is stopped only
         # when its PID, start time and executable all match the record. One
@@ -629,12 +649,26 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
                              "answered." + started)
 
             progress.set("model", "running")
-            model = model_status(engine)
-            ready = _chat_readiness(coordinator) if model["state"] == "ok" else None
-            if ready is not None and ready["code"] != "ready":
-                # Installed is not runnable: the selection, a switch, the
-                # file identity or the qualified profile can still say no.
-                model = {**model, "state": "attention", "readiness": ready,
+            try:
+                if coordinator is not None and getattr(coordinator, "ollama_control",
+                                                       None) is None:
+                    coordinator.ollama_control = supervisor
+            except AttributeError:
+                pass                  # a stand-in coordinator without that slot
+            ready = _chat_readiness(coordinator) if coordinator is not None else None
+            if ready is None:
+                model = model_status(engine)
+            elif ready["code"] == "ready":
+                chosen = coordinator.model_for("chat")
+                model = {"state": "ok", "model": chosen,
+                         "installed": engine.get("models") or [],
+                         "detail": "A local model is ready for Chat.",
+                         "action": None, "readiness": ready}
+            else:
+                # Installed is not runnable: the selection, a switch, the file
+                # identity, locality or the Ollama version can still say no.
+                model = {"state": "attention", "model": None,
+                         "installed": engine.get("models") or [], "readiness": ready,
                          "detail": f"{ready['message']} {ready['detail']}".strip(),
                          "action": ready["action"]}
             progress.set("model", "ok" if model["state"] == "ok" else "attention",
@@ -725,7 +759,8 @@ def _managed_engine_steps(progress, selection, coordinator, state_path):
                             "label": "Open Settings → Models"}}
     progress.set("model", "ok" if model["state"] == "ok" else "attention",
                  model["detail"], model["action"])
-    return state, model, engine_error, ManagedEngineControl(backend)
+    return state, model, engine_error, ManagedEngineControl(
+        backend, ollama=getattr(coordinator, "ollama_control", None))
 
 
 def _update_recovery(owner, state_path: Path, moment: str) -> None:

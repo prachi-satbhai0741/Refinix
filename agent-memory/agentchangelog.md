@@ -2788,3 +2788,63 @@ work. No repository file change means no changelog entry.
 - changes: Added a final cleanup stage for proven unused/replaced code after approved implementation and authorised verification. Recorded the user's request to delete the temporary direction report only after preserving both verbatim statements in repository memory and repairing active links. No code or report was deleted.
 - verification: Inspected current branch/status, changed paths and untracked checkpoint/media inventory. Current branch is aditya, one commit ahead of the local origin/aditya tracking reference. No tests, live models, downloads or Git writes were run.
 - remaining: The user stages, reviews, commits and pushes the current changes. The implementation owner returns a plan for independent review before execution; eventual cleanup remains conditional on complete execution and verification.
+
+
+<a id="ac-20261005-010"></a>
+## AC-20261005-010 — Add the README ownership headline
+- date: 2026-10-05
+- agent: agent
+- status: headline added
+- prompt_id: [UP-20261005-005](userprompts.md#up-20261005-005)
+- paths: docs/beta-user-direction-2026-10-05.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- changes: Added a prominent README ownership note at the top of the direction report. Root README work belongs to the teammate; later file-only synchronization from main waits for user confirmation and authorization, followed by normal member -> dev -> main integration preserving the final README.
+- verification: Read current report, branch/status and relevant agent rules. No root README edit, tests, live calls or Git writes were performed.
+- remaining: User confirmation that the final README has reached main and separate authorization for subsequent Git work.
+
+
+<a id="ac-20261006-001"></a>
+## AC-20261006-001 — Both local runtimes, Auto routing, capacity and local admission (A–F)
+- date: 2026-10-06
+- agent: agent
+- status: implemented and checked by the agent; requester verification pending; not Beta acceptance
+- prompt_id: [UP-20261006-001](userprompts.md#up-20261006-001), [UP-20261006-002](userprompts.md#up-20261006-002)
+- paths: backend/contracts/profiles.py; backend/coordinator/{admission,capacity,router,hub,fake_ollama,test_model_runtime}.py (new); backend/coordinator/{runtime,runtime_llamacpp,models,engine,local_engine,provisioning,db,server,readiness,ocr,pdfrender,documents,docflow,identity,code_service}.py and their tests; desktop/{lifecycle,shell}.py; frontend/app/{app.js,control.html,refinix.css} and tests
+- changes: Existing Ollama and the Refinix-managed llama.cpp engine run side by side; the model's origin selects the runtime ("ollama|name", "llama.cpp|id"), with no copied weights. Local candidate profiles replace the team-measurement gate on this computer only (locality, digest, declared capabilities and bounds), while worker/node/dispatch checks stay strict. Auto routing per request with a stored reason; pins are refused, never swapped. Capacity ledger (unified/discrete/CPU; resident weights once, per-job working state, bounded cancellable wait); a resident model reserves no new working state only for the window it was loaded with. Single managed-engine lease queue (b11390 router mode rejected: unauthenticated child listeners). Library of eight pinned Hugging Face entries, explicit Hub browse/resolve, imports without download. Schema 14 adds nullable model_selftests.check_fingerprint. Resume fixes: window-aware residency; install reads serialized on the shared connection (preview found InterfaceError under concurrent status/capabilities); Settings shows model names, runtimes and current Auto picks instead of internal keys.
+- verification: Offline: coordinator 1459 OK (4 skipped); contracts 20 OK; desktop 128 OK; frontend 208 pass; scripts 38 with the 2 known hotspot-address launcher failures; worker 169 with the 1 known missing-fastapi import error (not installed). Loopback live on the Mac: Auto and pinned chats on both runtimes, vision routing for page reading, scan+SOP to DOCX with citations, a reviewable Code proposal with no disk change, concurrent Ollama and managed streams, a fingerprinted OCR self-test, and Ollama 0.35.1 /api/ps reporting the num_ctx sent (same window: no reload; new window: reload). Preview UI: Settings and one Auto chat with its route reason. Ollama and the managed engine started by these checks were stopped.
+- remaining: Requester UI walkthrough. Chat self-test strict-format decision; a second managed model not tested live (no download authorized); protected docs (model-catalog, evaluation and others) still describe the earlier state; section G cleanup awaits named permission. Windows/Linux packages, updater/recovery, local sandbox and network-evidence gates remain outstanding.
+
+
+<a id="ac-20261006-002"></a>
+## AC-20261006-002 — Repair five review findings (Ollama start, Search scans, OCR admission, stale waits, Hub projectors)
+- date: 2026-10-06
+- agent: agent
+- status: implemented and checked by the agent; requester verification pending
+- prompt_id: [UP-20261006-003](userprompts.md#up-20261006-003)
+- paths: desktop/lifecycle.py, desktop/test_lifecycle.py, backend/coordinator/{server,capacity,local_engine,runtime,docflow,documents,hub,test_model_runtime,test_documents}.py, frontend/app/{app.js,test-models-card.cjs}
+- changes: (1) The Ollama supervisor beside the managed engine probes Ollama alone. (2) Search observes the runtimes when it has files, so a scan reaches the page-reading model Auto picks. (3) Page reads go through a job-scoped admitted call; a job's uses of one model share a ledger group and do not add up, and a job's end releases its whole group. (4) A memory wait re-reads residency and the loaded window each retry (Ollama /api/ps, engine state). (5) Hub listings pair projectors per model (named, repository, ambiguous, none); resolve refuses a projector not published for that file and a projector offered as weights; the UI auto-pairs only one unambiguous projector and otherwise asks, text only included.
+- verification: Each new regression failed against the old behaviour and passes now. Offline: coordinator 1468 OK (4 skipped); contracts 20 OK; desktop 129 OK; frontend 210 pass; scripts 38 with the 2 known launcher failures; worker 169 with the 1 known missing-fastapi error. Loopback live: Settings "Start Ollama" beside the managed engine started ollama serve as the coordinator's child and shutdown stopped it; Search over the 3-page scan read every page through the managed Qwen vision model with one admitted reservation per page and none left afterwards.
+- remaining: Requester walkthrough; items listed in AC-20261006-001 remain.
+
+
+<a id="ac-20261006-003"></a>
+## AC-20261006-003 — Stop double-counting loaded memory; pair projectors only on exact names
+- date: 2026-10-06
+- agent: agent
+- status: implemented and checked by the agent; requester verification pending
+- prompt_id: [UP-20261006-004](userprompts.md#up-20261006-004)
+- paths: backend/coordinator/{capacity,server,hub,test_model_runtime}.py, frontend/app/{app.js,test-models-card.cjs}
+- changes: A request needing no new memory is always admitted. Reservations record their window; a fresh reading that shows the model loaded at that window releases the reservation's working state as well as its weights. Each page read takes a fresh residency reading. Hub pairing: only an exact model-name match (named) or an unnamed projector in a single-model repository pairs automatically; related or prefix names and unnamed projectors beside several models are ambiguous, and resolve refuses them without projector_confirmed, which only the explicit choice screen sends. Paired files also offer text only.
+- verification: New regressions fail against the reverted logic and pass now. Offline: coordinator 1473 OK (4 skipped); contracts 20 OK; desktop 129 OK; frontend 210 pass; scripts 38 with the 2 known launcher failures; worker 169 with the 1 known missing-fastapi error. Loopback live: scanned Search "transfer pump" returned inspection-report-scan.pdf page 1 and "discharge pressure" page 2; scan+SOP to Word completed with 3 checked citations, later pages admitted on a fresh reading (resident, window 8192) with the answer reservation released to 0/0; no reservations left; engine stopped.
+- remaining: Requester walkthrough; Chat self-test strictness; platform/package, updater/recovery, sandbox and network-evidence gates.
+
+
+<a id="ac-20261006-004"></a>
+## AC-20261006-004 — Ignore generated desktop review builds
+- date: 2026-10-06
+- agent: agent
+- status: implemented and ignore behavior observed
+- prompt_id: [UP-20261006-005](userprompts.md#up-20261006-005)
+- paths: .gitignore, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- changes: Added the repository-root-anchored /desktop/out/ ignore rule; retained all local build files and existing staged work.
+- verification: git check-ignore -v matched the output directory, review ZIP and bundled executable to .gitignore:51. git status no longer reported desktop/out/ as untracked; the changed-file whitespace check passed. No tests, staging, commit or push performed.
+- remaining: User stages the ignore rule and ledger appends with the existing checkpoint.

@@ -177,10 +177,11 @@ test('a worker-only model is never counted as installed on this computer', () =>
   assert.match(p.text('c-models-lead'), /1 are visible on a paired worker/);
 });
 
-test('a supported model that is absent offers the command and never a download', () => {
+test('an absent Ollama model is explained without a terminal command or download', () => {
   const p = render({ models: [ABSENT] });
   const row = p.rows()[0].textContent;
-  assert.match(row, /ollama pull qwen3\.5:4b-q4_K_M/);
+  assert.match(row, /Available through Ollama/);
+  assert.doesNotMatch(row, /ollama pull/, 'Refinix gives no terminal steps');
   assert.match(row, /not installed/);
   assert.match(p.text('c-models-lead'), /1 Refinix supports are not/);
   assert.equal(p.requests.length, 0, 'showing a model must not call anything');
@@ -334,6 +335,27 @@ test('a self-test is only offered for a workflow that has one', () => {
     .map((b) => b.textContent);
   assert.ok(!labels.some((l) => /Self-test chat/.test(l)),
             'chat has no self-test in this build, so none is offered');
+});
+
+test('a row\'s self-test checks that row\'s own model, by its key', async () => {
+  const p = render({ models: [Object.assign({}, INSTALLED,
+                                            { key: 'ollama|qwen3.5:4b-q4_K_M' })] });
+  const button = p.rows()[0].children[2].children
+    .filter((child) => child.tag === 'button')
+    .find((b) => /Self-test chat/.test(b.textContent));
+  button.onclick();
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(p.requests[0].body,
+                   { scope: 'chat', model: 'ollama|qwen3.5:4b-q4_K_M' });
+});
+
+test('every workflow the model can run offers its check, not only the selected one', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, { selected_for: [] })] });
+  const labels = p.rows()[0].children[2].children
+    .filter((child) => child.tag === 'button').map((b) => b.textContent);
+  for (const scope of ['chat', 'code', 'documents.generate']) {
+    assert.ok(labels.includes(`Self-test ${scope}`), scope);
+  }
 });
 
 test('running a self-test asks the coordinator and nothing else', async () => {
@@ -518,4 +540,57 @@ test('a verified offer can be downloaded, and a verified package is never instal
   assert.match(verified.text('c-updates-chip'), /package verified/);
   assert.match(verified.text('c-updates-note'), /not available in this build/);
   assert.ok(!updateButtons(verified).some((label) => /Install/.test(label)));
+});
+
+// Review finding: Browse Hugging Face gave every weight file the repository's
+// first projector. Pairing now follows the coordinator, and anything it does
+// not settle is the person's explicit choice.
+const HUB_LISTING = {
+  revision: 'a'.repeat(40), licence: 'apache-2.0', base_model: null, architecture: null,
+  projectors: [{ file: 'mmproj-F16.gguf', size: 1 }, { file: 'mmproj-BF16.gguf', size: 1 }],
+  choices: [
+    { file: 'text-only.gguf', parts: ['text-only.gguf'], size: 1,
+      pairing: 'none', projectors: [] },
+    { file: 'named.gguf', parts: ['named.gguf'], size: 1, pairing: 'named',
+      projectors: [{ file: 'mmproj-named-f16.gguf', size: 1 }] },
+    { file: 'unsure.gguf', parts: ['unsure.gguf'], size: 1, pairing: 'ambiguous',
+      projectors: [{ file: 'mmproj-F16.gguf', size: 1 }] },
+  ],
+};
+
+test('a projector is paired only when it belongs to that file alone', () => {
+  const p = page();
+  const plan = (choice) => p.run(`hubPairingPlan(${JSON.stringify(choice)})`);
+  const [text, named, unsure] = HUB_LISTING.choices;
+  assert.deepEqual({ ...plan(text) }, { mode: 'text', projector: null });
+  assert.deepEqual({ ...plan(named) }, { mode: 'paired', projector: 'mmproj-named-f16.gguf' });
+  assert.equal(plan(unsure).mode, 'choose');
+  assert.equal(plan({ ...named, pairing: 'repository', projectors: HUB_LISTING.projectors }).mode,
+               'choose', 'two precisions are a choice');
+});
+
+test('browse sends the paired projector, text only, or what the person chose', () => {
+  const p = page();
+  const row = p.document.getElementById('hub-row');
+  p.run(`renderHubFiles('Quant/Repo', ${JSON.stringify(HUB_LISTING)}, document.getElementById('hub-row'))`);
+  const picks = row.children.slice(1);
+  assert.deepEqual(picks.map((b) => b.textContent.split(' — ')[0].split(' · ').pop()), [
+    'text-only.gguf', 'named.gguf', 'text only', 'unsure.gguf']);
+  for (const pick of picks.slice(0, 3)) pick.onclick();
+  assert.deepEqual(p.requests.map((r) => [r.path, r.body.file, r.body.projector,
+                                          r.body.projector_confirmed]), [
+    ['/v1/hub/resolve', 'text-only.gguf', null, false],
+    ['/v1/hub/resolve', 'named.gguf', 'mmproj-named-f16.gguf', false],
+    ['/v1/hub/resolve', 'named.gguf', null, false],
+  ]);
+  // The ambiguous file asks first, and nothing is sent until a choice is made.
+  picks[3].onclick();
+  assert.equal(p.requests.length, 3);
+  assert.match(row.textContent, /nothing in this repository ties/);
+  const labels = row.children.map((child) => child.textContent);
+  assert.ok(labels.includes('Text only (no image input)'));
+  row.children.find((child) => /With mmproj-F16\.gguf/.test(child.textContent)).onclick();
+  assert.deepEqual([p.requests[3].body.file, p.requests[3].body.projector,
+                    p.requests[3].body.projector_confirmed],
+                   ['unsure.gguf', 'mmproj-F16.gguf', true]);
 });

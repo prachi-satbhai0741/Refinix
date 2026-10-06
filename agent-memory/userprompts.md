@@ -2224,3 +2224,73 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - original_request: "alright next i want to git add commit and push everything to my branch \nonce everything is added and pushed to aditya \nalso the push and commit will be done by me so give me commands and statements accodingly \nalso in the copyabale handover mention that to delete unwanted code and also delete document { beta-user-direction-2026-10-05.md } after complete plan is executed \n\n\nand after that i'll start a new chat"
 - constraints: Do not perform Git writes for the user. Plan cleanup only after complete approved execution and verification; preserve original requirements, useful code, deferred distributed paths and user data.
 - linked_changes: [AC-20261005-009](agentchangelog.md#ac-20261005-009)
+
+
+<a id="up-20261005-005"></a>
+## UP-20261005-005 — Preserve the teammate-owned final README
+- date: 2026-10-05
+- status: requested headline recorded
+- scope: headline in docs/beta-user-direction-2026-10-05.md
+- original_request: "Also, a point that we don't have to update README as the final README will be pushed by one of my teammates, and that will be the final README. The README which we are currently having is not well structured compared to what his README is. So I don't want to push the current README in main as main will con contain the best REDME or if I'll tell you when the REDME is pushed to main, I'll tell to you and then accordingly we will pull only readme from main and then push the entire beta itself to my branch dev and main."
+- constraints: Do not edit the repository-root README. Wait for the user's confirmation and Git authorization before bringing only the final README from main into aditya; preserve that README through normal aditya -> dev -> main integration.
+- linked_changes: [AC-20261005-010](agentchangelog.md#ac-20261005-010)
+
+
+<a id="up-20261006-001"></a>
+## UP-20261006-001 — Plan, review and execute the model/runtime/routing package (A–F)
+- date: 2026-10-06
+- status: implementation delivered; requester verification pending
+- scope: planning, review, implementation
+- tags: beta, ollama-reuse, managed-llama-cpp, auto-routing, capacity, local-admission, check-fingerprint, schema-14
+- paths: backend/contracts, backend/coordinator, desktop, frontend/app
+- original_request: Planning request relayed by the user ("Planning only. Do not implement, edit files, run checks/models/downloads, or make Git/GitHub changes yet. Read docs/beta-user-direction-2026-10-05.md first…"), then two relayed independent reviews (nine corrections, six amendments, all accepted), then the relayed authorization "Execute the amended model/runtime/routing plan, sections A–F, including all nine initial corrections and all six final amendments… This approval is for this work package; it is not Beta release acceptance." The user confirmed it in chat with "Yes, execute it (Recommended)".
+- constraints: Excluded: protected documentation and README edits, section G report retirement/deletion and destructive cleanup, Git/GitHub writes, installers, model downloads, remote-device actions, credential/network/security changes. Live checks loopback-only on the Mac with existing Ollama models and cached managed Qwen files, isolated temporary state, synthetic fixtures; read-only Hugging Face metadata. Keep Windows/Linux packages, updater/recovery, local sandbox and network-evidence gates outstanding.
+- linked_changes: [AC-20261006-001](agentchangelog.md#ac-20261006-001)
+
+
+<a id="up-20261006-002"></a>
+## UP-20261006-002 — Resume the A–F execution after the usage limit
+- date: 2026-10-06
+- status: done; requester verification pending
+- scope: implementation, verification
+- tags: beta, resume, capacity, residency, preview
+- paths: backend/coordinator/capacity.py, backend/coordinator/server.py, backend/coordinator/local_engine.py, backend/coordinator/db.py, frontend/app/app.js
+- original_request: "continue", with a relayed compaction checkpoint asking to "resolve the capacity concern, finish remaining verification, and report changes, observed checks, failures and limitations. Do not claim complete Beta/release acceptance."
+- constraints: Same scope and exclusions as UP-20261006-001; preserve the dirty tree and untracked files.
+- linked_changes: [AC-20261006-001](agentchangelog.md#ac-20261006-001)
+
+
+<a id="up-20261006-003"></a>
+## UP-20261006-003 — Repair the five review findings in the A–F package
+- date: 2026-10-06
+- status: done; requester verification pending
+- scope: implementation, verification
+- tags: beta, review-fix, ollama-start, search-ocr, ocr-admission, capacity-refresh, hub-projector
+- paths: desktop/lifecycle.py, backend/coordinator/{server,capacity,local_engine,runtime,docflow,documents,hub}.py, frontend/app/app.js
+- original_request: A relayed independent review (NEEDS FIX, five reproduced defects) and its security diff report with no findings; the user confirmed in chat "Yes, fix all five (Recommended)".
+- constraints: Same A–F scope and exclusions as UP-20261006-001; a focused regression for each finding.
+- linked_changes: [AC-20261006-002](agentchangelog.md#ac-20261006-002)
+
+
+<a id="up-20261006-004"></a>
+## UP-20261006-004 — Complete the OCR memory and projector-pairing repairs
+- date: 2026-10-06
+- status: done; requester verification pending
+- scope: implementation, verification
+- tags: beta, review-fix, ocr-admission, capacity, hub-projector, scanned-search
+- paths: backend/coordinator/{capacity,server,hub}.py, frontend/app/app.js
+- original_request: A relayed follow-up review (NEEDS FIX: later OCR pages falsely refused; prefix matching invents projector compatibility and no text-only on the automatic path; verify scanned Search finds a known phrase on the right file and page); the user confirmed in chat "Yes, fix both (Recommended)".
+- constraints: Same A–F scope and exclusions; regressions that fail on the previous code; live loopback scanned-Search phrase check.
+- linked_changes: [AC-20261006-003](agentchangelog.md#ac-20261006-003)
+
+
+<a id="up-20261006-005"></a>
+## UP-20261006-005 — Ignore generated desktop review builds
+- date: 2026-10-06
+- status: done
+- scope: implementation
+- tags: gitignore, desktop, build-artifacts
+- paths: .gitignore
+- original_request: "add that to gitignore", referring to the untracked desktop/out/ review build.
+- constraints: Keep local build files and existing staged work; no Git writes or test commands.
+- linked_changes: [AC-20261006-004](agentchangelog.md#ac-20261006-004)

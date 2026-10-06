@@ -497,14 +497,35 @@ test('an unsupported platform offers no connect button', async () => {
   assert.match(p.document.getElementById('thread').textContent, /unavailable here/);
 });
 
-test('the model selector lists inventory and keeps Auto disabled for now', () => {
+test('the model selector lists inventory and offers Auto as a real choice', () => {
   assert.match(source, /for \(const candidate of models\)/,
     'the selector is populated from the coordinator inventory');
-  assert.match(source,
-    /appendModelChoiceParts\(auto, false, 'Auto model', 'after internal hackathon'\)/);
-  assert.match(source, /auto\.disabled = true/);
+  assert.match(source, /body: JSON\.stringify\(\{ scope, model: 'auto' \}\)/,
+    'choosing Auto stores Auto, not a model');
+  assert.doesNotMatch(source, /after internal hackathon/);
   assert.match(source, /skill\?\.id === 'search-documents'\) return null/,
     'search does not claim to select a model it never runs');
+});
+
+test('Auto says which model it would use now, by its display name', () => {
+  const p = page();
+  p.run(`
+    models = [{ id: 'gemma-3-4b-it-q4_k_m', key: 'llama.cpp|gemma-3-4b-it-q4_k_m',
+                display_name: 'Gemma 3 4B instruct (Q4_K_M)', installed: true,
+                runtime_label: 'Refinix engine',
+                eligible_scopes: ['chat'], locations: ['this computer'] }];
+    modelSelections = { chat: 'auto' };
+    modelChoices = { chat: { key: 'llama.cpp|gemma-3-4b-it-q4_k_m',
+                             reason: 'Auto: Chat → Gemma', refusal: null } };
+    appendModelChoices(document.body, 'chat', 'Chat model');
+  `);
+  const group = p.document.body.children[0];
+  const auto = group.children[1];
+  assert.equal(auto.children[1].textContent, 'Auto');
+  assert.match(auto.children[2].textContent, /now Gemma 3 4B instruct/);
+  assert.equal(auto.getAttribute('aria-checked'), 'true');
+  const row = group.children[2];
+  assert.match(row.children[2].textContent, /Refinix engine/);
 });
 
 test('model choices fill the three grid columns instead of the tick column', () => {
@@ -522,7 +543,7 @@ test('model choices fill the three grid columns instead of the tick column', () 
   const selected = group.children[2];
   assert.deepEqual(auto.children.map((node) => node.className),
                    ['mp-tick', 'mp-model-name', 'mp-tag']);
-  assert.equal(auto.children[1].textContent, 'Auto model');
+  assert.equal(auto.children[1].textContent, 'Auto');
   assert.deepEqual(selected.children.map((node) => node.className),
                    ['mp-tick', 'mp-model-name', 'mp-tag']);
   assert.equal(selected.children[1].textContent, 'qwen3.5:4b-q4_K_M');

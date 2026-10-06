@@ -258,16 +258,33 @@ class LaunchSettings:
     # for this model (`local_engine.LocalEngine.stream_chat`).
     min_available_memory_bytes: int = 0
     min_free_disk_bytes: int = 0
+    # Upstream fitting (llama.cpp b11390 server README): `--fit on` adjusts
+    # only *unset* arguments to device memory, keeping `--fit-target` MiB free
+    # per device. A measured preset pins every setting and keeps it off; a
+    # model nobody measured leaves `-ngl` to `auto` and lets upstream decide
+    # how many layers the device holds. `-c` is always given explicitly, so
+    # fitting never shrinks the window a request was promised.
+    fit: str = "off"
+    fit_target_mib: int | None = None
+    measured: bool = True
 
     def arguments(self) -> list[str]:
         args = ["-c", str(self.context_tokens * self.slots), "-np", str(self.slots),
                 "-ngl", str(self.gpu_layers), "-ctk", self.cache_type_k,
                 "-ctv", self.cache_type_v, "-fa", self.flash_attention,
-                "--fit", "off", "--reasoning-format", self.reasoning_format,
+                "--fit", self.fit, "--reasoning-format", self.reasoning_format,
                 "--sleep-idle-seconds", str(self.idle_sleep_seconds)]
+        if self.fit == "on" and self.fit_target_mib:
+            args += ["--fit-target", str(self.fit_target_mib)]
         if self.threads:
             args += ["-t", str(self.threads)]
         return args
+
+
+def fitted_settings(context_tokens: int, *, fit_target_mib: int = 1024) -> "LaunchSettings":
+    """Settings for a model with no measured preset: upstream fitting, fixed window."""
+    return LaunchSettings(context_tokens=context_tokens, slots=1, gpu_layers="auto",
+                          fit="on", fit_target_mib=fit_target_mib, measured=False)
 
 
 @dataclass(frozen=True)

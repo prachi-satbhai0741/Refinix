@@ -111,7 +111,7 @@ def probe(runtime_state: dict | None = None,
     """
     if ocr_model is None:
         model = {"state": "disabled", "model": None,
-                 "detail": "The selected OCR model is switched off for new work."}
+                 "detail": ocr.no_profile_detail(None)}
         scan = {"available": False, "renderer": pdfrender.probe(),
                 "model": model, "detail": model["detail"]}
         image = {"available": False, "model": model,
@@ -170,6 +170,22 @@ def probe(runtime_state: dict | None = None,
     }
 
 
+def _observed_capabilities(runtime_state: dict, model: str | None) -> list | None:
+    """What the runtime reported this model can do, from the observation first.
+
+    Asking the runtime is what keeps OCR from being advertised because a tag
+    has "VL" in its name; a probe that already carried the answer is reused.
+    """
+    if not model or not runtime_state.get("reachable"):
+        return None
+    entry = ocr.runtime.find(runtime_state, model)
+    if entry is None:
+        return None
+    if entry.get("capabilities") is not None:
+        return list(entry["capabilities"])
+    return ocr.runtime.model_capabilities(entry["key"])
+
+
 def _scan_capability(runtime_state: dict,
                      ocr_model: str = ocr.runtime.OCR_MODEL,
                      ocr_profile=None) -> dict:
@@ -179,12 +195,7 @@ def _scan_capability(runtime_state: dict,
         model = ocr.profile_state(ocr_model, ocr_profile)
         return {"available": False, "renderer": render, "model": model,
                 "detail": model["detail"]}
-    caps = None
-    if runtime_state.get("reachable") and \
-            ocr_model in (runtime_state.get("models") or []):
-        # A cheap metadata read (~10 ms, no model load). Asking is what keeps
-        # this from advertising OCR because a tag has "VL" in its name.
-        caps = ocr.runtime.model_capabilities(ocr_model)
+    caps = _observed_capabilities(runtime_state, ocr_model)
     model = ocr.runtime.model_state_from(
         runtime_state, ocr_model,
         requires=ocr.runtime.VISION_CAPABILITY, capabilities=caps)
@@ -211,10 +222,7 @@ def _image_capability(runtime_state: dict,
     if ocr_profile is None:
         model = ocr.profile_state(ocr_model, ocr_profile)
         return {"available": False, "model": model, "detail": model["detail"]}
-    caps = None
-    if runtime_state.get("reachable") and \
-            ocr_model in (runtime_state.get("models") or []):
-        caps = ocr.runtime.model_capabilities(ocr_model)
+    caps = _observed_capabilities(runtime_state, ocr_model)
     model = ocr.runtime.model_state_from(
         runtime_state, ocr_model,
         requires=ocr.runtime.VISION_CAPABILITY, capabilities=caps)
@@ -565,7 +573,7 @@ def _page_list(numbers: list[int]) -> str:
 
 def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
                  ocr_model: str | None = ocr.runtime.OCR_MODEL,
-                 ocr_profile=None):
+                 ocr_profile=None, ocr_chat=None):
     """Read the text layer; render and read pages with a model only for a scan.
 
     The text layer comes first and needs no model. Only when no page carries
@@ -585,7 +593,7 @@ def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
     if ocr_model is None:
         raise DocumentError(
             "model_disabled",
-            scanned + "The selected OCR model is switched off for new work.")
+            scanned + ocr.no_profile_detail(None))
     scan = ocr.probe(ocr_model, profile=ocr_profile)
     if not scan["available"]:
         # Several prerequisites, several codes. Collapsing them would send
@@ -599,7 +607,8 @@ def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
         raise DocumentError(code, scanned + scan["detail"])
     try:
         read = ocr.extract_pdf(data, filename=filename, profile=ocr_profile,
-                               should_cancel=should_cancel, model=ocr_model)
+                               should_cancel=should_cancel, model=ocr_model,
+                               chat=ocr_chat)
     except Exception as exc:
         # `cancelled` keeps its own code so the workflow can tell a stop from a
         # failure; everything else is a refusal with the extractor's reason.
@@ -640,7 +649,7 @@ def _extract_xlsx(data: bytes, filename: str) -> tuple[list[Page], str, list[str
 def _extract_image(data: bytes, filename: str, media_type: str, *,
                    should_cancel=None,
                    ocr_model: str | None = ocr.runtime.OCR_MODEL,
-                   ocr_profile=None):
+                   ocr_profile=None, ocr_chat=None):
     """Send one supplied image to the local vision model, as page 1.
 
     No renderer at all: the file already is a page image. The method string says
@@ -648,7 +657,7 @@ def _extract_image(data: bytes, filename: str, media_type: str, *,
     """
     if ocr_model is None:
         raise DocumentError(
-            "model_disabled", "The selected OCR model is switched off for new work.")
+            "model_disabled", ocr.no_profile_detail(None))
     state = ocr.image_probe(ocr_model, profile=ocr_profile)
     if not state["available"]:
         code = _OCR_MODEL_STATE_CODES.get(state["model"]["state"], "no_ocr_model")
@@ -656,7 +665,8 @@ def _extract_image(data: bytes, filename: str, media_type: str, *,
     try:
         read = ocr.extract_image(data, filename=filename, media_type=media_type,
                                  profile=ocr_profile,
-                                 should_cancel=should_cancel, model=ocr_model)
+                                 should_cancel=should_cancel, model=ocr_model,
+                                 chat=ocr_chat)
     except Exception as exc:
         raise _reading_failure(exc, filename) from exc
     pages = [Page(number=page["number"], text=_clean(page["text"]),
@@ -706,8 +716,12 @@ def verified_bytes(path: Path, *, filename: str, expected_sha256: str) -> bytes:
 def extract(path: Path, *, source_id: str, filename: str, media_type: str,
             expected_sha256: str, should_cancel=None,
             ocr_model: str | None = ocr.runtime.OCR_MODEL,
-            ocr_profile=None) -> Extraction:
-    """Read one attachment, after proving it is the file that was accepted."""
+            ocr_profile=None, ocr_chat=None) -> Extraction:
+    """Read one attachment, after proving it is the file that was accepted.
+
+    `ocr_chat` is the page-reading call (the runtime's own when omitted); the
+    coordinator passes one that holds a memory reservation for each page.
+    """
     data = verified_bytes(path, filename=filename,
                           expected_sha256=expected_sha256)
     actual = expected_sha256
@@ -734,11 +748,11 @@ def extract(path: Path, *, source_id: str, filename: str, media_type: str,
     elif suffix in IMAGE_SUFFIXES:
         pages, method, uncertain, declared_pages = _extract_image(
             data, filename, media_type, should_cancel=should_cancel,
-            ocr_model=ocr_model, ocr_profile=ocr_profile)
+            ocr_model=ocr_model, ocr_profile=ocr_profile, ocr_chat=ocr_chat)
     elif suffix == PDF_SUFFIX:
         pages, method, uncertain, declared_pages = _extract_pdf(
             data, filename, should_cancel=should_cancel, ocr_model=ocr_model,
-            ocr_profile=ocr_profile)
+            ocr_profile=ocr_profile, ocr_chat=ocr_chat)
     else:
         readable = sorted([*TEXT_SUFFIXES, WORD_SUFFIX, SHEET_SUFFIX,
                            PDF_SUFFIX, *IMAGE_SUFFIXES])

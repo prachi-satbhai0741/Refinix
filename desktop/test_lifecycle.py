@@ -59,6 +59,39 @@ DOWN = {"reachable": False, "server_version": None, "models": [],
 
 # --------------------------------------------------------------------------
 
+class TestOllamaBesideTheRefinixEngine(unittest.TestCase):
+    """Review finding: "Start Ollama" read the combined probe, took the
+    answering Refinix engine for a running Ollama and never started it."""
+
+    def test_start_ollama_watches_ollama_alone(self):
+        from types import SimpleNamespace
+        self.addCleanup(runtime.configure_managed, None)
+        self.addCleanup(runtime.configure_ollama, False)
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        coordinator = SimpleNamespace(installed_models=lambda: {},
+                                      engine_settings_for=lambda *_a: None,
+                                      refresh_hardware=lambda: None)
+        selection = SimpleNamespace(manifest=None, usable=True, problems=[],
+                                    runtime_version="b11390", mode="managed")
+        process, started = FakeProcess(), []
+        with patch.object(runtime, "probe_ollama", side_effect=[DOWN, REACHABLE]):
+            lifecycle.configure_managed_engine(
+                selection, coordinator, Path(scratch.name) / "state.sqlite3")
+            # The Refinix engine answers; Ollama does not.
+            runtime.configure_managed(SimpleNamespace(probe=lambda: {
+                "reachable": True, "server_version": "b11390", "runtime": "llama.cpp",
+                "models": [], "digests": {}, "loaded": None, "error": None}))
+            supervisor = coordinator.ollama_control
+            supervisor._locate = lambda: "/usr/local/bin/ollama"
+            supervisor._spawn = lambda argv, **_k: (started.append(argv), process)[1]
+            supervisor._sleep = lambda _s: None
+            state = supervisor.ensure()
+        self.assertEqual(started, [["/usr/local/bin/ollama", "serve"]])
+        self.assertTrue(state["started_by_refinix"])
+        self.assertEqual(state["server_version"], REACHABLE["server_version"])
+
+
 class TestEngine(unittest.TestCase):
     def test_running_runtime_is_used_and_never_restarted(self):
         supervisor = lifecycle.EngineSupervisor(

@@ -142,18 +142,25 @@ class OcrError(ValueError):
 NO_PROFILE_STATE = "no_qualified_profile"
 
 
-def no_profile_detail(model: str) -> str:
-    """Why reading pixels is unavailable when nothing has qualified it.
+def _name(model: str | None) -> str:
+    """A model key or bare name, as a person reads it."""
+    return runtime.split_key(model or "")[1] if model else "no model"
 
-    Stated as the prerequisite it is. A model being installed, switched on and
-    even declaring `vision` does not make it qualified: the licence, provenance
-    and measured envelope are what a profile records, and none of them can be
-    inferred from the runtime answering.
+
+def no_profile_detail(model: str | None) -> str:
+    """Why reading pixels is unavailable for this model here.
+
+    A page image goes only to a local model that declares `vision`, can return
+    the page schema and runs with reasoning off. Declaring `vision` is a
+    runtime observation, not a claim about reading accuracy.
     """
-    return (f"Refinix has no qualified reading profile for {model} on this "
-            "computer, so it will not send a page image to it. Reading scans "
-            "stays unavailable until that model, runtime and device are "
-            "measured and qualified together.")
+    if not model:
+        return ("No installed local model on this computer reads page images, so "
+                "scans and pictures cannot be read here. Text-layer PDFs and Word "
+                "files are still read.")
+    return (f"{_name(model)} cannot read page images on this computer: it does not "
+            "declare image input with the structured page output Refinix needs, so "
+            "no page image is sent to it.")
 
 
 def profile_state(model: str, profile) -> dict:
@@ -164,11 +171,18 @@ def profile_state(model: str, profile) -> dict:
 
 
 def qualified_profile(profile, model: str) -> bool:
-    """Whether this exact profile may receive this model's page images."""
+    """Whether this exact profile may receive this model's page images.
+
+    Page reading only ever runs on the computer that owns the workspace, so
+    the local policy applies: a measured profile, or an honest candidate whose
+    model declares `vision`, offers the page schema and runs reasoning off.
+    The name is kept for its callers; it no longer means team-measured.
+    """
+    _origin, model_id = runtime.split_key(model or "")
     return isinstance(profile, v1.ExecutionProfile) \
         and profile.profile_id == v1.execution_profile_id(profile) \
-        and inference_profiles.compatible(
-        profile, model_id=model, workflow=inference_profiles.OCR,
+        and inference_profiles.compatible_local(
+        profile, model_id=model_id, workflow=inference_profiles.OCR,
         reasoning="disabled", decoder="json_schema",
         output_allowance=min(PAGE_NUM_PREDICT, profile.max_output_tokens))
 
@@ -222,7 +236,7 @@ def method_label(digest: str | None = None,
     """
     suffix = f" manifest {digest[:16]}…" if digest else " manifest unavailable"
     return (f"pdf render ({renderer or 'renderer not recorded'}) "
-            f"+ vision ({model}){suffix}")
+            f"+ vision ({_name(model)}){suffix}")
 
 
 # --------------------------------------------------------------------------
@@ -274,7 +288,7 @@ def image_method_label(digest: str | None = None,
     was never rendered would be a fabricated provenance line.
     """
     suffix = f" manifest {digest[:16]}…" if digest else " manifest unavailable"
-    return f"image + local vision ({model}){suffix}"
+    return f"image + local vision ({_name(model)}){suffix}"
 
 
 def check_image(data: bytes, *, filename: str, media_type: str) -> str:
@@ -418,12 +432,12 @@ def page_inference(profile) -> v1.InferenceRequest:
     more than one page's worth of tokens is a failure to report, not a budget
     to raise.
     """
-    model = profile.model.model_id if isinstance(profile, v1.ExecutionProfile) else "unknown"
-    if not qualified_profile(profile, model):
+    model = profile.model.model_id if isinstance(profile, v1.ExecutionProfile) else None
+    if not qualified_profile(profile, model or ""):
         raise OcrError(
             "no_qualified_profile",
             no_profile_detail(model))
-    return inference_profiles.request(
+    return inference_profiles.request_local(
         profile, reasoning="disabled", decoder="json_schema",
         output_allowance=min(PAGE_NUM_PREDICT, profile.max_output_tokens),
         decoder_schema_sha256=inference_profiles.schema_sha256(PAGE_SCHEMA))
@@ -444,13 +458,13 @@ def read_page(image: bytes, *, media_type: str,
     every failure path through a fake endpoint without stubbing sockets. A
     fake is called with the same keywords production uses.
     """
-    model = profile.model.model_id if isinstance(profile, v1.ExecutionProfile) else "unknown"
-    if not qualified_profile(profile, model):
+    model = profile.model.model_id if isinstance(profile, v1.ExecutionProfile) else None
+    if not qualified_profile(profile, model or ""):
         raise OcrError("no_qualified_profile", no_profile_detail(model))
     if inference != page_inference(profile):
         raise OcrError(
             "incompatible_profile",
-            "The page request does not match the qualified OCR profile, so the "
+            "The page request does not match the page-reading profile, so the "
             "image was not sent.")
     call = chat or runtime.stream_chat
     messages = page_messages(media_type)

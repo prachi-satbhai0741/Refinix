@@ -51,14 +51,23 @@ class ModelComponent:
 class InstalledModel:
     model_id: str
     manifest_sha256: str
-    weights: Path
+    weights: Path                       # the first (or only) weights file
     projector: Path | None = None
     sampling: dict = field(default_factory=dict)
-    components: tuple[ModelComponent, ...] = ()
+    components: tuple[ModelComponent, ...] = ()   # every file, in recorded order
+    # Published facts from the model's library entry, when it has one.
+    context_length: int | None = None
+    reasoning_hint: bool = False
+    hints: tuple[str, ...] = ()
 
     @property
     def capabilities(self) -> list[str]:
         return ["completion"] + (["vision"] if self.projector else [])
+
+
+# How long a request waits for another model (or another window) to finish on
+# the Refinix engine before it is reported, rather than cutting that work off.
+SWITCH_WAIT_SECONDS = 600.0
 
 
 def _fingerprint(path: Path):
@@ -163,6 +172,56 @@ class LocalEngine:
                                   if selection.manifest else None)
         self.checks = FileChecks()
         self._lock = threading.Lock()
+        # Streams in flight per (model, settings). One engine process serves
+        # one model with one set of settings, so a request for anything else
+        # waits until these drain instead of stopping the engine under them.
+        self._active: dict[tuple, int] = {}
+        self._turn = threading.Condition()
+        self.switch_wait_seconds = SWITCH_WAIT_SECONDS
+
+    # -- the single-engine queue -------------------------------------------
+    def in_use(self, model_id: str | None = None) -> bool:
+        with self._turn:
+            return any(count and (model_id is None or lease[0] == model_id)
+                       for lease, count in self._active.items())
+
+    def _enter(self, lease: tuple, should_cancel, unavailable) -> bool:
+        """Wait for other models' streams to finish; False when cancelled."""
+        import time
+        deadline = time.monotonic() + self.switch_wait_seconds
+        with self._turn:
+            while any(count and other != lease for other, count in self._active.items()):
+                if should_cancel is not None and should_cancel():
+                    return False
+                if time.monotonic() >= deadline:
+                    busy = next(other[0] for other, count in self._active.items()
+                                if count and other != lease)
+                    raise unavailable(
+                        f"The Refinix engine is still serving {busy}; this request "
+                        "waited for it to finish and was not started. Try again.")
+                self._turn.wait(0.25)
+            self._active[lease] = self._active.get(lease, 0) + 1
+            return True
+
+    def _leave(self, lease: tuple) -> None:
+        with self._turn:
+            remaining = self._active.get(lease, 0) - 1
+            if remaining > 0:
+                self._active[lease] = remaining
+            else:
+                self._active.pop(lease, None)
+            self._turn.notify_all()
+
+    def facts(self, model_id: str) -> dict:
+        """Published facts about an installed model, for local admission."""
+        try:
+            record = self.registry().get(model_id)
+        except Exception:                                  # noqa: BLE001
+            record = None
+        if record is None:
+            return {}
+        return {"context_length": record.context_length,
+                "reasoning_hint": record.reasoning_hint, "hints": list(record.hints)}
 
     # -- observation ------------------------------------------------------
     def probe(self) -> dict:
@@ -189,10 +248,7 @@ class LocalEngine:
             last = self.engine.last_error
         else:
             last = None
-        loaded = None
-        if self.engine is not None and self.engine.running and self.engine.model:
-            loaded = {"model": self.engine.model.model_id, "size_bytes": None,
-                      "size_vram_bytes": None, "expires_at": None}
+        loaded = self.loaded()
         return {
             "reachable": self.selection.usable and self.engine is not None,
             "server_version": self.selection.runtime_version,
@@ -202,11 +258,30 @@ class LocalEngine:
             "digests": {k: v.manifest_sha256 for k, v in installed.items()
                         if checks[k]["state"] != MISMATCH},
             "file_checks": checks,
+            # What each install's own record says, so admission needs no
+            # second read: vision only with a verified projector, the declared
+            # context and the publisher's stated strengths.
+            "capabilities": {k: list(v.capabilities) for k, v in installed.items()},
+            "context_lengths": {k: v.context_length for k, v in installed.items()
+                                if v.context_length},
+            "reasoning_hints": {k: v.reasoning_hint for k, v in installed.items()},
+            "hints": {k: list(v.hints) for k, v in installed.items()},
+            "sizes": {k: sum(c.size for c in v.components if c.role != "projector")
+                      for k, v in installed.items() if v.components},
             "loaded": loaded,
             "endpoint": "Refinix engine (loopback, started by Refinix)",
             "error": ("; ".join(problems) if problems else
                       (str(last) if last is not None else error)),
         }
+
+    def loaded(self) -> dict | None:
+        """The model the engine holds now and the window it was started with."""
+        if self.engine is None or not self.engine.running or not self.engine.model:
+            return None
+        settings = self.engine.settings
+        return {"model": self.engine.model.model_id, "size_bytes": None,
+                "size_vram_bytes": None, "expires_at": None,
+                "context_length": settings.context_tokens if settings else None}
 
     def capabilities(self, model_id: str) -> list[str] | None:
         try:
@@ -233,47 +308,78 @@ class LocalEngine:
         if record.manifest_sha256 != profile.model.manifest_sha256 \
                 or profile.model.runtime != engine.LLAMA_CPP \
                 or profile.model.runtime_version != self.selection.runtime_version:
-            raise unavailable("the qualified profile is bound to different model "
+            raise unavailable("the execution profile is bound to different model "
                               "bytes or another engine build")
-        settings = self.settings_for(model_id)
+        settings = self._settings(model_id, profile)
         if settings is None:
-            raise unavailable(f"there is no reviewed engine preset for {model_id} "
-                              "on this computer")
-        # The bytes about to be loaded (or already loaded) are the installed
-        # bytes, read now rather than remembered from the install record.
-        checked = self.checks.confirm(record, cancelled=should_cancel)
-        if checked is None:
-            yield "cancelled", {}
-            return
-        if checked[0] != VERIFIED:
-            self.unload(model_id)
-            raise unavailable(f"{model_id} is not the verified file Refinix installed: "
-                              f"{checked[1]}. Remove it and install it again from "
-                              "Settings → Models.")
+            raise unavailable(f"there are no engine settings for {model_id} at "
+                              f"{profile.qualified_context_tokens} tokens on this computer")
         files = engine.ModelFiles(model_id, Path(record.weights),
                                   Path(record.projector) if record.projector else None)
-        if not (self.engine.running and self.engine.model == files
-                and self.engine.settings == settings):
-            short = self._short_of(settings)
-            if short:
-                raise unavailable(short)
+        lease = (model_id, files, settings)
+        if not self._enter(lease, should_cancel, unavailable):
+            yield "cancelled", {}
+            return
         try:
-            endpoint = self.engine.ensure(files, settings, cancelled=should_cancel)
-        except engine.EngineError as exc:
-            if exc.code == "engine_cancelled":
+            # The bytes about to be loaded (or already loaded) are the installed
+            # bytes, read now rather than remembered from the install record.
+            checked = self.checks.confirm(record, cancelled=should_cancel)
+            if checked is None:
                 yield "cancelled", {}
                 return
-            raise unavailable(str(exc)) from exc
-        if self.checks.look(record)[0] != VERIFIED:
-            # Replaced between the hash and the engine opening it.
-            self.unload(model_id)
-            raise unavailable(f"{model_id} changed while it was loading, so it was "
-                              "not used.")
-        yield from runtime_llamacpp.stream_chat(
-            endpoint, messages, profile=profile, inference=inference,
-            should_cancel=should_cancel, images=images,
-            response_format=response_format, sampling=record.sampling,
-            watch_class=watch_class, unavailable=unavailable)
+            if checked[0] != VERIFIED:
+                self._stop_if_idle(model_id, lease)
+                raise unavailable(f"{model_id} is not the verified file Refinix installed: "
+                                  f"{checked[1]}. Remove it and install it again from "
+                                  "Settings → Models.")
+            if not (self.engine.running and self.engine.model == files
+                    and self.engine.settings == settings):
+                short = self._short_of(settings)
+                if short:
+                    raise unavailable(short)
+            try:
+                endpoint = self.engine.ensure(files, settings, cancelled=should_cancel)
+            except engine.EngineError as exc:
+                if exc.code == "engine_cancelled":
+                    yield "cancelled", {}
+                    return
+                raise unavailable(str(exc)) from exc
+            if self.checks.look(record)[0] != VERIFIED:
+                # Replaced between the hash and the engine opening it.
+                self._stop_if_idle(model_id, lease)
+                raise unavailable(f"{model_id} changed while it was loading, so it was "
+                                  "not used.")
+            yield from runtime_llamacpp.stream_chat(
+                endpoint, messages, profile=profile, inference=inference,
+                should_cancel=should_cancel, images=images,
+                response_format=response_format, sampling=record.sampling,
+                watch_class=watch_class, unavailable=unavailable)
+        finally:
+            self._leave(lease)
+
+    def _settings(self, model_id: str, profile):
+        """The engine settings for this request's exact window.
+
+        A measured preset is used unchanged when the request is the measured
+        profile; anything else gets upstream fitting at the promised window.
+        """
+        try:
+            return self.settings_for(model_id, profile)
+        except TypeError:
+            # An older two-argument-free callback (tests, scripts).
+            return self.settings_for(model_id)
+
+    def _stop_if_idle(self, model_id: str, lease: tuple) -> None:
+        """Stop the engine for a bad file only when no other stream uses it."""
+        with self._turn:
+            others = sum(count for other, count in self._active.items()
+                         if other != lease) + max(0, self._active.get(lease, 0) - 1)
+        if not others and self.engine is not None and self.engine.model is not None \
+                and self.engine.model.model_id == model_id:
+            try:
+                self.engine.stop()
+            except engine.EngineError:
+                pass
 
     def _observe_resources(self):
         available = free = None
@@ -311,13 +417,23 @@ class LocalEngine:
         return None
 
     def unload(self, model_id: str) -> None:
-        """Stop an engine serving `model_id`; a survivor is reported by `engine`."""
+        """Stop an engine serving `model_id`.
+
+        Refuses while a request is still streaming from it, and lets a failed
+        stop surface: removing files from under a running engine, or calling a
+        model removed after the engine refused to stop, would both report
+        something that did not happen.
+        """
+        with self._turn:
+            busy = any(count and lease[0] == model_id
+                       for lease, count in self._active.items())
+        if busy:
+            raise engine.EngineError(
+                "engine_in_use", f"{model_id} is answering a request; wait for it "
+                "to finish or stop it first.")
         if self.engine is not None and self.engine.model is not None \
                 and self.engine.model.model_id == model_id:
-            try:
-                self.engine.stop()
-            except engine.EngineError:
-                pass
+            self.engine.stop()
 
     def stop(self) -> bool:
         return self.engine.stop() if self.engine is not None else False

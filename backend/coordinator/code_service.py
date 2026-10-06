@@ -28,7 +28,7 @@ import time
 from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
 from backend.coordinator import (codeflow, context, db, dispatch, pairing, policy,
-                                 repo, runtime)
+                                 repo, router, runtime)
 
 # One proposal is one bounded local model call.
 PROPOSAL_DEADLINE_SECONDS = 240
@@ -562,17 +562,29 @@ class CodeService:
             # needs. Code generation runs on the paired worker when one is
             # healthy and advertises `code.generate`; otherwise it runs here,
             # and the attempt records which and why.
-            model_id = self.c.model_for("code")
-            if not db.get_model_enabled(self.conn, model_id):
-                raise CodeError(
-                    "model_disabled",
-                    f"The selected model {model_id} is switched off for new work.",
-                    409)
-            reasoning = db.get_reasoning(self.conn, model_id)
+            # The model is settled before anything is frozen: the person's
+            # pinned Code model, or Auto's choice for this request.
+            runtime_state = runtime.probe()
+            observed = self.c.observations(runtime_state)
+            choice = self.c.choose_model(
+                "code", observed=observed,
+                task=router.classify(request, workflow=inference_profiles.CODE))
+            worker = (self.c.worker_model("code")
+                      if choice["refusal"] and target != TARGET_LOCAL else None)
+            if choice["refusal"] and worker is None:
+                raise CodeError("model_disabled" if choice.get("code") == "disabled"
+                                else "model_unavailable", choice["refusal"], 409)
+            model_id = choice["key"] if not choice["refusal"] else worker
+            model_name = runtime.split_key(model_id)[1]
+            reasoning = self.c.reasoning_for(model_id)
             reasoning_mode = "enabled" if reasoning else "disabled"
+            offered = self.c._offered_reasoning(model_id, inference_profiles.CODE,
+                                                "json_schema", observed=observed)
+            if offered and reasoning_mode not in offered:
+                reasoning_mode = "disabled" if "disabled" in offered else "enabled"
+                reasoning = reasoning_mode == "enabled"
             generation_messages = codeflow.build_messages(request, selection)
             required_output = self._proposal_required_output(selection)
-            runtime_state = runtime.probe()
             if target == TARGET_LOCAL:
                 # Explicitly this device. No preflight, no route decision and
                 # no worker call: local permission is something the person
@@ -581,11 +593,10 @@ class CodeService:
                 local_profile = self.c.local_profile(
                     workflow=inference_profiles.CODE, model_id=model_id,
                     reasoning=reasoning_mode, decoder="json_schema",
-                    output_allowance=required_output,
-                    runtime_state=runtime_state)
+                    output_allowance=required_output, observed=observed)
                 route = dispatch.Route(
-                    "local", "local coordinator: this device was chosen for "
-                             "this request", node_id=self.c.node_id,
+                    "local", (f"{choice['reason']}; local coordinator: this device "
+                              "was chosen for this request")[:256], node_id=self.c.node_id,
                     model=local_model,
                     profile=(local_profile.model_dump() if local_profile else None))
             else:
@@ -595,7 +606,13 @@ class CodeService:
                                             workflow=inference_profiles.CODE,
                                             reasoning=reasoning_mode,
                                             decoder="json_schema",
-                                            output_allowance=required_output)
+                                            output_allowance=required_output,
+                                            observed=observed)
+                if not route.remote and choice["reason"]:
+                    route = dispatch.Route(
+                        route.kind, f"{choice['reason']}; {route.reason}"[:256],
+                        node_id=route.node_id, relationship_id=route.relationship_id,
+                        model=route.model, profile=route.profile)
             if route.kind == "identity-mismatch":
                 raise CodeError("permission_denied", route.reason, 403)
             if target == TARGET_DISTRIBUTED and not route.remote:
@@ -606,16 +623,29 @@ class CodeService:
             if route.model is None or route.profile is None:
                 raise CodeError(
                     "model_unavailable",
-                    f"The selected model {model_id} has no compatible qualified profile "
+                    f"The selected model {model_name} cannot write Code proposals "
                     "at this execution target.", 409)
             profile = v1.ExecutionProfile.model_validate(route.profile)
             generation_limit = self._proposal_output_limit(
                 generation_messages, selection, profile)
-            inference = inference_profiles.request(
+            # A remote worker keeps the strict measured-only contract; this
+            # computer runs a measured profile or an honest local candidate.
+            build_request = (inference_profiles.request if route.remote
+                             else inference_profiles.request_local)
+            inference = build_request(
                 profile, reasoning=reasoning_mode, decoder="json_schema",
                 output_allowance=generation_limit,
                 decoder_schema_sha256=inference_profiles.schema_sha256(
                     codeflow.PROPOSAL_SCHEMA))
+            if not route.remote:
+                # Memory for this proposal, reserved before its attempt exists.
+                decision = self.c._admit(f"code-{repo_id}", observed.get(model_id),
+                                         profile.qualified_context_tokens,
+                                         should_cancel=cancel.is_set)
+                if decision.outcome == "cancelled":
+                    raise CodeError("cancelled", "The proposal was stopped.", 409)
+                if decision.outcome == "refuse":
+                    raise runtime.RuntimeUnavailable(decision.reason)
             if route.remote:
                 parsed, job_id, attempt_id, model = self._propose_remote(
                     repo_id, request, selection, route, inference, cancel,
@@ -635,7 +665,7 @@ class CodeService:
                                   "running"):
                     db.set_job_state(self.conn, job_id, following)
                 db.set_attempt_state(self.conn, attempt_id, "running")
-                model = route.model or {"model_id": model_id}
+                model = route.model or {"model_id": model_name}
                 reply, reasoning = self._ask_model(
                     generation_messages, cancel, profile, inference,
                     attempt_id=attempt_id)
@@ -650,7 +680,7 @@ class CodeService:
                     repair_messages = codeflow.repair_messages(reply)
                     repair_limit = self._proposal_output_limit(
                         repair_messages, selection, profile)
-                    repair_inference = inference_profiles.request(
+                    repair_inference = inference_profiles.request_local(
                         profile, reasoning=reasoning_mode,
                         decoder="json_schema", output_allowance=repair_limit,
                         decoder_schema_sha256=inference_profiles.schema_sha256(
@@ -690,6 +720,7 @@ class CodeService:
             self._fail_code_job(job_id, attempt_id, "internal_error", str(exc))
             raise
         finally:
+            self.c.ledger.release(f"code-{repo_id}")
             with self._lock:
                 if self._cancels.get(repo_id) is cancel:
                     self._cancels.pop(repo_id)
