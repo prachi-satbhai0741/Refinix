@@ -35,7 +35,7 @@ binaries = collect_dynamic_libs("pypdfium2_raw")
 hiddenimports = (collect_submodules("backend.coordinator")
                  + collect_submodules("backend.contracts")
                  + collect_submodules("desktop")
-                 + ["psutil", "tuf.ngclient", "securesystemslib",
+                 + ["psutil", "tuf.ngclient", "tuf.api.metadata", "securesystemslib",
                  "securesystemslib._vendor.ed25519.ed25519", "urllib3"])
 hiddenimports = [name for name in hiddenimports
                  if not name.rsplit(".", 1)[-1].startswith(

@@ -503,7 +503,7 @@ test('the developer engine never offers to remove a model itself', () => {
 });
 
 // Settings -> Updates: nothing is checked on its own, only verified offers are
-// shown, and no Install control is drawn while installing is not built.
+// shown, and no Install control is drawn where installing does not work.
 function renderUpdates(updates) {
   const p = page();
   p.run(`renderUpdatesCard(${JSON.stringify({ updates })})`);
@@ -532,16 +532,20 @@ test('a failed check is never shown as up to date', () => {
   assert.match(p.text('c-updates-facts'), /expired/);
 });
 
-test('a verified offer can be downloaded, and a verified package is never installed from here', () => {
+test('a verified offer can be downloaded, and Install appears only where installing works', () => {
   const offered = renderUpdates({ version: '0.1.0-internal.1', channel: 'internal',
-    can_check: true, offer: { version: '0.1.1-internal.1', size: 2147483648, notes: 'Fixes.' } });
+    can_check: true, source: 'https',
+    offer: { version: '0.1.1-internal.1', size: 2147483648, notes: 'Fixes.' } });
   assert.ok(updateButtons(offered).includes('Download 0.1.1-internal.1'));
+  // A build whose install capability does not allow installing explains why
+  // and draws no Install button.
   const verified = renderUpdates({ version: '0.1.0-internal.1', channel: 'internal',
-    can_check: true, offer: { version: '0.1.1-internal.1', size: 1, notes: '' },
-    download: { state: 'verified', path: '/data/updates/staging/0.1.1/Refinix.zip' },
-    install_note: 'Installing an update from inside Refinix is not available in this build yet.' });
+    can_check: true, source: 'https', offer: { version: '0.1.1-internal.1', size: 1, notes: '' },
+    download: { state: 'verified', version: '0.1.1-internal.1' },
+    install_supported: false,
+    install_reason: 'Installing updates from inside Refinix is not available for this build.' });
   assert.match(verified.text('c-updates-chip'), /package verified/);
-  assert.match(verified.text('c-updates-note'), /not available in this build/);
+  assert.match(verified.text('c-updates-note'), /not available for this build/);
   assert.ok(!updateButtons(verified).some((label) => /Install/.test(label)));
 });
 

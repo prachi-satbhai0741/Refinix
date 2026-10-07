@@ -123,6 +123,9 @@ class FakeWorker:
 
 class Base(unittest.TestCase):
     def setUp(self):
+        mesh = patch.dict("os.environ", REFINIX_ENABLE_MESH="1")
+        mesh.start()
+        self.addCleanup(mesh.stop)
         if not repo.containment_supported():
             self.skipTest("this platform cannot contain repository access")
         self.tmp = tempfile.TemporaryDirectory()

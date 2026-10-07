@@ -87,6 +87,20 @@
       <!-- Icon only, and the icon reports the theme that is on rather than the
            one a click would bring: a moon and star while dark is on, a sun and
            cloud while light is on. -->
+      <!-- Updates: drawn only in a build that can update itself, and only
+           while this computer reports a network connection. Opening it never
+           checks on its own; Settings -> Updates keeps the offline actions. -->
+      <button class="panel-toggle update-toggle" type="button" id="update-toggle"
+              aria-haspopup="dialog" aria-expanded="false"
+              aria-controls="update-popover" aria-label="Updates" title="Updates"
+              hidden>
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M13.4 8.6a5.5 5.5 0 1 1-1.5-4.6"/>
+          <path d="M12.3 1.6v2.8H9.5"/>
+          <path d="M8 5.4v4.8M6 8.3l2 2 2-2"/>
+        </svg>
+        <span class="update-dot" id="update-dot" hidden></span>
+      </button>
       <button class="panel-toggle theme-toggle" type="button" id="theme-toggle">
         <svg class="theme-icon theme-icon-day" viewBox="0 0 20 20"
              aria-hidden="true" focusable="false">
@@ -359,4 +373,12 @@
   </main>
 </div>
 <div class="panel-scrim" id="scrim"></div>
+<div class="update-popover" id="update-popover" role="dialog"
+     aria-labelledby="update-popover-title" hidden>
+  <p class="up-title" id="update-popover-title">Updates</p>
+  <p class="up-state" id="update-popover-state" aria-live="polite"></p>
+  <p class="up-detail" id="update-popover-detail"></p>
+  <div class="up-actions" id="update-popover-actions"></div>
+  <a class="up-link" href="/control.html#updates">Open Settings → Updates</a>
+</div>
 <script type="module" src="/app.js"></script>

@@ -2342,3 +2342,79 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - original_request: The user requests a visible graphical update control that closes, updates and reopens the primary Refinix app without terminal commands; removal of unnecessary app copies; subsequent package qualification and unwanted-code cleanup. The complete latest wording is preserved in the linked handoff. The user will paste it to the implementation owner for a plan, then continue independent review in the next chat.
 - constraints: Extend existing updater/recovery code, preserve the dirty tree and real data, retain full Beta gates. No implementation, app deletion/installation, tests, model calls, downloads, protected-document changes or Git/GitHub writes in this planning turn.
 - linked_changes: [AC-20261007-004](agentchangelog.md#ac-20261007-004)
+
+
+<a id="up-20261007-005"></a>
+## UP-20261007-005 — Approve updater boundaries and add the public website update requirement
+- date: 2026-10-07
+- status: handoff updated; application execution pending
+- scope: v3 plan review and existing handoff update only
+- tags: in-app-update, v3-review, public-release, website-installs, online-visibility, owned-processes, retain-build-records
+- paths: agent-memory/handoffs/2026-10-07-refinix-in-app-update-and-consolidation.md; agent-memory/{userprompts,agentchangelog}.md
+- original_request: "Alright then, approved" confirms retaining every ZIP/build record and stopping only verified owned processes. The user requests updates for the entire website-installed Refinix application after future fixes reach main, online-only visibility of the connected update option, and the latest raw wording in the updated handoff. Complete wording is preserved in the handoff.
+- constraints: Update the handoff, preserve full package/signing/OS acceptance and offline operation, distinguish a main commit from a published signed update. No application execution, protected-document edits, tests, installation, cleanup, Git/GitHub writes or publication in this turn.
+- linked_changes: [AC-20261007-005](agentchangelog.md#ac-20261007-005)
+
+
+<a id="up-20261007-006"></a>
+## UP-20261007-006 — Review v5 and reconcile the existing updater handoff
+- date: 2026-10-07
+- status: reviewed and handed off; application execution pending
+- scope: independent v5 review and existing handoff update only
+- tags: in-app-update, v5-review, offline-install, signed-evidence, online-header, internal-folder, network-observation
+- paths: agent-memory/handoffs/2026-10-07-refinix-in-app-update-and-consolidation.md; agent-memory/{userprompts,agentchangelog}.md
+- original_request: The user supplied the implementation owner's v5 amendments as the request. The attachment removes the proposed 30-day cutoff and offline header exceptions, resolves the internal-source visibility mismatch, qualifies network observation, and asks the reviewer to update the existing handoff. Application execution remains a later explicit user instruction.
+- constraints: Preserve previous raw user wording, retention/process approvals, dirty handoff/ledger edits and all source/data/packages. Keep public OS/signing/feed acceptance separate. No tests, builds, launches, installs, cleanup, host/network changes, protected-document edits, Git/GitHub writes or publication in this turn.
+- linked_changes: [AC-20261007-006](agentchangelog.md#ac-20261007-006)
+
+
+<a id="up-20261007-007"></a>
+## UP-20261007-007 — Execute the reviewed in-app updater plan
+- date: 2026-10-07
+- status: implemented and internally proven on this Mac; paused at checkpoint (a) for the user's click and Wi-Fi observation
+- scope: implementation of the consolidated updater plan (v3 + v4 + v5 + review-5/6 corrections) through internal-proof checkpoint (a)
+- tags: in-app-update, execution, signed-evidence, update-id-reconciliation, header-control, internal-proof
+- paths: backend/coordinator/{updates,recovery,server,provisioning,hub,code_service,engine}.py; desktop/{build,setup_py2app,lifecycle,shell,refinix,update_apply}.py; desktop/updates/; scripts/update_repository.py; frontend/app/*; tests; agent-memory/{userprompts,agentchangelog}.md
+- original_request: "take this in consideration and execute", supplied with the final review: W3 offline chain and process-check wording approved; W7 must resume a matching current-attempt data journal regardless of a missing install marker, cancel only when N is intact with no current-attempt journal, block (never cancel) after a swap with missing/mismatched evidence, and retain the previous committed journal beside its snapshot; cover crashes during copying, between snapshot and marker, and mismatched evidence after swapping.
+- constraints: Settled approvals and exclusions stand (no Git/GitHub writes, protected docs, production keys/signing/hosting/publication, Windows/Linux devices, downloads, real-store migration, data/model/ZIP/Keychain deletion). Stop at checkpoint (a) with the Wi-Fi observation; later checkpoints (b) bootstrap, (c) first click-update, (d) cleanup remain user-gated.
+- linked_changes: [AC-20261007-007](agentchangelog.md#ac-20261007-007)
+
+
+<a id="up-20261007-008"></a>
+## UP-20261007-008 — Continue after the internal updater checkpoints and stop saved-peer polling
+- date: 2026-10-07
+- status: source fix and internal.5 package ready; user update/normal Quit and cleanup confirmation pending
+- scope: resume the existing updater continuation after reported checkpoints (a), (b), (c); repair unintended worker connections in standalone Beta, prepare the affected internal package and preserve checkpoint (d)
+- tags: standalone-beta, deferred-mesh, worker-polling, internal-update, continuation
+- paths: backend/coordinator/{server,test_dispatch,test_remote_code}.py; frontend/app/{app.js,test-control-centre.cjs}; desktop/out/updater-n5 (ignored build output); agent-memory/{userprompts,agentchangelog}.md
+- original_request: "let's continue , claude's limit is reached", with the prior agent's checkpoint results and remaining cleanup/worker-polling work.
+- constraints: Preserve the implementation owner's dirty work, real store, previous update recovery, original ZIP sets/build records and saved pairing. No Git/GitHub writes, protected-document edits, public release/feed/signing, downloads or remote-device checks. Cleanup stays at the existing explicit final checkpoint after primary-app verification and normal Quit.
+- linked_changes: [AC-20261007-008](agentchangelog.md#ac-20261007-008)
+
+
+<a id="up-20261007-009"></a>
+## UP-20261007-009 — Confirm normal Quit and approve the three-copy cleanup
+- date: 2026-10-07
+- status: completed
+- scope: checkpoint (d), limited to the three previously identified unpacked review folders and their app registrations
+- tags: app-consolidation, native-trash, spotlight, normal-quit
+- paths: desktop/out/{local-review-20261006,local-review-20261007e,local-review-20261007g}/unpacked; agent-memory/{userprompts,agentchangelog}.md
+- original_request: "quit done, approve cleanup"
+- constraints: Move the approved unpacked folders recoverably to the Bin, unregister those apps, preserve every ZIP/build record and the primary application/data/recovery copies. No Git/GitHub writes or broader repository/app cleanup.
+- linked_changes: [AC-20261007-009](agentchangelog.md#ac-20261007-009)
+
+
+<a id="up-20261008-001"></a>
+## UP-20261008-001 — Recheck and fix the three updater review findings
+- date: 2026-10-08
+- status: done
+- scope: implementation, review
+- tags: updater, recovery, journal, retention, root-rotation, offline-tests
+- aliases: /execute, check once again before executing, final review fixes
+- paths: desktop/update_apply.py, desktop/test_update_apply.py, desktop/test_install_flow.py, backend/coordinator/updates.py, backend/coordinator/test_update_install.py
+- summary: The user authorised execution of the three updater fixes after rechecking the findings against current source.
+- constraints: Preserve the existing dirty tree, installed app, real data, retained ZIP/build records and public release boundaries; no Git/GitHub writes or protected-document edits.
+- acceptance: Confirm each finding, repair the shared paths, run relevant offline regressions and distinguish source checks from installed-package acceptance.
+- follow_up_to: UP-20261007-009
+- supersedes: none
+- linked_changes: [AC-20261008-001](agentchangelog.md#ac-20261008-001)

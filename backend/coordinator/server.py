@@ -118,7 +118,7 @@ CAPABILITY_SELFTEST_SCOPE = {
 }
 
 def mesh_enabled(environ=None) -> bool:
-    """Whether the deferred paired-computer controls are shown.
+    """Whether the deferred paired-computer paths are enabled.
 
     Off in every packaged build: running work on other computers is post-Beta,
     and an unfinished control must not look functional. A source checkout can
@@ -199,6 +199,70 @@ def one_system_message(messages: list[dict]) -> list[dict]:
     return [{"role": "system", "content": "\n\n".join(system)}, *rest]
 
 
+class Activity:
+    """Work in flight, by kind, so an update install can wait for it to end.
+
+    `writers` counts everything that may change the workspace: every
+    data-changing request and every background writer (a reply, a model
+    download or import). `requests` counts every request handler, including
+    the long-lived event stream, so the database is closed only after the last
+    reader has left.
+    """
+
+    def __init__(self):
+        self._cond = threading.Condition()
+        self._active: dict[int, str] = {}
+        self._next = 0
+
+    def hold(self, what: str):
+        activity = self
+
+        class _Held:
+            def __enter__(self_inner):
+                with activity._cond:
+                    activity._next += 1
+                    self_inner.key = activity._next
+                    activity._active[self_inner.key] = what
+                return self_inner
+
+            def __exit__(self_inner, *_exc):
+                with activity._cond:
+                    activity._active.pop(self_inner.key, None)
+                    activity._cond.notify_all()
+                return False
+
+        return _Held()
+
+    def active(self) -> list[str]:
+        with self._cond:
+            return sorted(set(self._active.values()))
+
+    def wait_idle(self, timeout: float) -> list[str]:
+        """Empty when idle within `timeout`; otherwise what is still running."""
+        import time as _time
+        deadline = _time.monotonic() + timeout
+        with self._cond:
+            while self._active:
+                remaining = deadline - _time.monotonic()
+                if remaining <= 0:
+                    return sorted(set(self._active.values()))
+                self._cond.wait(remaining)
+        return []
+
+
+def _held(coordinator, kind: str, what: str):
+    """Count this work in `coordinator.<kind>`; a stand-in without one counts nothing."""
+    activity = getattr(coordinator, kind, None)
+    if activity is None:
+        import contextlib
+        return contextlib.nullcontext()
+    return activity.hold(what)
+
+
+# While an update is being installed only these changes are still accepted.
+INSTALL_ALLOWED_POSTS = frozenset({"/v1/updates/cancel", "/v1/updates/cancel-install"})
+
+
 class Coordinator:
     def __init__(self, state_path: Path, node_id: str | None = None, *,
                  owner=None, admitted: db.Admission | None = None):
@@ -229,6 +293,12 @@ class Coordinator:
         # Set on Ctrl+C so streaming loops leave promptly instead of holding
         # the process open.
         self.stopping = threading.Event()
+        # Set while an update is being installed: data-changing requests are
+        # refused, and the install waits for `writers`, then `requests`, to end.
+        self.installing = threading.Event()
+        self.writers = Activity()
+        self.requests = Activity()
+        self.closed = False
         # Set when a second launch asks the running copy to come forward.
         self.focus_requested = threading.Event()
         # Filled in by the desktop shell; empty when the coordinator was
@@ -252,6 +322,7 @@ class Coordinator:
         self.provisioner = provisioning.Provisioner(
             self.conn, self.state_path, unload=self._unload_model,
             busy=lambda: bool(self.active_jobs()))
+        self.provisioner.writers = self.writers
         # Refinix-owned memory decisions across both runtimes, one at a time.
         self.ledger = capacity.Ledger(observe=self._available_memory)
         # The last observation of every runtime's models, for resolving
@@ -1517,9 +1588,41 @@ class Coordinator:
         db.bind_attachments(self.conn, draft_id or chat_id, chat_id, message_id)
         self._emit(job_id, None, {"kind": "job.state", "previous": None,
                                   "current": "created"})
-        threading.Thread(target=self._run, args=(job_id, chat_id, skill_id),
+        threading.Thread(target=self._run_held, args=(job_id, chat_id, skill_id),
                          daemon=True).start()
         return job_id
+
+    def _run_held(self, job_id: str, chat_id: str, skill_id: str | None = None):
+        with self.writers.hold("a running reply"):
+            self._run(job_id, chat_id, skill_id)
+
+    # -- update installation -------------------------------------------------
+    def begin_install(self) -> None:
+        """Refuse new changes from now on; work already running continues."""
+        self.installing.set()
+
+    def end_install(self) -> None:
+        """The install did not start: accept changes again."""
+        self.installing.clear()
+
+    def close_for_install(self, timeout: float = 5.0) -> list[str]:
+        """After the listener stopped: wait for the last request, then close SQLite.
+
+        Empty when the database is closed; otherwise what was still running,
+        and nothing was closed.
+        """
+        stuck = self.requests.wait_idle(timeout) or self.writers.wait_idle(timeout)
+        if stuck:
+            return stuck
+        self.provisioner.wait(timeout)
+        with db.LOCK:
+            try:
+                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except Exception:                              # noqa: BLE001
+                pass
+            self.conn.close()
+            self.closed = True
+        return []
 
     def _advance_job(self, job_id, following, previous):
         db.set_job_state(self.conn, job_id, following)
@@ -3023,6 +3126,8 @@ class Coordinator:
         }
 
     def paired_worker(self) -> dict | None:
+        if not mesh_enabled():
+            return None
         return db.active_relationship(self.conn, self.workspace_id)
 
     def worker_client(self, relationship: dict) -> dispatch.WorkerClient:
@@ -3032,6 +3137,8 @@ class Coordinator:
         cached on the object: a revoked relationship must stop working at the
         next request, not when the process restarts.
         """
+        if not mesh_enabled():
+            raise RequestError("Paired computers are switched off in this build.", 409)
         return dispatch.WorkerClient(
             address=relationship["address"], port=relationship["port"],
             fingerprint=relationship["fingerprint"],
@@ -3045,6 +3152,8 @@ class Coordinator:
         the operator as a changed-worker error, not be flattened into "the
         worker is unavailable" and answered locally.
         """
+        if not mesh_enabled():
+            return None
         relationship = relationship or self.paired_worker()
         if relationship is None:
             return None
@@ -3160,6 +3269,8 @@ class Coordinator:
         before that store accepts it would describe a pairing with no usable
         credential.
         """
+        if not mesh_enabled():
+            raise RequestError("Paired computers are switched off in this build.", 409)
         fingerprint = pairing.normalise_fingerprint(fingerprint)
         store = pairing.credential_store()
         if not store["available"]:
@@ -4231,6 +4342,10 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- routes
     def do_GET(self):
+        with _held(self.coordinator, "requests", "a request"):
+            self._get()
+
+    def _get(self):
         parsed = urlparse(self.path)
         route, query = parsed.path, parse_qs(parsed.query)
         c = self.coordinator
@@ -4336,6 +4451,27 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
 
     def do_POST(self):
+        c = self.coordinator
+        route = urlparse(self.path).path
+        with _held(c, "requests", "a request"):
+            installing = getattr(c, "installing", None)
+            if installing is not None and installing.is_set() \
+                    and route not in INSTALL_ALLOWED_POSTS:
+                # The body is not read, so this connection cannot carry another
+                # request: its unread bytes would be parsed as one.
+                self.close_connection = True
+                try:
+                    self._local_request()
+                except RequestError as exc:
+                    self._json({"error": str(exc)}, exc.status)
+                    return
+                self._json({"error": "Refinix is installing an update, so this change "
+                                     "was not made.", "code": "installing"}, 409)
+                return
+            with _held(c, "writers", f"a change ({route})"):
+                self._post()
+
+    def _post(self):
         route = urlparse(self.path).path
         c = self.coordinator
         try:
@@ -4468,6 +4604,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._update(c.updates.start_download, 202)
             elif route == "/v1/updates/cancel":
                 self._update(c.updates.cancel)
+            elif route == "/v1/updates/check-folder":
+                # Only when the person presses Check update folder (internal builds).
+                self._update(c.updates.check_folder)
+            elif route == "/v1/updates/prepare":
+                self._update(c.updates.prepare_install, 202)
+            elif route == "/v1/updates/cancel-install":
+                self._update(c.updates.cancel_install)
+            elif route == "/v1/updates/acknowledge":
+                c.updates.notice = None
+                self._json(c.updates.describe())
             elif route == "/v1/model/download":
                 # Started only by the person, after the plan was shown.
                 self._provision(lambda: c.provisioner.start_download(

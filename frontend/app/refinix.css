@@ -442,6 +442,7 @@
  * the dialogs and the composer box take, rather than an opaque panel colour. */
 .plus-menu,
 .model-popover,
+.update-popover,
 .row-menu {
   border: 1px solid var(--glass-edge);
   border-radius: var(--radius-lg);
@@ -2311,3 +2312,68 @@
 }
 .mp-model-caution { grid-column: 2 / -1; font-size: 11px; line-height: 1.35;
   color: var(--st-caution); text-align: left; }
+
+/* ---- update control --------------------------------------------------- *
+ * Shares the .panel-toggle shell with the theme and panel toggles, so the
+ * controls at the right of the header read as one set. The dot means a
+ * verified update is offered or ready, never "not checked". The panel takes
+ * the same floating-glass surface as the model popover. */
+
+.update-toggle { position: relative; }
+.update-toggle[hidden] { display: none; }
+
+.update-toggle svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.update-toggle[data-busy] svg { animation: update-turn 1.4s linear infinite; }
+
+@keyframes update-turn { to { transform: rotate(360deg); } }
+
+.update-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--signal);
+  box-shadow: 0 0 0 2px var(--surface-raised);
+}
+
+.update-dot[hidden] { display: none; }
+
+.update-popover {
+  position: fixed;
+  z-index: 60;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: var(--sp-4);
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.update-popover[hidden] { display: none; }
+
+.up-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.up-state { margin: 0; font-size: 13px; color: var(--text); }
+
+.up-detail {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  max-height: 9rem;
+  overflow: auto;
+}
+
+.up-detail:empty { display: none; }
+.up-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.up-link { font-size: 12px; color: var(--signal); justify-self: start; }
+
+@media (prefers-reduced-motion: reduce) {
+  .update-toggle[data-busy] svg { animation: none; }
+}

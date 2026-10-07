@@ -211,22 +211,96 @@ class TestRestore(Base):
         self.assertEqual(Path(f"{self.path}-journal").read_bytes(), b"late writer")
 
 
+class TestAttempts(Base):
+    """Each attempt is named; an earlier update's record is never mistaken for it."""
+
+    def test_the_journal_names_the_attempt_versions_and_root(self):
+        record = self.recovery().set_aside(from_version=OLD, to_version=NEW,
+                                           update_id="u1", data_root="/data")
+        self.assertEqual((record["update_id"], record["data_root"]), ("u1", "/data"))
+        self.assertTrue(Path(record["set_aside"]).name.endswith("-u1"))
+        r = self.recovery()
+        self.assertIsNotNone(r.matches(update_id="u1", from_version=OLD,
+                                       to_version=NEW, data_root="/data"))
+        for wrong in ({"update_id": "u2"}, {"from_version": "0.0.1"},
+                      {"to_version": "9.9.9"}, {"data_root": "/elsewhere"}):
+            values = {"update_id": "u1", "from_version": OLD, "to_version": NEW,
+                      "data_root": "/data", **wrong}
+            self.assertIsNone(r.matches(**values), wrong)
+
+    def test_a_finished_journal_is_kept_beside_its_copy_before_the_next_attempt(self):
+        first = self.recovery().set_aside(from_version=OLD, to_version=NEW, update_id="u1")
+        self.recovery().commit("u1")
+        newer = "0.1.2-internal.1"
+        second = self.recovery().set_aside(from_version=NEW, to_version=newer,
+                                           update_id="u2")
+        kept = list(Path(first["set_aside"]).glob("update-journal-*.json"))
+        self.assertEqual(len(kept), 1)
+        previous = json.loads(kept[0].read_text())
+        self.assertEqual((previous["state"], previous["update_id"]), ("committed", "u1"))
+        self.assertTrue((Path(first["set_aside"]) / self.path.name).exists(),
+                        "the earlier update's set-aside copy was not kept")
+        self.assertNotEqual(first["set_aside"], second["set_aside"])
+
+    def test_commit_and_discard_refuse_another_attempts_record(self):
+        self.recovery().set_aside(from_version=OLD, to_version=NEW, update_id="u1")
+        for step in (self.recovery().commit, self.recovery().discard):
+            with self.assertRaises(recovery.RecoveryError) as caught:
+                step("u2")
+            self.assertEqual(caught.exception.code, "not_this_update")
+        self.assertEqual(self.recovery().read()["state"], "set_aside")
+
+    def test_discard_closes_an_unchanged_attempt_and_refuses_a_changed_one(self):
+        self.recovery().set_aside(from_version=OLD, to_version=NEW, update_id="u1")
+        self.assertEqual(self.recovery().discard("u1")["state"], "discarded")
+        self.assertEqual(fingerprint(self.path), self.before)
+        self.recovery().set_aside(from_version=OLD, to_version=NEW, update_id="u2")
+        conn = self.newer_version_writes()
+        conn.close()
+        with self.assertRaises(recovery.RecoveryError) as caught:
+            self.recovery().discard("u2")
+        self.assertEqual(caught.exception.code, "changed")
+        self.assertEqual(self.recovery().read()["state"], "set_aside")
+
+
 class TestStartup(Base):
-    def test_the_previous_version_goes_back_before_it_opens(self):
+    def test_a_launch_never_starts_a_restore(self):
         self.recovery().set_aside(from_version=OLD, to_version=NEW)
         conn = self.newer_version_writes()
         conn.close()
+        newer = fingerprint(self.path)
         record = recovery.at_startup(self.lock, self.path, OLD)
-        self.assertEqual(record["state"], "rolled_back_with_data")
-        self.assertEqual(self.marker(), "before update")
+        self.assertEqual(record["state"], "set_aside")
+        self.assertEqual(fingerprint(self.path), newer)
+        self.assertEqual(self.marker(), "after update")
+        with running(OLD):
+            with self.assertRaises(db.AdmissionRefused) as caught:
+                db.admit(self.path, owner=self.lock)
+            self.assertEqual(caught.exception.code, "recovery_pending")
 
-    def test_the_new_version_opens_then_commits(self):
-        self.recovery().set_aside(from_version=OLD, to_version=NEW)
+    def test_the_new_version_opens_and_only_an_explicit_commit_finishes(self):
+        self.recovery().set_aside(from_version=OLD, to_version=NEW, update_id="u1")
         self.assertEqual(recovery.at_startup(self.lock, self.path, NEW)["state"], "set_aside")
-        self.assertEqual(recovery.after_startup(self.lock, self.path, NEW)["state"],
-                         "committed")
+        self.assertFalse(hasattr(recovery, "after_startup"))
+        with running(NEW):
+            self.assertEqual(db.admit(self.path, owner=self.lock).kind, "existing")
+        self.assertEqual(self.recovery().read()["state"], "set_aside")
+        self.assertEqual(self.recovery().commit("u1")["state"], "committed")
         with running(OLD):
             self.assertEqual(db.admit(self.path, owner=self.lock).kind, "existing")
+
+    def test_an_interrupted_copy_is_finished_by_a_launch(self):
+        real = recovery._copy_durably
+
+        def crash(source, target):
+            raise OSError("power lost")
+
+        with patch.object(recovery, "_copy_durably", side_effect=crash):
+            with self.assertRaises(OSError):
+                self.recovery().set_aside(from_version=OLD, to_version=NEW, update_id="u1")
+        self.assertEqual(self.recovery().read()["state"], "setting_aside")
+        self.assertIs(recovery._copy_durably, real)
+        self.assertEqual(recovery.at_startup(self.lock, self.path, OLD)["state"], "set_aside")
 
     def test_another_version_is_refused_and_told_why(self):
         self.recovery().set_aside(from_version=OLD, to_version=NEW)

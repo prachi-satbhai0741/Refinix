@@ -15,6 +15,7 @@ so nothing about Chat, history, drafts or the event stream changes here.
 from __future__ import annotations
 
 import base64
+import os
 import json
 import sys
 import threading
@@ -388,6 +389,15 @@ class Bridge:
             return {"opened": False, "error": str(exc)}
         return {"opened": bool(opened)}
 
+    # -- updates
+    def install_update(self) -> dict:
+        """Install the prepared, verified update and restart. Takes no argument."""
+        return self._app.install_update()
+
+    def ui_ready(self) -> dict:
+        """The page has loaded; an update being verified may now be finished."""
+        return self._app.ui_ready()
+
     # -- window / services
     def shell_info(self) -> dict:
         return self._app.shell_info()
@@ -403,8 +413,12 @@ class Bridge:
 
 class DesktopApp:
     def __init__(self, *, state_path: Path = lifecycle.STATE_DB,
-                 port: int = lifecycle.DEFAULT_PORT, on_started=None, owner=None):
+                 port: int = lifecycle.DEFAULT_PORT, on_started=None, owner=None,
+                 update_gate=None):
         self.state_path = state_path
+        # What the launch found about an update in progress or just finished
+        # (desktop/update_apply.on_launch); None when nothing was found.
+        self.update_gate = update_gate
         # The workspace lock the entry point took for this database.
         self.owner = owner
         self.preferred_port = port
@@ -451,6 +465,9 @@ class DesktopApp:
                     self.startup = startup
                     if startup.coordinator is not None:
                         startup.coordinator.desktop = self.shell_info()
+                        gate = self.update_gate
+                        if gate is not None and gate.notice:
+                            startup.coordinator.updates.notice = gate.notice
                         threading.Thread(target=self._serve, daemon=True,
                                          name="coordinator-http").start()
                     if self.on_started is not None:
@@ -620,6 +637,136 @@ class DesktopApp:
                                  if s and s.coordinator is not None else None),
         }
 
+    # -- updates ------------------------------------------------------------
+    def ui_ready(self) -> dict:
+        """Commit an update being verified, now that its window has loaded."""
+        gate = self.update_gate
+        s = self.startup
+        if gate is None or gate.supervised is None or s is None or s.coordinator is None:
+            return {"committed": False}
+        from desktop import update_apply
+        try:
+            journal = update_apply.commit_if_supervised(self.owner, self.state_path,
+                                                        gate.supervised)
+        except Exception as exc:                       # noqa: BLE001
+            return {"committed": False, "error": str(exc)}
+        gate.supervised = None
+        if journal:
+            s.coordinator.updates.notice = {"kind": "updated",
+                                            "from": journal["from_version"],
+                                            "to": journal["to_version"]}
+        return {"committed": bool(journal)}
+
+    def install_update(self) -> dict:
+        """Close, replace and reopen: drain, close the data, set it aside, hand off.
+
+        Until the database is closed nothing has changed, and any refusal
+        leaves Refinix running as it was.
+        """
+        from backend.coordinator import ownership, recovery, updates as updates_module
+        from desktop import update_apply
+        s = self.startup
+        c = s.coordinator if s else None
+        if c is None or self.owner is None:
+            return {"error": "Installing needs the Refinix that owns this workspace."}
+        u = c.updates
+        install = dict(u.install)
+        if install.get("state") != "ready":
+            return {"error": "The update is not ready to install yet."}
+        path, reason = u.install_location()
+        if reason:
+            return {"error": reason}
+        busy_models = c.provisioner.active()
+        if busy_models:
+            return {"error": "A model download or import is running "
+                             f"({', '.join(busy_models)}). Finish or cancel it in "
+                             "Settings → Models, then install."}
+        running = self.active_jobs()
+        if running and self.window is not None:
+            count = len(running)
+            if not self.window.create_confirmation_dialog(
+                    "Install the update now?",
+                    f"{count} {'reply is' if count == 1 else 'replies are'} still "
+                    f"running. Installing stops {'it' if count == 1 else 'them'} and "
+                    f"saves {'it' if count == 1 else 'them'} as stopped; Refinix then "
+                    "closes, updates and opens again."):
+                return {"cancelled": True}
+        with self._lifecycle_lock:
+            if self._closing.is_set():
+                return {"error": "Refinix is already closing."}
+        identity = u.identity or {}
+        database = ownership.canonical_database(self.state_path)
+        environment = {key: os.environ[key] for key in update_apply.CARRIED
+                       if os.environ.get(key)}
+        try:
+            journal = update_apply.plan_attempt(
+                self.owner, database, update_id=install["update_id"],
+                from_version=u.version, to_version=install["version"],
+                install_path=path, incoming=Path(install["incoming"]),
+                lane=identity.get("lane"), channel=identity.get("channel"),
+                trust_root=identity.get("trust_root"), environment=environment)
+        except update_apply.InstallError as exc:
+            return {"error": str(exc)}
+        c.begin_install()
+        for job in running:
+            try:
+                c.request_cancel(job["job_id"])
+            except Exception:                          # noqa: BLE001
+                pass                                   # finished meanwhile
+        stuck = c.writers.wait_idle(30.0)
+        if stuck:
+            c.end_install()
+            update_apply.cancel_attempt(self.owner, database, journal,
+                                        f"{', '.join(stuck)} did not finish in time")
+            return {"error": "The update was not installed because "
+                             f"{', '.join(stuck)} did not finish in time. Nothing was "
+                             "changed; try again."}
+        # From here Refinix closes whatever happens; the helper reopens it.
+        with self._lifecycle_lock:
+            self._closing.set()
+            self._retry.set()
+        try:
+            shutdown_server(s.server, c)
+        except Exception:                              # noqa: BLE001
+            pass
+        stuck = c.close_for_install(5.0)
+        try:
+            s.engine_supervisor.stop()
+        except Exception:                              # noqa: BLE001
+            pass
+        mode = "--apply-update"
+        if stuck:
+            mode = "--resume"          # nothing was set aside: the helper cancels
+        else:
+            try:
+                recovery.Recovery(self.owner, database).set_aside(
+                    from_version=u.version, to_version=install["version"],
+                    update_id=install["update_id"], data_root=str(database.parent))
+                journal = update_apply.mark(self.owner, database, journal,
+                                            "snapshot_taken")
+            except (recovery.RecoveryError, OSError):
+                mode = "--resume"      # the helper finishes or discards the copy
+        try:
+            update_apply.hand_off(self.owner, database, journal,
+                                  bundle=updates_module.running_bundle(), mode=mode)
+        except Exception as exc:                       # noqa: BLE001
+            # The app files are untouched; the next launch resumes the attempt.
+            print(f"update helper did not start: {exc}", file=sys.stderr)
+        if self.window is not None:
+            threading.Timer(0.3, self.window.destroy).start()
+        return {"installing": True}
+
+    def terminate(self):
+        """SIGTERM, e.g. from the update helper: stop as Quit does, without asking."""
+        try:
+            self.shutdown()
+        finally:
+            if self.window is not None:
+                try:
+                    self.window.destroy()
+                except Exception:                      # noqa: BLE001
+                    pass
+
     # -- shutdown ---------------------------------------------------------
     def active_jobs(self) -> list[dict]:
         c = self.startup.coordinator if self.startup else None
@@ -735,9 +882,40 @@ class DesktopApp:
             s.engine_supervisor.stop()
 
 
+def _stop_on_sigterm(app: "DesktopApp") -> None:
+    """Turn SIGTERM into an orderly shutdown while the native run loop owns the thread.
+
+    Python runs signal handlers only on the main thread, which the window's run
+    loop holds; the wakeup pipe lets a helper thread react instead.
+    """
+    import os as _os
+    import signal as _signal
+    try:
+        read_end, write_end = _os.pipe()
+        _os.set_blocking(write_end, False)
+        _signal.set_wakeup_fd(write_end)
+        _signal.signal(_signal.SIGTERM, lambda *_args: None)
+    except (ValueError, OSError, AttributeError):
+        return
+
+    def watch():
+        while True:
+            try:
+                data = _os.read(read_end, 64)
+            except OSError:
+                return
+            if not data:
+                return
+            if _signal.SIGTERM in data:
+                app.terminate()
+                return
+
+    threading.Thread(target=watch, daemon=True, name="refinix-sigterm").start()
+
+
 def run(*, state_path: Path = lifecycle.STATE_DB, port: int = lifecycle.DEFAULT_PORT,
         gui: str | None = None, debug: bool = False, on_started=None,
-        owner=None) -> int:
+        owner=None, update_gate=None) -> int:
     """Open the window and block until it closes."""
     gui = pinned_gui(gui)
     if getattr(sys, "frozen", False):
@@ -756,7 +934,7 @@ def run(*, state_path: Path = lifecycle.STATE_DB, port: int = lifecycle.DEFAULT_
         pass
 
     app = DesktopApp(state_path=state_path, port=port, on_started=on_started,
-                     owner=owner)
+                     owner=owner, update_gate=update_gate)
     bridge = Bridge(app)
     window = webview.create_window(
         WINDOW_TITLE, html=startup_html(app.assets), js_api=bridge,
@@ -769,6 +947,8 @@ def run(*, state_path: Path = lifecycle.STATE_DB, port: int = lifecycle.DEFAULT_
 
     def boot(_window):
         worker.start()
+
+    _stop_on_sigterm(app)
 
     try:
         # private_mode keeps the webview from writing cookies or local storage:

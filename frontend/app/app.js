@@ -341,12 +341,24 @@ function pushEvent(ev) {
   const li = document.createElement('li');
   const kind = document.createElement('span');
   kind.className = 'kind';
-  kind.textContent = ev.data.kind === 'job.state' ? 'job' : 'attempt';
   const time = document.createElement('time');
   time.textContent = ev.occurred_at.slice(11, 19);
-  li.append(kind,
-            document.createTextNode(` ${ev.data.previous || 'start'} → ${ev.data.current}`),
-            time);
+  /* Only state changes read as "previous → current". Anything else — a saved
+     document, or a kind this page does not know yet — is named for what it
+     is, never shown as a transition to "undefined". */
+  let line;
+  if (ev.data.kind === 'job.state' || ev.data.kind === 'attempt.state') {
+    kind.textContent = ev.data.kind === 'job.state' ? 'job' : 'attempt';
+    line = ` ${ev.data.previous || 'start'} → ${ev.data.current}`;
+  } else if (ev.data.kind === 'artifact.created') {
+    kind.textContent = 'document';
+    const media = (ev.data.artifact && ev.data.artifact.media_type) || '';
+    line = media ? ` saved (${media})` : ' saved';
+  } else {
+    kind.textContent = 'event';
+    line = ` ${String(ev.data.kind || 'unknown')}`;
+  }
+  li.append(kind, document.createTextNode(line), time);
   ul.prepend(li);
   while (ul.children.length > 24) ul.lastElementChild.remove();
 }
@@ -4108,58 +4120,358 @@ function initHubBrowse() {
   if (form && form.addEventListener) form.addEventListener('submit', hubSearch);
 }
 
+/* ---- Updates ------------------------------------------------------------
+ * One reading of the update state drives both the header control (Chat, Code
+ * and Settings) and Settings -> Updates. Nothing here checks on its own:
+ * opening the panel, loading a page, polling and the browser's "online" event
+ * only redraw what the coordinator already reports. A check, a download, an
+ * install each start from a click.
+ *
+ * Online-only: the header control appears only while the computer reports a
+ * network connection (navigator.onLine — a hint, never proof) and hides in
+ * every state when it does not. Settings keeps everything that works without
+ * the internet: Cancel, Install and restart for a verified download, Import,
+ * the update folder on internal builds, and what is kept for going back. */
+let updateBusy = '';
+let updatePollTimer = null;
+let updateNoticeShown = false;
+let uiReadySent = false;
+let updatePopoverOpen = false;
+
+function online() {
+  return !(typeof navigator !== 'undefined' && navigator && navigator.onLine === false);
+}
+
+function mb(bytes) {
+  return bytes == null ? null : `${Math.max(1, Math.round(bytes / 1048576))} MB`;
+}
+
+function updateView(u) {
+  u = u || {};
+  const d = u.download || null;
+  const offer = u.offer || null;
+  const install = u.install || {};
+  const last = u.last_check || null;
+  const since = last && last.last_success ? ` Last successful check: ${last.last_success}.` : '';
+  if (updateBusy === 'checking') return { state: 'checking', label: 'Checking for updates…', detail: '' };
+  if (updateBusy === 'installing') {
+    return { state: 'installing', label: 'Installing — Refinix will close and open again',
+             detail: 'Your conversations, documents and models are kept.' };
+  }
+  if (install.state === 'preparing') return { state: 'preparing', label: 'Preparing the update…', detail: '' };
+  if (install.state === 'ready') {
+    return { state: 'ready', label: `Version ${install.version} is ready to install`,
+             detail: u.install_note || '' };
+  }
+  if (install.state === 'failed') {
+    return { state: 'failed', label: 'The update could not be prepared',
+             detail: `${install.error || ''} Nothing was changed.`.trim() };
+  }
+  if (d && d.state === 'running') {
+    const pct = d.bytes_total ? Math.floor((100 * d.bytes_done) / d.bytes_total) : 0;
+    return { state: 'downloading', label: `Getting version ${d.version}… ${pct}%`, detail: '' };
+  }
+  if (d && d.state === 'verified') {
+    return { state: 'verified', label: `Version ${d.version} is downloaded and verified`,
+             detail: u.install_supported ? (u.install_note || '') : (u.install_reason || '') };
+  }
+  if (d && (d.state === 'failed' || d.state === 'cancelled')) {
+    return { state: 'failed', label: d.state === 'cancelled' ? 'The download was cancelled'
+                                                             : 'The download did not complete',
+             detail: d.error || 'The installed version is unchanged.' };
+  }
+  if (offer) {
+    return { state: 'available', label: `Version ${offer.version} is available`,
+             detail: [offer.size ? `${mb(offer.size)}.` : '', offer.notes || ''].join(' ').trim() };
+  }
+  if (last && last.result === 'up_to_date') {
+    return { state: 'current', label: u.source === 'folder' ? 'No newer verified update'
+                                                            : 'Refinix is up to date',
+             detail: `${last.detail || ''} Checked ${last.at}.`.trim() };
+  }
+  if (last && last.result === 'incomplete') {
+    return { state: 'incomplete', label: 'Not every update was checked', detail: last.detail || '' };
+  }
+  if (last && last.result === 'unreachable') {
+    return { state: 'unreachable', label: "Couldn't reach the update server",
+             detail: `${last.detail || ''}${since}`.trim() };
+  }
+  if (last && last.result === 'failed') {
+    return { state: 'failed', label: 'The check did not complete', detail: `${last.detail || ''}${since}`.trim() };
+  }
+  return { state: 'idle', label: 'Not checked yet', detail: '' };
+}
+
+/* The buttons for the current state. `header` drops the ones that belong only
+   in Settings, and every connected action needs the online hint. */
+function updateActions(u, header) {
+  u = u || {};
+  const list = [];
+  const d = u.download || null;
+  const offer = u.offer || null;
+  const install = u.install || {};
+  const isOnline = online();
+  const busy = Boolean(updateBusy) || install.state === 'preparing';
+  if (busy) return list;
+  if (d && d.state === 'running') {
+    list.push({ label: 'Cancel download', run: () => updateStep('/v1/updates/cancel') });
+    return list;
+  }
+  const verified = d && d.state === 'verified';
+  if ((verified || install.state === 'ready') && u.install_supported
+      && nativeBridge() && nativeBridge().install_update) {
+    list.push({ label: 'Install and restart', run: () => installAndRestart() });
+  }
+  if (!verified && offer) {
+    const fromFolder = offer.source && offer.source.kind === 'bundle';
+    if (fromFolder) {
+      list.push({ label: `Get ${offer.version} from the update folder`,
+                  run: () => updateStep('/v1/updates/download', true) });
+    } else if (isOnline && u.can_check) {
+      list.push({ label: `Download ${offer.version}`, run: () => updateStep('/v1/updates/download', true) });
+    }
+  }
+  if (u.can_check && isOnline && (u.source === 'https' || (header && u.source === 'folder'))) {
+    list.push({ label: 'Check for updates', run: () => checkForUpdates(u.source) });
+  }
+  if (!header && u.source === 'folder') {
+    list.push({ label: 'Check update folder', run: () => checkForUpdates('folder') });
+  }
+  if (!header && u.can_import && nativeBridge() && nativeBridge().choose_update_bundle) {
+    list.push({ label: 'Import update…', run: () => importUpdate() });
+  }
+  return list;
+}
+
 function renderUpdatesCard(s) {
   if (!$('c-updates-facts')) return;
   const u = s.updates || {};
-  const last = u.last_check;
-  const download = u.download;
-  const offer = u.offer;
-  let chipText = 'not checked';
-  let chipKind = 'unknown';
-  if (download?.state === 'verified') { chipText = 'package verified'; chipKind = 'enforced'; }
-  else if (download?.state === 'running') { chipText = 'downloading'; chipKind = 'caution'; }
-  else if (offer) { chipText = 'update available'; chipKind = 'caution'; }
-  else if (last?.result === 'up_to_date') { chipText = 'up to date'; chipKind = 'enforced'; }
-  else if (last?.result === 'failed') { chipText = 'check failed'; chipKind = 'fault'; }
-  chip($('c-updates-chip'), chipText, chipKind);
+  const v = updateView(u);
+  const kinds = { ready: 'enforced', verified: 'enforced', current: 'enforced',
+                  available: 'caution', downloading: 'caution', preparing: 'caution',
+                  checking: 'caution', installing: 'caution', incomplete: 'caution',
+                  unreachable: 'fault', failed: 'fault' };
+  const chips = { ready: 'ready to install', verified: 'package verified', current: 'up to date',
+                  available: 'update available', downloading: 'downloading',
+                  preparing: 'preparing', checking: 'checking', installing: 'installing',
+                  incomplete: 'not all checked', unreachable: "couldn't reach",
+                  failed: 'check failed', idle: 'not checked' };
+  chip($('c-updates-chip'), chips[v.state] || 'not checked', kinds[v.state] || 'unknown');
   $('c-updates-lead').textContent = u.unavailable
     || 'Refinix checks for updates only when you ask, and offers one only after '
        + 'its signed details are verified.';
+  const offer = u.offer;
+  const download = u.download;
+  const last = u.last_check;
+  const kept = u.kept;
   facts($('c-updates-facts'), [
     ['Installed version', u.version ? `${u.version} (${u.channel})` : null, 'not reported'],
+    ['Updates come from', u.source === 'folder' ? `the update folder ${u.folder}`
+      : u.source === 'https' ? 'the online update channel' : null, 'no update source'],
     ['Last check', last ? `${last.at} — ${last.detail}` : null, 'not checked yet'],
     ['Offered', offer ? `${offer.version}, ${gib(offer.size)} GB` : null,
-     last?.result === 'up_to_date' ? 'nothing newer' : 'nothing offered'],
-    ['What changed', offer?.notes || null, offer ? 'no notes' : '—'],
+     last && last.result === 'up_to_date' ? 'nothing newer' : 'nothing offered'],
+    ['What changed', (offer && offer.notes) || null, offer ? 'no notes' : '—'],
     ['Download', download ? (download.state === 'running'
       ? `${gib(download.bytes_done)} of ${gib(download.bytes_total)} GB`
-      : download.state === 'verified' ? `verified — ${download.path}`
+      : download.state === 'verified' ? `verified — ${download.version}`
       : download.error || download.state) : null, 'not downloaded'],
+    ['Install', u.install_supported ? v.label : (u.install_reason || null), 'not available'],
+    ['Kept for going back', kept && kept.previous_app
+      ? `version ${kept.previous_version} (${mb(kept.previous_app_bytes) || 'size unknown'})`
+        + (kept.data_copy ? ` and its data copy (${mb(kept.data_copy_bytes) || 'size unknown'})` : '')
+      : null, 'nothing yet'],
   ]);
-  const list = [];
-  if (u.can_check) {
-    list.push({ label: 'Check for updates', run: () => updateStep('/v1/updates/check') });
+  actions($('c-updates-actions'), updateActions(u, false));
+  const note = $('c-updates-note');
+  if (!online() && u.can_check && u.source === 'https') {
+    note.textContent = 'Connect to the internet to check for updates. Importing an update, '
+      + 'installing one already downloaded, and cancelling still work offline.';
+  } else if (v.detail) {
+    note.textContent = v.detail;
+  } else {
+    note.textContent = 'Checking sends nothing about this computer, your work or your models.';
   }
-  if (offer && u.can_check && download?.state !== 'running' && download?.state !== 'verified') {
-    list.push({ label: `Download ${offer.version}`, run: () => updateStep('/v1/updates/download') });
-  }
-  if (download?.state === 'running') {
-    list.push({ label: 'Cancel download', run: () => updateStep('/v1/updates/cancel') });
-  }
-  if (u.can_import && nativeBridge()?.choose_update_bundle) {
-    list.push({ label: 'Import update…', run: () => importUpdate() });
-  }
-  actions($('c-updates-actions'), list);
-  $('c-updates-note').textContent = download?.state === 'verified'
-    ? u.install_note
-    : 'Checking sends nothing about this computer, your work or your models.';
 }
 
-async function updateStep(path) {
+/* The header control: shown only for a build that can update, while online. */
+function renderUpdateControl(s) {
+  const btn = $('update-toggle');
+  if (!btn) return;
+  const u = (s && s.updates) || {};
+  const show = Boolean(u.header_eligible) && online();
+  btn.hidden = !show;
+  if (!show) {
+    if (updatePopoverOpen) closeUpdatePopover(false);
+    return;
+  }
+  const v = updateView(u);
+  const dot = $('update-dot');
+  if (dot) dot.hidden = !['available', 'verified', 'ready'].includes(v.state);
+  const label = `Updates: ${v.label}`;
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  if (['checking', 'downloading', 'preparing', 'installing'].includes(v.state)) {
+    btn.setAttribute('data-busy', '');
+  } else {
+    btn.removeAttribute('data-busy');
+  }
+  if (updatePopoverOpen) renderUpdatePopover(u);
+}
+
+function renderUpdatePopover(u) {
+  const v = updateView(u);
+  $('update-popover-state').textContent = v.label;
+  $('update-popover-detail').textContent = v.detail || (u.version ? `Installed: ${u.version}` : '');
+  const list = updateActions(u, true);
+  list.push({ label: 'Later', run: () => closeUpdatePopover(true) });
+  actions($('update-popover-actions'), list);
+}
+
+function openUpdatePopover() {
+  const btn = $('update-toggle');
+  const pop = $('update-popover');
+  if (!btn || !pop) return;
+  updatePopoverOpen = true;
+  const box = btn.getBoundingClientRect();
+  pop.style.top = `${Math.round(box.bottom + 8)}px`;
+  pop.style.right = `${Math.max(8, Math.round((window.innerWidth || 0) - box.right))}px`;
+  pop.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  renderUpdatePopover((lastStatus && lastStatus.updates) || {});
+  const first = pop.querySelector('button');
+  if (first) first.focus();
+}
+
+function closeUpdatePopover(returnFocus) {
+  const btn = $('update-toggle');
+  const pop = $('update-popover');
+  updatePopoverOpen = false;
+  if (pop) pop.hidden = true;
+  if (btn) {
+    btn.setAttribute('aria-expanded', 'false');
+    if (returnFocus) btn.focus();
+  }
+}
+
+function wireUpdateControl() {
+  const btn = $('update-toggle');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      if (updatePopoverOpen) closeUpdatePopover(true);
+      else openUpdatePopover();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && updatePopoverOpen) closeUpdatePopover(true);
+  });
+  document.addEventListener('click', (e) => {
+    const pop = $('update-popover');
+    if (updatePopoverOpen && pop && !pop.contains(e.target) && btn && !btn.contains(e.target)) {
+      closeUpdatePopover(false);
+    }
+  });
+  /* A connection change only redraws: it never checks. */
+  const redraw = () => {
+    renderUpdateControl(lastStatus);
+    if (lastStatus) renderUpdatesCard(lastStatus);
+  };
+  window.addEventListener('online', redraw);
+  window.addEventListener('offline', redraw);
+  window.addEventListener('pywebviewready', sendUiReady);
+}
+
+/* The window has loaded: a version being verified after an update may finish. */
+function sendUiReady() {
+  const bridge = nativeBridge();
+  if (uiReadySent || !bridge || !bridge.ui_ready) return;
+  uiReadySent = true;
+  Promise.resolve(bridge.ui_ready())
+    .then((result) => { if (result && result.committed) return loadStatus(); })
+    .catch(() => {});
+}
+
+function showUpdateNotice(u) {
+  const n = u && u.notice;
+  if (!n || updateNoticeShown) return;
+  updateNoticeShown = true;
+  if (n.kind === 'updated') {
+    notice(`Refinix was updated to ${n.to}.`, 'ok',
+           'Your conversations, documents and models were kept. The previous version is '
+           + 'kept in Settings → Updates for going back.');
+  } else {
+    notice(n.kind === 'rolled_back' ? 'The update did not complete.' : 'The update was not installed.',
+           'warn', n.detail || '');
+  }
+  postJson('/v1/updates/acknowledge', {}).catch(() => {});
+}
+
+function afterStatus(s) {
+  renderUpdateControl(s);
+  showUpdateNotice(s && s.updates);
+  sendUiReady();
+  const u = (s && s.updates) || {};
+  const running = (u.download && u.download.state === 'running')
+    || (u.install && u.install.state === 'preparing');
+  if (running && !updatePollTimer) {
+    updatePollTimer = setTimeout(() => {
+      updatePollTimer = null;
+      loadStatus().catch(() => {});
+    }, 700);
+  }
+}
+
+async function checkForUpdates(source) {
+  updateBusy = 'checking';
+  renderUpdateControl(lastStatus);
+  try {
+    await postJson(source === 'folder' ? '/v1/updates/check-folder' : '/v1/updates/check', {});
+  } catch (err) {
+    // The coordinator records why; the card and panel show it after reloading.
+  } finally {
+    updateBusy = '';
+  }
+  await loadStatus().catch(() => {});
+}
+
+async function updateStep(path, poll) {
   try {
     await postJson(path, {});
   } catch (err) {
     notice('That update step did not complete.', 'error', err.message);
+  }
+  await loadStatus().catch(() => {});
+}
+
+/* Prepare (verify again offline and expand beside the app), then hand over to
+   the window, which drains work, keeps the data, closes and reopens. */
+async function installAndRestart() {
+  let u = (lastStatus && lastStatus.updates) || {};
+  try {
+    if (!u.install || u.install.state !== 'ready') {
+      await postJson('/v1/updates/prepare', {});
+      for (let i = 0; i < 600; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const s = await loadStatus();
+        u = (s && s.updates) || {};
+        if (u.install && u.install.state !== 'preparing') break;
+      }
+      if (!u.install || u.install.state !== 'ready') {
+        notice('The update could not be prepared.', 'error',
+               ((u.install && u.install.error) || 'It was not verified.') + ' Nothing was changed.');
+        return;
+      }
+    }
+    updateBusy = 'installing';
+    renderUpdateControl(lastStatus);
+    renderUpdatesCard(lastStatus || {});
+    const result = await nativeBridge().install_update();
+    if (result && result.installing) return;            // the window is closing
+    updateBusy = '';
+    if (result && result.error) notice('The update was not installed.', 'error', result.error);
+  } catch (err) {
+    updateBusy = '';
+    notice('The update was not installed.', 'error', err.message);
   }
   await loadStatus().catch(() => {});
 }
@@ -5190,19 +5502,21 @@ async function loadStatus() {
   renderSetupAction(s);
   openSetupOnce(s);
   renderSkill();
+  afterStatus(s);
   if ($('kv-unavailable') && !$('c-cap-list')) {
     // Chat's Details rail carries the same "not observed" list.
     kv($('kv-unavailable'), Object.entries(s.unavailable).map(([k, v]) => [k, null, v]));
   }
   if (!$('c-computer-facts')) return s;
   const { jobs } = await api('/v1/jobs');
-  // Preflight is a live observation and can fail on its own; a worker that
-  // cannot be read must not blank the rest of the Control Center.
+  // The deferred mesh must not contact saved peers during standalone work.
   let worker = null;
-  try {
-    worker = await api('/v1/worker');
-  } catch (error) {
-    worker = null;
+  if (s.features?.mesh) {
+    try {
+      worker = await api('/v1/worker');
+    } catch (error) {
+      worker = null;
+    }
   }
   renderOverview(s);
   renderComputerCard(s);
@@ -5504,6 +5818,7 @@ function wirePanels() {
 window.addEventListener('DOMContentLoaded', () => {
   wirePanels();
   wireTheme();
+  wireUpdateControl();
   syncScrollGutter();
   window.addEventListener('resize', syncScrollGutter);
   const thread = $('thread');

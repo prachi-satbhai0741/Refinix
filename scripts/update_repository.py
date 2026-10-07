@@ -12,9 +12,12 @@ holds the channel's keys:
     python scripts/update_repository.py publish --keys ... --repo ... \\
         --channel internal --notes "What changed" out/Refinix-0.1.1-internal.1-*.zip ...
 
-    # optional: one file for offline import (USB or an internal host)
+    # optional: one file for offline import (USB, an internal host, or the
+    # internal channel's update folder). --output may be a folder; the file is
+    # then named Refinix-<version>-<lane>-update.zip, the name Refinix's
+    # internal update folder looks for.
     python scripts/update_repository.py bundle --repo ... --lane macos-arm64 \\
-        --channel internal --output Refinix-0.1.1-update.zip
+        --channel internal --output ~/"Refinix Updates"
 
 `init` prints the trust root's SHA-256; pass the root file to
 `desktop/build.py --trust-root` so packages accept only this channel's
@@ -162,7 +165,10 @@ def publish(keys_dir: Path, repo: Path, *, channel: str, packages: list[dict],
                   "min_os": package.get("min_os"),
                   "schema_version": package.get("schema_version"),
                   "engine_release": package.get("engine_release"), "notes": notes,
-                  "prerequisites": package.get("prerequisites", [])}
+                  "prerequisites": package.get("prerequisites", []),
+                  # Data-format moves this release's app can perform and the
+                  # team has qualified, as [from, to] pairs; none by default.
+                  "qualified_migrations": package.get("qualified_migrations", [])}
         latest_name = f"{channel}/{package['lane']}/latest.json"
         latest_path = repo / "targets" / latest_name
         latest_path.write_text(json.dumps(latest, indent=2, sort_keys=True) + "\n",
@@ -198,15 +204,26 @@ def publish(keys_dir: Path, repo: Path, *, channel: str, packages: list[dict],
             "timestamp": timestamp.signed.version}
 
 
+def bundle_name(version: str, lane: str) -> str:
+    return f"Refinix-{version}-{lane}-update.zip"
+
+
 def bundle(repo: Path, output: Path, *, channel: str, lane: str) -> Path:
     """One zip with the metadata and the lane's offered package, for offline import."""
     latest_name = f"{channel}/{lane}/latest.json"
     latest = json.loads((repo / "targets" / latest_name).read_text(encoding="utf-8"))
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
+    output = Path(output)
+    if output.is_dir():
+        output = output / bundle_name(latest["version"], lane)
+    partial = output.with_name(f".{output.name}.partial")
+    with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_STORED) as archive:
         for path in sorted((repo / "metadata").glob("*.json")):
             archive.write(path, f"metadata/{path.name}")
         for name in (latest_name, latest["artifact"]):
             archive.write(repo / "targets" / name, f"targets/{name}")
+    # Complete before it appears under its final name, so a folder check never
+    # reads half a bundle.
+    os.replace(partial, output)
     return output
 
 
@@ -220,8 +237,10 @@ def _package_from_record(path: Path) -> dict:
     minimum = {"windows-x64": "10.0.22000",
                "linux-x64": "24.04"}.get(manifest["lane"], manifest.get("minimum_os"))
     return {"path": str(path), "lane": manifest["lane"], "version": identity["version"],
+            "channel": identity.get("channel"),
             "build_set": identity["build_set"], "min_os": minimum,
             "schema_version": identity.get("schema_version"),
+            "qualified_migrations": identity.get("qualified_migrations") or [],
             "engine_release": (identity.get("engines") or [{}])[0].get("release")}
 
 
@@ -248,6 +267,11 @@ def main(argv=None) -> int:
     elif args.command == "publish":
         _outside_repository(args.keys)
         packages = [_package_from_record(path) for path in args.packages]
+        for path, package in zip(args.packages, packages):
+            # Internal test packages never reach the Beta feed, and the reverse.
+            if package["channel"] != args.channel:
+                raise SystemExit(f"{path.name} was built for the {package['channel']} "
+                                 f"channel, not {args.channel}")
         print(json.dumps(publish(args.keys, args.repo, channel=args.channel,
                                  packages=packages, notes=args.notes), indent=2))
     else:

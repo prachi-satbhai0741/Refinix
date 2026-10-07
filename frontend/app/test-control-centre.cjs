@@ -254,6 +254,30 @@ test('the page never starts a self-test on its own', () => {
   assert.doesNotMatch(source, /setInterval\([^)]*runSelftest/);
 });
 
+test('repeated Settings refreshes only request a worker when mesh is enabled', async () => {
+  for (const features of [{ mesh: false }, undefined, { mesh: true }]) {
+    const p = page();
+    p.run(`globalThis.networkCalls = [];
+      fetch = async (path) => {
+        networkCalls.push(path);
+        return { ok: true, json: async () => path === '/v1/status'
+          ? ${JSON.stringify({ features })} : path === '/v1/jobs' ? { jobs: [] } : {} };
+      };`);
+    for (const name of ['renderReadyLine', 'renderSetupAction', 'openSetupOnce',
+      'renderSkill', 'afterStatus', 'renderOverview', 'renderComputerCard',
+      'renderEngineCard', 'renderModelsCard', 'renderModelChoiceNote',
+      'renderOllamaLine', 'renderUpdatesCard', 'renderOthersCard',
+      'renderWorkCard', 'renderCapabilityCard', 'renderAdvanced']) {
+      p.run(`${name} = () => {};`);
+    }
+    for (let i = 0; i < 3; i += 1) await p.run('loadStatus()');
+    const calls = JSON.parse(p.run('JSON.stringify(networkCalls)'));
+    assert.equal(calls.filter((path) => path === '/v1/worker').length,
+      features?.mesh ? 3 : 0);
+    assert.equal(calls.filter((path) => path === '/v1/status').length, 3);
+  }
+});
+
 test('the result names where each attempt ran and why', () => {
   const p = page();
   p.run(`renderSelftest(${JSON.stringify({

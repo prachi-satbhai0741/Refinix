@@ -78,7 +78,9 @@ PLIST = {
     "CFBundleDisplayName": "Refinix",
     "CFBundleIdentifier": BUNDLE_ID,
     "CFBundleShortVersionString": VERSION,
-    "CFBundleVersion": VERSION,
+    # Apple's build number is one to three whole numbers; desktop/build.py
+    # passes the label's increasing <n>. The full label lives in refinix-build.json.
+    "CFBundleVersion": os.environ.get("REFINIX_BUNDLE_BUILD", VERSION),
     "CFBundleExecutable": "Refinix",
     "NSHumanReadableCopyright": "Refinix. Runs entirely on this computer.",
     "LSApplicationCategoryType": "public.app-category.productivity",
@@ -129,6 +131,11 @@ OPTIONS = {
                  "backend.coordinator.engine", "backend.coordinator.local_engine",
                  "backend.coordinator.runtime_llamacpp", "backend.coordinator.readiness",
                  "backend.coordinator.build_info", "backend.coordinator.ownership",
+                 # In-app updates: offline evidence checks, package expansion,
+                 # data recovery and the install helper the app re-runs itself as.
+                 "backend.coordinator.updates", "backend.coordinator.app_archive",
+                 "backend.coordinator.recovery", "desktop.update_apply",
+                 "tuf.api.metadata", "plistlib",
                  "psutil", "tuf.ngclient", "securesystemslib",
                  "securesystemslib._vendor.ed25519.ed25519", "urllib3"],
     "excludes": ["tkinter", "test", "unittest", "pydoc_data", "py2app",

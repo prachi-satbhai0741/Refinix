@@ -392,5 +392,110 @@ class TestWebView2InTheWindowsSetup(unittest.TestCase):
             self.assertFalse((cache / f"{pin['sha256']}-{Path(pin['url']).name}").exists())
 
 
+
+class TestChannelsAndLabels(unittest.TestCase):
+    """W1: channel, label, build number and install capability are the package's identity."""
+
+    def feed(self, folder, data):
+        path = Path(folder) / "feed.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def root(self, folder):
+        path = Path(folder) / "root.json"
+        path.write_text(json.dumps({"signed": {"_type": "root"}}), encoding="utf-8")
+        return path
+
+    def test_a_local_folder_is_for_the_internal_channel_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            local = self.feed(folder, {"local_folder": "~/Refinix Updates"})
+            found = build.update_files(self.root(folder), local, "internal")
+            self.assertEqual(found["update_feed"]["name"], build.UPDATE_FEED_NAME)
+            with self.assertRaises(build.BuildError):
+                build.update_files(self.root(folder), local, "beta")
+
+    def test_beta_needs_its_own_root_and_an_https_feed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            https = self.feed(folder, {"metadata_url": "https://u.example/m/",
+                                       "targets_url": "https://u.example/t/"})
+            build.update_files(self.root(folder), https, "beta")
+            with self.assertRaises(build.BuildError):
+                build.update_files(None, https, "beta")
+            with self.assertRaises(build.BuildError):
+                build.update_files(self.root(folder), None, "beta")
+            plain = self.feed(folder, {"metadata_url": "http://u.example/m/",
+                                       "targets_url": "http://u.example/t/"})
+            with self.assertRaises(build.BuildError):
+                build.update_files(self.root(folder), plain, "internal")
+
+    def test_labels_follow_the_application_version_and_numbers_only_increase(self):
+        base = build.app_version()
+        self.assertEqual(build.label_number(f"{base}-internal.7", "internal"), 7)
+        self.assertIsNone(build.label_number(base, "beta"))
+        for bad, channel in ((base, "internal"), (f"{base}-beta.1", "internal"),
+                             ("9.9.9-internal.1", "internal"), (f"{base}-internal.x",
+                                                                "internal")):
+            with self.subTest(bad), self.assertRaises(build.BuildError):
+                build.label_number(bad, channel)
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder)
+            (out / "set-a").mkdir()
+            (out / "set-a" / "build-record-macos-arm64.json").write_text(json.dumps(
+                {"lane": "macos-arm64", "version": f"{base}-internal.3"}))
+            self.assertEqual(build.bundle_build(f"{base}-internal.4", "internal", None,
+                                                "macos-arm64", [], out), 4)
+            with self.assertRaises(build.BuildError):
+                build.bundle_build(f"{base}-internal.3", "internal", None,
+                                   "macos-arm64", [], out)
+            # Another lane's numbers do not count, and a release names its number.
+            self.assertEqual(build.bundle_build(f"{base}-internal.1", "internal", None,
+                                                "linux-x64", [], out), 1)
+            with self.assertRaises(build.BuildError):
+                build.bundle_build(base, "beta", None, "macos-arm64", [], out)
+            self.assertEqual(build.bundle_build(base, "beta", 9, "macos-arm64", [], out), 9)
+
+    def test_install_capability_is_never_assumed(self):
+        cap = build.install_capability
+        self.assertEqual(cap("macos-arm64", "internal", None, None)["capability"],
+                         "internal-test")
+        self.assertEqual(cap("windows-x64", "internal", None, None)["capability"],
+                         "unavailable")
+        self.assertEqual(cap("macos-arm64", "beta", None, None)["capability"],
+                         "unavailable")
+        with self.assertRaises(build.BuildError):
+            cap("linux-x64", "internal", "internal-test", None)
+        with self.assertRaises(build.BuildError):
+            cap("macos-arm64", "beta", "qualified", None)
+        with tempfile.TemporaryDirectory() as folder:
+            evidence = Path(folder) / "accepted.json"
+            evidence.write_text("{}", encoding="utf-8")
+            record = cap("macos-arm64", "beta", "qualified", evidence)
+            self.assertRegex(record["evidence_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_channel_label_and_capability_are_bound_into_the_input_digest(self):
+        toolchain = {"python": "3.12"}
+        one = build.input_identity("linux-x64", toolchain=toolchain, channel="internal",
+                                   version="0.1.0-internal.1", capability=None)
+        for change in ({"channel": "beta"}, {"version": "0.1.0-internal.2"},
+                       {"capability": {"capability": "internal-test",
+                                       "evidence_sha256": None}}):
+            values = {"channel": "internal", "version": "0.1.0-internal.1",
+                      "capability": None, **change}
+            other = build.input_identity("linux-x64", toolchain=toolchain, **values)
+            self.assertNotEqual(one["input_digest"], other["input_digest"], change)
+        args = type("A", (), {"version": "0.1.0-internal.1", "build_set": "bs-1",
+                              "source_commit": None, "bundle_build": 1})()
+        beta = build.input_identity("linux-x64", toolchain=toolchain, channel="beta",
+                                    capability={"capability": "unavailable",
+                                                "evidence_sha256": None})
+        identity = build.build_identity(args, "linux-x64", beta, [])
+        self.assertEqual((identity["channel"], identity["install_capability"],
+                          identity["bundle_build"]), ("beta", "unavailable", 1))
+
+    def test_the_mac_archive_carries_no_finder_metadata(self):
+        text = Path(build.__file__).read_text(encoding="utf-8")
+        self.assertIn('"--norsrc", "--noextattr"', text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

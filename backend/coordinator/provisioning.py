@@ -146,6 +146,9 @@ class Provisioner:
         self._lock = threading.Lock()
         self._operations: dict[str, Operation] = {}
         self._thread: threading.Thread | None = None
+        # Set by the coordinator: a running download or import is a writer an
+        # update install waits for (server.Activity).
+        self.writers = None
         # Downloads and imports the person chose while another was running,
         # started one at a time in the order they were chosen.
         self._queue: list[tuple[Operation, object]] = []
@@ -290,6 +293,12 @@ class Provisioner:
         operation.cancel.set()
         return {"model_id": model_id, "cancelled": True}
 
+    def active(self) -> list[str]:
+        """Models with a download or import running or waiting to start."""
+        with self._lock:
+            return sorted(model_id for model_id, operation in self._operations.items()
+                          if operation.state in ("running", "queued"))
+
     def wait(self, timeout: float | None = None) -> None:
         """Until every running and queued operation has finished."""
         deadline = None if timeout is None else time.monotonic() + timeout
@@ -395,7 +404,11 @@ class Provisioner:
 
         def run():
             try:
-                work()
+                if self.writers is not None:
+                    with self.writers.hold("a model download or import"):
+                        work()
+                else:
+                    work()
                 if operation.cancel.is_set():
                     operation.state = "cancelled"
                 else:

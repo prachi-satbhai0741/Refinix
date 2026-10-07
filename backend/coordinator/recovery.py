@@ -7,16 +7,27 @@ proves no other Refinix is writing; the engine never writes the database.
 
     set_aside   before a newer version first opens the workspace: copy the
                 database and its write-ahead log (never the -shm, which SQLite
-                rebuilds) into recovery/set-aside/<version>/, each file
-                journalled with its size and SHA-256 and flushed to disk.
+                rebuilds) into recovery/set-aside/<version>[-<update id>]/, each
+                file journalled with its size and SHA-256 and flushed to disk.
+                The journal names the update attempt (`update_id`), both
+                versions and the data root, so a later attempt can tell its own
+                record from an earlier update's. A finished earlier journal is
+                kept beside that update's set-aside copy before it is replaced.
     commit      the newer version started and checked itself: the update is
                 finished; the set-aside copy is kept until the next update.
+    discard     the attempt stopped before the newer version ran: when the
+                workspace still matches the set-aside copy byte for byte, the
+                attempt is closed with nothing restored.
     restore     going back: move the attempted version's database files into
                 recovery/attempted/<version>-<time>/ (nothing is deleted), then
                 put each verified set-aside file back through a temporary file
                 in the same folder and an atomic replace.
     resume      after a crash: finish an interrupted set-aside or restore from
                 what is on disk, checked by location and hash.
+
+Which of commit, discard or restore follows an attempt is decided by the
+update helper (`desktop/update_apply.py`) while it holds the workspace lock,
+never by an ordinary launch: a launch only finishes an interrupted copy.
 
 Every step is written to recovery/update-journal.json before and after it
 happens. `db.admit` refuses to open the workspace while the journal is in a
@@ -123,11 +134,19 @@ class Recovery:
     def _block(self, record: dict, why: str) -> dict:
         return self._write({**record, "state": "recovery_blocked", "blocked": why})
 
+    def block(self, why: str) -> dict:
+        """Stop this journal where it is, saying why; nothing else changes."""
+        record = self.read()
+        if not record:
+            raise RecoveryError("nothing_to_block", "There is no update journal.")
+        return self._block(record, why)
+
     def _canonical(self) -> list[Path]:
         return [self.database] + [Path(f"{self.database}{s}") for s in SIDECARS]
 
     # -- set aside ---------------------------------------------------------
-    def set_aside(self, *, from_version: str, to_version: str) -> dict:
+    def set_aside(self, *, from_version: str, to_version: str,
+                  update_id: str | None = None, data_root: str | None = None) -> dict:
         """Copy the current database and WAL before a newer version opens them."""
         current = self.read()
         if current and current.get("state") not in FINAL:
@@ -136,7 +155,8 @@ class Recovery:
         if journal.exists() and journal.stat().st_size:
             raise RecoveryError("hot_journal", "The database has an unfinished write "
                                                "and cannot be copied safely.")
-        folder = self.root / "set-aside" / from_version
+        name = f"{from_version}-{update_id}" if update_id else from_version
+        folder = self.root / "set-aside" / name
         files = []
         for source in (self.database, Path(f"{self.database}-wal")):
             if source.exists():
@@ -144,10 +164,38 @@ class Recovery:
                               "sha256": _sha256(source), "done": False})
         if not files:
             raise RecoveryError("no_database", "There is no workspace database to keep.")
+        if current:
+            self._keep_previous(current)
         record = self._write({"state": "setting_aside", "from_version": from_version,
                               "to_version": to_version, "set_aside": str(folder),
+                              "update_id": update_id, "data_root": data_root,
                               "files": files, "started_at": _stamp()})
         return self._finish_set_aside(record)
+
+    def _keep_previous(self, record: dict) -> None:
+        """Keep a finished journal beside its own set-aside copy before replacing it."""
+        folder = Path(record["set_aside"]) if record.get("set_aside") else None
+        if folder is None or not folder.is_dir():
+            folder = self.root / "history"
+            folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+        stamp = str(record.get("update_id") or record.get("updated_at") or _stamp())
+        target = folder / f"update-journal-{stamp.replace(':', '')}.json"
+        if target.exists():
+            return
+        _copy_durably(self.journal_path, target)
+
+    def matches(self, *, update_id: str, from_version: str, to_version: str,
+                data_root: str | None = None) -> dict | None:
+        """The journal, when it belongs to exactly this update attempt."""
+        record = self.read()
+        if not record or not update_id or record.get("update_id") != update_id:
+            return None
+        if (record.get("from_version"), record.get("to_version")) != (from_version,
+                                                                      to_version):
+            return None
+        if data_root is not None and record.get("data_root") not in (None, data_root):
+            return None
+        return record
 
     def _finish_set_aside(self, record: dict) -> dict:
         folder = Path(record["set_aside"])
@@ -171,11 +219,43 @@ class Recovery:
         return self._write({**record, "state": "set_aside"})
 
     # -- after the newer version ran ---------------------------------------
-    def commit(self) -> dict:
+    def commit(self, update_id: str | None = None) -> dict:
         record = self.read()
         if not record or record.get("state") not in ("set_aside", "verifying"):
             raise RecoveryError("nothing_to_commit", "There is no update to finish.")
+        if update_id is not None and record.get("update_id") != update_id:
+            raise RecoveryError("not_this_update", "The kept data belongs to another "
+                                                   "update, so nothing was finished.")
         return self._write({**record, "state": "committed", "committed_at": _stamp()})
+
+    def unchanged(self, record: dict | None = None) -> bool:
+        """Whether the workspace is still exactly what was set aside."""
+        record = record or self.read() or {}
+        kept = {item["name"]: item["sha256"] for item in record.get("files") or []}
+        for path in self._canonical():
+            if path.name.endswith("-shm"):
+                continue                       # rebuilt by SQLite, never kept
+            present = path.exists() and (path.stat().st_size > 0
+                                         or path.name in kept)
+            if path.name not in kept:
+                if present:
+                    return False
+            elif not path.exists() or _sha256(path) != kept[path.name]:
+                return False
+        return True
+
+    def discard(self, update_id: str | None = None) -> dict:
+        """Close an attempt the newer version never ran, when nothing changed."""
+        record = self.read()
+        if not record or record.get("state") not in ("set_aside", "verifying"):
+            raise RecoveryError("nothing_to_discard", "There is no kept copy to release.")
+        if update_id is not None and record.get("update_id") != update_id:
+            raise RecoveryError("not_this_update", "The kept data belongs to another "
+                                                   "update, so it was left alone.")
+        if not self.unchanged(record):
+            raise RecoveryError("changed", "The workspace changed after it was set "
+                                           "aside, so the attempt was not discarded.")
+        return self._write({**record, "state": "discarded", "discarded_at": _stamp()})
 
     # -- going back --------------------------------------------------------
     def restore(self) -> dict:
@@ -264,10 +344,11 @@ class Recovery:
 def at_startup(owner, database: Path, running_version: str) -> dict | None:
     """What a launch does with an update journal before opening the workspace.
 
-    An interrupted set-aside or restore is finished. A launch of the previous
-    version during an unfinished update goes back to the previous data first.
-    The version being verified opens normally (and commits after it starts);
-    any other state is left for the admission check to refuse and explain.
+    Only an interrupted copy is finished here: a set-aside or a restore that a
+    crash stopped is completed from what is on disk. A launch never starts a
+    restore and never commits; the update helper decides those while it holds
+    the workspace lock. Any other unfinished state is left for the admission
+    check to refuse and explain.
     """
     recovery = Recovery(owner, database)
     record = recovery.read()
@@ -275,17 +356,4 @@ def at_startup(owner, database: Path, running_version: str) -> dict | None:
         return record
     if record["state"] in ("setting_aside", "restoring"):
         return recovery.resume()
-    if record["state"] in ("set_aside", "verifying") \
-            and running_version == record.get("from_version"):
-        return recovery.restore()
-    return record
-
-
-def after_startup(owner, database: Path, running_version: str) -> dict | None:
-    """The version being verified started and opened its data: the update is done."""
-    recovery = Recovery(owner, database)
-    record = recovery.read()
-    if record and record.get("state") in ("set_aside", "verifying") \
-            and running_version == record.get("to_version"):
-        return recovery.commit()
     return record

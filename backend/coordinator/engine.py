@@ -592,91 +592,116 @@ class ManagedEngine:
             pass
 
     def _blocked(self, record: dict, why: str) -> EngineError:
-        self.last_error = EngineError(
-            "engine_stop_blocked",
-            f"An engine an earlier Refinix started (process {record.get('pid')}) "
-            f"may still be running and {why}, so a new engine was not started. "
-            "Restart the computer if this does not clear after quitting Refinix.")
+        self.last_error = _stop_blocked(record, why)
         return self.last_error
 
     def reap_orphan(self) -> bool:
         """Stop an engine a crashed Refinix left behind, only if provably ours.
 
-        The record names a PID, its start time and the executable. True when
-        that process was ours and its exit is confirmed; False when there was
-        nothing to stop, because no record exists or the PID now belongs to a
-        process started at another time (a live PID names one process, so
-        ours has exited). A recycled PID is never signalled.
-
-        Raises `EngineError("engine_stop_blocked")` and keeps the record when
-        the process cannot be identified or did not exit: an uncertain
-        survivor is never treated as gone.
+        See `reap_recorded_process`, which the update helper also uses for the
+        engine a supervised Refinix started.
         """
         try:
-            text = self.record_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return False
-        try:
-            record = json.loads(text)
-            pid = int(record["pid"])
-            recorded_start = record.get("create_time")
-            recorded_start = None if recorded_start is None else float(recorded_start)
-            executable = Path(record["executable"])
-        except (ValueError, TypeError, KeyError, AttributeError):
-            # Written atomically, so this is not a crash mid-write. It names no
-            # process that could be checked or signalled; keep it for anyone
-            # investigating and continue.
-            aside = self.record_path.with_name(
-                f"engine-process.unreadable-{int(time.time())}.json")
-            os.replace(self.record_path, aside)
-            return False
-        try:
-            import psutil
-        except ImportError:
-            raise self._blocked(record, "this installation cannot inspect processes")
-        try:
-            process = psutil.Process(pid)
-            started = process.create_time()
-        except psutil.NoSuchProcess:
-            self._forget_record()
-            return False
-        except Exception:                                  # noqa: BLE001
-            raise self._blocked(record, "this computer did not let Refinix inspect it")
-        if recorded_start is not None and abs(started - recorded_start) >= 0.01:
-            self._forget_record()
-            return False
-        try:
-            same_program = Path(process.exe()) == executable
-        except psutil.NoSuchProcess:
-            self._forget_record()
-            return False
-        except Exception:                                  # noqa: BLE001
-            raise self._blocked(record, "this computer did not let Refinix inspect it")
-        if recorded_start is None:
-            # Without a start time the PID could have been reused by another
-            # copy of the same engine, for example another workspace's.
-            if not same_program:
-                self._forget_record()
-                return False
-            raise self._blocked(record, "it cannot be told apart from another program")
+            return reap_recorded_process(self.record_path)
+        except EngineError as exc:
+            self.last_error = exc
+            raise
+
+
+def _stop_blocked(record: dict, why: str) -> EngineError:
+    return EngineError(
+        "engine_stop_blocked",
+        f"An engine an earlier Refinix started (process {record.get('pid')}) "
+        f"may still be running and {why}, so a new engine was not started. "
+        "Restart the computer if this does not clear after quitting Refinix.")
+
+
+def _forget(record_path: Path) -> None:
+    try:
+        Path(record_path).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def reap_recorded_process(record_path: Path) -> bool:
+    """Stop an engine a crashed Refinix left behind, only if provably ours.
+
+    The record names a PID, its start time and the executable. True when
+    that process was ours and its exit is confirmed; False when there was
+    nothing to stop, because no record exists or the PID now belongs to a
+    process started at another time (a live PID names one process, so
+    ours has exited). A recycled PID is never signalled.
+
+    Raises `EngineError("engine_stop_blocked")` and keeps the record when
+    the process cannot be identified or did not exit: an uncertain
+    survivor is never treated as gone.
+    """
+    record_path = Path(record_path)
+    try:
+        text = record_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return False
+    try:
+        record = json.loads(text)
+        pid = int(record["pid"])
+        recorded_start = record.get("create_time")
+        recorded_start = None if recorded_start is None else float(recorded_start)
+        executable = Path(record["executable"])
+    except (ValueError, TypeError, KeyError, AttributeError):
+        # Written atomically, so this is not a crash mid-write. It names no
+        # process that could be checked or signalled; keep it for anyone
+        # investigating and continue.
+        aside = record_path.with_name(
+            f"engine-process.unreadable-{int(time.time())}.json")
+        os.replace(record_path, aside)
+        return False
+    try:
+        import psutil
+    except ImportError:
+        raise _stop_blocked(record, "this installation cannot inspect processes")
+    try:
+        process = psutil.Process(pid)
+        started = process.create_time()
+    except psutil.NoSuchProcess:
+        _forget(record_path)
+        return False
+    except Exception:                                  # noqa: BLE001
+        raise _stop_blocked(record, "this computer did not let Refinix inspect it")
+    if recorded_start is not None and abs(started - recorded_start) >= 0.01:
+        _forget(record_path)
+        return False
+    try:
+        same_program = Path(process.exe()) == executable
+    except psutil.NoSuchProcess:
+        _forget(record_path)
+        return False
+    except Exception:                                  # noqa: BLE001
+        raise _stop_blocked(record, "this computer did not let Refinix inspect it")
+    if recorded_start is None:
+        # Without a start time the PID could have been reused by another
+        # copy of the same engine, for example another workspace's.
         if not same_program:
-            raise self._blocked(record, "it is now running a different program")
-        for request in (process.terminate, process.kill):
-            try:
-                request()
-            except psutil.NoSuchProcess:
-                break
-            except Exception:                              # noqa: BLE001
-                raise self._blocked(record, "Refinix was not allowed to stop it")
-            try:
-                process.wait(timeout=STOP_SECONDS)
-                break
-            except psutil.TimeoutExpired:
-                continue
-        else:
-            raise self._blocked(record, "it did not stop when asked")
-        self._forget_record()
-        return True
+            _forget(record_path)
+            return False
+        raise _stop_blocked(record, "it cannot be told apart from another program")
+    if not same_program:
+        raise _stop_blocked(record, "it is now running a different program")
+    for request in (process.terminate, process.kill):
+        try:
+            request()
+        except psutil.NoSuchProcess:
+            break
+        except Exception:                              # noqa: BLE001
+            raise _stop_blocked(record, "Refinix was not allowed to stop it")
+        try:
+            process.wait(timeout=STOP_SECONDS)
+            break
+        except psutil.TimeoutExpired:
+            continue
+    else:
+        raise _stop_blocked(record, "it did not stop when asked")
+    _forget(record_path)
+    return True
 
 
 def list_devices(selection: Selection, *, run=subprocess.run, timeout: float = 20.0) -> list[dict] | None:

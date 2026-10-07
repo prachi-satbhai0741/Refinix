@@ -68,8 +68,21 @@ def schema_version() -> int:
     return int(match.group(1))
 
 
-def update_files(trust_root: Path | None, feed: Path | None) -> dict:
-    """Validate the optional update trust root and feed; return their identities."""
+CHANNELS = ("internal", "beta")
+CAPABILITIES = ("qualified", "internal-test", "unavailable")
+# Lanes whose install-and-restart helper exists in this application
+# (desktop/update_apply.py). Others ship with install capability "unavailable".
+HELPER_LANES = ("macos-arm64",)
+
+
+def update_files(trust_root: Path | None, feed: Path | None,
+                 channel: str = "internal") -> dict:
+    """Validate the optional update trust root and feed; return their identities.
+
+    A feed names HTTPS `metadata_url` and `targets_url`, or — on the internal
+    channel only — a `local_folder` the app reads bundles from. A Beta build
+    accepts only an HTTPS feed.
+    """
     found = {}
     for label, path, name in (("trust_root", trust_root, UPDATE_ROOT_NAME),
                               ("update_feed", feed, UPDATE_FEED_NAME)):
@@ -83,13 +96,108 @@ def update_files(trust_root: Path | None, feed: Path | None) -> dict:
             raise BuildError(f"{label}: {path} is not readable JSON: {exc}") from exc
         if label == "trust_root" and (data.get("signed") or {}).get("_type") != "root":
             raise BuildError(f"{path} is not TUF root metadata")
-        if label == "update_feed" and not all(
-                str(data.get(k, "")).startswith("https://")
-                for k in ("metadata_url", "targets_url")):
-            raise BuildError(f"{path} must name HTTPS metadata_url and targets_url")
+        if label == "update_feed":
+            https = any(k in data for k in ("metadata_url", "targets_url"))
+            if https and not all(str(data.get(k, "")).startswith("https://")
+                                 for k in ("metadata_url", "targets_url")):
+                raise BuildError(f"{path} must name HTTPS metadata_url and targets_url")
+            if "local_folder" in data and channel != "internal":
+                raise BuildError(f"{path}: a local update folder is for the internal "
+                                 "channel only")
+            if "local_folder" in data and not str(data["local_folder"]).strip():
+                raise BuildError(f"{path}: local_folder is empty")
+            if not https and "local_folder" not in data:
+                raise BuildError(f"{path} names no update source")
+            if channel == "beta" and not https:
+                raise BuildError(f"{path}: a Beta build needs an HTTPS feed")
         found[label] = {"path": str(path.resolve()), "name": name,
                         "sha256": sha256_file(path)}
+    if channel == "beta" and not (found["trust_root"] and found["update_feed"]):
+        raise BuildError("a Beta build needs its own trust root and HTTPS feed")
     return found
+
+
+def app_version() -> str:
+    """The one application version (backend/coordinator/build_info.py)."""
+    return packaging_plan.VERSION
+
+
+def label_number(version: str, channel: str) -> int | None:
+    """The `<n>` of `<APP_VERSION>-<channel>.<n>`; None for a plain release label."""
+    base = re.escape(app_version())
+    tag = {"internal": "internal", "beta": "beta"}[channel]
+    match = re.fullmatch(rf"{base}(?:-{tag}\.(\d+))?", version)
+    if not match:
+        raise BuildError(f"version {version!r} must be {app_version()}-{tag}.<n>"
+                         + (f" or {app_version()}" if channel == "beta" else "")
+                         + " (the application version is set in build_info.py)")
+    if channel == "internal" and match.group(1) is None:
+        raise BuildError(f"an internal build is labelled {app_version()}-internal.<n>")
+    return int(match.group(1)) if match.group(1) else None
+
+
+def recorded_numbers(lane: str, records: list[dict], out_root: Path) -> list[int]:
+    """Every build number already used for this lane, from records and local outputs."""
+    numbers = []
+    seen = list(records)
+    for path in Path(out_root).glob("*/build-record-*.json"):
+        try:
+            seen.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    for record in seen:
+        if not isinstance(record, dict) or record.get("lane") != lane:
+            continue
+        number = record.get("bundle_build")
+        if isinstance(number, int):
+            numbers.append(number)
+            continue
+        match = re.search(r"-(?:internal|beta)\.(\d+)$", str(record.get("version", "")))
+        if match:
+            numbers.append(int(match.group(1)))
+    return numbers
+
+
+def bundle_build(version: str, channel: str, explicit: int | None, lane: str,
+                 records: list[dict], out_root: Path) -> int:
+    """The whole-number CFBundleVersion: the label's <n>, strictly increasing."""
+    number = label_number(version, channel)
+    if number is None:
+        if explicit is None:
+            raise BuildError("a release label needs --build-number")
+        number = explicit
+    elif explicit is not None and explicit != number:
+        raise BuildError("--build-number must equal the label's number")
+    used = recorded_numbers(lane, records, out_root)
+    if used and number <= max(used):
+        raise BuildError(f"build number {number} is not above {max(used)}, the "
+                         f"highest already recorded for {lane}; old bytes are never "
+                         "relabelled")
+    return number
+
+
+def install_capability(lane: str, channel: str, requested: str | None,
+                       evidence: Path | None) -> dict:
+    """Whether this package may offer Install and restart, and on what basis."""
+    if requested is None:
+        requested = ("internal-test" if channel == "internal" and lane in HELPER_LANES
+                     else "unavailable")
+    if requested not in CAPABILITIES:
+        raise BuildError(f"unknown install capability {requested!r}")
+    if requested != "unavailable" and lane not in HELPER_LANES:
+        raise BuildError(f"{lane} has no install helper yet, so its capability is "
+                         "unavailable")
+    if requested == "internal-test" and channel != "internal":
+        raise BuildError("internal-test install capability is for internal builds")
+    record = {"capability": requested, "evidence_sha256": None}
+    if requested == "qualified":
+        # Configuration is not qualification: a qualified capability names the
+        # accepted evidence it rests on.
+        if evidence is None or not Path(evidence).is_file():
+            raise BuildError("a qualified install capability needs "
+                             "--qualification-evidence naming the accepted record")
+        record["evidence_sha256"] = sha256_file(Path(evidence))
+    return record
 TOOLS = DESKTOP / "packaging-tools.json"
 CHUNK = 4 * 1024 * 1024
 
@@ -235,7 +343,9 @@ def toolchain_identity(lane: str) -> dict:
 
 
 def input_identity(lane: str, *, toolchain: dict | None = None,
-                   trust_root: str | None = None, update_feed: str | None = None) -> dict:
+                   trust_root: str | None = None, update_feed: str | None = None,
+                   channel: str = "internal", version: str | None = None,
+                   capability: dict | None = None) -> dict:
     snapshot, listing = packaging_plan.snapshot_digest(lane)
     pins = json.loads((DESKTOP / "engine" / "engine-pins.json").read_text(encoding="utf-8"))
     entry = packaging_plan.LANES[lane]
@@ -253,6 +363,11 @@ def input_identity(lane: str, *, toolchain: dict | None = None,
         # feed is, are part of what it is.
         "trust_root": trust_root,
         "update_feed": update_feed,
+        # What the package says it is and may do are part of its identity too:
+        # a different label or capability is a different build.
+        "channel": channel,
+        "version": version,
+        "install_capability": capability,
         "schema_version": schema_version(),
     }
     return {"input_digest": canonical_digest(components), "components": components,
@@ -476,7 +591,8 @@ def verify_update_files(resources: Path) -> None:
 def build_macos(args, work: Path, identity_file: Path, engines: list[dict]) -> list[Path]:
     floor = expected_macos_floor(engines)
     env = dict(os.environ, REFINIX_BUILD_IDENTITY=str(identity_file),
-               REFINIX_MIN_MACOS=".".join(map(str, floor)))
+               REFINIX_MIN_MACOS=".".join(map(str, floor)),
+               REFINIX_BUNDLE_BUILD=str(args.bundle_build))
     dist = work / "dist"
     _check([sys.executable, str(DESKTOP / "setup_py2app.py"), "py2app",
             "--bdist-base", str(work / "py2app"), "--dist-dir", str(dist)],
@@ -495,7 +611,10 @@ def build_macos(args, work: Path, identity_file: Path, engines: list[dict]) -> l
     _check(["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)])
     _check(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)])
     artifact = Path(args.out) / f"Refinix-{args.version}-macos-arm64.zip"
-    _check(["/usr/bin/ditto", "-c", "-k", "--keepParent", str(app), str(artifact)])
+    # No resource forks or extended attributes: the archive is the app's files
+    # and links only, which is what the in-app installer expects.
+    _check(["/usr/bin/ditto", "-c", "-k", "--norsrc", "--noextattr", "--keepParent",
+            str(app), str(artifact)])
     args.min_os = ".".join(map(str, floor))
     return [artifact]
 
@@ -719,8 +838,9 @@ UNINSTALL = {
     "linux-x64": "Remove the package with App Center, or delete the AppImage file.",
 }
 UPDATE_LIMITATION = ("- Updates: Check for updates works only in a build given an update trust "
-                     "root and feed; installing an update from inside Refinix is not "
-                     "available yet (a verified package's folder is shown instead).")
+                     "root and an update source. Install and restart is offered only where "
+                     "this package's install capability allows it (internal macOS test "
+                     "builds installed in Applications); elsewhere Settings explains why.")
 LIMITATIONS = {
     "macos-arm64": "- Code validation in a sandbox is not available on macOS in this "
                    "build; Code changes keep the \"Not sandbox tested\" label.\n"
@@ -767,9 +887,17 @@ def finalize(artifact: Path, identity: dict, *, lane: str, min_os: str,
 
 
 def build_identity(args, lane: str, inputs: dict, engines: list[dict]) -> dict:
+    capability = inputs["components"].get("install_capability") or {
+        "capability": "unavailable", "evidence_sha256": None}
     return {
-        "identity_version": 1, "product": "Refinix", "version": args.version,
-        "build_set": args.build_set, "channel": "internal", "signing": "unsigned",
+        "identity_version": 2, "product": "Refinix", "version": args.version,
+        "build_set": args.build_set,
+        "channel": inputs["components"].get("channel") or "internal",
+        # No publisher signature or notarisation is applied by this driver.
+        "signing": "unsigned", "bundle_build": getattr(args, "bundle_build", None),
+        "install_capability": capability["capability"],
+        "install_qualification": capability["evidence_sha256"],
+        "qualified_migrations": [],
         "lane": lane, "input_digest": inputs["input_digest"],
         "snapshot_digest": inputs["components"]["snapshot_digest"],
         "shared_snapshot_digest": inputs["components"]["shared_snapshot_digest"],
@@ -802,7 +930,15 @@ def main(argv=None) -> int:
     parser.add_argument("--trust-root", type=Path, default=None,
                         help="TUF root metadata this package trusts for updates")
     parser.add_argument("--update-feed", type=Path, default=None,
-                        help="JSON naming the channel's HTTPS metadata_url and targets_url")
+                        help="JSON naming the channel's HTTPS metadata_url and targets_url, "
+                             "or (internal only) a local_folder")
+    parser.add_argument("--channel", choices=CHANNELS, default="internal")
+    parser.add_argument("--install-capability", choices=CAPABILITIES, default=None)
+    parser.add_argument("--qualification-evidence", type=Path, default=None,
+                        help="the accepted updater qualification record a 'qualified' "
+                             "capability rests on")
+    parser.add_argument("--build-number", type=int, default=None,
+                        help="whole-number CFBundleVersion for a release label")
     parser.add_argument("--rebuild-reason")
     parser.add_argument("--disposable-host", action="store_true",
                         help="this host is a throwaway runner: the Windows installer "
@@ -812,12 +948,17 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         lane = detect_lane()
-        update = update_files(args.trust_root, args.update_feed)
-        inputs = input_identity(
-            lane, trust_root=(update["trust_root"] or {}).get("sha256"),
-            update_feed=(update["update_feed"] or {}).get("sha256"))
+        update = update_files(args.trust_root, args.update_feed, args.channel)
         records = (json.loads(args.records.read_text(encoding="utf-8"))
                    if args.records.is_file() else [])
+        args.bundle_build = bundle_build(args.version, args.channel, args.build_number,
+                                         lane, records, REPO / "desktop" / "out")
+        capability = install_capability(lane, args.channel, args.install_capability,
+                                        args.qualification_evidence)
+        inputs = input_identity(
+            lane, trust_root=(update["trust_root"] or {}).get("sha256"),
+            update_feed=(update["update_feed"] or {}).get("sha256"),
+            channel=args.channel, version=args.version, capability=capability)
         reuse = find_reuse(records, lane=lane, input_digest=inputs["input_digest"],
                            store=args.store)
         plan = {"lane": lane, "input_digest": inputs["input_digest"],
@@ -832,6 +973,10 @@ def main(argv=None) -> int:
                               "reason": reuse["reason"]}, indent=2))
             return 0
         args.out.mkdir(parents=True, exist_ok=True)
+        # Built apps are build output, not installed apps: keep Spotlight from
+        # listing them beside the real one.
+        for folder in {args.out, args.out.parent}:
+            (folder / ".metadata_never_index").touch(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="refinix-build-") as directory:
             work = Path(directory)
             engines = prepare_engines(lane, work, args.cache)
@@ -863,6 +1008,7 @@ def main(argv=None) -> int:
                                disposable_host=args.disposable_host)
                       for a in artifacts]
         record = {"build_set": args.build_set, "version": args.version, "lane": lane,
+                  "channel": args.channel, "bundle_build": args.bundle_build,
                   "input_digest": inputs["input_digest"],
                   "shared_snapshot_digest": inputs["components"]["shared_snapshot_digest"],
                   "rebuild_reason": args.rebuild_reason,

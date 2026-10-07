@@ -66,12 +66,29 @@ def main() -> int:
         return _second_launch(existing)
 
     try:
+        # An unfinished in-app update is handed back to its helper before
+        # anything opens the workspace (desktop/update_apply.py). A headless
+        # start never commits an update.
+        from backend.coordinator import build_info
+        from desktop import update_apply
+        try:
+            gate = update_apply.on_launch(instance, args.state,
+                                          build_info.describe()["version"])
+        except Exception as exc:                           # noqa: BLE001
+            print(f"Refinix could not check an unfinished update, so the workspace "
+                  f"was not opened: {exc}", file=sys.stderr)
+            return 1
+        if not gate.proceed:
+            print(gate.message or "An update is being finished; open Refinix again "
+                                  "in a moment.", file=sys.stderr)
+            return 0
         if not args.no_window:
             from desktop import shell
             try:
                 instance.record(port=None, mode="starting")
                 return shell.run(state_path=args.state, port=args.port,
                                  gui=args.gui, debug=args.debug, owner=instance,
+                                 update_gate=gate,
                                  on_started=lambda startup: instance.record(
                                      port=startup.port, mode="window"))
             except shell.MissingToolkit as exc:

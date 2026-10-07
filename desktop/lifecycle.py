@@ -675,9 +675,10 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
                          model["detail"], model["action"])
 
         ready = model.get("readiness")
-        if owner is not None and coordinator is not None:
-            # This version started and opened its data: an update to it is done.
-            _update_recovery(owner, state_path, "after")
+        # An update to this version is committed later, by the packaged window
+        # once its interface has loaded (desktop/update_apply.commit_if_supervised);
+        # opening the data alone is not enough evidence, and a headless start
+        # never commits.
         if engine_error is not None or model["state"] != "ok":
             progress.finish("attention", "Refinix is open. " + (
                 ready["message"] if ready else "Chat needs one more step on this computer."))
@@ -764,12 +765,15 @@ def _managed_engine_steps(progress, selection, coordinator, state_path):
 
 
 def _update_recovery(owner, state_path: Path, moment: str) -> None:
-    """Finish or undo an interrupted update before the workspace is opened."""
+    """Finish an interrupted update copy before the workspace is opened.
+
+    Only mechanical completion happens here (`recovery.at_startup`); commit,
+    discard and restore belong to the update helper.
+    """
     from backend.coordinator import build_info, recovery
     version = build_info.describe()["version"]
-    step = recovery.at_startup if moment == "before" else recovery.after_startup
     try:
-        step(owner, state_path, version)
+        recovery.at_startup(owner, state_path, version)
     except recovery.RecoveryError as exc:
         raise StartupError("Refinix could not finish an update recovery.",
                            f"{exc} Nothing else was changed.",
