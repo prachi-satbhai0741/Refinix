@@ -2294,3 +2294,51 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - original_request: "add that to gitignore", referring to the untracked desktop/out/ review build.
 - constraints: Keep local build files and existing staged work; no Git writes or test commands.
 - linked_changes: [AC-20261006-004](agentchangelog.md#ac-20261006-004)
+
+
+<a id="up-20261007-001"></a>
+## UP-20261007-001 — Execute the reviewed Beta plan (A–G) and walk through Refinix
+- date: 2026-10-07
+- status: done; requester verification pending
+- scope: implementation, verification, packaging, walkthrough
+- tags: beta, model-agnostic-routing, fallback, setup, ollama-reuse, settings, categories, selftest, dependabot, webview2, deb
+- paths: backend/coordinator/{router,models,admission,server,code_service,runtime,local_engine,hub,capacity,provisioning,readiness,db,ocr}.py and tests; frontend/app/{app.js,index.html,code.html,control.html,refinix.css} and tests; desktop/{build.py,packaging_plan.py,packaging-tools.json,windows/refinix.iss,test_build.py,test_dependency_pins.py}; .github/{dependabot.yml,workflows/ci.yml}
+- original_request: Reviewed handoff (revision 4 with revision 5 replacements plus cleanup) and the user's Beta requirement: download from the website on three OS with every dependency, hardware check, model suggestions by category with free choice, existing Ollama models usable, Auto picks the best available model and the second best when it is not available, and the user gets the answer; "after this execution you open and try every step on Refinix".
+- constraints: Granted P1–P6 and P8 plus scratch import; not P7. Full Beta 0.1 release gates apply (unsigned Preview not approved); 10 October is a target. Unsigned builds for local testing only; signing and notarisation required before Beta. Bundle the offline WebView2 installer; .deb primary, AppImage secondary. One owner; no subagents. No Git/GitHub writes, protected-doc or README edits.
+- linked_changes: [AC-20261007-001](agentchangelog.md#ac-20261007-001)
+
+
+<a id="up-20261007-002"></a>
+## UP-20261007-002 — Repair batch after the independent review (D1, D9 approved)
+- date: 2026-10-07
+- status: done; requester verification pending
+- scope: implementation, verification, packaging, walkthrough
+- tags: beta, review-fix, fallback-budget, picture-intent, d1, d9, page-reader, webview2-signature, setup-first-launch
+- paths: backend/coordinator/{router,models,admission,server,code_service,ocr,capacity,db}.py and tests; desktop/{build.py,test_build.py}; frontend/app/{app.js,refinix.css} and tests
+- original_request: "/execute the repair batch" — fixes for six review findings (Chat/Code fallback before the attempt, picture intent and unreadable sources, no tag-absence incompatibility, page-reader fallback and truthful runtime record, PowerShell path binding, Setup first launch), D1 (accept "unsafe; 2.4") and D9 (incomplete answers as task-specific, current-evidence exclusion), the approved live second-choice test with the cached managed model imported into scratch data, a new review build and the affected scratch walkthrough.
+- constraints: P1–P5 and D8 only; no downloads, Git/GitHub writes, protected docs, workflow dispatch or publication; full Beta 0.1 gates remain.
+- linked_changes: [AC-20261007-002](agentchangelog.md#ac-20261007-002)
+
+
+<a id="up-20261007-003"></a>
+## UP-20261007-003 — Resume interrupted repair verification on the existing application
+- date: 2026-10-07
+- status: done for the interrupted repair verification; release gates remain open
+- scope: affected offline regressions, packaged scratch walkthrough, normal quit/relaunch
+- tags: resume, existing-build, unreadable-attachments, lazy-ocr, system-message, document-generation, native-folder-picker, data-preservation
+- paths: existing backend/coordinator/{server,router,documents,docflow}.py and affected tests; desktop/out/local-review-20261007g; agent-memory/{userprompts,agentchangelog}.md
+- original_request: "yes continue / try maintaining claude's quality for this / proceed"
+- constraints: Resume the existing approved implementation from build 7g. Preserve the dirty tree and real data; rebuild only for an actual source fix. No subagents, downloads, Git/GitHub writes, protected-document changes or publication. Full Beta gates remain.
+- linked_changes: [AC-20261007-003](agentchangelog.md#ac-20261007-003)
+
+
+<a id="up-20261007-004"></a>
+## UP-20261007-004 — Handoff for a graphical in-app updater and one primary application
+- date: 2026-10-07
+- status: handoff prepared; implementation owner's plan pending independent review
+- scope: planning handoff only
+- tags: in-app-update, primary-installation, duplicate-apps, spotlight, plan-first, full-beta-gates
+- paths: agent-memory/handoffs/2026-10-07-refinix-in-app-update-and-consolidation.md; agent-memory/{userprompts,agentchangelog}.md
+- original_request: The user requests a visible graphical update control that closes, updates and reopens the primary Refinix app without terminal commands; removal of unnecessary app copies; subsequent package qualification and unwanted-code cleanup. The complete latest wording is preserved in the linked handoff. The user will paste it to the implementation owner for a plan, then continue independent review in the next chat.
+- constraints: Extend existing updater/recovery code, preserve the dirty tree and real data, retain full Beta gates. No implementation, app deletion/installation, tests, model calls, downloads, protected-document changes or Git/GitHub writes in this planning turn.
+- linked_changes: [AC-20261007-004](agentchangelog.md#ac-20261007-004)

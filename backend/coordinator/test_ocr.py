@@ -156,7 +156,8 @@ class FakeQuartz:
 TEST_OCR_DIGEST = "c" * 64
 
 
-def test_ocr_profile(max_output: int = ocr.PAGE_NUM_PREDICT):
+def test_ocr_profile(max_output: int = ocr.PAGE_NUM_PREDICT, *,
+                     runtime_name: str = inference_profiles.RUNTIME):
     """A qualified OCR profile, built HERE and only here.
 
     The product registry deliberately contains no OCR profile, so these checks
@@ -168,7 +169,7 @@ def test_ocr_profile(max_output: int = ocr.PAGE_NUM_PREDICT):
     values = {
         "model": inference_profiles.model_ref(
             "0.0.0-fake", model_id=runtime.OCR_MODEL,
-            manifest_sha256=TEST_OCR_DIGEST),
+            manifest_sha256=TEST_OCR_DIGEST, runtime=runtime_name),
         "target_profile_id": "test-target",
         "workflow_mode": inference_profiles.OCR,
         "qualified_context_tokens": 8192,
@@ -589,6 +590,24 @@ class TestExtractPdf(unittest.TestCase):
                          [None, None, None])
         self.assertTrue(any("Confidence is unavailable" in note
                             for note in result["uncertain"]))
+
+    def test_the_stored_method_names_the_reader_and_its_runtime(self):
+        self.assertIn("(reader:1 on Refinix engine)",
+                      ocr.method_label("a" * 64, "llama.cpp|reader:1", renderer=pdfrender.PDFIUM))
+        self.assertIn("(reader:1 on Ollama)", ocr.image_method_label("a" * 64, "ollama|reader:1"))
+        self.assertIn(f"({runtime.OCR_MODEL})", ocr.method_label("a" * 64),
+                      "a bare name claims no runtime it cannot show")
+
+    def test_the_record_names_the_runtime_that_actually_read_it(self):
+        """Review finding: the record said "ollama" whatever read the pages."""
+        for name in ("llama.cpp", "ollama"):
+            with self.subTest(runtime=name), self.ready():
+                result = ocr.extract_pdf(
+                    b"%PDF", profile=test_ocr_profile(runtime_name=name), filename="scan.pdf",
+                    render=render_ok,
+                    chat=fake_chat(['{"status":"transcription","text": "a"}'] * 3))
+                self.assertEqual(result["model"]["runtime"], name)
+                self.assertEqual(result["model"]["runtime_version"], "0.0.0-fake")
 
     def test_the_extraction_says_which_model_read_it(self):
         with self.ready():

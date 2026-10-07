@@ -142,8 +142,10 @@ PLATFORMS: dict[str, Platform] = {
                 "a WebView2 runtime for the application window")),
     "linux": Platform(
         key="linux", label="Linux", icon="refinix-256.png",
-        tool="PyInstaller + AppImage/.deb", pinned=True,
-        artifact="Refinix-<version>-linux-x86_64.AppImage",
+        tool="PyInstaller + .deb (recommended) and AppImage", pinned=True,
+        # The .deb is the main package: it declares GTK/WebKitGTK, so the
+        # system installs them. The AppImage relies on what the host has.
+        artifact="refinix_<version>_amd64.deb",
         checkpoint=("Built by desktop/build.py on a native Ubuntu 24.04 x86_64 "
                     "host or the package workflow's Ubuntu runner, from the "
                     "pinned requirements-linux.lock and requirements-build-linux.lock "

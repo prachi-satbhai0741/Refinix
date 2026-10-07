@@ -150,6 +150,14 @@ class Entry:
     hints: tuple[str, ...] = ()
     hint_source: str | None = None
     gated: bool = False
+    # An explicit, cited statement that the model does only these tasks (for
+    # example document OCR). Never inferred: an entry without one is not
+    # limited, whatever its strengths.
+    limited_to: tuple[str, ...] = ()
+    # Task tags the model's own repository publishes (Hugging Face `tags` and
+    # `pipeline_tag`), recorded when a person resolved it in Browse. Weaker
+    # evidence than a curated card citation; mapped by `TAG_STRENGTHS`.
+    repo_tags: tuple[str, ...] = ()
 
     def as_dict(self) -> dict:
         return {
@@ -169,7 +177,8 @@ class Entry:
             "architecture": self.architecture,
             "context_length": self.context_length,
             "hints": list(self.hints), "hint_source": self.hint_source,
-            "gated": self.gated,
+            "gated": self.gated, "limited_to": list(self.limited_to),
+            "repo_tags": list(self.repo_tags),
         }
 
     def weights_bytes(self) -> int | None:
@@ -217,6 +226,13 @@ CATALOGUE: tuple[Entry, ...] = (
                   "fixed-prompt smoke check, not a scored quality result."),
         evidence_state=VERIFIED,
         setup_command="ollama pull qwen3.5:4b-q4_K_M",
+        # The same Qwen3.5-4B model the Refinix-engine entry below quantizes:
+        # its publisher's card lists general multimodal use, and Ollama's
+        # library page describes the family as multimodal (text and image
+        # input), read 2026-10-07. Bound to this exact manifest digest.
+        publisher="Qwen", base_model="Qwen/Qwen3.5-4B",
+        hints=("general", "vision"),
+        hint_source="https://huggingface.co/Qwen/Qwen3.5-4B",
     ),
     Entry(
         id=MANAGED_MAIN,
@@ -456,7 +472,7 @@ CHAT_CHECK_PROMPT = (
     "Reply with one line and nothing else, in this form:\n"
     "<safe or unsafe>; smaller number: <the smaller of the two numbers>")
 
-# The whole reply, or it is not an answer to this question.
+# The whole reply, on one line, or it is not an answer to this question.
 #
 # `fullmatch`, and no prose fallback. Found in review: searching for a verdict
 # token and a number independently passed "not unsafe; smaller number: 2.4" —
@@ -466,35 +482,72 @@ CHAT_CHECK_PROMPT = (
 # bought tolerance for a model that rambles at the cost of the evidence the
 # check exists to produce.
 #
+# Line boundaries are checked before whitespace is normalised. Found in a
+# later review: collapsing every run of whitespace first let a reply spread
+# over several lines pass as the one line it was asked for.
+#
 # A reply in the wrong shape and a reply with the comparison backwards are
-# reported as different failures, because they are: one model could not follow
-# a one-line instruction, the other could not hold a relation.
+# reported as different failures, because they are: one model did not follow
+# a one-line format instruction, the other could not hold a relation. Only
+# the second is described as reversing anything.
+#
+# The "smaller number:" label is optional (user decision D1, 2026-10-07):
+# "unsafe; 2.4" states the verdict and the number exactly as asked, only
+# without the label. The whole reply must still be that one line.
 _STRICT_REPLY = re.compile(
-    r"(unsafe|safe)\s*;\s*smaller number\s*:\s*(\d+(?:\.\d+)?)\.?", re.I)
+    r"(unsafe|safe)\s*;\s*(?:smaller number\s*:\s*)?(\d+(?:\.\d+)?)\.?", re.I)
+
+# Failure kinds. Formatting: the reply could not be read back as an answer.
+# Wrong answer: it could, and the answer is wrong. Incomplete: the check's
+# output limit was reached before an answer was finished (D9).
+EMPTY, MULTI_LINE, EXTRA_TEXT = "empty", "multi_line", "extra_text"
+WRONG_VERDICT, WRONG_NUMBER, INVALID_OUTPUT = "wrong_verdict", "wrong_number", "invalid_output"
+INCOMPLETE = "incomplete"
+FORMAT_FAILURES = frozenset({EMPTY, MULTI_LINE, EXTRA_TEXT})
+EXCERPT_CHARS = 240
 
 
-def chat_relation_failure(reply: str) -> str | None:
-    """Why a reply to `CHAT_CHECK_PROMPT` fails, or None if it holds up.
+def chat_reply_failure(reply: str) -> tuple[str, str] | None:
+    """`(kind, sentence)` for why a reply to `CHAT_CHECK_PROMPT` fails, or None.
 
-    Returns the sentence a person reads in the self-test result, so it says
+    The sentence is what a person reads in the self-test result, so it says
     what the model actually did rather than that a check failed.
     """
-    text = " ".join((reply or "").split())
-    if not text:
-        return "answered with nothing visible"
+    stripped = (reply or "").strip()
+    if not stripped:
+        return EMPTY, "answered with nothing visible"
+    if "\n" in stripped or "\r" in stripped:
+        return MULTI_LINE, ("answered on more than one line instead of the single "
+                            "line it was asked for")
+    text = " ".join(stripped.split())
     answer = _STRICT_REPLY.fullmatch(text)
     if answer is None:
-        return ("did not answer in the single line it was asked for, so what "
-                "it concluded could not be read back without guessing")
+        return EXTRA_TEXT, ("did not answer in the exact one-line form it was asked "
+                            "for, so what it concluded could not be read back "
+                            "without guessing")
     verdict, smaller = answer.group(1).casefold(), answer.group(2)
     if verdict == "safe":
-        return (f"called the operation safe although the available capacity "
-                f"({CHAT_CHECK_SMALLER}) is below the required capacity "
-                f"({CHAT_CHECK_LARGER})")
+        return WRONG_VERDICT, (f"called the operation safe although the available "
+                               f"capacity ({CHAT_CHECK_SMALLER}) is below the required "
+                               f"capacity ({CHAT_CHECK_LARGER})")
     if smaller != CHAT_CHECK_SMALLER:
-        return (f"named {smaller} as the smaller number when "
-                f"{CHAT_CHECK_SMALLER} is")
+        return WRONG_NUMBER, (f"named {smaller} as the smaller number when "
+                              f"{CHAT_CHECK_SMALLER} is")
     return None
+
+
+def reply_excerpt(reply) -> str | None:
+    """A short, inert excerpt of a self-test reply, kept for diagnosis.
+
+    Only ever called with a model's reply to a synthetic self-test prompt,
+    never with a person's conversation. Line breaks stay visible as ⏎ because
+    they can be the reason a reply failed; other control characters go.
+    """
+    if not isinstance(reply, str) or not reply:
+        return None
+    text = reply.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ⏎ ")
+    text = "".join(ch for ch in text if ch == " " or ch.isprintable())
+    return text[:EXCERPT_CHARS] + ("…" if len(text) > EXCERPT_CHARS else "")
 
 
 SELFTESTS: dict[str, SelfTest] = {
@@ -515,6 +568,18 @@ NOT_RUN = "not_run"
 
 class SelfTestError(RuntimeError):
     """A self-test could not run. Never recorded as a failure of the model."""
+
+
+class IncompleteReply(Exception):
+    """The model was still writing when the check's output limit was reached.
+
+    Raised only for that runtime-reported stop reason. A crash, a cancel, a
+    runtime that stopped answering or any other stop is a `SelfTestError`.
+    """
+
+    def __init__(self, text: str, limit: int | None):
+        super().__init__("the reply reached the check's output limit")
+        self.text, self.limit = text or "", limit
 
 
 def entry_for(model: str) -> Entry | None:
@@ -619,9 +684,26 @@ def entry_from_record(record: dict) -> Entry | None:
             quantizer=meta.get("quantizer"), repo=meta.get("repo"),
             architecture=meta.get("architecture"),
             context_length=meta.get("context_length"),
-            hints=tuple(meta.get("hints") or ()), hint_source=meta.get("hint_source"))
+            hints=(), hint_source=meta.get("hint_source"),
+            repo_tags=_recorded_tags(meta))
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _recorded_tags(meta: dict) -> tuple[str, ...]:
+    """The repository task tags a resolved install recorded.
+
+    Version 1 records kept a `hints` list in which `general` was added to
+    every download and `vision` meant only that a projector was chosen —
+    neither is evidence of a task strength, so both are dropped here; `code`
+    and `reasoning` did come from the repository's own tags and are kept.
+    Version 2 records the vocabulary-filtered tags themselves.
+    """
+    if meta.get("version", 1) >= 2:
+        tags = meta.get("repo_tags") or ()
+    else:
+        tags = [hint for hint in meta.get("hints") or () if hint in ("code", "reasoning")]
+    return tuple(str(tag) for tag in tags if isinstance(tag, str))[:16]
 
 
 def record_source(entry: Entry, how: str) -> str:
@@ -629,16 +711,70 @@ def record_source(entry: Entry, how: str) -> str:
     if entry.id in BY_ID:
         return f"{how} {entry.source}"
     return json.dumps({
-        "kind": "resolved", "version": 1, "how": how,
+        "kind": "resolved", "version": 2, "how": how,
         "display_name": entry.display_name, "source": entry.source,
         "licence": entry.licence, "format": entry.format,
         "parameters": entry.parameters, "evidence": entry.evidence,
         "revision": entry.revision, "publisher": entry.publisher,
         "base_model": entry.base_model, "quantizer": entry.quantizer,
         "repo": entry.repo, "architecture": entry.architecture,
-        "context_length": entry.context_length, "hints": list(entry.hints),
-        "hint_source": entry.hint_source,
+        "context_length": entry.context_length,
+        "repo_tags": list(entry.repo_tags), "hint_source": entry.hint_source,
         "files": [f.as_dict() for f in entry.files]}, sort_keys=True)
+
+
+# --------------------------------------------------------------------------
+# Task evidence: what a model is documented to be good at, or limited to
+# --------------------------------------------------------------------------
+#
+# One resolver for both runtimes, so Ollama and the Refinix engine describe a
+# model the same way. Three sources, most credible first, and the most
+# credible one present is used on its own rather than merged with weaker ones:
+#
+#   3  a curated catalogue entry citing the publisher's model card;
+#   2  task tags the model's own repository publishes, recorded at Browse;
+#   1  task tags the runtime reports from the model file's metadata.
+#
+# A model's name, family, architecture or base model never assigns a
+# strength or a limitation: a fine-tune can differ from what it was built on.
+
+# Tags that name a task strength, per tag and never per model.
+TAG_STRENGTHS = {
+    "conversational": "general", "chat": "general", "instruct": "general",
+    "code": "code", "coding": "code",
+    "reasoning": "reasoning", "math": "reasoning",
+    "ocr": "ocr",
+    "image-text-to-text": "vision", "vision": "vision", "multimodal": "vision",
+}
+EVIDENCE_CARD, EVIDENCE_REPOSITORY, EVIDENCE_RUNTIME, EVIDENCE_NONE = 3, 2, 1, 0
+
+
+def strengths_from_tags(tags) -> tuple[str, ...]:
+    found = []
+    for tag in tags or ():
+        strength = TAG_STRENGTHS.get(str(tag).strip().lower())
+        if strength and strength not in found:
+            found.append(strength)
+    return tuple(found)
+
+
+def task_evidence(entry: Entry | None, runtime_tags=()) -> dict:
+    """`{strengths, limited_to, level, source}` for one model, from evidence only."""
+    if entry is not None and entry.id in BY_ID and (entry.hints or entry.limited_to):
+        return {"strengths": tuple(entry.hints), "limited_to": tuple(entry.limited_to),
+                "level": EVIDENCE_CARD, "source": entry.hint_source}
+    if entry is not None and entry.repo_tags:
+        strengths = strengths_from_tags(entry.repo_tags)
+        if strengths:
+            return {"strengths": strengths, "limited_to": (),
+                    "level": EVIDENCE_REPOSITORY,
+                    "source": (f"https://huggingface.co/{entry.repo}" if entry.repo
+                               else entry.hint_source)}
+    strengths = strengths_from_tags(runtime_tags)
+    if strengths:
+        return {"strengths": strengths, "limited_to": (), "level": EVIDENCE_RUNTIME,
+                "source": "the model file's metadata, as its runtime reports it"}
+    return {"strengths": (), "limited_to": (), "level": EVIDENCE_NONE, "source": None}
 
 
 def provenance(model: str, *, origin: str | None = None,
@@ -819,26 +955,34 @@ def run_selftest(scope: str, model: str, *, generate=None, artifact=None,
                 "cannot check that it accepts page images.")
         if vision_capability not in capabilities:
             return {"scope": scope, "model": model, "state": FAILED,
+                    "failure_kind": "no_vision", "reply_excerpt": None,
                     "detail": (f"{model} does not accept page images on this "
                                "computer, so it cannot read a scan.")}
     if generate is None:
         raise SelfTestError("the local engine was not available to ask.")
+    reply = None
 
-    def failed(detail: str) -> dict:
-        return {"scope": scope, "model": model, "state": FAILED,
-                "detail": detail}
+    def failed(detail: str, kind: str = INVALID_OUTPUT) -> dict:
+        return {"scope": scope, "model": model, "state": FAILED, "detail": detail,
+                "failure_kind": kind, "reply_excerpt": reply_excerpt(reply)}
 
     try:
         if scope == CHAT:
             reply = generate(
                 model, [{"role": "user", "content": CHAT_CHECK_PROMPT}],
                 scope=scope, num_predict=128)
-            wrong = chat_relation_failure(reply)
+            wrong = chat_reply_failure(reply)
             if wrong:
-                return failed(f"{model} {wrong}. A model that reverses a "
+                kind, sentence = wrong
+                if kind in FORMAT_FAILURES:
+                    return failed(f"{model} {sentence}. This is a formatting "
+                                  "failure: the check could not read an answer "
+                                  "back, which says nothing about whether the "
+                                  "model would have got it right.", kind)
+                return failed(f"{model} {sentence}. A model that reverses a "
                               "supplied relation can write a fluent technical "
                               "answer that is backwards, so Chat is not "
-                              "self-tested on this computer.")
+                              "self-tested on this computer.", kind)
         elif scope == CODE:
             from backend.coordinator import codeflow
             before = "before\n"
@@ -891,12 +1035,22 @@ def run_selftest(scope: str, model: str, *, generate=None, artifact=None,
                 return failed(f"The model did not produce a valid page reading: {exc}")
             if "refinix" not in reading.lower():
                 return failed("The model did not read REFINIX from the test page image.")
+    except IncompleteReply as exc:
+        reply = exc.text
+        limit = f"{exc.limit}-token " if exc.limit else ""
+        return failed(f"{model} was still writing when this check's {limit}output "
+                      "limit was reached, so it did not finish the answer. This "
+                      "describes the check's bounded settings on this computer, not "
+                      "every use of the model; Auto does not choose it for this task "
+                      "while this result matches the model, runtime and settings. "
+                      "Passing the check again restores it.", INCOMPLETE)
     except SelfTestError:
         raise
     except Exception as exc:                                # noqa: BLE001
         raise SelfTestError(str(exc)) from exc
     return {"scope": scope, "model": model, "state": PASSED,
-            "detail": f"{check.label} succeeded on this computer. {check.caveat}"}
+            "detail": f"{check.label} succeeded on this computer. {check.caveat}",
+            "failure_kind": None, "reply_excerpt": None}
 
 
 def selftest_view(records: list[dict], *, model: str,
@@ -947,15 +1101,24 @@ def selftest_view(records: list[dict], *, model: str,
             "superseded": bool(digest and recorded and recorded != digest),
             "settings_changed": bool(fingerprints is not None and matches
                                      and not settings_match),
-            # A pass is current only when it was observed against the bytes
-            # installed now, with the settings a check would use now. An
+            # Whether this result — pass or failure — was observed against the
+            # bytes installed now, with the settings a check would use now.
+            # Computed on every read, never stored: replacing the model or
+            # changing the check makes an old result history at once. An
             # unobservable digest or an unrecorded setting is not a match.
+            "matches_now": matches and settings_match,
+            # A pass that matches now: the only result that makes a
+            # capability look checked.
             "current": record["state"] == PASSED and matches and settings_match,
+            # Why a check failed, when the record says. Older rows predate it.
+            "failure_kind": record.get("failure_kind"),
+            "reply_excerpt": record.get("reply_excerpt"),
         }
     for scope, check in SELFTESTS.items():
         shown.setdefault(scope, {
             "scope": scope, "state": NOT_RUN,
             "detail": f"{check.label} has not been run on this computer yet.",
             "ran_at": None, "runtime_version": None,
-            "superseded": False, "current": False})
+            "superseded": False, "matches_now": False, "current": False,
+            "failure_kind": None, "reply_excerpt": None})
     return shown

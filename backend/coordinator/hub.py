@@ -301,9 +301,12 @@ def resolve(repo: str, file: str, revision: str, *, projector: str | None = None
     owner = repo.split("/", 1)[0]
     base_owner = base_model.split("/", 1)[0] if isinstance(base_model, str) and "/" in base_model else None
     quantizer = owner if base_owner and base_owner.lower() != owner.lower() else None
-    hints = tuple(h for h, present in (("general", True), ("vision", bool(projector)),
-                                      ("code", "code" in tags),
-                                      ("reasoning", "reasoning" in tags)) if present)
+    # Task evidence is the repository's own published tags, filtered to the
+    # task vocabulary; nothing is assumed. A chosen projector makes the model
+    # accept images — a capability the engine reports — not a task strength.
+    pipeline = info.get("pipeline_tag")
+    published = sorted(tags | ({str(pipeline).lower()} if isinstance(pipeline, str) else set()))
+    repo_tags = tuple(tag for tag in published if tag in models.TAG_STRENGTHS)[:16]
     model_id = models.managed_id_for(repo, file, info["sha"], set(taken))
     licence = card.get("license")
     revision = info["sha"]
@@ -331,4 +334,4 @@ def resolve(repo: str, file: str, revision: str, *, projector: str | None = None
         quantizer=quantizer, repo=repo,
         architecture=gguf.get("architecture") if isinstance(gguf.get("architecture"), str) else None,
         context_length=gguf.get("context_length") if isinstance(gguf.get("context_length"), int) else None,
-        hints=hints, hint_source=f"https://huggingface.co/{repo}")
+        repo_tags=repo_tags, hint_source=f"https://huggingface.co/{repo}")

@@ -28,7 +28,7 @@ import time
 from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
 from backend.coordinator import (codeflow, context, db, dispatch, pairing, policy,
-                                 repo, router, runtime)
+                                 repo, runtime)
 
 # One proposal is one bounded local model call.
 PROPOSAL_DEADLINE_SECONDS = 240
@@ -567,85 +567,113 @@ class CodeService:
             runtime_state = runtime.probe()
             observed = self.c.observations(runtime_state)
             choice = self.c.choose_model(
-                "code", observed=observed,
-                task=router.classify(request, workflow=inference_profiles.CODE))
+                "code", observed=observed, task=self.c.request_task("code", request))
             worker = (self.c.worker_model("code")
                       if choice["refusal"] and target != TARGET_LOCAL else None)
             if choice["refusal"] and worker is None:
                 raise CodeError("model_disabled" if choice.get("code") == "disabled"
                                 else "model_unavailable", choice["refusal"], 409)
-            model_id = choice["key"] if not choice["refusal"] else worker
-            model_name = runtime.split_key(model_id)[1]
-            reasoning = self.c.reasoning_for(model_id)
-            reasoning_mode = "enabled" if reasoning else "disabled"
-            offered = self.c._offered_reasoning(model_id, inference_profiles.CODE,
-                                                "json_schema", observed=observed)
-            if offered and reasoning_mode not in offered:
-                reasoning_mode = "disabled" if "disabled" in offered else "enabled"
-                reasoning = reasoning_mode == "enabled"
-            generation_messages = codeflow.build_messages(request, selection)
-            required_output = self._proposal_required_output(selection)
-            if target == TARGET_LOCAL:
-                # Explicitly this device. No preflight, no route decision and
-                # no worker call: local permission is something the person
-                # chose, never something inferred from the worker failing.
-                local_model = self.c.local_model_ref(model_id, runtime_state)
-                local_profile = self.c.local_profile(
-                    workflow=inference_profiles.CODE, model_id=model_id,
-                    reasoning=reasoning_mode, decoder="json_schema",
-                    output_allowance=required_output, observed=observed)
-                route = dispatch.Route(
-                    "local", (f"{choice['reason']}; local coordinator: this device "
-                              "was chosen for this request")[:256], node_id=self.c.node_id,
-                    model=local_model,
-                    profile=(local_profile.model_dump() if local_profile else None))
-            else:
-                route = self.c.choose_route(required=["code.generate"],
-                                            model_id=model_id,
-                                            runtime_state=runtime_state,
-                                            workflow=inference_profiles.CODE,
-                                            reasoning=reasoning_mode,
-                                            decoder="json_schema",
-                                            output_allowance=required_output,
-                                            observed=observed)
-                if not route.remote and choice["reason"]:
+            # Auto's ordered list, tried in turn until one is admitted; a
+            # pinned model or the worker fallback is the only entry.
+            to_try = ([worker] if choice["refusal"]
+                      else [choice["key"], *choice.get("alternatives", [])])
+            passed_over = []
+            for position, model_id in enumerate(to_try):
+                last = position == len(to_try) - 1
+                model_name = runtime.split_key(model_id)[1]
+                reasoning = self.c.reasoning_for(model_id)
+                reasoning_mode = "enabled" if reasoning else "disabled"
+                offered = self.c._offered_reasoning(model_id, inference_profiles.CODE,
+                                                    "json_schema", observed=observed)
+                if offered and reasoning_mode not in offered:
+                    reasoning_mode = "disabled" if "disabled" in offered else "enabled"
+                    reasoning = reasoning_mode == "enabled"
+                generation_messages = codeflow.build_messages(request, selection)
+                required_output = self._proposal_required_output(selection)
+                reason = choice["reason"]
+                if passed_over:
+                    reason = (f"Auto: Code → {self.c._display(observed, model_id)} — the "
+                              "next suitable model: " + "; ".join(
+                                  f"{self.c._display(observed, key)} skipped ({why[:90]})"
+                                  for key, why in passed_over))
+                if target == TARGET_LOCAL:
+                    # Explicitly this device. No preflight, no route decision and
+                    # no worker call: local permission is something the person
+                    # chose, never something inferred from the worker failing.
+                    local_model = self.c.local_model_ref(model_id, runtime_state)
+                    local_profile = self.c.local_profile(
+                        workflow=inference_profiles.CODE, model_id=model_id,
+                        reasoning=reasoning_mode, decoder="json_schema",
+                        output_allowance=required_output, observed=observed)
                     route = dispatch.Route(
-                        route.kind, f"{choice['reason']}; {route.reason}"[:256],
-                        node_id=route.node_id, relationship_id=route.relationship_id,
-                        model=route.model, profile=route.profile)
-            if route.kind == "identity-mismatch":
-                raise CodeError("permission_denied", route.reason, 403)
-            if target == TARGET_DISTRIBUTED and not route.remote:
-                raise CodeError(
-                    "incompatible_profile",
-                    "The selected paired target cannot preserve this Code "
-                    f"request's qualified semantics: {route.reason}", 409)
-            if route.model is None or route.profile is None:
-                raise CodeError(
-                    "model_unavailable",
-                    f"The selected model {model_name} cannot write Code proposals "
-                    "at this execution target.", 409)
-            profile = v1.ExecutionProfile.model_validate(route.profile)
-            generation_limit = self._proposal_output_limit(
-                generation_messages, selection, profile)
-            # A remote worker keeps the strict measured-only contract; this
-            # computer runs a measured profile or an honest local candidate.
-            build_request = (inference_profiles.request if route.remote
-                             else inference_profiles.request_local)
-            inference = build_request(
-                profile, reasoning=reasoning_mode, decoder="json_schema",
-                output_allowance=generation_limit,
-                decoder_schema_sha256=inference_profiles.schema_sha256(
-                    codeflow.PROPOSAL_SCHEMA))
-            if not route.remote:
-                # Memory for this proposal, reserved before its attempt exists.
-                decision = self.c._admit(f"code-{repo_id}", observed.get(model_id),
-                                         profile.qualified_context_tokens,
-                                         should_cancel=cancel.is_set)
-                if decision.outcome == "cancelled":
-                    raise CodeError("cancelled", "The proposal was stopped.", 409)
-                if decision.outcome == "refuse":
-                    raise runtime.RuntimeUnavailable(decision.reason)
+                        "local", (f"{reason}; local coordinator: this device "
+                                  "was chosen for this request")[:256], node_id=self.c.node_id,
+                        model=local_model,
+                        profile=(local_profile.model_dump() if local_profile else None))
+                else:
+                    route = self.c.choose_route(required=["code.generate"],
+                                                model_id=model_id,
+                                                runtime_state=runtime_state,
+                                                workflow=inference_profiles.CODE,
+                                                reasoning=reasoning_mode,
+                                                decoder="json_schema",
+                                                output_allowance=required_output,
+                                                observed=observed)
+                    if not route.remote and reason:
+                        route = dispatch.Route(
+                            route.kind, f"{reason}; {route.reason}"[:256],
+                            node_id=route.node_id, relationship_id=route.relationship_id,
+                            model=route.model, profile=route.profile)
+                if route.kind == "identity-mismatch":
+                    raise CodeError("permission_denied", route.reason, 403)
+                if target == TARGET_DISTRIBUTED and not route.remote:
+                    raise CodeError(
+                        "incompatible_profile",
+                        "The selected paired target cannot preserve this Code "
+                        f"request's qualified semantics: {route.reason}", 409)
+                if route.model is None or route.profile is None:
+                    if not last and not route.remote:
+                        passed_over.append((model_id, "it could not write a proposal here"))
+                        continue
+                    raise CodeError(
+                        "model_unavailable",
+                        f"The selected model {model_name} cannot write Code proposals "
+                        "at this execution target.", 409)
+                profile = v1.ExecutionProfile.model_validate(route.profile)
+                try:
+                    # The whole-file proposal must fit this model's window and
+                    # output allowance; decided before any job or attempt exists.
+                    generation_limit = self._proposal_output_limit(
+                        generation_messages, selection, profile)
+                except CodeError as exc:
+                    if exc.code == "selection_too_large" and not last and not route.remote:
+                        passed_over.append((model_id, "the proposal does not fit its "
+                                                      "context window or reply allowance"))
+                        continue
+                    raise
+                # A remote worker keeps the strict measured-only contract; this
+                # computer runs a measured profile or an honest local candidate.
+                build_request = (inference_profiles.request if route.remote
+                                 else inference_profiles.request_local)
+                inference = build_request(
+                    profile, reasoning=reasoning_mode, decoder="json_schema",
+                    output_allowance=generation_limit,
+                    decoder_schema_sha256=inference_profiles.schema_sha256(
+                        codeflow.PROPOSAL_SCHEMA))
+                if not route.remote:
+                    # Memory for this proposal, reserved before its attempt exists.
+                    decision = self.c._admit(f"code-{repo_id}", observed.get(model_id),
+                                             profile.qualified_context_tokens,
+                                             should_cancel=cancel.is_set)
+                    if decision.outcome == "cancelled":
+                        raise CodeError("cancelled", "The proposal was stopped.", 409)
+                    if decision.outcome == "refuse":
+                        self.c.ledger.release(f"code-{repo_id}")
+                        if not last:
+                            passed_over.append((model_id, decision.reason))
+                            continue
+                        raise runtime.RuntimeUnavailable(decision.reason)
+                break
             if route.remote:
                 parsed, job_id, attempt_id, model = self._propose_remote(
                     repo_id, request, selection, route, inference, cancel,

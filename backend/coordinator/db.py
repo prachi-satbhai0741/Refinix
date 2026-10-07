@@ -26,7 +26,7 @@ from unicodedata import category
 from backend.contracts import v1
 from backend.coordinator import build_info, ownership
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # SQLite's header field for "which application owns this file" (offset 68).
 # "RFNX". Written on every open from now on; a legacy Refinix store still has 0
@@ -847,6 +847,14 @@ def connect(path: Path, *, owner=None,
         "PRAGMA table_info(model_selftests)")}
     if "check_fingerprint" not in selftest_columns:
         conn.execute("ALTER TABLE model_selftests ADD COLUMN check_fingerprint TEXT")
+    # Schema 15: why a check failed (`models.FORMAT_FAILURES` and the wrong-
+    # answer kinds) and a short excerpt of the model's reply to the synthetic
+    # check prompt. Older rows keep NULL and read as "reason not recorded".
+    # Whether a result still matches is never stored: it is computed on read.
+    if "failure_kind" not in selftest_columns:
+        conn.execute("ALTER TABLE model_selftests ADD COLUMN failure_kind TEXT")
+    if "reply_excerpt" not in selftest_columns:
+        conn.execute("ALTER TABLE model_selftests ADD COLUMN reply_excerpt TEXT")
     # Full-text search is created only where this SQLite build has FTS5. Its
     # absence disables document search and says so; it never fails a startup.
     try:
@@ -1431,8 +1439,16 @@ def model_enablement(conn) -> dict:
 @serialized
 def record_selftest(conn, *, model: str, scope: str, state: str, detail: str,
                     digest: str | None, runtime_version: str | None,
-                    check_fingerprint: str | None = None) -> dict:
-    """Store one capability check against the manifest and settings it ran on."""
+                    check_fingerprint: str | None = None,
+                    failure_kind: str | None = None,
+                    reply_excerpt: str | None = None) -> dict:
+    """Store one capability check against the manifest and settings it ran on.
+
+    `reply_excerpt` is only ever the model's reply to a synthetic self-test
+    prompt, bounded here as well as by the caller.
+    """
+    failure_kind = failure_kind[:32] if isinstance(failure_kind, str) else None
+    reply_excerpt = reply_excerpt[:300] if isinstance(reply_excerpt, str) else None
     if not isinstance(model, str) or not model.strip() or len(model) > 200:
         raise ValueError("a model name is required")
     if not isinstance(scope, str) or not scope or len(scope) > 64:
@@ -1444,24 +1460,55 @@ def record_selftest(conn, *, model: str, scope: str, state: str, detail: str,
     with conn:
         conn.execute(
             "INSERT INTO model_selftests(model, scope, state, detail, digest,"
-            " runtime_version, ran_at, check_fingerprint) VALUES (?,?,?,?,?,?,?,?)"
+            " runtime_version, ran_at, check_fingerprint, failure_kind, reply_excerpt)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(model, scope) DO UPDATE SET state=excluded.state,"
             " detail=excluded.detail, digest=excluded.digest,"
             " runtime_version=excluded.runtime_version, ran_at=excluded.ran_at,"
-            " check_fingerprint=excluded.check_fingerprint",
+            " check_fingerprint=excluded.check_fingerprint,"
+            " failure_kind=excluded.failure_kind, reply_excerpt=excluded.reply_excerpt",
             (model, scope, state, detail[:2000], digest, runtime_version, ran_at,
-             check_fingerprint))
+             check_fingerprint, failure_kind, reply_excerpt))
     return {"model": model, "scope": scope, "state": state,
             "detail": detail[:2000], "digest": digest,
             "runtime_version": runtime_version, "ran_at": ran_at,
-            "check_fingerprint": check_fingerprint}
+            "check_fingerprint": check_fingerprint, "failure_kind": failure_kind,
+            "reply_excerpt": reply_excerpt}
+
+
+# Person-facing settings kept in `meta`, under one prefix so they can never
+# collide with the schema and ownership keys stored there.
+SETTING_PREFIX = "setting."
+SETTING_KEYS = frozenset({"setup.intro_dismissed", "setup.choice", "setup.chosen_at",
+                          "setup.first_opened"})
+
+
+@serialized
+def get_setting(conn, key: str) -> str | None:
+    if key not in SETTING_KEYS:
+        raise ValueError("unknown setting")
+    row = conn.execute("SELECT value FROM meta WHERE key=?",
+                       (SETTING_PREFIX + key,)).fetchone()
+    return row["value"] if row else None
+
+
+@serialized
+def set_setting(conn, key: str, value: str) -> None:
+    if key not in SETTING_KEYS:
+        raise ValueError("unknown setting")
+    if not isinstance(value, str) or len(value) > 200:
+        raise ValueError("a setting value is a short string")
+    with conn:
+        conn.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key)"
+                     " DO UPDATE SET value=excluded.value", (SETTING_PREFIX + key, value))
 
 
 @serialized
 def selftests(conn) -> list[dict]:
     return [dict(row) for row in conn.execute(
         "SELECT model, scope, state, detail, digest, runtime_version, ran_at,"
-        " check_fingerprint FROM model_selftests ORDER BY model, scope")]
+        " check_fingerprint, failure_kind, reply_excerpt FROM model_selftests"
+        " ORDER BY model, scope")]
 
 
 @serialized

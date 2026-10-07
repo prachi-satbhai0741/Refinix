@@ -1,0 +1,52 @@
+# Dependabot version updates. Options reference:
+# https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference
+#
+# Version-update pull requests target `dev`, so they follow the normal
+# member -> dev -> main flow; nothing merges on its own. Security-update pull
+# requests always target the default branch (`main`), where pr-flow-guard
+# blocks anything not coming from `dev`: a reviewer re-applies such a fix on a
+# branch into `dev` instead.
+#
+# Coverage, stated plainly:
+#   * pip reads the declarations `backend/requirements.txt` and
+#     `desktop/requirements-desktop.txt` (and its `-r` include).
+#   * The hash-pinned, multi-platform `.lock` files that packages are built
+#     from are not standard requirement-file names and are not expected to be
+#     read. `desktop/test_dependency_pins.py` fails a pull request that bumps
+#     a declaration without its locks, so a maintainer updates every
+#     platform's hashes deliberately. Confirm what was read from the
+#     repository's dependency graph after the first run.
+#   * The worker image (`backend/worker-image`), the managed llama.cpp engine
+#     (`desktop/engine/engine-pins.json`), packaging tools and model files keep
+#     their own integrity and provenance review and are not listed here.
+#
+# This file acts only once it is on the default branch.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directories:
+      - "/backend"
+      - "/desktop"
+    schedule:
+      interval: "weekly"
+    target-branch: "dev"
+    open-pull-requests-limit: 3
+    groups:
+      python-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "dev"
+    open-pull-requests-limit: 2
+    groups:
+      actions-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"

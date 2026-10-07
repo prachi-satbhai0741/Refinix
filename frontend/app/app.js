@@ -1115,8 +1115,23 @@ function appendModelChoices(box, scope, labelText) {
     const why = candidate.locality === 'remote' ? 'runs on another host'
       : candidate.locality === 'unknown' ? 'locality not confirmed'
       : !candidate.enabled ? 'switched off' : 'unavailable for this workflow';
+    // A model Auto would not use is still the person's to choose; say why
+    // before they choose it, not only in the record afterwards.
+    const caution = candidate.auto_excluded?.[scope]
+      ? `Auto does not use it for ${SCOPE_WORDS[scope] || scope}: its check here did not `
+        + 'finish within the check limit'
+      : candidate.limited_to?.length
+        ? `Documented for ${candidate.limited_to.map((r) => STRENGTH_WORDS[r] || r).join(', ')} only`
+        : null;
     appendModelChoiceParts(button, selected, modelLabel(candidate),
       unavailable ? `${location} — ${why}` : location);
+    if (caution && !unavailable) {
+      const note = document.createElement('span');
+      note.className = 'mp-model-caution';
+      note.textContent = caution;
+      button.append(note);
+      button.title = caution;
+    }
     button.disabled = unavailable;
     button.onclick = async () => {
       button.disabled = true;
@@ -1127,6 +1142,10 @@ function appendModelChoices(box, scope, labelText) {
         });
         await loadStatus();
         closeModelPopover(true);
+        if (caution) {
+          notice(`Chosen: ${modelLabel(candidate)}`, 'error',
+                 `${caution}. Its answers here may not be useful. Choose Auto to go back.`);
+        }
       } catch (err) {
         notice('That model could not be selected.', 'error', err.message);
         button.disabled = false;
@@ -3026,6 +3045,12 @@ function readinessActions(s) {
       if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
       else location.href = '/control.html#' + (action.target || 'models');
     } });
+  } else if (action && action.kind === 'open_setup') {
+    list.push({ label: action.label, run: () => {
+      const card = document.getElementById('setup');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else location.href = '/control.html#setup';
+    } });
   } else if (action && action.kind === 'reinstall') {
     list.push({ label: action.label, run: () => notice(
       'Repair Refinix', 'error',
@@ -3157,14 +3182,104 @@ const SELFTEST_CHIP = {
 function selftestSummary(model) {
   const runs = Object.values(model.selftests || {})
     .filter((run) => run.state !== 'not_run');
+  // The chip names which workflow the news is about, and says when a result
+  // describes bytes or check settings that are no longer what is installed.
+  const named = (chipValue, list) => {
+    const words = list.map((r) => (SCOPE_WORDS[r.scope] || r.scope || '')
+      + (r.matches_now === false && r.state === 'failed' ? ' (older result)' : ''))
+      .filter(Boolean);
+    return words.length ? [`${chipValue[0]} — ${words.join(', ')}`, chipValue[1]] : chipValue;
+  };
   if (!runs.length) return SELFTEST_CHIP.not_run;
-  if (runs.some((r) => r.state === 'failed')) return SELFTEST_CHIP.failed;
+  const failed = runs.filter((r) => r.state === 'failed');
+  if (failed.length) return named(SELFTEST_CHIP.failed, failed);
   if (runs.some((r) => r.superseded)) return SELFTEST_CHIP.superseded;
-  if (runs.some((r) => r.current)) return SELFTEST_CHIP.passed;
+  const passed = runs.filter((r) => r.current);
+  if (passed.length) return named(SELFTEST_CHIP.passed, passed);
   if (runs.some((r) => r.state === 'passed')) return SELFTEST_CHIP.unconfirmed;
   if (runs.some((r) => r.state === 'unavailable')) return SELFTEST_CHIP.unavailable;
   return SELFTEST_CHIP.not_run;
 }
+
+/* Why a check failed, in plain words: formatting and wrong answers apart. */
+const FAILURE_WORDS = {
+  empty: 'formatting: the reply was empty',
+  multi_line: 'formatting: answered on more than one line',
+  missing_label: 'formatting: left out the requested label (older check)',
+  incomplete: 'did not finish its answer within the check limit',
+  extra_text: 'formatting: not in the exact form asked for',
+  wrong_verdict: 'wrong answer: the verdict was backwards',
+  wrong_number: 'wrong answer: the wrong number',
+  invalid_output: 'the output could not be used',
+  no_vision: 'it does not accept images here',
+};
+
+/* One line per workflow's check, with its reason and whether it still
+ * describes this model and these settings. */
+function selftestLine(run) {
+  const line = document.createElement('p');
+  line.className = 'selftest-line';
+  const word = SCOPE_WORDS[run.scope] || run.scope;
+  const state = { passed: 'passed', failed: 'failed', not_run: 'not run yet',
+                  unavailable: 'could not run' }[run.state] || run.state;
+  const parts = [`${word} check: ${state}`];
+  if (run.state === 'failed') {
+    parts.push(FAILURE_WORDS[run.failure_kind] || 'reason not recorded (older check)');
+  }
+  if (run.state !== 'not_run') {
+    parts.push(run.matches_now ? 'matches this model and settings now'
+      : run.superseded ? 'older result: the model changed'
+      : run.matches_now === false ? 'older result: the model or check settings changed'
+      : 'not confirmed against what is installed now');
+  }
+  line.textContent = parts.join(' · ') + '.';
+  if (run.state === 'failed' && run.detail) {
+    const why = document.createElement('span');
+    why.className = 'selftest-detail';
+    why.textContent = ` ${run.detail}`;
+    line.append(why);
+  }
+  if (run.reply_excerpt) {
+    const reply = document.createElement('q');
+    reply.className = 'selftest-excerpt';
+    // textContent only: a model's reply is shown as inert text, never markup.
+    reply.textContent = run.reply_excerpt;
+    const label = document.createElement('span');
+    label.textContent = ' Reply: ';
+    line.append(label, reply);
+  }
+  return line;
+}
+
+/* A problem that must stay visible while Details is closed. */
+function modelAlert(model) {
+  const local = model.integrity?.local || {};
+  let text = null;
+  let formattingOnly = false;
+  if (local.state === 'mismatch') {
+    text = 'Its files changed since they were installed, so it is not used.';
+  } else if (model.state === 'cloud') {
+    text = 'Runs on another host through Ollama, so Refinix never sends work to it.';
+  } else if (model.state === 'locality_unknown') {
+    text = 'Whether it runs on this computer could not be confirmed, so nothing is sent to it.';
+  } else {
+    const failed = Object.values(model.selftests || {})
+      .filter((r) => r.state === 'failed' && r.matches_now);
+    if (failed.length) {
+      text = failed.map((r) => `${SCOPE_WORDS[r.scope] || r.scope} check failed — `
+        + (FAILURE_WORDS[r.failure_kind] || 'see Details')).join('; ') + '.';
+      // A reply in the wrong shape is worth knowing, not a fault in the model.
+      formattingOnly = failed.every((r) => FORMATTING_KINDS.has(r.failure_kind));
+    }
+  }
+  if (!text) return null;
+  const alert = document.createElement('span');
+  alert.className = formattingOnly ? 'model-alert model-note' : 'model-alert';
+  alert.textContent = text;
+  return alert;
+}
+
+const FORMATTING_KINDS = new Set(['empty', 'multi_line', 'missing_label', 'extra_text']);
 
 function modelFactRows(model, choices = {}) {
   const p = model.provenance || {};
@@ -3263,6 +3378,16 @@ async function showRemovalImpact(model, button) {
   }
 }
 
+/* "Check Chat" rather than an API scope name. */
+function checkButton(scope, model) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn';
+  button.textContent = `Check ${SCOPE_WORDS[scope] || scope}`;
+  button.onclick = () => runSelfTest(scope, button, model.key || null);
+  return button;
+}
+
 async function runSelfTest(scope, button, model = null) {
   button.disabled = true;
   const original = button.textContent;
@@ -3331,6 +3456,13 @@ function renderModelsCard(s) {
       + (model.state === 'cloud' ? ' — runs on another host, not used' : '')
       + (model.enabled ? '' : ' — switched off for new work');
     name.append(id, where);
+    const roles = document.createElement('span');
+    roles.className = 'model-roles';
+    roles.textContent = [model.installed ? modelRoleWords(model) : null, model.fit_label]
+      .filter(Boolean).join(' · ');
+    name.append(roles);
+    const alert = modelAlert(model);
+    if (alert) name.append(alert);
     const badge = document.createElement('span');
     const [chipText, chipKind] = MODEL_STATE_CHIP[model.state]
       || MODEL_STATE_CHIP.unavailable;
@@ -3338,6 +3470,13 @@ function renderModelsCard(s) {
     badge.textContent = model.enabled ? chipText : 'switched off';
     head.append(name, badge);
 
+    // Provenance, hashes, runtime and every check: one press away, never
+    // removed. A native <details> is keyboard operable and reports its open
+    // state to assistive technology by itself.
+    const details = document.createElement('details');
+    details.className = 'model-details';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Details';
     const dl = document.createElement('dl');
     dl.className = 'model-facts';
     for (const [key, value, fallback] of modelFactRows(model, s.model_choices)) {
@@ -3347,6 +3486,9 @@ function renderModelsCard(s) {
       row.append(dt, cell(value, fallback));
       dl.append(row);
     }
+    const checks = document.createElement('div');
+    checks.className = 'selftest-rows';
+    details.append(summary, dl, checks);
 
     const row = document.createElement('div');
     row.className = 'model-actions';
@@ -3391,14 +3533,20 @@ function renderModelsCard(s) {
       && (model.eligible_scopes?.length || model.selected_for?.length);
     const scopes = checkable
       ? (model.eligible_scopes?.length ? model.eligible_scopes : model.selected_for) : [];
+    for (const run of Object.values(model.selftests || {})) {
+      if (run.state !== 'not_run' || scopes.includes(run.scope)) {
+        const line = selftestLine(run);
+        if (scopes.includes(run.scope) && (s.selftest_scopes || []).includes(run.scope)) {
+          line.append(checkButton(run.scope, model));
+        }
+        checks.append(line);
+      }
+    }
     for (const scope of scopes) {
-      if (!(s.selftest_scopes || []).includes(scope)) continue;
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'btn';
-      button.textContent = `Self-test ${scope}`;
-      button.onclick = () => runSelfTest(scope, button, model.key || null);
-      row.append(button);
+      if (!(s.selftest_scopes || []).includes(scope) || model.selftests?.[scope]) continue;
+      const line = selftestLine({ scope, state: 'not_run' });
+      line.append(checkButton(scope, model));
+      checks.append(line);
     }
     if (model.installed && model.state !== 'cloud') {
       const toggle = document.createElement('button');
@@ -3418,7 +3566,7 @@ function renderModelsCard(s) {
       row.append(toggle, impact);
     }
 
-    li.append(head, dl, row);
+    li.append(head, details, row);
     host.append(li);
   }
 
@@ -3501,78 +3649,309 @@ function renderOllamaLine(s) {
   }
 }
 
-/* Up to six starting choices, then Show more. Estimates, never an allowlist. */
-function recommendationRow(item, s) {
-  const entry = (s.models || []).find((m) => m.id === item.id) || {};
+/* ---- Settings -> Overview and setup ----------------------------------- *
+ *
+ * Opens Settings with three answers — is local AI ready, which models can I
+ * use, what next — and the one action that matters now. Everything below it
+ * (the hardware Refinix observed at startup, the person's Ollama models,
+ * choices by kind of work) comes from /v1/status; nothing is counted, started
+ * or downloaded here without the person pressing a button.
+ */
+
+const STRENGTH_WORDS = { general: 'general use', code: 'coding', vision: 'images',
+                         reasoning: 'reasoning', ocr: 'page reading' };
+const EVIDENCE_SOURCE_WORDS = { 3: "publisher's card", 2: "repository's tags",
+                                1: "model file's metadata" };
+
+/* What a model is documented to be good at, or limited to, in plain words. */
+function modelRoleWords(model) {
+  const source = EVIDENCE_SOURCE_WORDS[model.evidence_level];
+  const excluded = Object.keys(model.auto_excluded || {});
+  if (excluded.length) {
+    return `Auto does not use it for ${excluded.map((sc) => SCOPE_WORDS[sc] || sc).join(', ')}: `
+      + 'its check there did not finish within the check limit (current model and settings)';
+  }
+  if (model.limited_to?.length) {
+    return `Documented for ${model.limited_to.map((r) => STRENGTH_WORDS[r] || r).join(', ')} only`
+      + (source ? ` (${source})` : '');
+  }
+  if (model.hints?.length) {
+    return `Good for: ${model.hints.map((r) => STRENGTH_WORDS[r] || r).join(', ')}`
+      + (source ? ` (${source})` : '');
+  }
+  return 'Strengths not documented — usable; Auto prefers documented models';
+}
+
+const NEEDS_SETUP = (s) => !!(s.readiness && s.readiness.state !== 'ok');
+
+/* The footer link to Setup is always there, so setup can be reopened at any
+ * time; only the attention badge and outline depend on readiness. */
+function renderSetupAction(s) {
+  const action = $('setup-action');
+  const needs = NEEDS_SETUP(s);
+  if (action) {
+    action.hidden = false;
+    action.dataset.attention = needs ? 'true' : 'false';
+  }
+  const link = $('settings-link');
+  if (link) link.dataset.attention = needs ? 'true' : 'false';
+  const badge = $('settings-attention');
+  if (badge) badge.hidden = !needs;
+}
+
+/* On the first launch of this data, Setup opens by itself — once. The
+ * coordinator remembers it, because the desktop window keeps no storage. */
+function openSetupOnce(s) {
+  if (!s.setup || s.setup.first_opened) return false;
+  postJson('/v1/setup', { first_opened: true }).catch(() => {});
+  const here = typeof location !== 'undefined' ? location : null;
+  if (!here) return true;
+  if ($('setup')) {
+    $('setup').scrollIntoView?.({ block: 'start' });
+  } else {
+    here.href = '/control.html#setup';
+  }
+  return true;
+}
+
+async function saveSetup(change, success) {
+  try {
+    await postJson('/v1/setup', change);
+    if (success) notice(success[0], 'ok', success[1]);
+    await loadStatus();
+  } catch (err) {
+    notice('That choice could not be saved.', 'error', err.message);
+  }
+}
+
+function hardwareWords(s) {
+  const f = (s.hardware && s.hardware.facts) || {};
+  const memory = (s.hardware && s.hardware.memory) || {};
+  const parts = [];
+  if (f.cpu_brand) parts.push(f.cpu_brand);
+  if (f.memory_total_bytes) parts.push(`${gib(f.memory_total_bytes)} GB memory`);
+  if (memory.capacity_bytes) {
+    parts.push(`about ${gib(memory.capacity_bytes)} GB usable for models (estimated)`);
+  }
+  if (f.disk_free_bytes) parts.push(`${gib(f.disk_free_bytes)} GB free disk`);
+  return parts.length
+    ? `${parts.join(' · ')}. Read when Refinix started; suggestions below use it.`
+    : 'Refinix could not read this computer\'s memory and disk yet, so model fit is unknown.';
+}
+
+function usableModels(s) {
+  return (s.models || []).filter((m) => m.installed && m.locality === 'local');
+}
+
+function autoWords(s) {
+  const choices = s.model_choices || {};
+  return Object.entries(SCOPE_WORDS).map(([scope, word]) => {
+    const choice = choices[scope] || {};
+    if (choice.refusal) return `${word}: none suitable yet`;
+    const row = (s.models || []).find((m) => modelKey(m) === choice.key);
+    return `${word}: ${row ? modelLabel(row) : 'a model'}${choice.pinned ? ' (your choice)' : ''}`;
+  }).join(' · ');
+}
+
+function renderOverview(s) {
+  if (!$('o-ready')) return;
+  const ready = s.readiness || {};
+  chip($('o-chip'), ready.state === 'ok' ? 'ready'
+    : ready.state === 'failed' ? 'needs repair' : 'needs setup',
+  ready.state === 'ok' ? 'enforced' : ready.state === 'failed' ? 'fault' : 'caution');
+
+  const setup = s.setup || {};
+  const intro = $('o-intro');
+  intro.hidden = !!setup.intro_dismissed;
+  const introActions = [];
+  introActions.push(setup.intro_dismissed
+    ? { label: 'Show the setup explanation',
+        run: () => saveSetup({ intro_dismissed: false }) }
+    : { label: 'Hide this explanation',
+        run: () => saveSetup({ intro_dismissed: true }) });
+  actions($('o-intro-actions'), introActions);
+
+  $('o-ready').textContent = ready.state === 'ok'
+    ? 'Yes. Chat can run on this computer.'
+    : `Not yet. ${ready.message || ''}`.trim();
+  const here = usableModels(s);
+  const usable = here.filter((m) => m.enabled && m.eligible_scopes?.length);
+  $('o-models').textContent = here.length
+    ? `${usable.length} of ${here.length} installed model(s) can take work now. `
+      + `Auto right now — ${autoWords(s)}.`
+    : 'None installed yet. Use your Ollama models, or download one below.';
+  $('o-next').textContent = ready.state === 'ok'
+    ? 'Nothing is required. Ask something in Chat, or add models for other kinds of work below.'
+    : (ready.detail || ready.message || 'Check again.');
+  actions($('o-actions'), readinessActions(s));
+  $('o-hardware').textContent = hardwareWords(s);
+  renderOllamaPanel(s);
+  renderCategories(s);
+}
+
+/* The person's Ollama models: found, explained, and usable without a copy. */
+function renderOllamaPanel(s) {
+  const host = $('o-ollama');
+  if (!host) return;
+  host.replaceChildren();
+  const o = s.ollama || {};
+  const say = (text) => {
+    const p = document.createElement('p');
+    p.className = 'card-note';
+    p.textContent = text;
+    host.append(p);
+  };
+  if (!o.active) {
+    say('This copy of Refinix does not use Ollama.');
+    return;
+  }
+  if (!o.reachable) {
+    if (o.installed) {
+      say('Start Ollama to check your models. Refinix starts it only when you press '
+          + 'the button, and stops it when you quit only if Refinix started it.');
+      if (o.startable) {
+        const row = document.createElement('div');
+        row.className = 'card-actions';
+        host.append(row);
+        actions(row, [{ label: 'Start Ollama', run: startOllama }]);
+      }
+    } else if (o.installed === null) {
+      say('Ollama is not answering on this computer.');
+    } else {
+      say('Ollama is not installed. That is fine: choose models to download below.');
+    }
+    return;
+  }
+  const found = (s.models || []).filter((m) => m.origin === 'ollama' && m.installed);
+  const local = found.filter((m) => m.locality === 'local');
+  say(`Found ${local.length} model${local.length === 1 ? '' : 's'} in Ollama on this computer`
+      + (o.version ? ` (Ollama ${o.version})` : '') + '. Refinix uses these files '
+      + 'through Ollama; using them does not download another copy.'
+      + (o.update_recommended ? ` This Ollama is older than ${o.baseline?.minimum}; `
+         + 'update it to use these models.' : ''));
+  const list = document.createElement('ul');
+  list.className = 'found-list';
+  for (const model of local) {
+    const li = document.createElement('li');
+    const name = document.createElement('strong');
+    name.textContent = modelLabel(model);
+    const roles = document.createElement('span');
+    const can = (model.eligible_scopes || []).map((sc) => SCOPE_WORDS[sc] || sc);
+    roles.textContent = ` — ${modelRoleWords(model)}`
+      + (can.length ? `. Can run: ${can.join(', ')}.` : '. Cannot run a Refinix workflow here.')
+      + (model.enabled ? '' : ' Switched off for new work.');
+    li.append(name, roles);
+    list.append(li);
+  }
+  if (local.length) host.append(list);
+  if (o.cloud_models?.length) {
+    say(`Cloud models (${o.cloud_models.join(', ')}) run on another host and are not used.`);
+  }
+  const chosen = (s.setup || {}).choice === 'existing_models';
+  const buttons = document.createElement('div');
+  buttons.className = 'card-actions';
+  host.append(buttons);
+  actions(buttons, [
+    ...(local.length && !chosen ? [{
+      label: 'Use existing models',
+      run: () => saveSetup({ choice: 'existing_models', intro_dismissed: true },
+        ['Using your Ollama models.', 'Auto now chooses among them for each request. '
+         + 'Nothing was copied or downloaded, and no model was switched on or off.']),
+    }] : []),
+    { label: 'Review models', run: () => $('models')?.scrollIntoView?.({ block: 'start' }) },
+  ]);
+  if (chosen && local.length) say('You chose to use these models. Auto picks among them per request.');
+}
+
+/* Choices by kind of work. Any combination; downloads run one after another. */
+function categoryOption(option, s) {
   const li = document.createElement('li');
-  li.dataset.state = item.installed ? 'installed' : 'absent';
-  const head = document.createElement('div');
-  head.className = 'model-head';
+  li.dataset.state = option.installed ? 'installed' : 'absent';
   const name = document.createElement('span');
-  const id = document.createElement('span');
-  id.className = 'model-id';
-  id.textContent = entry.display_name || item.id;
+  name.className = 'model-id';
+  name.textContent = option.display_name;
   const sub = document.createElement('span');
   sub.className = 'model-where';
-  const p = entry.provenance || {};
-  sub.textContent = [p.publisher, p.quantizer && p.quantizer !== p.publisher
-    ? `quantized by ${p.quantizer}` : null, `${gib(item.storage_bytes)} GB`,
-  p.licence].filter(Boolean).join(' · ');
-  name.append(id, sub);
-  const badge = document.createElement('span');
-  badge.className = 'chip chip-' + (item.fit === 'good' ? 'enforced'
-    : item.fit === 'too_large' ? 'fault' : 'caution');
-  badge.textContent = item.fit_label;
-  head.append(name, badge);
-  const row = document.createElement('div');
-  row.className = 'model-actions';
-  if (item.hints?.length) {
-    const hints = document.createElement('span');
-    hints.className = 'fit-note';
-    hints.textContent = `Publisher lists: ${item.hints.join(', ')}`;
-    row.append(hints);
-  }
-  if (item.installed) {
-    const done = document.createElement('span');
-    done.className = 'fit-note';
-    done.textContent = 'Installed';
-    row.append(done);
-  } else if (item.disk_short) {
+  sub.textContent = [option.runtime_label,
+    option.storage_bytes ? `${gib(option.storage_bytes)} GB` : null,
+    option.fit_label, option.licence].filter(Boolean).join(' · ');
+  li.append(name, sub);
+  const operation = (s.provisioning || {})[option.id];
+  if (option.installed) {
+    const here = document.createElement('span');
+    here.className = 'fit-note';
+    here.textContent = option.origin === 'ollama' ? 'Already here, in Ollama — no download'
+      : 'Already here';
+    li.append(here);
+  } else if (operation && ['running', 'queued'].includes(operation.state)) {
+    li.append(provisioningLine(option.id, operation));
+  } else if (option.disk_short) {
     const short = document.createElement('span');
     short.className = 'fit-note';
-    short.textContent = 'Not enough free disk space for this download.';
-    row.append(short);
-  } else {
+    short.textContent = 'Not enough free disk space for this download now.';
+    li.append(short);
+  } else if (option.download) {
     const download = document.createElement('button');
     download.type = 'button';
     download.className = 'btn';
-    download.textContent = `Download (${gib(item.storage_bytes)} GB)`;
-    download.onclick = () => downloadModel(item.id, download);
-    row.append(download);
+    download.textContent = `Download (${gib(option.storage_bytes)} GB)`;
+    download.onclick = () => downloadModel(option.id, download);
+    li.append(download);
   }
-  li.append(head, row);
   return li;
 }
 
-function renderRecommendations(s) {
-  const host = $('c-recommend');
+function renderCategories(s) {
+  const host = $('o-categories');
   if (!host) return;
-  const rec = s.recommendations || { initial: [], more: [] };
-  host.replaceChildren(...rec.initial.map((item) => recommendationRow(item, s)));
-  const more = $('c-recommend-more');
-  more.replaceChildren(...rec.more.map((item) => recommendationRow(item, s)));
-  const toggle = $('c-recommend-toggle');
-  toggle.hidden = !rec.more.length;
-  toggle.textContent = more.hidden ? `Show more (${rec.more.length})` : 'Show fewer';
-  toggle.onclick = () => {
-    more.hidden = !more.hidden;
-    toggle.textContent = more.hidden ? `Show more (${rec.more.length})` : 'Show fewer';
-  };
-  const note = $('c-recommend-note');
+  host.replaceChildren();
+  const categories = (s.categories || []).filter(
+    (c) => c.initial.length || c.more.length || c.id !== 'other');
+  const note = $('o-categories-note');
   if (note) {
-    note.textContent = rec.initial.length || rec.more.length
-      ? rec.note || ''
+    note.textContent = categories.some((c) => c.initial.some((o) => o.download))
+      ? 'Estimates from this computer\'s memory and each model\'s published size — '
+        + 'not measurements. Choose any combination: one model, one per kind of work, '
+        + 'several in one, or none. One model can serve several kinds of work, so it '
+        + 'is never downloaded twice. Downloads run one after another and can be cancelled.'
       : 'Downloads run in the Refinix engine, which this copy does not include.';
+  }
+  for (const category of categories) {
+    const box = document.createElement('section');
+    box.className = 'category';
+    const head = document.createElement('h4');
+    head.textContent = category.label;
+    const detail = document.createElement('p');
+    detail.className = 'card-note';
+    detail.textContent = category.detail;
+    box.append(head, detail);
+    const list = document.createElement('ul');
+    list.className = 'model-list';
+    list.append(...category.initial.map((o) => categoryOption(o, s)));
+    if (!category.initial.length) {
+      const none = document.createElement('li');
+      none.textContent = 'Nothing documented for this yet. Browse Hugging Face under Models.';
+      list.append(none);
+    }
+    box.append(list);
+    if (category.more.length) {
+      const more = document.createElement('ul');
+      more.className = 'model-list';
+      more.hidden = true;
+      more.append(...category.more.map((o) => categoryOption(o, s)));
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'btn';
+      toggle.textContent = `Show more (${category.more.length})`;
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.onclick = () => {
+        more.hidden = !more.hidden;
+        toggle.setAttribute('aria-expanded', String(!more.hidden));
+        toggle.textContent = more.hidden ? `Show more (${category.more.length})` : 'Show fewer';
+      };
+      box.append(toggle, more);
+    }
+    host.append(box);
   }
 }
 
@@ -3800,7 +4179,16 @@ function provisioningLine(model, operation) {
   const line = document.createElement('p');
   line.className = 'provisioning-line';
   const verb = operation.kind === 'import' ? 'Importing' : 'Downloading';
-  if (operation.state === 'running') {
+  if (operation.state === 'queued') {
+    line.textContent = `Waiting to start: ${operation.kind === 'import' ? 'imports' : 'downloads'} `
+      + 'run one after another. ';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = 'Cancel';
+    cancel.onclick = () => cancelProvisioning(model, cancel);
+    line.append(cancel);
+  } else if (operation.state === 'running') {
     const share = operation.bytes_total
       ? Math.floor((100 * operation.bytes_done) / operation.bytes_total) : 0;
     line.textContent = `${verb}${operation.file ? ` ${operation.file}` : ''}: `
@@ -3833,8 +4221,10 @@ async function downloadModel(model, button) {
     const plan = await api(`/v1/model/plan?model=${encodeURIComponent(model)}`);
     if (!plan.enough_space) {
       notice('There is not enough free space for this model.', 'error',
-             `About ${gib(plan.download_bytes)} GB, plus 1 GB to spare, is needed; `
-             + `${gib(plan.free_bytes)} GB is free.`);
+             `About ${gib(plan.download_bytes)} GB, plus 1 GB to spare, is needed`
+             + (plan.pending_bytes ? `, beside ${gib(plan.pending_bytes)} GB for models `
+                + 'already chosen' : '')
+             + `; ${gib(plan.free_bytes)} GB is free.`);
       return;
     }
     const files = plan.files.map(
@@ -4797,6 +5187,8 @@ async function loadStatus() {
     renderModelPill();
   }
   renderReadyLine(s);
+  renderSetupAction(s);
+  openSetupOnce(s);
   renderSkill();
   if ($('kv-unavailable') && !$('c-cap-list')) {
     // Chat's Details rail carries the same "not observed" list.
@@ -4812,12 +5204,12 @@ async function loadStatus() {
   } catch (error) {
     worker = null;
   }
+  renderOverview(s);
   renderComputerCard(s);
   renderEngineCard(s);
   renderModelsCard(s);
   renderModelChoiceNote(s);
   renderOllamaLine(s);
-  renderRecommendations(s);
   renderUpdatesCard(s);
   renderOthersCard(s, worker);
   renderWorkCard(s, jobs);

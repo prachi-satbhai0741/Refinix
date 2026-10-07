@@ -46,21 +46,25 @@
     </div>
     <div class="nav-list">
       <p class="lbl nav-list-h">Settings</p>
-      <a class="nav-item" href="#computer">This computer</a>
-      <a class="nav-item" href="#engine">AI engine</a>
-      <a class="nav-item" href="#others">Connected computers</a>
-      <a class="nav-item" href="#work">Current work</a>
+      <a class="nav-item" href="#setup">Overview</a>
+      <a class="nav-item" href="#models">Models</a>
       <a class="nav-item" href="#updates">Updates</a>
+      <a class="nav-item" href="#details-group">Details</a>
       <a class="nav-item" href="#advanced">Advanced</a>
     </div>
     <div class="nav-foot">
-      <a class="nav-secondary" aria-current="page" href="/control.html">
+      <!-- Shown only while setup needs an action. Text and keyboard are
+           the cue; the Settings outline below only repeats it. -->
+      <a class="setup-action btn" id="setup-action" href="/control.html#setup"
+         hidden>Set up local AI</a>
+      <a class="nav-secondary" id="settings-link" aria-current="page" href="/control.html">
         <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
           <path d="M12.4 8h1.8M10.2 11.8l.9 1.6M5.8 11.8l-.9 1.6M3.6 8H1.8M5.8 4.2l-.9-1.6M10.2 4.2l.9-1.6"/>
           <circle cx="8" cy="8" r="4.4"/>
           <circle cx="8" cy="8" r="1.8"/>
         </svg>
         <span>Settings</span>
+        <span class="attention-badge" id="settings-attention" hidden>Needs setup</span>
       </a>
       <p class="ready-line" id="ready-line">Checking this computer…</p>
     </div>
@@ -110,6 +114,88 @@
     <div class="body">
       <div class="cards">
 
+        <!-- Settings opens here: three answers and the one next step. The
+             long evidence below (hashes, provenance, runtime versions, raw
+             checks) stays one Details press away and is never removed. -->
+        <section class="card span-2 overview" id="setup" aria-labelledby="setup-title">
+          <div class="card-head">
+            <h2 id="setup-title">Overview</h2>
+            <span class="chip chip-unknown" id="o-chip">checking</span>
+          </div>
+          <div class="setup-intro" id="o-intro">
+            <p class="card-lead">Refinix runs AI models on this computer. Use models
+               you already have in Ollama, download models by the kind of work you
+               want, or both. Nothing is downloaded or started until you choose it.</p>
+          </div>
+          <div class="card-actions" id="o-intro-actions"></div>
+          <dl class="overview-answers">
+            <div><dt>Is local AI ready?</dt><dd id="o-ready">Checking…</dd></div>
+            <div><dt>Which models can I use?</dt><dd id="o-models">Checking…</dd></div>
+            <div><dt>What should I do next?</dt><dd id="o-next">Checking…</dd></div>
+          </dl>
+          <div class="card-actions" id="o-actions"></div>
+          <h3 class="subhead">This computer</h3>
+          <p class="card-note" id="o-hardware"></p>
+          <h3 class="subhead">Models you already have in Ollama</h3>
+          <div class="ollama-panel" id="o-ollama"></div>
+          <h3 class="subhead">Choose models by kind of work</h3>
+          <p class="card-note" id="o-categories-note"></p>
+          <div class="category-grid" id="o-categories"></div>
+        </section>
+
+        <!-- Settings -> Models. The catalogue lifecycle stays available for
+             the installation's lifetime, not only during first setup. -->
+        <section class="card span-2" id="models">
+          <div class="card-head">
+            <h2>Models</h2>
+            <span class="chip chip-unknown" id="c-models-chip">checking</span>
+          </div>
+          <p class="card-lead" id="c-models-lead">Reading what is installed on
+             this computer…</p>
+          <!-- How each request picks a model: Auto by default, or a model the
+               person pinned. Filled from status; nothing here is a setting
+               the interface invents. -->
+          <p class="card-note" id="c-auto-note"></p>
+          <!-- The person's Ollama: used through its own local API, never
+               installed, updated or started without them asking. -->
+          <div class="ollama-line" id="c-ollama"></div>
+          <ul class="model-list" id="c-model-list"></ul>
+          <p class="card-note" id="c-models-note"></p>
+
+          <!-- Connected, and only when the person searches. -->
+          <h3 class="subhead">Browse Hugging Face</h3>
+          <p class="card-note">Searches Hugging Face for GGUF models only when
+             you press Search. Nothing is downloaded until you confirm the exact
+             files, sizes and checksums.</p>
+          <form class="hub-search" id="c-hub-form">
+            <input type="search" id="c-hub-query" maxlength="100"
+                   placeholder="e.g. qwen3, gemma 3, glm-4, deepseek r1, gpt-oss"
+                   aria-label="Search Hugging Face for models">
+            <button type="submit" class="btn" id="c-hub-search">Search</button>
+          </form>
+          <ul class="model-list" id="c-hub-results"></ul>
+        </section>
+
+        <!-- Settings -> Updates. Checked only when the person asks; nothing
+             is offered unless signed metadata verified it. -->
+        <section class="card span-2" id="updates">
+          <div class="card-head">
+            <h2>Updates</h2>
+            <span class="chip chip-unknown" id="c-updates-chip">checking</span>
+          </div>
+          <p class="card-lead" id="c-updates-lead">Reading this installation's version…</p>
+          <dl class="facts" id="c-updates-facts"></dl>
+          <div class="card-actions" id="c-updates-actions"></div>
+          <p class="card-note" id="c-updates-note"></p>
+        </section>
+
+        <!-- What this computer, its engine, paired computers and running work
+             look like in full. Collapsed so Settings opens on the overview;
+             every card and control inside is unchanged. -->
+        <details class="card span-2 details-group" id="details-group">
+          <summary><h2>Details</h2><span class="lbl">This computer, AI engine,
+             connected computers and current work</span></summary>
+          <div class="cards cards-nested">
         <section class="card" id="computer">
           <div class="card-head">
             <h2>This computer</h2>
@@ -189,62 +275,8 @@
           <div class="proof-card" id="c-proof" hidden></div>
           <div class="card-actions" id="c-work-actions"></div>
         </section>
-
-        <!-- Settings -> Models. The catalogue lifecycle stays available for
-             the installation's lifetime, not only during first setup. -->
-        <section class="card span-2" id="models">
-          <div class="card-head">
-            <h2>Models</h2>
-            <span class="chip chip-unknown" id="c-models-chip">checking</span>
           </div>
-          <p class="card-lead" id="c-models-lead">Reading what is installed on
-             this computer…</p>
-          <!-- How each request picks a model: Auto by default, or a model the
-               person pinned. Filled from status; nothing here is a setting
-               the interface invents. -->
-          <p class="card-note" id="c-auto-note"></p>
-          <!-- The person's Ollama: used through its own local API, never
-               installed, updated or started without them asking. -->
-          <div class="ollama-line" id="c-ollama"></div>
-          <ul class="model-list" id="c-model-list"></ul>
-          <p class="card-note" id="c-models-note"></p>
-
-          <!-- Starting choices for this computer. Recommendations, never an
-               allowlist: everything below them can be chosen too. -->
-          <h3 class="subhead">Recommended for this computer</h3>
-          <p class="card-note" id="c-recommend-note"></p>
-          <ul class="model-list" id="c-recommend"></ul>
-          <div class="card-actions">
-            <button type="button" class="btn" id="c-recommend-toggle" hidden>Show more</button>
-          </div>
-          <ul class="model-list" id="c-recommend-more" hidden></ul>
-
-          <!-- Connected, and only when the person searches. -->
-          <h3 class="subhead">Browse Hugging Face</h3>
-          <p class="card-note">Searches Hugging Face for GGUF models only when
-             you press Search. Nothing is downloaded until you confirm the exact
-             files, sizes and checksums.</p>
-          <form class="hub-search" id="c-hub-form">
-            <input type="search" id="c-hub-query" maxlength="100"
-                   placeholder="e.g. qwen3, gemma 3, glm-4, deepseek r1, gpt-oss"
-                   aria-label="Search Hugging Face for models">
-            <button type="submit" class="btn" id="c-hub-search">Search</button>
-          </form>
-          <ul class="model-list" id="c-hub-results"></ul>
-        </section>
-
-        <!-- Settings -> Updates. Checked only when the person asks; nothing
-             is offered unless signed metadata verified it. -->
-        <section class="card span-2" id="updates">
-          <div class="card-head">
-            <h2>Updates</h2>
-            <span class="chip chip-unknown" id="c-updates-chip">checking</span>
-          </div>
-          <p class="card-lead" id="c-updates-lead">Reading this installation's version…</p>
-          <dl class="facts" id="c-updates-facts"></dl>
-          <div class="card-actions" id="c-updates-actions"></div>
-          <p class="card-note" id="c-updates-note"></p>
-        </section>
+        </details>
 
         <!-- Off the UI, not out of the build: renderCapabilityCard() still
              fills this from /v1/status, so nothing downstream changes. -->

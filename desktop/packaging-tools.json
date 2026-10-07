@@ -28,5 +28,15 @@
     "source": "Preinstalled on GitHub windows runners, or the official installer from jrsoftware.org on a native host",
     "licence": "Inno Setup licence (free for commercial use)",
     "shipped": false
+  },
+  "webview2_standalone_x64": {
+    "version": "Evergreen Standalone Installer x64, as published 2026-10-05",
+    "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/18c66e75-0385-4019-be3f-3f4a2bb867d5/MicrosoftEdgeWebView2RuntimeInstallerX64.exe",
+    "size": 212358352,
+    "sha256": "ac22ecdc19c5b88b87f3fa752c00da9541653a8f5c0c5fc4a3b2b6ebe6591f69",
+    "source": "https://go.microsoft.com/fwlink/?linkid=2124701 (Microsoft's x64 standalone link), resolved and downloaded once on 2026-10-07; size and SHA-256 computed from those bytes",
+    "licence": "Microsoft Edge WebView2 Runtime licence terms. Including the Evergreen Standalone Installer in an app's installer is Microsoft's documented offline deployment path (learn.microsoft.com/microsoft-edge/webview2/concepts/distribution, read 2026-10-07)",
+    "signature": "Authenticode, Microsoft Corporation; verified on the Windows build host",
+    "shipped": true
   }
 }

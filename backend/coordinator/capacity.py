@@ -142,51 +142,119 @@ def grossly_oversized(weights_bytes: int | None, memory: dict) -> bool:
 # --------------------------------------------------------------------------
 
 FIT_ORDER = {GOOD: 0, MARGINAL: 1, UNKNOWN: 2, TOO_LARGE: 3}
-HINT_ORDER = ("general", "vision", "code", "reasoning")
-INITIAL = 6
 
 
-def recommend(entries: list, memory: dict, *, free_disk: int | None = None,
-              installed: set[str] = frozenset()) -> dict:
-    """Up to six starting choices for this computer, then everything else.
+# --------------------------------------------------------------------------
+# Categories: the same evidence routing uses, grouped by kind of work
+# --------------------------------------------------------------------------
+#
+# A person chooses freely: one model, one per category, several in one, or
+# none. A model appears in every category its evidence supports, so one
+# download serves all of them and nothing is downloaded twice. Installed
+# models — Refinix-engine files and the person's own Ollama models — come
+# first and are marked as already here.
 
-    A recommendation is a starting point, not an allowlist: every entry is
-    returned, larger ones with a warning, and choosing one is never blocked
-    except by an actual disk shortage or an unsupported format.
+CATEGORIES = (
+    ("chat", "Chat", "Everyday questions and conversation"),
+    ("code", "Code", "Proposing changes to code you choose"),
+    ("documents", "Documents", "Writing and reading documents"),
+    ("page_reading", "Page reading (OCR)", "Reading the text on scanned pages and photos of pages"),
+    ("vision", "Images", "Answering questions about what a picture shows"),
+    ("reasoning", "Reasoning", "Step-by-step problems"),
+    # Every model stays choosable: one whose strengths nobody documented is
+    # listed here rather than left out.
+    ("other", "Other models", "Usable, but their strengths are not documented"),
+)
+PER_CATEGORY = 3
+_LIMIT_CATEGORIES = {"general": {"chat", "documents"}, "code": {"code"},
+                     "reasoning": {"reasoning"}, "ocr": {"page_reading"},
+                     "vision": {"vision", "page_reading"}}
+
+
+def category_ids(strengths, *, accepts_images: bool, limited_to=()) -> set[str]:
+    """Which categories one model belongs to, from evidence and capability only."""
+    s = set(strengths or ())
+    found = set()
+    if "general" in s:
+        found |= {"chat", "documents"}
+    if "code" in s:
+        found.add("code")
+    if "reasoning" in s:
+        found.add("reasoning")
+    if accepts_images:
+        # Page reading sends a picture: a model that cannot take one here is
+        # not a page-reading choice, whatever its documentation says.
+        found.add("page_reading")
+    if accepts_images and ("vision" in s or "general" in s):
+        found.add("vision")
+    if limited_to:
+        allowed = set().union(*(_LIMIT_CATEGORIES.get(item, set()) for item in limited_to))
+        found &= allowed
+    return found
+
+
+def categories(entries: list, rows: list[dict], memory: dict, *,
+               free_disk: int | None = None, pending_bytes: int = 0) -> list[dict]:
+    """Each category's choices for this computer: installed first, then by fit.
+
+    `entries` are downloadable catalogue entries; `rows` are installed models
+    (status inventory rows) on either runtime. Estimates, never an allowlist.
     """
-    rows = []
+    from backend.coordinator import models as models_module   # no import cycle at load
+    options: dict[str, list[dict]] = {cid: [] for cid, _l, _d in CATEGORIES}
+    installed_ids = set()
+    for row in rows:
+        if not row.get("installed") or row.get("locality") not in (None, "local"):
+            continue
+        installed_ids.add(row["id"])
+        found = category_ids(row.get("hints"),
+                             accepts_images="vision" in (row.get("capabilities") or []),
+                             limited_to=row.get("limited_to") or ())
+        option = {"key": row["key"], "id": row["id"],
+                  "display_name": row.get("display_name") or row["id"],
+                  "origin": row["origin"], "runtime_label": row.get("runtime_label"),
+                  "installed": True, "enabled": row.get("enabled", True),
+                  "fit": row.get("fit") or UNKNOWN,
+                  "fit_label": FIT_LABELS.get(row.get("fit") or UNKNOWN),
+                  "storage_bytes": row.get("weights_bytes"),
+                  "evidence_source": row.get("evidence_source"),
+                  "disk_short": False, "download": False}
+        for cid in found or {"other"}:
+            options[cid].append(option)
     for entry in entries:
+        if entry.id in installed_ids:
+            continue
+        evidence = models_module.task_evidence(entry)
+        found = category_ids(evidence["strengths"],
+                             accepts_images=any(f.role == "projector" for f in entry.files),
+                             limited_to=evidence["limited_to"])
         weights = entry.weights_bytes()
         label = fit(weights, memory)
         storage = entry.storage_bytes or 0
-        disk_short = (free_disk is not None and entry.id not in installed
-                      and storage + GIB > free_disk)
-        rows.append({"id": entry.id, "fit": label, "fit_label": FIT_LABELS[label],
-                     "estimated": True, "disk_short": disk_short,
-                     "hints": list(entry.hints), "weights_bytes": weights,
-                     "storage_bytes": storage, "installed": entry.id in installed})
-    order = sorted(rows, key=lambda r: (FIT_ORDER[r["fit"]], -(r["weights_bytes"] or 0)
-                                        if r["fit"] == GOOD else (r["weights_bytes"] or 0),
-                                        r["id"]))
-    initial, used = [], set()
-    for hint in HINT_ORDER:
-        pick = next((r for r in order if r["id"] not in used and hint in r["hints"]
-                     and r["fit"] in (GOOD, MARGINAL)), None)
-        if pick is not None:
-            initial.append(pick)
-            used.add(pick["id"])
-    for row in order:
-        if len(initial) >= INITIAL:
-            break
-        if row["id"] not in used and row["fit"] != TOO_LARGE:
-            initial.append(row)
-            used.add(row["id"])
-    initial = initial[:INITIAL]
-    more = [row for row in order if row["id"] not in used]
-    return {"initial": initial, "more": more, "memory": memory,
-            "note": ("Recommendations use this computer's memory and each model's "
-                     "published size. They are estimates, not measurements; you "
-                     "can choose any model, including larger ones.")}
+        option = {"key": f"{entry.engine}|{entry.id}", "id": entry.id,
+                  "display_name": entry.display_name or entry.id,
+                  "origin": entry.engine, "runtime_label": "Refinix engine",
+                  "installed": False, "enabled": True, "fit": label,
+                  "fit_label": FIT_LABELS[label], "storage_bytes": storage,
+                  "licence": entry.licence, "publisher": entry.publisher,
+                  "evidence_source": evidence["source"],
+                  "disk_short": (free_disk is not None
+                                 and storage + pending_bytes + GIB > free_disk),
+                  "download": True}
+        for cid in found or {"other"}:
+            options[cid].append(option)
+    result = []
+    for cid, label, detail in CATEGORIES:
+        ordered = sorted(options[cid], key=lambda o: (
+            int(not o["installed"]), FIT_ORDER.get(o["fit"], 2),
+            -(o["storage_bytes"] or 0) if o["fit"] == GOOD else (o["storage_bytes"] or 0),
+            o["id"]))
+        initial = [o for o in ordered if o["installed"] or o["fit"] != TOO_LARGE][:PER_CATEGORY]
+        more = [o for o in ordered if o not in initial]
+        result.append({"id": cid, "label": label, "detail": detail,
+                       "installed": sum(1 for o in ordered if o["installed"]),
+                       "initial": initial, "more": more})
+    return result
 
 
 # --------------------------------------------------------------------------

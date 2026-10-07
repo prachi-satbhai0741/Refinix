@@ -2244,3 +2244,70 @@
   border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
   color: var(--text); font: inherit; }
 .fit-note { font-size: 11.5px; color: var(--text-faint); }
+
+/* ---- setup and the Settings overview ---------------------------------- *
+ * The footer button and the Settings outline appear only while setup needs
+ * an action. Text carries the meaning; the outline only repeats it, and
+ * nothing here animates, so reduced motion needs no special case. */
+.setup-action[hidden] { display: none; }
+.setup-action[data-attention="false"] { font-weight: 500; color: var(--text-dim); }
+.setup-action { justify-content: center; text-align: center; text-decoration: none;
+  font-size: 12px; font-weight: 600; }
+.nav-secondary[data-attention="true"] { border-color: var(--st-caution);
+  box-shadow: inset 0 0 0 1px var(--st-caution); }
+.attention-badge { margin-left: auto; padding: 0 6px; border: 1px solid var(--st-caution);
+  border-radius: 999px; color: var(--st-caution); font-size: 10.5px; line-height: 16px; }
+.attention-badge[hidden] { display: none; }
+.setup-action:focus-visible, .nav-secondary:focus-visible,
+.details-group > summary:focus-visible, .model-details > summary:focus-visible {
+  outline: 2px solid var(--text); outline-offset: 2px; }
+
+.overview-answers { margin: 0; display: grid; gap: var(--sp-2); }
+.overview-answers > div { display: grid; grid-template-columns: minmax(10rem, 30%) 1fr;
+  gap: var(--sp-3); font-size: 12.5px; }
+.overview-answers dt { color: var(--text-faint); }
+.overview-answers dd { margin: 0; color: var(--text); word-break: break-word; }
+.setup-intro[hidden] { display: none; }
+.ollama-panel { display: grid; gap: var(--sp-2); font-size: 12.5px; }
+.found-list { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px;
+  font-size: 12px; color: var(--text-dim); }
+.found-list strong { color: var(--text); font-weight: 600; }
+
+.category-grid { display: grid; gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+.category { border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
+  padding: var(--sp-3); display: grid; gap: var(--sp-1); align-content: start;
+  min-width: 0; }
+.category h4 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.category .model-list { margin-top: var(--sp-1); }
+.category .model-list[hidden] { display: none; }
+
+/* Details: the technical cards, collapsed so Settings opens on the overview. */
+.details-group > summary { cursor: pointer; list-style: none; display: flex;
+  flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); }
+.details-group > summary::-webkit-details-marker { display: none; }
+.details-group > summary::before { content: "▸"; color: var(--text-faint); }
+.details-group[open] > summary::before { content: "▾"; }
+.details-group > summary h2 { display: inline; }
+.cards-nested { padding: 0; }
+
+/* A model row: summary first, the evidence one press away. */
+.model-roles { display: block; color: var(--text-dim); font-size: 11.5px; margin-top: 2px; }
+.model-alert { display: block; color: var(--st-fault); font-size: 11.5px; margin-top: 2px; }
+.model-alert::before { content: "Problem: "; font-weight: 600; }
+.model-alert.model-note { color: var(--st-caution); }
+.model-alert.model-note::before { content: "Note: "; }
+.model-details > summary { cursor: pointer; color: var(--text-dim); font-size: 11.5px; }
+.model-details[open] > summary { margin-bottom: var(--sp-2); }
+.selftest-rows { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+.selftest-line { font-size: 11.5px; color: var(--text-dim); display: flex;
+  flex-wrap: wrap; align-items: center; gap: 4px var(--sp-2); }
+.selftest-detail { color: var(--text-faint); }
+.selftest-excerpt { font-family: var(--font-data); color: var(--text);
+  word-break: break-word; }
+@media (max-width: 640px) {
+  .overview-answers > div { grid-template-columns: 1fr; gap: 2px; }
+  .model-facts div { grid-template-columns: 1fr; }
+}
+.mp-model-caution { grid-column: 2 / -1; font-size: 11px; line-height: 1.35;
+  color: var(--st-caution); text-align: left; }

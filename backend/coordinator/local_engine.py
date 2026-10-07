@@ -55,10 +55,11 @@ class InstalledModel:
     projector: Path | None = None
     sampling: dict = field(default_factory=dict)
     components: tuple[ModelComponent, ...] = ()   # every file, in recorded order
-    # Published facts from the model's library entry, when it has one.
+    # Published facts from the model's library entry, when it has one. Task
+    # strengths are not kept here: the coordinator reads them from the same
+    # evidence for both runtimes (`models.task_evidence`).
     context_length: int | None = None
     reasoning_hint: bool = False
-    hints: tuple[str, ...] = ()
 
     @property
     def capabilities(self) -> list[str]:
@@ -212,17 +213,6 @@ class LocalEngine:
                 self._active.pop(lease, None)
             self._turn.notify_all()
 
-    def facts(self, model_id: str) -> dict:
-        """Published facts about an installed model, for local admission."""
-        try:
-            record = self.registry().get(model_id)
-        except Exception:                                  # noqa: BLE001
-            record = None
-        if record is None:
-            return {}
-        return {"context_length": record.context_length,
-                "reasoning_hint": record.reasoning_hint, "hints": list(record.hints)}
-
     # -- observation ------------------------------------------------------
     def probe(self) -> dict:
         """What is installed, and whether its files are still the installed bytes.
@@ -260,12 +250,11 @@ class LocalEngine:
             "file_checks": checks,
             # What each install's own record says, so admission needs no
             # second read: vision only with a verified projector, the declared
-            # context and the publisher's stated strengths.
+            # context and whether a reasoning switch is offered.
             "capabilities": {k: list(v.capabilities) for k, v in installed.items()},
             "context_lengths": {k: v.context_length for k, v in installed.items()
                                 if v.context_length},
             "reasoning_hints": {k: v.reasoning_hint for k, v in installed.items()},
-            "hints": {k: list(v.hints) for k, v in installed.items()},
             "sizes": {k: sum(c.size for c in v.components if c.role != "projector")
                       for k, v in installed.items() if v.components},
             "loaded": loaded,

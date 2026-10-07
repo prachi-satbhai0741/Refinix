@@ -375,6 +375,8 @@ def probe_ollama() -> dict:
                 state["capabilities"][model_id] = facts["capabilities"]
             if facts.get("context_length"):
                 state["context_lengths"][model_id] = facts["context_length"]
+            if facts.get("tags"):
+                state.setdefault("model_tags", {})[model_id] = facts["tags"]
     try:
         # Every resident model, including ones other applications loaded:
         # Refinix counts their memory and never unloads them.
@@ -463,7 +465,9 @@ def _entries_one(sub: dict, origin: str) -> dict[str, dict]:
             "capabilities": capabilities.get(model_id),
             "context_length": (sub.get("context_lengths") or {}).get(model_id),
             "reasoning_hint": bool((sub.get("reasoning_hints") or {}).get(model_id)),
-            "hints": tuple((sub.get("hints") or {}).get(model_id) or ()),
+            # Task tags the model file's own metadata carries, as the runtime
+            # reports them; the weakest of the task-evidence sources.
+            "model_tags": tuple((sub.get("model_tags") or {}).get(model_id) or ()),
             "size_bytes": (sub.get("sizes") or {}).get(model_id),
             "details": (sub.get("details") or {}).get(model_id),
         }
@@ -503,12 +507,17 @@ def _show(model_id: str) -> dict | None:
     info = body.get("model_info") if isinstance(body.get("model_info"), dict) else {}
     architecture = info.get("general.architecture")
     context = info.get(f"{architecture}.context_length") if architecture else None
+    tags = info.get("general.tags")
     return {
         "capabilities": ([item for item in listed if isinstance(item, str)]
                          if isinstance(listed, list) else None),
         "locality": REMOTE if _is_remote(body) else LOCAL,
         "context_length": context if isinstance(context, int) and context > 0 else None,
         "architecture": architecture if isinstance(architecture, str) else None,
+        # The GGUF `general.tags` array, when the file carries one and the
+        # runtime returns it. Bounded; only task vocabulary is ever used.
+        "tags": ([str(t)[:64] for t in tags if isinstance(t, str)][:32]
+                 if isinstance(tags, list) else []),
         "details": body.get("details") if isinstance(body.get("details"), dict) else {},
         "requires": body.get("requires") if isinstance(body.get("requires"), str) else None,
     }

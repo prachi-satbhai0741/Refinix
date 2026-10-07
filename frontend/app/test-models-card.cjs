@@ -151,6 +151,13 @@ function status(over = {}) {
   }, over);
 }
 
+/* Every button in a card, wherever it sits: the checks live under Details. */
+function allButtons(node) {
+  const found = node.tag === 'button' ? [node] : [];
+  for (const child of node.children || []) found.push(...allButtons(child));
+  return found;
+}
+
 function render(over = {}) {
   const p = page();
   p.run(`renderModelsCard(${JSON.stringify(status(over))})`);
@@ -330,19 +337,16 @@ test('the impact notice repeats that Refinix removes nothing itself', async () =
 
 test('a self-test is only offered for a workflow that has one', () => {
   const p = render({ selftest_scopes: ['documents.ocr'] });
-  const labels = p.rows()[0].children[2].children
-    .filter((child) => child.tag === 'button')
-    .map((b) => b.textContent);
-  assert.ok(!labels.some((l) => /Self-test chat/.test(l)),
+  const labels = allButtons(p.rows()[0]).map((b) => b.textContent);
+  assert.ok(!labels.some((l) => /Check Chat/.test(l)),
             'chat has no self-test in this build, so none is offered');
+  assert.ok(labels.length > 0, 'the card still has its other controls');
 });
 
 test('a row\'s self-test checks that row\'s own model, by its key', async () => {
   const p = render({ models: [Object.assign({}, INSTALLED,
                                             { key: 'ollama|qwen3.5:4b-q4_K_M' })] });
-  const button = p.rows()[0].children[2].children
-    .filter((child) => child.tag === 'button')
-    .find((b) => /Self-test chat/.test(b.textContent));
+  const button = allButtons(p.rows()[0]).find((b) => b.textContent === 'Check Chat');
   button.onclick();
   await new Promise((r) => setImmediate(r));
   assert.deepEqual(p.requests[0].body,
@@ -351,18 +355,17 @@ test('a row\'s self-test checks that row\'s own model, by its key', async () => 
 
 test('every workflow the model can run offers its check, not only the selected one', () => {
   const p = render({ models: [Object.assign({}, INSTALLED, { selected_for: [] })] });
-  const labels = p.rows()[0].children[2].children
-    .filter((child) => child.tag === 'button').map((b) => b.textContent);
-  for (const scope of ['chat', 'code', 'documents.generate']) {
-    assert.ok(labels.includes(`Self-test ${scope}`), scope);
+  const labels = allButtons(p.rows()[0]).map((b) => b.textContent);
+  for (const word of ['Chat', 'Code', 'Documents']) {
+    assert.ok(labels.includes(`Check ${word}`), word);
   }
+  assert.ok(!labels.some((l) => /documents\.generate|Self-test/.test(l)),
+            'plain workflow names, never API scope names');
 });
 
 test('running a self-test asks the coordinator and nothing else', async () => {
   const p = render();
-  const button = p.rows()[0].children[2].children
-    .filter((child) => child.tag === 'button')
-    .find((b) => /Self-test chat/.test(b.textContent));
+  const button = allButtons(p.rows()[0]).find((b) => b.textContent === 'Check Chat');
   assert.ok(button);
   button.onclick();
   await new Promise((r) => setImmediate(r));
@@ -593,4 +596,87 @@ test('browse sends the paired projector, text only, or what the person chose', (
   assert.deepEqual([p.requests[3].body.file, p.requests[3].body.projector,
                     p.requests[3].body.projector_confirmed],
                    ['unsure.gguf', 'mmproj-F16.gguf', true]);
+});
+
+
+test('a failed check names its workflow, why, and whether it still applies', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'left out the label',
+                         current: false, superseded: false, matches_now: true,
+                         failure_kind: 'missing_label', reply_excerpt: 'unsafe; 2.4' } },
+  })] });
+  const row = p.rows()[0].textContent;
+  assert.match(row, /self-test failed — Chat/);
+  assert.match(row, /formatting: left out the requested label/);
+  assert.match(row, /matches this model and settings now/);
+  assert.match(row, /unsafe; 2\.4/);
+  assert.doesNotMatch(row, /backwards/, 'a formatting failure is not a wrong answer');
+});
+
+test('an older failure is labelled as history and does not raise the alert', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'x', current: false,
+                         superseded: false, matches_now: false } },
+  })] });
+  const head = p.rows()[0].children[0];
+  assert.match(p.rows()[0].textContent, /Chat \(older result\)/);
+  assert.match(p.rows()[0].textContent, /reason not recorded \(older check\)/);
+  assert.doesNotMatch(head.textContent, /check failed/);
+});
+
+test('a reply excerpt is inert text, never markup', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'x', current: false,
+                         matches_now: true, failure_kind: 'extra_text',
+                         reply_excerpt: '<img src=x onerror=alert(1)>' } },
+  })] });
+  const quotes = [];
+  const walk = (n) => { if (n.tag === 'q') quotes.push(n); (n.children || []).forEach(walk); };
+  walk(p.rows()[0]);
+  assert.equal(quotes.length, 1);
+  assert.equal(quotes[0].textContent, '<img src=x onerror=alert(1)>');
+  assert.equal(quotes[0].children.length, 0, 'set as text, not parsed');
+});
+
+test('a critical problem stays visible while Details is closed', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    integrity: { local: { state: 'mismatch' } } })] });
+  const head = p.rows()[0].children[0];
+  assert.match(head.textContent, /files changed since they were installed/);
+  assert.equal(p.rows()[0].children[1].tag, 'details', 'technical facts are collapsed');
+});
+
+test('the summary line says what the model is documented for, or that nobody did', () => {
+  const documented = render({ models: [Object.assign({}, INSTALLED, {
+    hints: ['general', 'vision'], evidence_level: 3, fit_label: 'Good fit (estimated)' })] });
+  assert.match(documented.rows()[0].children[0].textContent,
+               /Good for: general use, images \(publisher's card\) · Good fit/);
+  const unknown = render({ models: [Object.assign({}, INSTALLED, { hints: [] })] });
+  assert.match(unknown.rows()[0].children[0].textContent, /Strengths not documented/);
+  const limited = render({ models: [Object.assign({}, INSTALLED, {
+    hints: ['ocr'], limited_to: ['ocr'], evidence_level: 3 })] });
+  assert.match(limited.rows()[0].children[0].textContent, /Documented for page reading only/);
+});
+
+test('a task its current check shows unfinished says Auto does not use it there', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    hints: ['ocr'], evidence_level: 1, auto_excluded: { chat: 'did not finish' } })] });
+  assert.match(p.rows()[0].children[0].textContent,
+               /Auto does not use it for Chat: its check there did not finish/);
+  const tagged = render({ models: [Object.assign({}, INSTALLED, { hints: ['ocr'] })] });
+  assert.doesNotMatch(tagged.rows()[0].children[0].textContent, /Auto does not use it/,
+                      'tags alone never exclude a model');
+});
+
+test('a formatting-only check failure is a note, not a problem', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'x', current: false,
+                         matches_now: true, failure_kind: 'missing_label' } } })] });
+  const alert = p.rows()[0].children[0].children[0].children.find((n) => /model-alert/.test(n.className));
+  assert.equal(alert.className, 'model-alert model-note');
+  const wrong = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'x', current: false,
+                         matches_now: true, failure_kind: 'wrong_verdict' } } })] });
+  const fault = wrong.rows()[0].children[0].children[0].children.find((n) => /model-alert/.test(n.className));
+  assert.equal(fault.className, 'model-alert');
 });

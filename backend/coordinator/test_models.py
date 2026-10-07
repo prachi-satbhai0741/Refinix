@@ -227,8 +227,98 @@ class TestSelfTests(unittest.TestCase):
             generate=lambda *_a, **_k:
                 "The operation is unsafe because 2.4 is less than 3.1.")
         self.assertEqual(result["state"], models.FAILED)
-        self.assertIn("single line", result["detail"])
+        self.assertEqual(result["failure_kind"], models.EXTRA_TEXT)
+        self.assertIn("one-line form", result["detail"])
+        self.assertIn("formatting failure", result["detail"])
+        self.assertNotIn("reverses", result["detail"])
         self.assertNotIn("smaller number when", result["detail"])
+
+    def run_chat(self, reply):
+        return models.run_selftest(models.CHAT, CATALOGUED,
+                                   generate=lambda *_a, **_k: reply)
+
+    def test_line_boundaries_are_checked_before_whitespace_is_normalised(self):
+        """Found in review: joining every run of whitespace first let a reply
+        spread over several lines pass as the one line it was asked for."""
+        for reply in (f"unsafe;\nsmaller number: {models.CHAT_CHECK_SMALLER}",
+                      f"unsafe; smaller number:\r\n{models.CHAT_CHECK_SMALLER}",
+                      f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}\nExplanation."):
+            with self.subTest(reply=reply):
+                result = self.run_chat(reply)
+                self.assertEqual(result["state"], models.FAILED)
+                self.assertEqual(result["failure_kind"], models.MULTI_LINE)
+                self.assertNotIn("reverses", result["detail"])
+                self.assertIn("⏎", result["reply_excerpt"])
+
+    def test_surrounding_whitespace_and_one_trailing_newline_still_pass(self):
+        result = self.run_chat(f"  unsafe; smaller number: {models.CHAT_CHECK_SMALLER}\n")
+        self.assertEqual(result["state"], models.PASSED)
+        self.assertIsNone(result["failure_kind"])
+
+    def test_formatting_and_wrong_answers_are_different_failure_kinds(self):
+        cases = {
+            "": models.EMPTY,
+            "   ": models.EMPTY,
+            f"not unsafe; smaller number: {models.CHAT_CHECK_SMALLER}": models.EXTRA_TEXT,
+            f"not unsafe; {models.CHAT_CHECK_SMALLER}": models.EXTRA_TEXT,
+            f"safe; {models.CHAT_CHECK_SMALLER}": models.WRONG_VERDICT,
+            f"unsafe; {models.CHAT_CHECK_LARGER}": models.WRONG_NUMBER,
+            f"unsafe; {models.CHAT_CHECK_SMALLER} because it is lower": models.EXTRA_TEXT,
+            (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}, so actually "
+             "it is safe"): models.EXTRA_TEXT,
+            f"safe; smaller number: {models.CHAT_CHECK_SMALLER}": models.WRONG_VERDICT,
+            f"unsafe; smaller number: {models.CHAT_CHECK_LARGER}": models.WRONG_NUMBER,
+        }
+        for reply, kind in cases.items():
+            with self.subTest(reply=reply):
+                result = self.run_chat(reply)
+                self.assertEqual(result["state"], models.FAILED)
+                self.assertEqual(result["failure_kind"], kind)
+                said_reversed = "reverses" in result["detail"]
+                self.assertEqual(said_reversed, kind not in models.FORMAT_FAILURES)
+
+    def test_the_correct_answer_passes_with_or_without_the_label(self):
+        """User decision D1: the verdict and the number are the answer; the
+        label is formatting. Any model, not one model's habit."""
+        for reply in (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}",
+                      f"unsafe; {models.CHAT_CHECK_SMALLER}",
+                      f"Unsafe ; {models.CHAT_CHECK_SMALLER}.",
+                      f"  unsafe;{models.CHAT_CHECK_SMALLER}  \n"):
+            with self.subTest(reply=reply):
+                self.assertEqual(self.run_chat(reply)["state"], models.PASSED)
+
+    def test_the_shorter_form_still_rejects_lines_prose_and_contradictions(self):
+        for reply in (f"unsafe;\n{models.CHAT_CHECK_SMALLER}",
+                      f"unsafe; {models.CHAT_CHECK_SMALLER}\nsafe; {models.CHAT_CHECK_LARGER}",
+                      f"unsafe; {models.CHAT_CHECK_SMALLER} — actually safe",
+                      f"The answer: unsafe; {models.CHAT_CHECK_SMALLER}"):
+            with self.subTest(reply=reply):
+                self.assertEqual(self.run_chat(reply)["state"], models.FAILED)
+
+    def test_an_answer_cut_off_by_the_limit_is_a_failure_with_evidence(self):
+        """D9: the model was still writing when the check's limit was reached."""
+        def cut_off(*_a, **_k):
+            raise models.IncompleteReply("It is my understanding that you are " * 20, 128)
+        result = models.run_selftest(models.CHAT, CATALOGUED, generate=cut_off)
+        self.assertEqual(result["state"], models.FAILED)
+        self.assertEqual(result["failure_kind"], models.INCOMPLETE)
+        self.assertIn("128-token output limit", result["detail"])
+        self.assertIn("not every use of the model", result["detail"])
+        self.assertTrue(result["reply_excerpt"].startswith("It is my understanding"))
+        self.assertLessEqual(len(result["reply_excerpt"]), models.EXCERPT_CHARS + 1)
+
+    def test_a_check_that_could_not_run_is_never_a_model_failure(self):
+        def crashed(*_a, **_k):
+            raise RuntimeError("the runtime stopped answering")
+        with self.assertRaises(models.SelfTestError):
+            models.run_selftest(models.CHAT, CATALOGUED, generate=crashed)
+
+    def test_the_excerpt_is_bounded_and_inert(self):
+        reply = "<script>alert(1)</script>\x07" + "x" * 1000
+        excerpt = models.reply_excerpt(reply)
+        self.assertLessEqual(len(excerpt), models.EXCERPT_CHARS + 1)
+        self.assertNotIn("\x07", excerpt)
+        self.assertTrue(excerpt.startswith("<script>"), "kept as text; the page renders it inert")
 
     def test_no_reply_is_checked_for_a_pump_or_any_other_subject(self):
         """The fix for the observed failure is a shared reliability boundary,

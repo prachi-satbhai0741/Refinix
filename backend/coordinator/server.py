@@ -182,6 +182,23 @@ class Hub:
                 pass          # a stalled reader must not block generation
 
 
+def one_system_message(messages: list[dict]) -> list[dict]:
+    """Every system instruction, in order, as one leading system message.
+
+    Chat turns gather several (the identity block, the untrusted-file note,
+    a Chat-backed document instruction). Some chat templates — Qwen's in the
+    Refinix engine among them — refuse a system message anywhere but first
+    ("System message must be at the beginning"), found in the walkthrough.
+    Joining them keeps every instruction and its system role; nothing moves
+    into a user message.
+    """
+    system = [m["content"] for m in messages if m.get("role") == "system"]
+    rest = [m for m in messages if m.get("role") != "system"]
+    if len(system) <= 1 and (not system or messages[0].get("role") == "system"):
+        return messages
+    return [{"role": "system", "content": "\n\n".join(system)}, *rest]
+
+
 class Coordinator:
     def __init__(self, state_path: Path, node_id: str | None = None, *,
                  owner=None, admitted: db.Admission | None = None):
@@ -332,9 +349,8 @@ class Coordinator:
                 projector.path if projector else None,
                 dict(entry.sampling) if entry else {}, tuple(components),
                 context_length=entry.context_length if entry else None,
-                reasoning_hint=bool(measured_reasoning
-                                    or (entry and "reasoning" in entry.hints)),
-                hints=tuple(entry.hints) if entry else ())
+                reasoning_hint=bool(measured_reasoning or "reasoning"
+                                    in models.task_evidence(entry)["strengths"]))
         return found
 
     def _install_engines(self) -> dict[str, str]:
@@ -413,12 +429,21 @@ class Coordinator:
             elif check.get("state") == "pending" and integrity["eligible"]:
                 integrity = {**integrity, "state": "pending", "detail": check.get("detail")}
             item["integrity"] = integrity
-            item["hints"] = tuple(item.get("hints") or (entry.hints if entry else ()))
+            # Task evidence from one resolver for both runtimes: a curated
+            # card citation, the repository's recorded tags, or tags the
+            # runtime reports from the file. Never the model's name.
+            evidence = models.task_evidence(entry, item.get("model_tags"))
+            item["hints"] = evidence["strengths"]
+            item["limited_to"] = evidence["limited_to"]
+            item["evidence_level"] = evidence["level"]
+            item["evidence_source"] = evidence["source"]
             if not item.get("context_length") and entry is not None:
                 item["context_length"] = entry.context_length
+            # The Refinix engine's reasoning switch is a template argument
+            # offered from evidence; Ollama says itself (`thinking`).
             item["reasoning_hint"] = bool(
                 item.get("reasoning_hint")
-                or (entry is not None and "reasoning" in entry.hints)
+                or (origin == runtime.LLAMA_CPP and "reasoning" in evidence["strengths"])
                 or (model_id, item["digest"], origin) in measured_reasoning)
             item["display"] = (entry.display_name if entry is not None and entry.display_name
                                else model_id)
@@ -449,6 +474,11 @@ class Coordinator:
             return observed.get(model)
         key, _status = self.resolve_key(model, observed)
         return observed.get(key) if key else None
+
+    @staticmethod
+    def _display(observed: dict, key: str | None) -> str:
+        item = observed.get(key) if key else None
+        return (item or {}).get("display") or (runtime.split_key(key)[1] if key else "a model")
 
     @staticmethod
     def _usable(item: dict | None) -> bool:
@@ -599,10 +629,37 @@ class Coordinator:
         "documents.ocr": inference_profiles.OCR,
     }
 
-    def _candidates(self, observed: dict, workflow: str, *, reasoning: str = "disabled",
-                    decoder: str | None = None) -> list:
+    WORKFLOW_SCOPES = {inference_profiles.CHAT: "chat", inference_profiles.CODE: "code",
+                       inference_profiles.DOCUMENTS: "documents.generate",
+                       inference_profiles.OCR: "documents.ocr"}
+
+    def _current_check(self, item: dict, scope: str, recorded: list[dict],
+                       observed: dict) -> tuple[str | None, str | None]:
+        """This scope's self-test for this model, only while it still matches.
+
+        `(state, failure_kind)`: "passed" or "failed" when the stored result
+        was observed against the
+        bytes installed now with the check settings a run would use now
+        (`selftest_view`'s `matches_now`); otherwise None — missing or
+        superseded evidence counts for nothing either way.
+        """
+        if scope not in models.SELFTESTS:
+            return None, None
+        fingerprint = admission.check_fingerprint(
+            self._selftest_profile(scope, item["key"], observed), scope,
+            self._check_settings(scope))
+        row = models.selftest_view(recorded, model=item["key"], digest=item["digest"],
+                                   fingerprints={scope: fingerprint}).get(scope) or {}
+        if row.get("matches_now") and row.get("state") in (models.PASSED, models.FAILED):
+            return row["state"], row.get("failure_kind")
+        return None, None
+
+    def _candidates(self, observed: dict, workflow: str, *, decoder: str | None = None,
+                    structured: bool = True) -> list:
         profiles = self.local_profiles(observed=observed)
         decoder = decoder or admission.WORKFLOWS[workflow][0][0]
+        scope = self.WORKFLOW_SCOPES.get(workflow)
+        recorded = db.selftests(self.conn)
         found = []
         for item in observed.values():
             blocked = None
@@ -618,13 +675,20 @@ class Coordinator:
                             and p.model.runtime == item["origin"]
                             and p.workflow_mode == workflow
                             and decoder in p.decoder_modes), None)
+            check, check_kind = (self._current_check(item, scope, recorded, observed)
+                                 if profile is not None and blocked is None and scope
+                                 else (None, None))
             found.append(router.Candidate(
                 key=item["key"], model_id=item["model_id"], origin=item["origin"],
                 profile=profile, capabilities=item.get("capabilities"),
-                hints=item.get("hints") or (), resident=item.get("resident", False),
+                hints=tuple(item.get("hints") or ()), resident=item.get("resident", False),
                 fit=item.get("fit", "unknown"),
                 measured=bool(profile and profile.evidence_kind == "measured"),
-                display=item.get("display") or item["model_id"], blocked=blocked))
+                display=item.get("display") or item["model_id"], blocked=blocked,
+                limited_to=tuple(item.get("limited_to") or ()),
+                evidence=int(item.get("evidence_level") or 0),
+                evidence_source=item.get("evidence_source") or "",
+                check=check, check_kind=check_kind, structured=structured))
         return found
 
     def preview_model(self, scope: str, observed: dict | None = None) -> str | None:
@@ -632,72 +696,109 @@ class Coordinator:
         choice = self.choose_model(scope, observed=observed)
         return choice["key"]
 
+    def request_task(self, scope: str, text: str = "", *, images: bool = False,
+                     estimated_tokens: int = 0, default_budget: int = 6000) -> router.Task:
+        """What one request needs, decided the same way wherever it is asked.
+
+        The early check at submit, the status preview, readiness and the run
+        all build a task here, so they cannot disagree about what a request
+        needs. `images` means ordinary Chat was sent a picture.
+        """
+        workflow = self.SCOPE_WORKFLOWS[scope]
+        return router.classify(
+            text, workflow=workflow, needs_vision=scope == "documents.ocr",
+            images=images and scope == "chat", estimated_tokens=estimated_tokens,
+            default_budget=default_budget)
+
     def choose_model(self, scope: str, *, task: router.Task | None = None,
                      observed: dict | None = None, text: str = "") -> dict:
         """The model for one request: the person's pinned choice, or Auto's.
 
-        Returns `{key, reason, pinned, refusal}`. A pinned model that cannot do
-        this task is refused with the reason — never swapped for another.
+        Returns `{key, reason, pinned, refusal, code, alternatives}`. A pinned
+        model that cannot do this task is refused with the reason — never
+        swapped for another. Auto also returns `alternatives`: every other
+        model that may do this task, best first, for the run to fall back to
+        when the first cannot be admitted.
         """
         if scope not in self.SCOPE_WORKFLOWS:
             raise RequestError("that model scope does not exist")
         observed = observed if observed is not None else self.observations()
         workflow = self.SCOPE_WORKFLOWS[scope]
-        task = task or router.classify(text, workflow=workflow)
+        task = task or self.request_task(scope, text)
         choice = self._choose_for(scope, workflow, task, observed)
-        if (choice["refusal"] and workflow == inference_profiles.DOCUMENTS
-                and choice.get("code") in ("none", "cannot")):
-            # No structured Documents profile anywhere (or not for the pinned
-            # model): the limited Chat-backed route still writes and reads
-            # documents as plain Chat, and says so.
-            chat_task = router.Task(inference_profiles.CHAT, task.needs_vision,
-                                    task.labels, task.estimated_tokens)
-            limited = self._choose_for(scope, inference_profiles.CHAT, chat_task, observed)
-            if not limited["refusal"]:
-                limited["reason"] = (limited["reason"].replace("Chat →", "Documents (limited, as plain Chat) →", 1)
-                                     if limited["reason"].startswith("Auto:")
-                                     else limited["reason"] + " (limited: as plain Chat)")
-                return limited
+        if workflow != inference_profiles.DOCUMENTS:
+            return choice
+        # Documents: models with a structured Documents profile first, then
+        # models that can run it only as limited plain Chat — the existing,
+        # labelled route that never claims the structured workflow.
+        chat_task = router.Task(inference_profiles.CHAT, task.needs_vision,
+                                task.labels, task.estimated_tokens, task.image)
+        structured = set(choice.get("eligible") or ())
+        limited = self._choose_for(scope, inference_profiles.CHAT, chat_task, observed,
+                                   exclude=structured, structured=False)
+        if choice["refusal"] and choice.get("code") in ("none", "cannot", "unsuitable") \
+                and not limited["refusal"]:
+            limited["reason"] = (limited["reason"].replace("Chat →", "Documents (limited, as plain Chat) →", 1)
+                                 if limited["reason"].startswith("Auto:")
+                                 else limited["reason"] + " (limited: as plain Chat)")
+            return limited
+        if not choice["refusal"] and not choice["pinned"]:
+            choice["alternatives"] = [*choice["alternatives"],
+                                      *([limited["key"]] if limited["key"] and not limited["refusal"]
+                                        else []),
+                                      *limited.get("alternatives", [])]
         return choice
 
-    def _choose_for(self, scope: str, workflow: str, task, observed: dict) -> dict:
+    def _choose_for(self, scope: str, workflow: str, task, observed: dict, *,
+                    exclude: set | None = None, structured: bool = True) -> dict:
         stored = db.get_model_selection(self.conn, scope, models.AUTO)
         key, status = self.resolve_key(stored, observed)
         if status == "ambiguous":
             return {"key": None, "pinned": True, "reason": "", "code": "ambiguous",
+                    "alternatives": [],
                     "refusal": (f"The saved model choice {stored} exists in both Ollama "
                                 "and the Refinix engine. Choose it again in the model "
                                 "selector, or choose Auto.")}
         if status == "unknown":
             return {"key": None, "pinned": True, "reason": "", "code": "not_installed",
+                    "alternatives": [],
                     "refusal": (f"The selected model {stored} is not installed on this "
                                 "computer. Choose another model, or Auto.")}
-        candidates = self._candidates(observed, workflow)
+        candidates = self._candidates(observed, workflow, structured=structured)
         if status in ("key", "resolved"):
             pinned = next((c for c in candidates if c.key == key), None)
             if pinned is None:
                 _origin, model_id = runtime.split_key(key)
                 return {"key": key, "pinned": True, "reason": "", "code": "not_installed",
+                        "alternatives": [],
                         "refusal": (f"The selected model {model_id} is not installed on "
                                     "this computer. Choose another model, or Auto.")}
-            single = router.choose(task, [pinned])
+            # A pinned model meets the hard requirements or is refused; a
+            # documented limitation or weak fit is a warning, never a swap.
+            single = router.choose(task, [pinned], auto=False)
             if single.candidate is None:
                 why = single.skipped[0][1] if single.skipped else "it cannot do this task"
                 code = ("disabled" if pinned.blocked == "switched off for new work"
                         else "cannot")
                 return {"key": key, "pinned": True, "reason": "", "code": code,
+                        "alternatives": [],
                         "refusal": (f"The selected model {pinned.display} {why}. "
                                     "Choose another model, or Auto.")}
             return {"key": key, "pinned": True, "refusal": None, "code": None,
-                    "reason": f"Chosen by you: {pinned.display}"}
+                    "alternatives": [], "eligible": [key], "reason": single.reason}
+        if exclude:
+            candidates = [c for c in candidates if c.key not in exclude]
         choice = router.choose(task, candidates)
         if choice.candidate is None:
             off = [c for c in candidates if c.blocked == "switched off for new work"]
-            code = "disabled" if off and len(off) == len(candidates) else "none"
+            code = choice.code or ("disabled" if off and len(off) == len(candidates)
+                                   else "none")
             return {"key": None, "pinned": False, "reason": "", "code": code,
-                    "refusal": choice.reason}
+                    "alternatives": [], "eligible": [], "refusal": choice.reason}
         return {"key": choice.candidate.key, "pinned": False, "refusal": None,
-                "code": None, "reason": choice.reason}
+                "code": None, "reason": choice.reason,
+                "alternatives": [c.key for c in choice.ranked[1:]],
+                "eligible": [c.key for c in choice.ranked]}
 
     def worker_model(self, scope: str) -> str | None:
         """The model to offer a paired worker when nothing here can run it.
@@ -716,10 +817,16 @@ class Coordinator:
                 return key
         return runtime.model_key(runtime.OLLAMA, runtime.MODEL)
 
-    def _precheck(self, scope: str) -> None:
+    def _precheck(self, scope: str, task: router.Task | None = None) -> None:
+        """Refuse before a job exists only what the run would refuse too.
+
+        Decided on the last observation, with the same task the run builds
+        from this request's text and attachments (`request_task`), so a
+        picture question is not judged as plain text or the other way round.
+        """
         observed = self._observed_cache
         if observed is not None:
-            choice = self.choose_model(scope, observed=observed)
+            choice = self.choose_model(scope, observed=observed, task=task)
             if choice["refusal"]:
                 raise RequestError(choice["refusal"], 409)
             return
@@ -748,11 +855,6 @@ class Coordinator:
             return choice["key"]
         return db.get_model_selection(self.conn, scope, models.AUTO)
 
-    def enabled_model_for(self, scope: str) -> str | None:
-        """The model this workflow would use now, only when it may receive work."""
-        choice = self.choose_model(scope)
-        return choice["key"] if choice["key"] and not choice["refusal"] else None
-
     def ocr_profile(self, runtime_state: dict | None = None, *,
                     observed: dict | None = None, model: str | None = None):
         """The local profile for reading page images here, or `None`.
@@ -770,9 +872,7 @@ class Coordinator:
             reasoning="disabled", decoder="json_schema", observed=observed)
 
     def enabled_model_for_observed(self, scope: str, observed: dict) -> str | None:
-        task = router.Task(self.SCOPE_WORKFLOWS[scope],
-                           needs_vision=scope == "documents.ocr")
-        choice = self.choose_model(scope, task=task, observed=observed)
+        choice = self.choose_model(scope, task=self.request_task(scope), observed=observed)
         return choice["key"] if choice["key"] and not choice["refusal"] else None
 
     def _identity_message(self, model_id, runtime_state=None):
@@ -910,6 +1010,17 @@ class Coordinator:
                                if p.model.model_id == model_id],
                 },
                 "hints": list(item.get("hints") or ()),
+                "limited_to": list(item.get("limited_to") or ()),
+                # Workflows Auto does not give this model while a current check
+                # shows it did not finish within the check's limit (D9).
+                "auto_excluded": {scope: view["detail"] for scope, view in views.items()
+                                  if view.get("state") == models.FAILED
+                                  and view.get("failure_kind") == models.INCOMPLETE
+                                  and view.get("matches_now")},
+                "evidence_level": item.get("evidence_level", 0),
+                "evidence_source": item.get("evidence_source"),
+                "family": ((item.get("details") or {}).get("family")
+                           or (entry.architecture if entry else None)),
                 "fit": item.get("fit"), "fit_label": capacity.FIT_LABELS.get(item.get("fit")),
                 "weights_bytes": item.get("weights_bytes"),
                 "context_length": item.get("context_length"),
@@ -1062,9 +1173,8 @@ class Coordinator:
             if key is None:
                 raise RequestError("that model is not known to this installation", 404)
         else:
-            task = router.Task(self.SELFTEST_WORKFLOWS[scope][0],
-                               needs_vision=scope == models.DOCUMENTS_OCR)
-            choice = self.choose_model(scope, task=task, observed=observed)
+            choice = self.choose_model(scope, task=self.request_task(scope),
+                                       observed=observed)
             if choice["refusal"] and not choice["key"]:
                 # Auto found nothing to check, so there is no model to record
                 # a result against.
@@ -1099,7 +1209,9 @@ class Coordinator:
             conn=self.conn, model=key, scope=scope, state=result["state"],
             detail=detail, digest=(item or {}).get("digest"),
             runtime_version=(item or {}).get("runtime_version"),
-            check_fingerprint=fingerprint if result["state"] != "unavailable" else None)
+            check_fingerprint=fingerprint if result["state"] != "unavailable" else None,
+            failure_kind=result.get("failure_kind"),
+            reply_excerpt=result.get("reply_excerpt"))
 
     #: Which workflow each self-test scope actually exercises. Taken from the
     #: scope that was asked for, never inferred from the shape of the response
@@ -1162,6 +1274,12 @@ class Coordinator:
                     done = payload
         finally:
             self.ledger.release(token)
+        if (done and done.get("done_reason") == "length"
+                and done.get("limit_reason") in ("output", "context_and_output")):
+            # The runtime says it stopped at the check's output limit: an
+            # observed, incomplete answer (D9), not a check that could not run.
+            # A full context window or an unreported cause stays "could not run".
+            raise models.IncompleteReply("".join(collected), output_allowance)
         if not done or done.get("done_reason") != "stop":
             raise models.SelfTestError("the model's self-test reply was incomplete")
         return "".join(collected)
@@ -1212,7 +1330,53 @@ class Coordinator:
         return {"resident": loaded is not None,
                 "loaded_window": loaded.get("context_length") if loaded else None}
 
-    def _page_reading_call(self, job_id: str, ocr_model: str | None):
+    def _page_reader(self, job_id: str, observed: dict, *, should_cancel=None):
+        """`(key, profile)` of the model that reads this job's pages.
+
+        Chosen from page reading's own ordered list (a pinned reader is the
+        only entry) and admitted before the first page, so a reader that
+        cannot be admitted now gives way to the next suitable one. Once
+        chosen it stays for the whole job; it is recorded with the pages it
+        read, apart from the model that answers. `(None, None)` when nothing
+        here can read pages.
+        """
+        choice = self.choose_model("documents.ocr", task=self.request_task("documents.ocr"),
+                                   observed=observed)
+        if choice["refusal"] or not choice["key"]:
+            return None, None
+        keys = [choice["key"], *choice.get("alternatives", [])]
+        token = f"{job_id}:ocr"
+        for key in keys:
+            profile = self.ocr_profile(observed=observed, model=key)
+            if profile is None:
+                continue
+            decision = self._admit(token, observed.get(key), profile.qualified_context_tokens,
+                                   should_cancel=should_cancel, group=job_id)
+            # A check only: each page takes its own reservation when it runs.
+            self.ledger.release(token)
+            if decision.outcome in ("admit", "cancelled"):
+                return key, profile
+        # None could be admitted now: keep the first, whose page call reports
+        # the memory refusal rather than inventing a reader that can run.
+        return keys[0], self.ocr_profile(observed=observed, model=keys[0])
+
+    def _lazy_page_reader(self, job_id: str, observed: dict, *, should_cancel=None):
+        """A callback that chooses this job's page reader the first time a
+        page needs reading, then returns the same `(key, profile)` each time.
+
+        Text, Word, workbook and text-layer PDF reading never call it, so they
+        never wait for a page-reading model's memory admission.
+        """
+        chosen: dict = {}
+
+        def resolve():
+            if "key" not in chosen:
+                chosen["key"], chosen["profile"] = self._page_reader(
+                    job_id, observed, should_cancel=should_cancel)
+            return chosen["key"], chosen["profile"]
+        return resolve
+
+    def _page_reading_call(self, job_id: str, ocr_model):
         """The page-reading call for this job, admitted like any other model use.
 
         Each page is one bounded reservation in the job's own group, so a job
@@ -1221,7 +1385,10 @@ class Coordinator:
         reserves that model too.
         """
         def call(messages, **kwargs):
-            item = self._find(self._observed_cache or {}, ocr_model)
+            # `ocr_model` may be the lazy reader: by the time a page is read it
+            # has been chosen, and this resolves to that same model.
+            model = ocr_model()[0] if callable(ocr_model) else ocr_model
+            item = self._find(self._observed_cache or {}, model)
             if item is not None:
                 # Read again for every page: the first page usually loads the
                 # model, and the job's other reservations then stop counting
@@ -1323,9 +1490,18 @@ class Coordinator:
         if skill_id != docflow.SEARCH_SKILL and not conversion_request:
             # Refused before a job exists when nothing here can run it: the
             # pinned model cannot, or no installed model can (Auto). Decided
-            # from the last observation, without probing on every message; a
-            # request whose needs only show at run time is decided there.
-            self._precheck(scope)
+            # from the last observation, without probing on every message, for
+            # the same task the run will build: this text, and whether ordinary
+            # Chat was sent a picture.
+            images = False
+            if skill_id is None:
+                names = [a["filename"] for a in db.list_attachments(
+                    self.conn, chat_id=draft_id or chat_id)]
+                names += [self._reused_source(chat_id, source_id)["filename"]
+                          for source_id in reuse_source_ids]
+                images = any(Path(name).suffix.lower() in documents.IMAGE_SUFFIXES
+                             for name in names)
+            self._precheck(scope, self.request_task(scope, text, images=images))
         for source_id in reuse_source_ids:
             self._reused_source(chat_id, source_id)
         if reuse_source_ids and len(reuse_source_ids) + len(db.list_attachments(
@@ -1420,18 +1596,29 @@ class Coordinator:
             # window — is settled here, before the attempt is created. After
             # that it is never changed in place (`docs/PROJECT.md` 7.0).
             model_id, choice_reason, wanted_window = None, "", None
+            task, to_try, preview = None, [None], None
             if uses_model:
                 default_output = admission.DEFAULT_OUTPUT[workflow_mode]
                 _preview_messages, preview = context.select(
                     history, window=admission.DEFAULT_WINDOW,
                     output_allowance=default_output)
-                image_only = (skill_id is None and len(request_files) == 1
-                              and Path(request_files[0]["filename"]).suffix.lower()
-                              in documents.IMAGE_SUFFIXES)
-                task = router.classify(
-                    request_text, workflow=workflow_mode, prefers_vision=image_only,
+                pictures = [item for item in request_files
+                            if Path(item["filename"]).suffix.lower()
+                            in documents.IMAGE_SUFFIXES]
+                task = self.request_task(
+                    scope, request_text, images=skill_id is None and bool(pictures),
                     estimated_tokens=preview.estimated_input_tokens,
                     default_budget=preview.input_budget_tokens)
+                if task.image == router.VISUAL and len(request_files) != 1:
+                    # Reading the text out of a picture cannot answer what it
+                    # shows, and a model is shown one picture per request,
+                    # sent on its own.
+                    self._refuse_before_run(job_id, (
+                        "This question is about what the picture shows. A model can "
+                        "be shown one picture per request, sent on its own: send just "
+                        "that picture, or ask for the text in it (for example "
+                        "\"transcribe this\")."))
+                    return
                 choice = self.choose_model(scope, task=task, observed=observed)
                 fallback = (self.worker_model(scope)
                             if choice["refusal"] and skill_id is None
@@ -1439,114 +1626,170 @@ class Coordinator:
                 if choice["refusal"] and fallback is None:
                     self._refuse_before_run(job_id, choice["refusal"])
                     return
-                model_id = choice["key"] if not choice["refusal"] else fallback
+                # Auto's ordered list: the best suitable model first, then the
+                # next. A pinned model, or the paired-worker fallback, is the
+                # only entry — never swapped for another.
+                to_try = ([fallback] if choice["refusal"]
+                          else [choice["key"], *choice.get("alternatives", [])])
                 choice_reason = choice["reason"]
+            base_modes = (workflow_mode, decoder_mode)
+            passed_over = []
+            # Each model in turn, until one can be admitted. Nothing here has
+            # created an attempt: once one exists its model, profile and
+            # window never change.
+            for position, model_id in enumerate(to_try):
+                last = position == len(to_try) - 1
+                workflow_mode, decoder_mode = base_modes
+                wanted_window = None
                 # A conversation longer than the default window may use more of
                 # the window the model declares, when this computer has room.
-                if not preview.newest_fits or preview.omitted_count:
+                if uses_model and (not preview.newest_fits or preview.omitted_count):
                     declared = (observed.get(model_id) or {}).get("context_length") or 0
-                    needed = preview.estimated_input_tokens + default_output + 512
+                    needed = (preview.estimated_input_tokens
+                              + admission.DEFAULT_OUTPUT[workflow_mode] + 512)
                     for size in (16384, 32768):
                         if needed <= size <= declared:
                             wanted_window = size
                             break
-            model_name = runtime.split_key(model_id)[1] if model_id else None
-            reasoning = self.reasoning_for(model_id) if uses_model else False
-            reasoning_mode = "enabled" if reasoning else "disabled"
-            # A document skill whose model offers no structured Documents
-            # profile but a plain Chat profile runs as an ordinary bounded Chat
-            # call. Blocked stays on the Documents workflow, so `_local_route`
-            # finds no profile and the refusal below names that.
-            chat_backed = False
-            if skill_id in docflow.DOCUMENT_SKILLS and uses_model:
-                document_mode, mode_workflow, mode_decoder = \
-                    self._document_execution(model_id, observed=observed)
-                if document_mode == "chat_backed":
-                    chat_backed = True
-                    workflow_mode, decoder_mode = mode_workflow, mode_decoder
-            structured_document = (skill_id in docflow.DOCUMENT_SKILLS
-                                   and not chat_backed)
-            reasoning_note = ""
-            if uses_model:
-                # Reasoning is chosen per model, but offered per workflow and
-                # model. A request whose profile here offers only the other
-                # mode runs in that mode; a structured document says so.
-                offered = self._offered_reasoning(model_id, workflow_mode,
-                                                  decoder_mode, observed=observed)
-                if offered and reasoning_mode not in offered:
-                    reasoning_mode = "disabled" if "disabled" in offered else "enabled"
-                    reasoning = reasoning_mode == "enabled"   # what the attempt records
-                    if structured_document:
-                        reasoning_note = (
-                            f"; ran with reasoning {'off' if reasoning_mode == 'disabled' else 'on'}"
-                            ", the only mode offered for Documents on this computer")
+                model_name = runtime.split_key(model_id)[1] if model_id else None
+                reasoning = self.reasoning_for(model_id) if uses_model else False
+                reasoning_mode = "enabled" if reasoning else "disabled"
+                # A document skill whose model offers no structured Documents
+                # profile but a plain Chat profile runs as an ordinary bounded
+                # Chat call. Blocked stays on the Documents workflow, so
+                # `_local_route` finds no profile and the refusal below names it.
+                chat_backed = False
+                if skill_id in docflow.DOCUMENT_SKILLS and uses_model:
+                    document_mode, mode_workflow, mode_decoder = \
+                        self._document_execution(model_id, observed=observed)
+                    if document_mode == "chat_backed":
+                        chat_backed = True
+                        workflow_mode, decoder_mode = mode_workflow, mode_decoder
+                structured_document = (skill_id in docflow.DOCUMENT_SKILLS
+                                       and not chat_backed)
+                reasoning_note = ""
+                if uses_model:
+                    # Reasoning is chosen per model, but offered per workflow and
+                    # model. A request whose profile here offers only the other
+                    # mode runs in that mode; a structured document says so.
+                    offered = self._offered_reasoning(model_id, workflow_mode,
+                                                      decoder_mode, observed=observed)
+                    if offered and reasoning_mode not in offered:
+                        reasoning_mode = "disabled" if "disabled" in offered else "enabled"
+                        reasoning = reasoning_mode == "enabled"   # what the attempt records
+                        if structured_document:
+                            reasoning_note = (
+                                f"; ran with reasoning {'off' if reasoning_mode == 'disabled' else 'on'}"
+                                ", the only mode offered for Documents on this computer")
 
-            def routed(window):
-                if skill_id in docflow.DOCUMENT_SKILLS:
-                    return self._local_route(
-                        dispatch.Route(
-                            "local",
-                            "local coordinator: Documents (limited) — files are "
-                            "extracted here and the model answers as plain Chat, "
-                            "not the structured workflow"
-                            if chat_backed else
-                            "local coordinator: Documents runs on this computer"
-                            + reasoning_note),
-                        model_id, uses_model, runtime_state,
-                        workflow=workflow_mode, reasoning=reasoning_mode,
-                        decoder=decoder_mode, context_window=window,
-                        output_allowance=None, observed=observed)
-                if request_files:
-                    return self._local_route(
-                        dispatch.Route(
-                            "local", "local coordinator: this request has attached "
-                            "files, which are read on this computer"),
-                        model_id, uses_model, runtime_state,
-                        workflow=workflow_mode, reasoning=reasoning_mode,
-                        decoder=decoder_mode, context_window=window,
-                        output_allowance=None, observed=observed)
-                return self.choose_route(model_id=model_id,
-                                         runtime_state=runtime_state,
-                                         workflow=workflow_mode,
-                                         reasoning=reasoning_mode,
-                                         decoder=decoder_mode,
-                                         context_window=window, observed=observed)
+                def routed(window):
+                    if skill_id in docflow.DOCUMENT_SKILLS:
+                        return self._local_route(
+                            dispatch.Route(
+                                "local",
+                                "local coordinator: Documents (limited) — files are "
+                                "extracted here and the model answers as plain Chat, "
+                                "not the structured workflow"
+                                if chat_backed else
+                                "local coordinator: Documents runs on this computer"
+                                + reasoning_note),
+                            model_id, uses_model, runtime_state,
+                            workflow=workflow_mode, reasoning=reasoning_mode,
+                            decoder=decoder_mode, context_window=window,
+                            output_allowance=None, observed=observed)
+                    if request_files:
+                        return self._local_route(
+                            dispatch.Route(
+                                "local", "local coordinator: this request has attached "
+                                "files, which are read on this computer"),
+                            model_id, uses_model, runtime_state,
+                            workflow=workflow_mode, reasoning=reasoning_mode,
+                            decoder=decoder_mode, context_window=window,
+                            output_allowance=None, observed=observed)
+                    return self.choose_route(model_id=model_id,
+                                             runtime_state=runtime_state,
+                                             workflow=workflow_mode,
+                                             reasoning=reasoning_mode,
+                                             decoder=decoder_mode,
+                                             context_window=window, observed=observed)
 
-            route = routed(wanted_window)
-            if wanted_window is not None and route.profile is None:
-                wanted_window = None
-                route = routed(None)
-            profile = (v1.ExecutionProfile.model_validate(route.profile)
-                       if route.profile else None)
-            # Memory for Refinix's own work, reserved before the attempt
-            # exists. A Refinix-engine load that does not fit yet waits here,
-            # visibly queued and cancellable; a larger window that does not
-            # fit falls back to the default one, and the window used is what
-            # the attempt records.
-            if uses_model and profile is not None and not route.remote:
-                stopping = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
-                decision = self._admit(job_id, observed.get(model_id),
-                                       profile.qualified_context_tokens,
-                                       should_cancel=stopping)
-                if decision.outcome != "admit" and wanted_window is not None:
-                    self.ledger.release(job_id)
+                route = routed(wanted_window)
+                if wanted_window is not None and route.profile is None:
                     wanted_window = None
                     route = routed(None)
-                    profile = (v1.ExecutionProfile.model_validate(route.profile)
-                               if route.profile else None)
-                    decision = (self._admit(job_id, observed.get(model_id),
-                                            profile.qualified_context_tokens,
-                                            should_cancel=stopping)
-                                if profile is not None else decision)
-                if decision.outcome == "cancelled":
-                    self._stop(job_id, None, "cancelled", None, {
-                        "code": "cancelled_by_user",
-                        "message": "cancelled while waiting for memory",
-                        "retryable": True})
-                    return
-                if decision.outcome == "refuse":
-                    self._refuse_before_run(job_id, decision.reason)
-                    return
+                profile = (v1.ExecutionProfile.model_validate(route.profile)
+                           if route.profile else None)
+                if (uses_model and profile is None and not last and not route.remote
+                        and route.kind != "identity-mismatch"):
+                    passed_over.append((model_id, "it could not run this request here"))
+                    continue
+
+                def fits(candidate_profile) -> bool:
+                    """Whether this request's newest message fits this model's
+                    window and reply allowance — decided before any attempt."""
+                    _messages, fit = context.select(
+                        history, window=candidate_profile.qualified_context_tokens,
+                        output_allowance=candidate_profile.default_output_tokens)
+                    return fit.newest_fits
+
+                if (uses_model and profile is not None and not route.remote and not last
+                        and not fits(profile)):
+                    passed_over.append((model_id, "this request does not fit its context window"))
+                    continue
+                # Memory for Refinix's own work, reserved before the attempt
+                # exists. A Refinix-engine load that does not fit yet waits
+                # here, visibly queued and cancellable; a larger window that
+                # does not fit falls back to the default one, and the window
+                # used is what the attempt records.
+                if uses_model and profile is not None and not route.remote:
+                    stopping = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
+                    decision = self._admit(job_id, observed.get(model_id),
+                                           profile.qualified_context_tokens,
+                                           should_cancel=stopping)
+                    if decision.outcome != "admit" and wanted_window is not None:
+                        self.ledger.release(job_id)
+                        wanted_window = None
+                        route = routed(None)
+                        profile = (v1.ExecutionProfile.model_validate(route.profile)
+                                   if route.profile else None)
+                        decision = (self._admit(job_id, observed.get(model_id),
+                                                profile.qualified_context_tokens,
+                                                should_cancel=stopping)
+                                    if profile is not None else decision)
+                    if decision.outcome == "cancelled":
+                        self._stop(job_id, None, "cancelled", None, {
+                            "code": "cancelled_by_user",
+                            "message": "cancelled while waiting for memory",
+                            "retryable": True})
+                        return
+                    if decision.outcome == "refuse":
+                        self.ledger.release(job_id)
+                        if not last:
+                            # The next suitable model, before anything ran.
+                            passed_over.append((model_id, decision.reason))
+                            continue
+                        tried = "; ".join(
+                            f"{self._display(observed, key)}: {why[:120]}"
+                            for key, why in passed_over)
+                        self._refuse_before_run(
+                            job_id, decision.reason + (f" Also tried — {tried}" if tried else ""))
+                        return
+                    if (not last and profile is not None and not fits(profile)):
+                        # Admitted only at the default window, which this request
+                        # does not fit: the next model may have a larger one.
+                        self.ledger.release(job_id)
+                        passed_over.append((model_id, "this request does not fit its context window"))
+                        continue
+                break
+            if passed_over:
+                item = observed.get(model_id) or {}
+                choice_reason = (
+                    f"Auto: {router.WORKFLOW_LABEL.get(base_modes[0], base_modes[0])} → "
+                    f"{self._display(observed, model_id)} "
+                    f"({router.ORIGIN_LABEL.get(item.get('origin'), item.get('origin'))})"
+                    " — the next suitable model: "
+                    + "; ".join(f"{self._display(observed, key)} skipped ({why[:90]})"
+                                for key, why in passed_over))
             if choice_reason:
                 # The route's own sentence first: it says where and how the
                 # work runs, and the model choice follows within the limit.
@@ -1644,10 +1887,12 @@ class Coordinator:
             if structured_document:
                 # A document skill replaces the ordinary chat turn: it reads
                 # this request's attachments, then answers or writes from them.
+                reader = self._lazy_page_reader(
+                    job_id, observed,
+                    should_cancel=lambda: self.is_cancelled(job_id) or self.stopping.is_set())
                 messages, prepared, extra = self._document_stage(
-                    job_id, chat_id, skill_id, messages,
-                    ocr_model=self.enabled_model_for_observed("documents.ocr", observed),
-                    profile=profile)
+                    job_id, chat_id, skill_id, messages, ocr_model=None,
+                    ocr_reader=reader, profile=profile)
                 if messages is None:
                     # The skill produced its own answer without the model.
                     if extra.get("conversion"):
@@ -1669,7 +1914,9 @@ class Coordinator:
                 messages, extra = self._chat_attachments(
                     job_id, chat_id, messages, selection.included_ids,
                     profile=profile, runtime_state=runtime_state,
-                    native_images=not chat_backed)
+                    native_images=not chat_backed,
+                    image_intent=task.image if task is not None else None,
+                    observed=observed)
                 prepared = extra.get("prepared")
                 if chat_backed and request_files \
                         and not (prepared and prepared.usable):
@@ -1694,13 +1941,14 @@ class Coordinator:
                 # selection changes the answer with no edit here. Chat only:
                 # the document routes carry their own strict-JSON instructions
                 # and must not be given a second voice.
-                messages = [self._identity_message(model_id, runtime_state),
-                            *([{"role": "system",
-                                "content": (docflow.CHAT_READ_INSTRUCTION
-                                            if skill_id == docflow.READ_SKILL
-                                            else docflow.CHAT_WRITE_INSTRUCTION)}]
-                              if chat_backed else []),
-                            *messages]
+                messages = one_system_message([
+                    self._identity_message(model_id, runtime_state),
+                    *([{"role": "system",
+                        "content": (docflow.CHAT_READ_INSTRUCTION
+                                    if skill_id == docflow.READ_SKILL
+                                    else docflow.CHAT_WRITE_INSTRUCTION)}]
+                      if chat_backed else []),
+                    *messages])
 
             collected, metrics = [], {}
             thinking_seen = False
@@ -2006,7 +2254,8 @@ class Coordinator:
     def _chat_attachments(self, job_id, chat_id, messages, selected_ids,
                           *, profile: v1.ExecutionProfile,
                           runtime_state: dict | None = None,
-                          native_images: bool = True):
+                          native_images: bool = True, image_intent: str | None = None,
+                          observed: dict | None = None):
         """Read the files sent with an ordinary Chat request, if any.
 
         The same extraction the document skills use, and the same scope: only
@@ -2071,28 +2320,44 @@ class Coordinator:
                     }
         if not attachments:
             return messages, direct
-        ocr_model = self.enabled_model_for("documents.ocr")
+        if native_images and image_intent == router.VISUAL and any(
+                Path(item["filename"]).suffix.lower() in documents.IMAGE_SUFFIXES
+                for item in attachments):
+            # Page reading transcribes text (`ocr.SYSTEM_INSTRUCTION`); its
+            # output cannot answer a question about what a picture shows, so
+            # that question is never answered from it.
+            raise docflow.WorkflowError(
+                "needs_vision",
+                f"This question is about what the picture shows, and "
+                f"{profile.model.model_id} was not shown it. Reading the text in a "
+                "picture cannot answer that. Choose a model that accepts images, "
+                "or ask for the text in the picture (for example \"transcribe this\").")
+        # The turn already observed the runtime; reuse it rather than adding
+        # a second loopback probe to every attachment request.
+        observed = observed if observed is not None else self.observations(runtime_state)
+        reader = self._lazy_page_reader(job_id, observed, should_cancel=cancel)
         prepared = docflow.prepare_sources(
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
-            attachments=attachments, should_cancel=cancel, ocr_model=ocr_model,
-            # The turn already observed the runtime; reuse it rather than
-            # adding a second loopback probe to every attachment request.
-            ocr_profile=self.ocr_profile(runtime_state),
-            ocr_chat=self._page_reading_call(job_id, ocr_model))
+            attachments=attachments, should_cancel=cancel, ocr_model=None,
+            ocr_reader=reader, ocr_chat=self._page_reading_call(job_id, reader))
         if any(a.get("reused") for a in attachments) and prepared.skipped:
             reasons = "; ".join(f"{s['filename']}: {s['reason']}" for s in prepared.skipped)
             raise docflow.WorkflowError("source_unavailable", reasons)
         if not prepared.usable:
             if direct:
                 return messages, {**direct, "prepared": prepared}
-            # An ordinary question is still worth answering. The reply says
-            # which file could not be read and why, so nobody is left thinking
-            # the model saw something it never received — but the question is
-            # not thrown away because an attachment was unreadable.
-            reasons = "; ".join(f"{s['filename']}: {s['reason']}"
-                                for s in prepared.skipped) or "no readable text was found"
-            return messages, {**direct, "prepared": prepared,
-                              "attachment_note": f"_Nothing could be read — {reasons}._\n\n"}
+            # Files were sent with this request and none of them could be
+            # read. Whatever the wording, an answer now would be written
+            # without its source, so none is written; the person can attach a
+            # readable copy, or ask again without the file.
+            reasons = "; ".join(
+                reason if item["filename"] in reason else f"{item['filename']}: {reason}"
+                for item in prepared.skipped
+                for reason in [str(item["reason"]).rstrip(". ")]) or "no readable text was found"
+            raise docflow.WorkflowError(
+                "unreadable",
+                f"Nothing could be read — {reasons}. No answer was written without "
+                "the file. Attach a readable copy, or ask again without it.")
         # The extracted text is fenced as data before the model sees it, with
         # the same rule the document skills state: an instruction inside a
         # document is content, never authority.
@@ -2225,7 +2490,8 @@ class Coordinator:
                 "qualified context window.")
 
     def _document_stage(self, job_id, chat_id, skill_id, messages, *, ocr_model,
-                        profile: v1.ExecutionProfile | None = None):
+                        profile: v1.ExecutionProfile | None = None, ocr_profile=None,
+                        ocr_reader=None):
         """Extract, then either build a prompt or answer without the model."""
         cancel = lambda: self.is_cancelled(job_id) or self.stopping.is_set()
         message_id, attachments = self._request_sources(chat_id, job_id)
@@ -2269,8 +2535,10 @@ class Coordinator:
         prepared = docflow.prepare_sources(
             self, chat_id=chat_id, message_id=message_id, job_id=job_id,
             attachments=attachments, should_cancel=cancel, ocr_model=ocr_model,
-            ocr_profile=self.ocr_profile(model=ocr_model),
-            ocr_chat=self._page_reading_call(job_id, ocr_model))
+            ocr_profile=(ocr_profile if ocr_profile is not None or ocr_reader is not None
+                         else self.ocr_profile(model=ocr_model)),
+            ocr_reader=ocr_reader,
+            ocr_chat=self._page_reading_call(job_id, ocr_reader or ocr_model))
         if not attachments:
             raise docflow.WorkflowError("no_attachments", docflow.NO_ATTACHMENTS)
         if not prepared.usable:
@@ -3309,10 +3577,8 @@ class Coordinator:
 
     def _choices(self, observed: dict) -> dict:
         """What each workflow would use now, for status and capability rows."""
-        return {scope: self.choose_model(
-                    scope, observed=observed,
-                    task=router.Task(self.SCOPE_WORKFLOWS[scope],
-                                     needs_vision=scope == "documents.ocr"))
+        return {scope: self.choose_model(scope, observed=observed,
+                                         task=self.request_task(scope))
                 for scope in MODEL_DEFAULTS}
 
     def capabilities(self, runtime_state: dict | None = None,
@@ -3526,6 +3792,34 @@ class Coordinator:
             raise RequestError(f"Ollama did not start: {exc}", 409) from exc
         return self.ollama_state(runtime.probe())
 
+    # ---- setup choices ---------------------------------------------------
+
+    SETUP_CHOICES = ("existing_models", "download", "later")
+
+    def setup_state(self) -> dict:
+        """The person's setup choices. Stored by the coordinator because the
+        desktop window keeps no browser storage between launches."""
+        return {"intro_dismissed": db.get_setting(self.conn, "setup.intro_dismissed") == "1",
+                # Setup opens by itself once, on the first launch of this data.
+                "first_opened": db.get_setting(self.conn, "setup.first_opened") == "1",
+                "choice": db.get_setting(self.conn, "setup.choice"),
+                "chosen_at": db.get_setting(self.conn, "setup.chosen_at")}
+
+    def update_setup(self, payload: dict) -> dict:
+        """Record a setup choice. Changes no model, pin or switch."""
+        for field in ("intro_dismissed", "first_opened"):
+            if field in payload:
+                if not isinstance(payload[field], bool):
+                    raise RequestError(f"{field} must be true or false")
+                db.set_setting(self.conn, f"setup.{field}",
+                               "1" if payload[field] else "0")
+        if "choice" in payload:
+            if payload["choice"] not in self.SETUP_CHOICES:
+                raise RequestError("that setup choice does not exist")
+            db.set_setting(self.conn, "setup.choice", payload["choice"])
+            db.set_setting(self.conn, "setup.chosen_at", db.now())
+        return self.setup_state()
+
     def chat_readiness(self, runtime_state: dict | None = None,
                        inventory: list[dict] | None = None,
                        choices: dict | None = None) -> dict:
@@ -3562,7 +3856,7 @@ class Coordinator:
             model_id=name, chat_profile_found=not choice["refusal"],
             device_tier=(self.tier_ids[0] if self.tier_ids else None),
             managed=runtime.managed_engine() is not None,
-            refusal=choice["refusal"], ollama=ollama,
+            refusal=choice["refusal"], ollama=ollama, refusal_code=choice.get("code"),
             usable_models=sum(1 for row in inventory
                               if row.get("installed") and row.get("locality") == runtime.LOCAL))
 
@@ -3593,8 +3887,6 @@ class Coordinator:
         offered = ([entry for entry in models.CATALOGUE
                     if entry.engine == runtime.LLAMA_CPP and entry.files]
                    if runtime.managed_engine() is not None else [])
-        installed_managed = {row["id"] for row in inventory
-                             if row["origin"] == runtime.LLAMA_CPP and row["installed"]}
         return {
             "product": {"name": "Refinix", "surface": "local"},
             "build": build_info.describe(),
@@ -3632,12 +3924,15 @@ class Coordinator:
                                       "You can pin a model per workflow instead.")},
             "models": inventory,
             "ollama": self.ollama_state(runtime_state),
-            # Starting choices for this computer, then everything else. Never
+            # Choices for this computer grouped by kind of work, from the
+            # evidence routing uses; installed and Ollama models first. Never
             # an allowlist: every entry can be chosen, larger ones with a warning.
-            "recommendations": capacity.recommend(
-                offered, memory,
+            "categories": capacity.categories(
+                offered, inventory, memory,
                 free_disk=(self.hardware_facts or {}).get("disk_free_bytes"),
-                installed=installed_managed),
+                pending_bytes=self.provisioner.pending_bytes()),
+            # What the person chose during setup, kept across launches.
+            "setup": self.setup_state(),
             "reservations": self.ledger.snapshot(),
             # Which workflows have a smallest representative check the person
             # can run. Sent so the interface offers only the checks that exist.
@@ -4164,6 +4459,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._hub(resolve)
             elif route == "/v1/runtime/ollama/start":
                 self._json(c.start_ollama())
+            elif route == "/v1/setup":
+                self._json(c.update_setup(payload))
             elif route == "/v1/updates/check":
                 # Only when the person presses Check for updates.
                 self._update(c.updates.check)

@@ -126,8 +126,12 @@ class Prepared:
 def prepare_sources(coordinator, *, chat_id, message_id, job_id,
                     attachments: list[dict], should_cancel=None,
                     ocr_model: str = runtime.OCR_MODEL,
-                    ocr_profile=None, ocr_chat=None) -> Prepared:
-    """Read exactly the attachments that travelled with this request."""
+                    ocr_profile=None, ocr_chat=None, ocr_reader=None) -> Prepared:
+    """Read exactly the attachments that travelled with this request.
+
+    `ocr_reader`, when given, picks the page reader the first time a page
+    needs reading; files that need none never call it.
+    """
     prepared = Prepared()
     if not attachments:
         return prepared
@@ -157,7 +161,7 @@ def prepare_sources(coordinator, *, chat_id, message_id, job_id,
                 path, source_id=full["attachment_id"], filename=full["filename"],
                 media_type=full["media_type"], expected_sha256=full["sha256"],
                 should_cancel=should_cancel, ocr_model=ocr_model,
-                ocr_profile=ocr_profile, ocr_chat=ocr_chat)
+                ocr_profile=ocr_profile, ocr_chat=ocr_chat, ocr_reader=ocr_reader)
         except documents.DocumentError as exc:
             if exc.code == "cancelled":
                 # A stop is not a skipped file. Raising here keeps a cancelled

@@ -66,7 +66,7 @@ class Operation:
 
     model_id: str
     kind: str                                  # "download" | "import"
-    state: str = "running"                     # running | done | failed | cancelled
+    state: str = "running"                     # queued | running | done | failed | cancelled
     bytes_done: int = 0
     bytes_total: int = 0
     file: str | None = None
@@ -146,6 +146,9 @@ class Provisioner:
         self._lock = threading.Lock()
         self._operations: dict[str, Operation] = {}
         self._thread: threading.Thread | None = None
+        # Downloads and imports the person chose while another was running,
+        # started one at a time in the order they were chosen.
+        self._queue: list[tuple[Operation, object]] = []
         # Entries resolved from a repository this session (Browse), pinned to
         # a revision, files, sizes and SHA-256 before any byte is fetched.
         self._plans: dict[str, models.Entry] = {}
@@ -189,6 +192,7 @@ class Provisioner:
                                         else self.root.parent).free)
         except OSError:
             free = None
+        pending = self.pending_bytes(exclude=entry.id)
         return {"model_id": entry.id, "display_name": entry.display_name or entry.id,
                 "source": entry.source, "licence": entry.licence,
                 "revision": entry.revision, "manifest_sha256": entry.manifest_sha256,
@@ -196,8 +200,19 @@ class Provisioner:
                 "download_bytes": max(0, needed), "already_staged_bytes": staged,
                 "storage_bytes": sum(f.size for f in entry.files),
                 "free_bytes": free,
-                "enough_space": free is None or free >= needed + DISK_MARGIN_BYTES,
+                # Space other chosen downloads and imports still need: free
+                # space is shared, so it is counted before this one is allowed.
+                "pending_bytes": pending,
+                "enough_space": (free is None
+                                 or free >= needed + pending + DISK_MARGIN_BYTES),
                 "location": str(self.root / entry.id)}
+
+    def pending_bytes(self, *, exclude: str | None = None) -> int:
+        """Bytes still to be written by downloads and imports running or queued."""
+        with self._lock:
+            return sum(max(0, op.bytes_total - op.bytes_done)
+                       for op in self._operations.values()
+                       if op.state in ("running", "queued") and op.model_id != exclude)
 
     # -- starting work -----------------------------------------------------
     def start_download(self, model_id: str) -> dict:
@@ -208,10 +223,13 @@ class Provisioner:
                                         f"{item.name} is not served over HTTPS.")
         plan = self.plan(model_id)
         if not plan["enough_space"]:
+            others = (f", beside {plan['pending_bytes'] // 1024 ** 2} MB for the other "
+                      "chosen models" if plan["pending_bytes"] else "")
             raise ProvisioningError(
                 "insufficient_space",
                 f"About {(plan['download_bytes'] + DISK_MARGIN_BYTES) // 1024 ** 2} MB "
-                f"of free space is needed; {plan['free_bytes'] // 1024 ** 2} MB is free.")
+                f"of free space is needed{others}; {plan['free_bytes'] // 1024 ** 2} MB "
+                "is free.")
         operation = Operation(entry.id, "download", bytes_total=plan["storage_bytes"])
         self._begin(operation, lambda: self._download(entry, operation))
         return operation.as_dict()
@@ -243,11 +261,15 @@ class Provisioner:
                                         else self.root.parent).free)
         except OSError:
             free = None
-        if free is not None and free < total + DISK_MARGIN_BYTES:
+        pending = self.pending_bytes(exclude=entry.id)
+        if free is not None and free < total + pending + DISK_MARGIN_BYTES:
             raise ProvisioningError(
                 "insufficient_space",
                 f"About {(total + DISK_MARGIN_BYTES) // 1024 ** 2} MB of free space is "
-                f"needed to import; {free // 1024 ** 2} MB is free.")
+                f"needed to import"
+                + (f", beside {pending // 1024 ** 2} MB for the other chosen models"
+                   if pending else "")
+                + f"; {free // 1024 ** 2} MB is free.")
         operation = Operation(entry.id, "import", bytes_total=total)
         self._begin(operation, lambda: self._import(entry, candidates, operation,
                                                     rejected=unmatched))
@@ -256,22 +278,39 @@ class Provisioner:
     def cancel(self, model_id: str) -> dict:
         with self._lock:
             operation = self._operations.get(model_id)
+            if operation is not None and operation.state == "queued":
+                # Never started: nothing to stop, nothing written.
+                self._queue = [(op, work) for op, work in self._queue
+                               if op is not operation]
+                operation.state = "cancelled"
+                operation.finished_at = time.time()
+                return {"model_id": model_id, "cancelled": True}
         if operation is None or operation.state != "running":
             return {"model_id": model_id, "cancelled": False}
         operation.cancel.set()
         return {"model_id": model_id, "cancelled": True}
 
     def wait(self, timeout: float | None = None) -> None:
-        thread = self._thread
-        if thread is not None:
-            thread.join(timeout)
+        """Until every running and queued operation has finished."""
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            thread = self._thread
+            if thread is None:
+                return
+            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+            thread.join(remaining)
+            with self._lock:
+                if self._thread is thread and not self._queue:
+                    return
+            if deadline is not None and time.monotonic() >= deadline:
+                return
 
     # -- removal -----------------------------------------------------------
     def remove(self, model_id: str) -> dict:
         """Forget and delete one installed model, after it is unloaded."""
         with self._lock:
             running = self._operations.get(model_id)
-            if running is not None and running.state == "running":
+            if running is not None and running.state in ("running", "queued"):
                 raise ProvisioningError("in_progress",
                                         "Cancel the download or import first.")
         if self.busy():
@@ -336,32 +375,48 @@ class Provisioner:
         return replace(entry, manifest_sha256=manifest)
 
     def _begin(self, operation: Operation, work) -> None:
+        """Start now, or queue behind the one running: one at a time, in order."""
         with self._lock:
-            if self._thread is not None and self._thread.is_alive():
-                raise ProvisioningError("busy", "Another model is being set up. "
-                                                "Wait for it to finish or cancel it.")
+            current = self._operations.get(operation.model_id)
+            if current is not None and current.state in ("running", "queued"):
+                raise ProvisioningError("in_progress",
+                                        f"{operation.model_id} is already being set up.")
             self._operations[operation.model_id] = operation
+            if self._thread is not None and self._thread.is_alive():
+                operation.state = "queued"
+                self._queue.append((operation, work))
+                return
+            self._start(operation, work)
 
-            def run():
-                try:
-                    work()
-                    if operation.cancel.is_set():
-                        operation.state = "cancelled"
-                    else:
-                        operation.state = "done"
-                except ProvisioningError as exc:
-                    operation.state = "failed"
-                    operation.error, operation.error_code = str(exc), exc.code
-                except Exception as exc:                   # noqa: BLE001
-                    operation.state = "failed"
-                    operation.error = f"{type(exc).__name__}: {exc}"
-                    operation.error_code = "failed"
-                finally:
-                    operation.finished_at = time.time()
+    def _start(self, operation: Operation, work) -> None:
+        """Run one operation on the provisioning thread. Holds `_lock`."""
+        operation.state = "running"
+        operation.started_at = time.time()
 
-            self._thread = threading.Thread(target=run, name="refinix-provisioning",
-                                            daemon=True)
-            self._thread.start()
+        def run():
+            try:
+                work()
+                if operation.cancel.is_set():
+                    operation.state = "cancelled"
+                else:
+                    operation.state = "done"
+            except ProvisioningError as exc:
+                operation.state = "failed"
+                operation.error, operation.error_code = str(exc), exc.code
+            except Exception as exc:                       # noqa: BLE001
+                operation.state = "failed"
+                operation.error = f"{type(exc).__name__}: {exc}"
+                operation.error_code = "failed"
+            finally:
+                operation.finished_at = time.time()
+                with self._lock:
+                    if self._queue:
+                        following, following_work = self._queue.pop(0)
+                        self._start(following, following_work)
+
+        self._thread = threading.Thread(target=run, name="refinix-provisioning",
+                                        daemon=True)
+        self._thread.start()
 
     def _final(self, entry: models.Entry, item: models.ModelFile) -> Path:
         return self.root / entry.id / item.name

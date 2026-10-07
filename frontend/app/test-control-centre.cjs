@@ -440,3 +440,152 @@ test('a pending file check says when it is checked', () => {
   const integrity = rows.find((row) => row[0] === 'Integrity');
   assert.match(integrity[1], /checked again before it loads/);
 });
+
+/* Setup and the Settings overview (first-run work package). */
+const SETUP_STATUS = {
+  runtime: { reachable: false, models: [] },
+  readiness: { code: 'setup_incomplete', state: 'attention',
+    message: 'Choose a model to finish setting up Refinix.',
+    detail: 'No local model is installed yet.',
+    action: { kind: 'start_ollama', label: 'Start Ollama' } },
+  hardware: { facts: { cpu_brand: 'Test CPU', memory_total_bytes: 16 * 1024 ** 3,
+                       disk_free_bytes: 200 * 1024 ** 3 },
+              memory: { capacity_bytes: 11 * 1024 ** 3 } },
+  ollama: { active: true, reachable: false, installed: true, startable: true },
+  setup: { intro_dismissed: false, choice: null },
+  models: [], model_choices: {}, categories: [],
+};
+
+function allNodes(node) {
+  return [node, ...(node.children || []).flatMap(allNodes)];
+}
+
+test('setup can always be reopened; only the attention badge depends on readiness', () => {
+  const p = page();
+  p.run(`renderSetupAction(${JSON.stringify(SETUP_STATUS)})`);
+  assert.equal(p.document.getElementById('setup-action').hidden, false);
+  assert.equal(p.document.getElementById('settings-attention').hidden, false);
+  assert.equal(p.document.getElementById('settings-link').dataset.attention, 'true');
+  const ready = Object.assign({}, SETUP_STATUS, { readiness: { state: 'ok', code: 'ready' } });
+  p.run(`renderSetupAction(${JSON.stringify(ready)})`);
+  assert.equal(p.document.getElementById('setup-action').hidden, false, 'still reopenable');
+  assert.equal(p.document.getElementById('settings-attention').hidden, true);
+  assert.equal(p.document.getElementById('settings-link').dataset.attention, 'false');
+});
+
+test('setup opens by itself once, on the first launch of this data', async () => {
+  const p = page();
+  const first = p.run(`openSetupOnce(${JSON.stringify(SETUP_STATUS)})`);
+  assert.equal(first, true);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(p.requests[0].path, '/v1/setup');
+  assert.deepEqual(p.requests[0].body, { first_opened: true });
+  const later = Object.assign({}, SETUP_STATUS,
+    { setup: { intro_dismissed: false, first_opened: true } });
+  assert.equal(p.run(`openSetupOnce(${JSON.stringify(later)})`), false);
+  assert.equal(p.requests.length, 1, 'never again once it has opened');
+});
+
+test('the overview answers the three questions and reuses the startup hardware', () => {
+  const p = page();
+  p.run(`renderOverview(${JSON.stringify(SETUP_STATUS)})`);
+  assert.match(p.text('o-ready'), /^Not yet\./);
+  assert.match(p.text('o-models'), /None installed yet/);
+  assert.match(p.text('o-next'), /No local model is installed yet/);
+  assert.match(p.text('o-hardware'), /16\.0 GB memory/);
+  assert.match(p.text('o-hardware'), /11\.0 GB usable for models \(estimated\)/);
+});
+
+test('a stopped Ollama asks to be started and never claims a model count', () => {
+  const p = page();
+  p.run(`renderOverview(${JSON.stringify(SETUP_STATUS)})`);
+  const panel = p.text('o-ollama');
+  assert.match(panel, /Start Ollama to check your models/);
+  assert.doesNotMatch(panel, /Found \d/);
+  const buttons = allNodes(p.document.getElementById('o-ollama'))
+    .filter((n) => n.tag === 'button').map((b) => b.textContent);
+  assert.deepEqual(buttons, ['Start Ollama']);
+  assert.equal(p.requests.length, 0, 'nothing starts on its own');
+});
+
+test('a running Ollama lists what it reported and reuses it without a copy', async () => {
+  const p = page();
+  const status = Object.assign({}, SETUP_STATUS, {
+    ollama: { active: true, reachable: true, installed: true, version: '0.35.1' },
+    models: [
+      { key: 'ollama|chat-a:1', id: 'chat-a:1', origin: 'ollama', installed: true,
+        locality: 'local', enabled: true, eligible_scopes: ['chat', 'code'],
+        hints: ['general'], evidence_level: 3 },
+      { key: 'ollama|mystery:1', id: 'mystery:1', origin: 'ollama', installed: true,
+        locality: 'local', enabled: true, eligible_scopes: ['chat'], hints: [] }],
+  });
+  p.run(`renderOverview(${JSON.stringify(status)})`);
+  const panel = p.text('o-ollama');
+  assert.match(panel, /Found 2 models in Ollama on this computer \(Ollama 0\.35\.1\)/);
+  assert.match(panel, /does not download another copy/);
+  assert.match(panel, /chat-a:1 — Good for: general use/);
+  assert.match(panel, /mystery:1 — Strengths not documented/);
+  const use = allNodes(p.document.getElementById('o-ollama'))
+    .find((n) => n.tag === 'button' && n.textContent === 'Use existing models');
+  use.onclick();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(p.requests[0].path, '/v1/setup');
+  assert.deepEqual(p.requests[0].body, { choice: 'existing_models', intro_dismissed: true });
+});
+
+test('the explanation can be hidden and brought back, and the choice is stored', async () => {
+  const p = page();
+  p.run(`renderOverview(${JSON.stringify(SETUP_STATUS)})`);
+  const hide = p.document.getElementById('o-intro-actions').children[0];
+  assert.equal(hide.textContent, 'Hide this explanation');
+  hide.onclick();
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(p.requests[0].body, { intro_dismissed: true });
+  const dismissed = Object.assign({}, SETUP_STATUS, { setup: { intro_dismissed: true } });
+  p.run(`renderOverview(${JSON.stringify(dismissed)})`);
+  assert.equal(p.document.getElementById('o-intro').hidden, true);
+  assert.equal(p.document.getElementById('o-intro-actions').children[0].textContent,
+               'Show the setup explanation');
+});
+
+test('categories offer any combination, mark what is already here, and show progress', () => {
+  const p = page();
+  const option = (over) => Object.assign({ id: 'm', display_name: 'M', fit: 'good',
+    fit_label: 'Good fit (estimated)', storage_bytes: 2 * 1024 ** 3, installed: false,
+    download: true, disk_short: false, runtime_label: 'Refinix engine' }, over);
+  const status = Object.assign({}, SETUP_STATUS, {
+    provisioning: { queued: { model_id: 'queued', kind: 'download', state: 'queued',
+                              bytes_done: 0, bytes_total: 10 } },
+    categories: [
+      { id: 'chat', label: 'Chat', detail: 'Everyday', installed: 1,
+        initial: [option({ id: 'here', display_name: 'Here', installed: true,
+                           download: false, origin: 'ollama' }),
+                  option({ id: 'get', display_name: 'Get' })],
+        more: [option({ id: 'huge', display_name: 'Huge', fit: 'too_large' })] },
+      { id: 'code', label: 'Code', detail: 'Code', installed: 0,
+        initial: [option({ id: 'queued', display_name: 'Queued' }),
+                  option({ id: 'full', display_name: 'Full', disk_short: true })], more: [] },
+      { id: 'other', label: 'Other models', detail: 'x', installed: 0, initial: [], more: [] },
+    ] });
+  p.run(`renderCategories(${JSON.stringify(status)})`);
+  const host = p.document.getElementById('o-categories');
+  const text = host.textContent;
+  assert.match(text, /Already here, in Ollama — no download/);
+  assert.match(text, /Download \(2\.0 GB\)/);
+  assert.match(text, /Waiting to start: downloads run one after another/);
+  assert.match(text, /Not enough free disk space/);
+  assert.doesNotMatch(text, /Other models/, 'an empty extra group is not shown');
+  const more = allNodes(host).find((n) => n.tag === 'button' && /Show more/.test(n.textContent));
+  assert.ok(more, 'a model too large for this computer is still offered under Show more');
+  assert.equal(p.requests.length, 0, 'nothing downloads until a button is pressed');
+});
+
+test('an unsuitable-model readiness opens setup, not a terminal step', () => {
+  const p = page();
+  const status = Object.assign({}, SETUP_STATUS, { readiness: {
+    code: 'no_suitable_model', state: 'attention', message: 'No installed local model is suitable for Chat.',
+    detail: 'Choose one yourself, or set up a general model.',
+    action: { kind: 'open_setup', target: 'setup', label: 'Set up local AI' } } });
+  const labels = p.run(`readinessActions(${JSON.stringify(status)}).map((a) => a.label)`);
+  assert.deepEqual(Array.from(labels), ['Set up local AI', 'Check again']);
+});

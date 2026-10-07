@@ -51,6 +51,14 @@ class TestCodes(unittest.TestCase):
         self.assertEqual(assess(chat_row=row, chat_profile_found=False)["code"],
                          "cloud_model_excluded")
 
+    def test_models_documented_for_other_work_point_to_setup(self):
+        result = assess(chat_profile_found=False, chat_row=None,
+                        refusal="No installed local model is suitable for Chat: x.",
+                        refusal_code="unsuitable")
+        self.assertEqual(result["code"], "no_suitable_model")
+        self.assertEqual(result["action"]["kind"], "open_setup")
+        self.assertIn("suitable", result["message"])
+
     def test_ready_is_ready(self):
         self.assertEqual(assess()["code"], readiness.READY)
 

@@ -522,15 +522,42 @@ def build_pyinstaller(work: Path, identity_file: Path, staged: Path,
     return onedir
 
 
+SIGNATURE_PATH_VARIABLE = "REFINIX_SIGNATURE_PATH"
+# The path reaches PowerShell through the environment. Arguments after a
+# `-Command` string are joined into the command text rather than bound to
+# `$args`, so passing the path that way would check nothing (review finding).
+SIGNATURE_SCRIPT = (
+    f"$s = Get-AuthenticodeSignature -LiteralPath $env:{SIGNATURE_PATH_VARIABLE}; "
+    "$subject = if ($s.SignerCertificate) { $s.SignerCertificate.Subject } else { '' }; "
+    "Write-Output ($s.Status.ToString() + '|' + $subject)")
+
+
+def verify_microsoft_signature(path: Path, run=subprocess.run) -> None:
+    """The bundled WebView2 installer carries a valid Microsoft Authenticode
+    signature. Checked on the Windows build host, beside the pinned SHA-256."""
+    env = dict(os.environ, **{SIGNATURE_PATH_VARIABLE: str(Path(path).resolve())})
+    result = run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                  SIGNATURE_SCRIPT], capture_output=True, text=True, env=env)
+    status, _, subject = (result.stdout or "").strip().partition("|")
+    if result.returncode != 0 or status != "Valid" or "O=Microsoft Corporation" not in subject:
+        raise BuildError(f"{path.name} is not validly signed by Microsoft "
+                         f"({status or result.stderr.strip()[-200:]})")
+
+
 def build_windows(args, work: Path, identity_file: Path, staged: Path,
-                  engines: list[dict]) -> list[Path]:
+                  engines: list[dict], cache: Path) -> list[Path]:
     onedir = build_pyinstaller(work, identity_file, staged, engines)
     iscc = find_iscc()
     if not iscc:
         raise BuildError("Inno Setup (ISCC.exe) was not found on this build host")
+    # Shipped inside the setup, and run by it only when this computer has no
+    # WebView2 Runtime: the install never needs a separate download.
+    webview2 = obtain_tool("webview2_standalone_x64", cache)
+    verify_microsoft_signature(webview2)
     base = f"Refinix-{args.version}-windows-x64-setup"
     _check([iscc, f"/DAppVersion={args.version}", f"/DSourceDir={onedir}",
             f"/DOutputDir={Path(args.out).resolve()}", f"/DOutputBase={base}",
+            f"/DWebView2Installer={webview2}",
             str(DESKTOP / "windows" / "refinix.iss")])
     args.min_os = "Windows 11 (10.0.22000)"
     return [Path(args.out) / f"{base}.exe"]
@@ -667,26 +694,29 @@ INSTALL_STEPS = {
                    "may warn: choose **More info → Run anyway**.\n"
                    "2. Setup installs for your account only; no administrator password "
                    "is needed.",
-    "linux-x64": "Either:\n- **AppImage:** in Files, open the file's Properties, turn on "
-                 "**Executable as Program** (\"Allow executing\"), then double-click it; or\n"
-                 "- **.deb:** double-click it to install with App Center (asks for your "
-                 "password and installs GTK/WebKitGTK if needed).",
+    "linux-x64": "Recommended — **.deb:** double-click it to install with App Center. "
+                 "It asks for your password and installs the GTK/WebKitGTK packages "
+                 "Refinix needs, so nothing else has to be set up.\n"
+                 "Alternative — **AppImage:** in Files, open the file's Properties, turn on "
+                 "**Executable as Program** (\"Allow executing\"), then double-click it. "
+                 "It needs FUSE and WebKitGTK already installed.",
 }
 PREREQUISITES = {
     "macos-arm64": "- A Mac with an Apple M-series chip.",
-    "windows-x64": "- Windows 11 x64 with the Microsoft Edge WebView2 Runtime (part of "
-                   "Windows 11). Setup stops and explains if it is missing.\n"
+    "windows-x64": "- Windows 11 x64. The Microsoft Edge WebView2 Runtime is part of "
+                   "Windows 11; if it is missing, setup installs it from the copy "
+                   "included in this package, without downloading.\n"
                    "- A current graphics driver; Refinix uses the processor if no "
                    "usable graphics device is found.",
-    "linux-x64": "- Ubuntu 24.04 desktop.\n- For the AppImage: FUSE (`fuse3`) and the "
-                 "WebKitGTK 4.1 packages; Refinix explains if they are missing. The .deb "
-                 "installs them itself.\n- A current graphics driver; otherwise the "
-                 "processor is used.",
+    "linux-x64": "- Ubuntu 24.04 desktop.\n- The .deb installs everything else it needs. "
+                 "The AppImage needs FUSE (`fuse3`) and the WebKitGTK 4.1 packages; "
+                 "Refinix explains if they are missing.\n- A current graphics driver; "
+                 "otherwise the processor is used.",
 }
 UNINSTALL = {
     "macos-arm64": "Move Refinix.app to the Bin.",
     "windows-x64": "Settings → Apps → Installed apps → Refinix → Uninstall.",
-    "linux-x64": "Delete the AppImage file, or remove the package with App Center.",
+    "linux-x64": "Remove the package with App Center, or delete the AppImage file.",
 }
 UPDATE_LIMITATION = ("- Updates: Check for updates works only in a build given an update trust "
                      "root and feed; installing an update from inside Refinix is not "
@@ -824,7 +854,8 @@ def main(argv=None) -> int:
             if lane == "macos-arm64":
                 artifacts = build_macos(args, work, identity_file, engines)
             elif lane == "windows-x64":
-                artifacts = build_windows(args, work, identity_file, staged, engines)
+                artifacts = build_windows(args, work, identity_file, staged, engines,
+                                          args.cache)
             else:
                 artifacts = build_linux(args, work, identity_file, staged, engines,
                                         args.cache)

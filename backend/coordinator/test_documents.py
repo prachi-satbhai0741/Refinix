@@ -1223,7 +1223,10 @@ class TestSkillsInsideChat(Base):
         asked = []
 
         def extract(_path, **kwargs):
-            asked.append((kwargs.get("ocr_model"), kwargs.get("ocr_chat")))
+            # The reader is chosen when a page needs reading: resolve it here.
+            reader = kwargs.get("ocr_reader")
+            chosen = reader()[0] if reader is not None else kwargs.get("ocr_model")
+            asked.append((chosen, kwargs.get("ocr_chat")))
             raise documents.DocumentError("scan", "stopped after the choice")
 
         with patch.object(runtime, "probe", return_value=vision), \
@@ -1308,8 +1311,11 @@ class TestChatBackedReading(Base):
         self.assertIsNone(stream.response_format, "text decoding, no JSON")
         self.assertIsNone(stream.images, "no picture is sent")
         systems = [m["content"] for m in stream.messages if m["role"] == "system"]
-        self.assertIn(docflow.UNTRUSTED_NOTE, systems)
-        self.assertIn(docflow.CHAT_READ_INSTRUCTION, systems)
+        # One leading system message carries every instruction (some chat
+        # templates refuse a second); each keeps its system role.
+        self.assertEqual(len(systems), 1)
+        self.assertIn(docflow.UNTRUSTED_NOTE, systems[0])
+        self.assertIn(docflow.CHAT_READ_INSTRUCTION, systems[0])
         fenced = stream.messages[-1]["content"]
         self.assertIn("--- DOCUMENT", fenced)
         self.assertIn("name=report.docx", fenced)

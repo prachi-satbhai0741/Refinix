@@ -121,10 +121,12 @@ UNCERTAINTY_NOTE = (
     "page coordinates. Confidence is unavailable for this extraction, not zero "
     "and not high. Check any value that matters against the original page.")
 
+# True of whichever model reads the page: Auto chooses any model that takes
+# pictures, so the note names no particular one.
 STANDALONE_NOTE = (
-    "The installed model is a standalone vision-language component, not the "
-    "complete PaddleOCR document-layout pipeline. No layout regions, tables or "
-    "field detections were produced.")
+    "Pages are read by a standalone vision-language component, not a complete "
+    "document-layout pipeline. No layout regions, tables or field detections "
+    "were produced.")
 
 
 class OcrError(ValueError):
@@ -145,6 +147,16 @@ NO_PROFILE_STATE = "no_qualified_profile"
 def _name(model: str | None) -> str:
     """A model key or bare name, as a person reads it."""
     return runtime.split_key(model or "")[1] if model else "no model"
+
+
+_RUNTIME_WORDS = {"ollama": "Ollama", "llama.cpp": "Refinix engine"}
+
+
+def _reader(model: str | None) -> str:
+    """The reading model and, when its key says, the runtime it ran on."""
+    origin = runtime.split_key(model or "")[0] if model else None
+    where = _RUNTIME_WORDS.get(origin)
+    return f"{_name(model)} on {where}" if where else _name(model)
 
 
 def no_profile_detail(model: str | None) -> str:
@@ -236,7 +248,7 @@ def method_label(digest: str | None = None,
     """
     suffix = f" manifest {digest[:16]}…" if digest else " manifest unavailable"
     return (f"pdf render ({renderer or 'renderer not recorded'}) "
-            f"+ vision ({_name(model)}){suffix}")
+            f"+ vision ({_reader(model)}){suffix}")
 
 
 # --------------------------------------------------------------------------
@@ -288,7 +300,7 @@ def image_method_label(digest: str | None = None,
     was never rendered would be a fabricated provenance line.
     """
     suffix = f" manifest {digest[:16]}…" if digest else " manifest unavailable"
-    return f"image + local vision ({_name(model)}){suffix}"
+    return f"image + local vision ({_reader(model)}){suffix}"
 
 
 def check_image(data: bytes, *, filename: str, media_type: str) -> str:
@@ -569,7 +581,13 @@ def extract_pdf(data: bytes, *, filename: str,
         "uncertain": uncertain,
         # The renderer counted these pages; it is an observation of the file.
         "page_count": len(pages),
-        "model": {"model_id": model, "manifest_sha256": digest,
-                  "runtime": "ollama",
-                  "runtime_version": state["model"].get("runtime_version")},
+        # The reader that actually ran, from its own profile: never assumed
+        # to be any particular runtime.
+        "model": {"model_id": (profile.model.model_id if profile is not None
+                               else runtime.split_key(model)[1]),
+                  "manifest_sha256": digest,
+                  "runtime": (profile.model.runtime if profile is not None
+                              else runtime.split_key(model)[0] or "unknown"),
+                  "runtime_version": (profile.model.runtime_version if profile is not None
+                                      else state["model"].get("runtime_version"))},
     }

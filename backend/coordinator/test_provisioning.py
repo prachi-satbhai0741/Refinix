@@ -41,7 +41,18 @@ ENTRY = models.Entry(
     format="GGUF", parameters=None, storage_bytes=len(WEIGHTS) + len(PROJECTOR),
     minimum_runtime=None, evidence="synthetic", engine="llama.cpp", files=FILES,
     revision="r1")
-BODIES = {FILES[0].url: WEIGHTS, FILES[1].url: PROJECTOR}
+SECOND_WEIGHTS = b"GGUF-second-" + b"\x05" * 4000
+SECOND_FILES = (models.ModelFile("weights", "second.gguf", len(SECOND_WEIGHTS),
+                                 _sha(SECOND_WEIGHTS), "https://models.example/second.gguf"),)
+SECOND = models.Entry(
+    id="second-model", role="Library model", scopes=(models.CHAT,), source="test source",
+    licence="test licence",
+    manifest_sha256=models.manifest_digest("second-model", "r1", SECOND_FILES),
+    format="GGUF", parameters=None, storage_bytes=len(SECOND_WEIGHTS),
+    minimum_runtime=None, evidence="synthetic", engine="llama.cpp", files=SECOND_FILES,
+    revision="r1")
+BODIES = {FILES[0].url: WEIGHTS, FILES[1].url: PROJECTOR,
+          SECOND_FILES[0].url: SECOND_WEIGHTS}
 
 
 class Response:
@@ -115,6 +126,58 @@ class Base(unittest.TestCase):
 
     def installed(self, name):
         return (db.models_root(self.state) / ENTRY.id / name)
+
+
+class TestQueue(Base):
+    """Several chosen models: one at a time, in order, sharing the disk check."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = patch.object(models, "entry_for", side_effect=lambda m: {
+            ENTRY.id: ENTRY, SECOND.id: SECOND}.get(m))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_second_choice_queues_and_runs_after_the_first(self):
+        release = threading.Event()
+        p = self.provisioner(Pool(on_chunk=lambda _s: release.wait(5)))
+        first = p.start_download(ENTRY.id)
+        second = p.start_download(SECOND.id)
+        self.assertEqual((first["state"], second["state"]), ("running", "queued"))
+        release.set()
+        p.wait(10)
+        states = p.state()
+        self.assertEqual((states[ENTRY.id]["state"], states[SECOND.id]["state"]),
+                         ("done", "done"))
+        self.assertEqual((db.models_root(self.state) / SECOND.id / "second.gguf")
+                         .read_bytes(), SECOND_WEIGHTS)
+
+    def test_a_queued_choice_can_be_cancelled_before_it_starts(self):
+        release = threading.Event()
+        p = self.provisioner(Pool(on_chunk=lambda _s: release.wait(5)))
+        p.start_download(ENTRY.id)
+        p.start_download(SECOND.id)
+        self.assertTrue(p.cancel(SECOND.id)["cancelled"])
+        release.set()
+        p.wait(10)
+        self.assertEqual(p.state()[SECOND.id]["state"], "cancelled")
+        self.assertFalse((db.models_root(self.state) / SECOND.id).exists())
+
+    def test_the_disk_check_counts_what_other_choices_still_need(self):
+        release = threading.Event()
+        room = len(SECOND_WEIGHTS) + provisioning.DISK_MARGIN_BYTES + 10
+        p = self.provisioner(Pool(on_chunk=lambda _s: release.wait(5)), free=room)
+        try:
+            # The first model alone would fit only if nothing else were queued.
+            p.start_download(SECOND.id)
+            with self.assertRaises(provisioning.ProvisioningError) as caught:
+                p.start_download(ENTRY.id)
+            self.assertEqual(caught.exception.code, "insufficient_space")
+            self.assertIn("other chosen models", str(caught.exception))
+        finally:
+            p.cancel(SECOND.id)
+            release.set()
+            p.wait(10)
 
 
 class TestDownload(Base):
@@ -227,14 +290,14 @@ class TestDownload(Base):
             p.start_download("somebody/else")
         self.assertEqual(caught.exception.code, "unknown_model")
 
-    def test_one_operation_at_a_time(self):
+    def test_the_same_model_is_never_set_up_twice_at_once(self):
         release = threading.Event()
         p = self.provisioner(Pool(on_chunk=lambda _s: release.wait(5)))
         p.start_download(ENTRY.id)
         try:
             with self.assertRaises(provisioning.ProvisioningError) as caught:
                 p.start_download(ENTRY.id)
-            self.assertEqual(caught.exception.code, "busy")
+            self.assertEqual(caught.exception.code, "in_progress")
         finally:
             p.cancel(ENTRY.id)
             release.set()

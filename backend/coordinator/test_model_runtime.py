@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend.contracts import profiles, v1
-from backend.coordinator import (admission, capacity, db, engine, fake_ollama, hub,
+from backend.coordinator import (admission, capacity, code_service, db, docflow, engine, fake_ollama, hub,
                                  local_engine, models, ocr, provisioning, router,
                                  runtime)
 from backend.coordinator.server import Coordinator, RequestError
@@ -38,17 +38,19 @@ def managed_state(*entries, capabilities=None):
             "models": [e.id for e in entries],
             "digests": {e.id: e.manifest_sha256 for e in entries},
             "capabilities": {e.id: capabilities.get(e.id, ["completion"]) for e in entries},
-            "hints": {e.id: list(e.hints) for e in entries},
             "context_lengths": {e.id: e.context_length for e in entries},
             "file_checks": {e.id: {"state": "verified", "detail": ""} for e in entries},
             "loaded": None, "error": None}
 
 
-def ollama_state(models_=None, *, version="0.34.2", remote=(), capabilities=None):
+def ollama_state(models_=None, *, version="0.34.2", remote=(), capabilities=None,
+                 model_tags=None, context_lengths=None):
     models_ = models_ if models_ is not None else {OLLAMA_QWEN: OLLAMA_DIGEST}
     return {"reachable": True, "server_version": version, "runtime": "ollama",
             "models": list(models_), "digests": dict(models_), "remote": list(remote),
             "capabilities": dict(capabilities or {}), "tags_read": True,
+            "model_tags": dict(model_tags or {}),
+            "context_lengths": dict(context_lengths or {}),
             "loaded": None, "loaded_all": [], "error": None}
 
 
@@ -355,6 +357,690 @@ class TestRouter(unittest.TestCase):
         choice = router.choose(router.Task(profiles.CHAT),
                                [self.candidate("a", blocked="switched off for new work")])
         self.assertIn("a switched off for new work", choice.reason)
+
+
+class TestModelAgnosticRouting(unittest.TestCase):
+    """Routing for any compatible model: made-up identities, evidence only."""
+
+    def c(self, key, *, hints=(), limited=(), evidence=None, caps=("completion",),
+          check=None, resident=False, fit="good", structured=True, blocked=None):
+        return router.Candidate(
+            key=key, model_id=key, origin="ollama",
+            profile=SimpleNamespace(qualified_context_tokens=8192),
+            capabilities=list(caps), hints=tuple(hints), resident=resident, fit=fit,
+            blocked=blocked, limited_to=tuple(limited),
+            evidence=(3 if (hints or limited) else 0) if evidence is None else evidence,
+            check=check, structured=structured)
+
+    CHAT = router.Task(profiles.CHAT)
+
+    def test_names_do_not_route_evidence_does(self):
+        for documented, unknown in (("zz-model", "aa-model"), ("aa-model", "zz-model")):
+            with self.subTest(documented=documented):
+                choice = router.choose(self.CHAT, [self.c(unknown),
+                                                   self.c(documented, hints=("general",))])
+                self.assertEqual(choice.candidate.key, documented)
+
+    def test_each_task_gets_its_documented_strength(self):
+        eyes = ("completion", "vision")
+        pool = [self.c("g", hints=("general",)), self.c("k", hints=("code",)),
+                self.c("r", hints=("reasoning",)),
+                self.c("v", hints=("general", "vision"), caps=eyes),
+                self.c("o", hints=("ocr",), caps=eyes)]
+        cases = [
+            (self.CHAT, "g"),
+            (router.Task(profiles.CODE), "k"),
+            (router.classify("prove this step by step", workflow=profiles.CHAT), "r"),
+            (router.classify("what colour is the car?", workflow=profiles.CHAT,
+                             images=True), "v"),
+            (router.Task(profiles.OCR, needs_vision=True), "o"),
+            (router.classify("transcribe this", workflow=profiles.CHAT, images=True), "o"),
+            (router.classify("summarise the text", workflow=profiles.CHAT,
+                             images=True), "v"),
+        ]
+        for task, expected in cases:
+            with self.subTest(task=task):
+                self.assertEqual(router.choose(task, pool).candidate.key, expected)
+
+    def test_the_preferred_model_missing_means_the_next_capable_one(self):
+        choice = router.choose(router.Task(profiles.CODE),
+                               [self.c("plain", hints=("general",)), self.c("mystery")])
+        self.assertEqual(choice.candidate.key, "plain")
+        self.assertIn("general-purpose", choice.reason)
+        self.assertEqual([c.key for c in choice.ranked], ["plain", "mystery"])
+
+    def test_a_coding_specialist_is_a_capable_chat_fallback(self):
+        choice = router.choose(self.CHAT, [self.c("mystery"), self.c("coder", hints=("code",))])
+        self.assertEqual(choice.candidate.key, "coder")
+        self.assertIn("no better-documented model is available", choice.reason)
+
+    def test_only_unknown_models_still_route_with_a_caution(self):
+        choice = router.choose(self.CHAT, [self.c("mystery")])
+        self.assertEqual(choice.candidate.key, "mystery")
+        self.assertIn("not documented", choice.reason)
+        self.assertIsNone(choice.code)
+
+    def test_a_documented_limitation_excludes_from_auto_but_not_from_a_pin(self):
+        reader = self.c("reader", hints=("ocr",), limited=("ocr",),
+                        caps=("completion", "vision"))
+        both = router.choose(self.CHAT, [reader, self.c("plain", hints=("general",))])
+        self.assertEqual(both.candidate.key, "plain")
+        self.assertIn(("reader", "is documented for page reading only (its publisher's card)"),
+                      both.skipped)
+        alone = router.choose(self.CHAT, [reader])
+        self.assertIsNone(alone.candidate)
+        self.assertEqual(alone.code, "unsuitable")
+        self.assertIn("page reading only", alone.reason)
+        self.assertEqual(router.choose(router.Task(profiles.OCR, needs_vision=True),
+                                       [reader]).candidate.key, "reader")
+        pinned = router.choose(self.CHAT, [reader], auto=False)
+        self.assertEqual(pinned.candidate.key, "reader")
+        self.assertIn("note: it is documented for page reading only", pinned.reason)
+
+    def test_missing_evidence_is_never_a_limitation(self):
+        choice = router.choose(self.CHAT, [self.c("no-template-no-card")])
+        self.assertEqual(choice.candidate.key, "no-template-no-card")
+
+    def test_a_hard_requirement_names_what_is_missing(self):
+        task = router.classify("who is in this photo?", workflow=profiles.CHAT, images=True)
+        choice = router.choose(task, [self.c("plain", hints=("general",))])
+        self.assertIsNone(choice.candidate)
+        self.assertIsNone(choice.code)
+        self.assertIn("does not accept images", choice.reason)
+
+    def test_a_current_self_test_ranks_but_never_gates(self):
+        failed = router.choose(self.CHAT, [self.c("a", hints=("general",), check="failed"),
+                                           self.c("b", hints=("general",))])
+        self.assertEqual(failed.candidate.key, "b")
+        alone = router.choose(self.CHAT, [self.c("a", hints=("general",), check="failed")])
+        self.assertEqual(alone.candidate.key, "a")
+        self.assertIn("failed this check here", alone.reason)
+        passed = router.choose(self.CHAT, [self.c("z", hints=("general",), check="passed"),
+                                           self.c("a", hints=("general",))])
+        self.assertEqual(passed.candidate.key, "z")
+
+    def test_the_ranked_list_is_every_suitable_model_best_first(self):
+        choice = router.choose(self.CHAT, [
+            self.c("mystery"), self.c("coder", hints=("code",)),
+            self.c("plain", hints=("general",)),
+            self.c("off", hints=("general",), blocked="switched off for new work")])
+        self.assertEqual([c.key for c in choice.ranked], ["plain", "coder", "mystery"])
+        self.assertIn(("off", "switched off for new work"), choice.skipped)
+
+    def test_structured_documents_rank_before_limited_chat(self):
+        task = router.Task(profiles.DOCUMENTS)
+        choice = router.choose(task, [self.c("a-limited", hints=("general",), structured=False),
+                                      self.c("z-structured", hints=("general",))])
+        self.assertEqual([c.key for c in choice.ranked], ["z-structured", "a-limited"])
+
+    def test_picture_questions_are_classified_conservatively(self):
+        cases = {
+            "transcribe this": router.TRANSCRIPTION,
+            "What does it say?": router.TRANSCRIPTION,
+            "please extract the text": router.TRANSCRIPTION,
+            "summarise the text": router.TEXT_QUESTION,
+            "what is the total on this invoice": router.TEXT_QUESTION,
+            "transcribe the text in this image": router.TRANSCRIPTION,
+            "what does this sign say": router.TRANSCRIPTION,
+            "Is this signature genuine?": router.VISUAL,
+            "Compare the handwriting in this document": router.VISUAL,
+            "summarise this document": router.VISUAL,
+            "summarise this receipt": router.VISUAL,
+            "who signed this letter": router.VISUAL,
+            "is this stamp authentic": router.VISUAL,
+            # Mixed requests: a text clause plus anything else needs vision.
+            "Transcribe the text and explain the gesture": router.VISUAL,
+            "transcribe this and tell me who wrote it": router.VISUAL,
+            "What does it say, and is it real?": router.VISUAL,
+            "extract the text then describe the layout": router.VISUAL,
+            "read the text, also what mood does it convey": router.VISUAL,
+            "transcribe this. Is it friendly?": router.VISUAL,
+            "summarise this PDF": router.VISUAL,
+            # Whole requests in a clearly text-only form.
+            "Could you read out the text from this page?": router.TRANSCRIPTION,
+            "Perform OCR on this image": router.TRANSCRIPTION,
+            "translate the text into French": router.TEXT_QUESTION,
+            "what colour is the car?": router.VISUAL,
+            "who is in this photo": router.VISUAL,
+            "describe the image": router.VISUAL,
+            "how many people are there?": router.VISUAL,
+            "transcribe the text on the left": router.VISUAL,
+            "what is this?": router.VISUAL,
+            "": router.VISUAL,
+        }
+        for text, intent in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(router.image_intent(text), intent)
+
+    def test_a_visual_question_needs_vision_and_a_text_request_only_prefers_it(self):
+        visual = router.classify("what colour is the car", workflow=profiles.CHAT, images=True)
+        self.assertTrue(visual.needs_vision)
+        self.assertEqual(visual.image, router.VISUAL)
+        text = router.classify("transcribe this", workflow=profiles.CHAT, images=True)
+        self.assertFalse(text.needs_vision)
+        self.assertIn("image", text.labels)
+        self.assertEqual(router.wanted(text), router.OCR)
+        plain = router.classify("hello", workflow=profiles.CHAT)
+        self.assertIsNone(plain.image)
+
+
+ACME_HELPER, ACME_READER = "acme/helper:1", "acme/reader:1"
+
+
+class TestRoutingAcrossRuntimes(CoordinatorCase):
+    """Made-up models on both runtimes: evidence, fallback and agreement."""
+
+    STATE = runtime.merge({
+        runtime.LLAMA_CPP: managed_state(
+            GEMMA, CODER, capabilities={GEMMA.id: ["completion", "vision"]}),
+        runtime.OLLAMA: ollama_state(
+            {ACME_HELPER: "1" * 64, ACME_READER: "2" * 64},
+            capabilities={ACME_HELPER: ["completion"],
+                          ACME_READER: ["completion", "vision"]},
+            model_tags={ACME_HELPER: ["conversational", "text-generation"]})})
+    GEMMA_KEY, CODER_KEY = f"llama.cpp|{GEMMA.id}", f"llama.cpp|{CODER.id}"
+    HELPER_KEY, READER_KEY = f"ollama|{ACME_HELPER}", f"ollama|{ACME_READER}"
+
+    def test_one_resolver_describes_both_runtimes(self):
+        observed = self.c.observations()
+        self.assertEqual(observed[self.GEMMA_KEY]["evidence_level"], models.EVIDENCE_CARD)
+        self.assertEqual(observed[self.HELPER_KEY]["hints"], ("general",))
+        self.assertEqual(observed[self.HELPER_KEY]["evidence_level"], models.EVIDENCE_RUNTIME)
+        self.assertEqual(observed[self.READER_KEY]["hints"], ())
+        self.assertEqual(observed[self.READER_KEY]["limited_to"], ())
+
+    def test_the_next_suitable_model_takes_over_as_models_go_away(self):
+        self.assertEqual(self.c.choose_model("chat")["key"], self.GEMMA_KEY)
+        db.set_model_enabled(self.c.conn, self.GEMMA_KEY, False)
+        self.assertEqual(self.c.choose_model("chat")["key"], self.HELPER_KEY)
+        db.set_model_enabled(self.c.conn, self.HELPER_KEY, False)
+        self.assertEqual(self.c.choose_model("chat")["key"], self.CODER_KEY)
+        self.assertEqual(self.c.choose_model("code")["key"], self.CODER_KEY)
+        db.set_model_enabled(self.c.conn, self.CODER_KEY, False)
+        db.set_model_enabled(self.c.conn, self.GEMMA_KEY, True)
+        code = self.c.choose_model("code")
+        self.assertEqual(code["key"], self.GEMMA_KEY)
+        self.assertIn("general-purpose", code["reason"])
+
+    def test_a_stopped_runtime_drops_out_and_the_other_runtime_serves(self):
+        stopped = runtime.merge({
+            runtime.LLAMA_CPP: {**managed_state(GEMMA), "reachable": False},
+            runtime.OLLAMA: self.STATE["runtimes"][runtime.OLLAMA]})
+        choice = self.c.choose_model("chat", observed=self.c.observations(stopped))
+        self.assertEqual(choice["key"], self.HELPER_KEY)
+
+    def test_auto_offers_an_ordered_list_and_a_pin_offers_none(self):
+        choice = self.c.choose_model("chat")
+        self.assertEqual(choice["alternatives"][0], self.HELPER_KEY)
+        self.assertNotIn(choice["key"], choice["alternatives"])
+        self.c.select_model("chat", self.READER_KEY)
+        pinned = self.c.choose_model("chat")
+        self.assertEqual((pinned["key"], pinned["alternatives"]), (self.READER_KEY, []))
+
+    def test_preview_precheck_and_run_build_the_same_task(self):
+        observed = self.c.observations()
+        preview = self.c._choices(observed)["chat"]["key"]
+        run = self.c.choose_model("chat", observed=observed,
+                                  task=self.c.request_task("chat", "hello"))["key"]
+        self.assertEqual(preview, run)
+        self.c._precheck("chat", self.c.request_task("chat", "hello"))
+        visual = self.c.request_task("chat", "what colour is this?", images=True)
+        self.assertTrue(visual.needs_vision)
+        self.assertEqual(self.c.choose_model("chat", observed=observed, task=visual)["key"],
+                         self.GEMMA_KEY)
+
+    def test_a_first_choice_refused_by_memory_falls_back_before_any_attempt(self):
+        chat = db.create_chat(self.c.conn, self.c.workspace_id, "fallback")
+        with patch("backend.coordinator.server.threading.Thread.start"):
+            job = self.c.submit(chat, "hello there")
+        real_admit = self.c._admit
+
+        def admit(token, item, window, **kwargs):
+            if item and item["key"] == self.GEMMA_KEY:
+                return capacity.Decision("refuse", "Not enough free memory (test).")
+            return real_admit(token, item, window, **kwargs)
+
+        def stream(_messages, **_kwargs):
+            yield "delta", "Hello."
+            yield "done", {"done_reason": "stop"}
+
+        with patch.object(self.c, "_admit", side_effect=admit), \
+                patch.object(runtime, "stream_chat", stream):
+            self.c._run(job, chat)
+        detail = self.c.job_detail(job)
+        self.assertEqual(detail["job"]["state"], "completed")
+        self.assertEqual(len(detail["attempts"]), 1, "fallback happens before an attempt")
+        attempt = detail["attempts"][0]
+        self.assertIn(ACME_HELPER, attempt["model_json"])
+        self.assertIn("skipped", attempt["route_reason"])
+        self.assertIn("next suitable model", attempt["route_reason"])
+
+    def test_a_pinned_model_refused_by_memory_is_not_swapped(self):
+        self.c.select_model("chat", self.GEMMA_KEY)
+        chat = db.create_chat(self.c.conn, self.c.workspace_id, "pinned")
+        with patch("backend.coordinator.server.threading.Thread.start"):
+            job = self.c.submit(chat, "hello there")
+        with patch.object(self.c, "_admit",
+                          return_value=capacity.Decision("refuse", "Not enough memory.")):
+            self.c._run(job, chat)
+        detail = self.c.job_detail(job)
+        self.assertEqual(detail["job"]["state"], "failed")
+        self.assertIn("Not enough memory", json.loads(
+            detail["attempts"][0]["error_json"])["message"])
+
+
+OCR_ONLY = "acme/page-reader:1"
+
+
+class TestDemonstratedLimitation(CoordinatorCase):
+    """D9: only an observed, current, task-specific failure to finish removes a
+    model from Auto. Tags, missing tags and other failures only rank it."""
+
+    STATE = runtime.merge({
+        runtime.LLAMA_CPP: managed_state(),
+        runtime.OLLAMA: ollama_state(
+            {ACME_HELPER: "1" * 64, OCR_ONLY: "3" * 64},
+            capabilities={ACME_HELPER: ["completion"], OCR_ONLY: ["completion"]},
+            model_tags={ACME_HELPER: ["conversational"],
+                        OCR_ONLY: ["image-to-text", "ocr", "document-parse"]})})
+    HELPER_KEY, READER_KEY = f"ollama|{ACME_HELPER}", f"ollama|{OCR_ONLY}"
+
+    def record(self, key, *, state="failed", kind=models.INCOMPLETE, fingerprint=None,
+               digest=None, scope="chat"):
+        observed = self.c.observations()
+        db.record_selftest(
+            self.c.conn, model=key, scope=scope, state=state, detail="recorded",
+            digest=digest or observed[key]["digest"], runtime_version="0.34.2",
+            check_fingerprint=fingerprint or self.c.check_fingerprints(key, observed)[scope],
+            failure_kind=kind, reply_excerpt="It is my understanding that")
+
+    def test_tags_alone_never_exclude_a_model(self):
+        db.set_model_enabled(self.c.conn, self.HELPER_KEY, False)
+        choice = self.c.choose_model("chat")
+        self.assertEqual(choice["key"], self.READER_KEY, "a capable fallback, ranked low")
+        self.assertIn("no better-documented model", choice["reason"])
+
+    def test_a_current_incomplete_check_excludes_it_for_that_task_only(self):
+        self.record(self.READER_KEY)
+        db.set_model_enabled(self.c.conn, self.HELPER_KEY, False)
+        chat = self.c.choose_model("chat")
+        self.assertIsNone(chat["key"])
+        self.assertEqual(chat["code"], "unsuitable")
+        self.assertIn("did not finish its answer", chat["refusal"])
+        # Code has no such evidence, so it stays a candidate there.
+        self.assertEqual(self.c.choose_model("code")["key"], self.READER_KEY)
+        row = next(r for r in self.c.model_inventory() if r["key"] == self.READER_KEY)
+        self.assertEqual(list(row["auto_excluded"]), ["chat"])
+
+    def test_stale_formatting_wrong_or_unavailable_results_never_exclude(self):
+        db.set_model_enabled(self.c.conn, self.HELPER_KEY, False)
+        for label, kwargs in (
+                ("stale settings", {"fingerprint": "f" * 64}),
+                ("replaced bytes", {"digest": "9" * 64}),
+                ("formatting", {"kind": models.EXTRA_TEXT}),
+                ("wrong answer", {"kind": models.WRONG_VERDICT}),
+                ("could not run", {"state": "unavailable", "kind": None})):
+            with self.subTest(label):
+                self.record(self.READER_KEY, **kwargs)
+                self.assertEqual(self.c.choose_model("chat")["key"], self.READER_KEY)
+
+    def test_passing_again_restores_it(self):
+        self.record(self.READER_KEY)
+        self.record(self.READER_KEY, state="passed", kind=None)
+        db.set_model_enabled(self.c.conn, self.HELPER_KEY, False)
+        self.assertEqual(self.c.choose_model("chat")["key"], self.READER_KEY)
+
+    def test_a_person_may_still_choose_it_with_the_reason_said(self):
+        self.record(self.READER_KEY)
+        self.c.select_model("chat", self.READER_KEY)
+        pinned = self.c.choose_model("chat")
+        self.assertEqual(pinned["key"], self.READER_KEY)
+        self.assertIsNone(pinned["refusal"])
+        self.assertIn("note: it did not finish its answer", pinned["reason"])
+
+    def test_only_an_output_limit_stop_is_recorded_as_incomplete(self):
+        key = self.HELPER_KEY
+
+        def stops(reason, limit):
+            def stream(_messages, **_kwargs):
+                yield "delta", "It is my understanding"
+                yield "done", {"done_reason": reason, "limit_reason": limit}
+            return stream
+
+        cases = (("length", "output", "failed", models.INCOMPLETE),
+                 ("length", "context", "unavailable", None),
+                 ("length", "unknown", "unavailable", None),
+                 ("error", None, "unavailable", None))
+        for reason, limit, state, kind in cases:
+            with self.subTest(reason=reason, limit=limit):
+                with patch.object(runtime, "stream_chat", stops(reason, limit)):
+                    result = self.c.run_model_selftest("chat", model=key)
+                self.assertEqual((result["state"], result["failure_kind"]), (state, kind))
+
+
+BIG, SMALL = "acme/big-window:1", "acme/small-window:1"
+
+
+class TestFallbackBeforeTheAttempt(CoordinatorCase):
+    """Review finding: a request the first model's window cannot hold, or a
+    proposal its budget cannot hold, was refused without trying the next."""
+
+    STATE = runtime.merge({
+        runtime.LLAMA_CPP: managed_state(GEMMA, CODER,
+                                         capabilities={GEMMA.id: ["completion", "vision"]}),
+        runtime.OLLAMA: ollama_state(
+            {SMALL: "4" * 64, BIG: "5" * 64},
+            capabilities={SMALL: ["completion"], BIG: ["completion"]},
+            model_tags={SMALL: ["conversational"]},
+            context_lengths={SMALL: 4096, BIG: 32768})})
+    SMALL_KEY, BIG_KEY = f"ollama|{SMALL}", f"ollama|{BIG}"
+
+    def setUp(self):
+        super().setUp()
+        for key in (f"llama.cpp|{GEMMA.id}", f"llama.cpp|{CODER.id}"):
+            db.set_model_enabled(self.c.conn, key, False)
+        self.chat = db.create_chat(self.c.conn, self.c.workspace_id, "long")
+
+    def run_long(self):
+        with patch("backend.coordinator.server.threading.Thread.start"):
+            job = self.c.submit(self.chat, "Please check this text. " + "word " * 2600)
+
+        def stream(_messages, **_kwargs):
+            yield "delta", "Checked."
+            yield "done", {"done_reason": "stop"}
+
+        with patch.object(runtime, "stream_chat", stream):
+            self.c._run(job, self.chat)
+        return self.c.job_detail(job)
+
+    def test_a_request_the_first_window_cannot_hold_goes_to_the_next_model(self):
+        self.assertEqual(self.c.choose_model("chat")["key"], self.SMALL_KEY)
+        detail = self.run_long()
+        self.assertEqual(detail["job"]["state"], "completed")
+        self.assertEqual(len(detail["attempts"]), 1)
+        self.assertIn(BIG, detail["attempts"][0]["model_json"])
+        self.assertIn("does not fit its context window", detail["attempts"][0]["route_reason"])
+
+    def test_a_pinned_model_is_not_swapped_for_a_larger_window(self):
+        self.c.select_model("chat", self.SMALL_KEY)
+        detail = self.run_long()
+        self.assertEqual(detail["job"]["state"], "failed")
+        self.assertNotIn(BIG, detail["attempts"][0]["model_json"] or "")
+
+    def test_a_proposal_the_first_budget_cannot_hold_goes_to_the_next_model(self):
+        for key in (f"llama.cpp|{GEMMA.id}", f"llama.cpp|{CODER.id}"):
+            db.set_model_enabled(self.c.conn, key, True)
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        project = Path(outside.name) / "project"
+        project.mkdir()
+        (project / "a.py").write_text("x = 1\n")
+        repo_id = self.c.code.connect(str(project))["repo_id"]
+        self.c.conn.execute("UPDATE repositories SET mode='full' WHERE repo_id=?", (repo_id,))
+        self.c.conn.commit()
+        first = self.c.choose_model("code")["key"]
+        real_limit = code_service.CodeService._proposal_output_limit
+
+        def limit(messages, selection, profile):
+            if runtime.model_key(profile.model.runtime, profile.model.model_id) == first:
+                raise code_service.CodeError("selection_too_large", "does not fit")
+            return real_limit(messages, selection, profile)
+
+        reply = json.dumps({"summary": "s", "edits": [{
+            "path": "a.py", "base_sha256": hashlib.sha256(b"x = 1\n").hexdigest(),
+            "content": "x = 2\n"}]})
+        with patch.object(code_service.CodeService, "_proposal_output_limit",
+                          staticmethod(limit)), \
+                patch.object(code_service.CodeService, "_ask_model",
+                             return_value=(reply, False)):
+            proposal = self.c.code.propose(repo_id, "set x to 2", ["a.py"],
+                                           execution_target=code_service.TARGET_LOCAL)
+        attempt = self.c.conn.execute(
+            "SELECT route_reason, model_json FROM attempts WHERE attempt_id=?",
+            (proposal["attempt_id"],)).fetchone()
+        self.assertNotIn(runtime.split_key(first)[1], attempt["model_json"])
+        self.assertIn("skipped", attempt["route_reason"])
+
+
+class TestPictureRequestsWithoutVision(CoordinatorCase):
+    """Only a text model is here: a request for a picture's text may use page
+    reading, but nothing may be answered from a picture nobody could read, and
+    a question about what it shows is never answered from OCR text."""
+
+    STATE = runtime.merge({
+        runtime.LLAMA_CPP: managed_state(),
+        runtime.OLLAMA: ollama_state({ACME_HELPER: "1" * 64},
+                                     capabilities={ACME_HELPER: ["completion"]},
+                                     model_tags={ACME_HELPER: ["conversational"]})})
+
+    def send(self, text):
+        chat = db.create_chat(self.c.conn, self.c.workspace_id, "picture")
+        db.add_attachment(self.c.conn, self.c.attachments_root,
+                          workspace_id=self.c.workspace_id, chat_id=chat,
+                          filename="note.png", data=ocr.selftest_image())
+        self.c.observations()
+        with patch("backend.coordinator.server.threading.Thread.start"):
+            job = self.c.submit(chat, text)
+        with patch.object(runtime, "stream_chat",
+                          side_effect=AssertionError("no model may answer")):
+            self.c._run(job, chat)
+        detail = self.c.job_detail(job)
+        return detail["job"]["state"], json.loads(detail["attempts"][-1]["error_json"])["message"]
+
+    def test_a_transcription_with_nothing_readable_is_refused_not_answered(self):
+        state, message = self.send("transcribe this")
+        self.assertEqual(state, "failed")
+        self.assertIn("No answer was written without the file", message)
+
+    def test_a_visual_question_is_refused_without_a_model_that_sees(self):
+        with self.assertRaises(RequestError) as caught:
+            self.send("Is this signature genuine?")
+        self.assertIn("does not accept images", str(caught.exception))
+
+
+class TestAttachmentsNeedTheirSource(CoordinatorCase):
+    """Review findings: a request whose files could not be read was answered
+    anyway, and every document request waited for a page reader it might
+    never need."""
+
+    STATE = runtime.merge({
+        runtime.LLAMA_CPP: managed_state(),
+        runtime.OLLAMA: ollama_state({ACME_HELPER: "1" * 64},
+                                     capabilities={ACME_HELPER: ["completion"]},
+                                     model_tags={ACME_HELPER: ["conversational"]})})
+
+    def send(self, text, files=(), *, skill_id=None, reply="Done.", **extra):
+        chat = db.create_chat(self.c.conn, self.c.workspace_id, "sources")
+        for filename, data in files:
+            db.add_attachment(self.c.conn, self.c.attachments_root,
+                              workspace_id=self.c.workspace_id, chat_id=chat,
+                              filename=filename, data=data)
+        self.c.observations()
+        with patch("backend.coordinator.server.threading.Thread.start"):
+            job = self.c.submit(chat, text, skill_id=skill_id, **extra)
+        calls = []
+
+        def stream(_messages, **_kwargs):
+            calls.append(1)
+            yield "delta", reply
+            yield "done", {"done_reason": "stop"}
+
+        readers = []
+
+        def page_reader(*args, **kwargs):
+            readers.append(1)
+            return None, None
+
+        with patch.object(runtime, "stream_chat", stream), \
+                patch.object(self.c, "_page_reader", side_effect=page_reader):
+            self.c._run(job, chat, skill_id)
+        detail = self.c.job_detail(job)
+        error = detail["attempts"][-1]["error_json"]
+        return (detail["job"]["state"], json.loads(error)["message"] if error else "",
+                len(calls), len(readers))
+
+    def test_an_unreadable_pdf_never_reaches_generation(self):
+        state, message, generated, _readers = self.send(
+            "Summarise this PDF", [("report.pdf", b"%PDF-1.4 not really a document")])
+        self.assertEqual((state, generated), ("failed", 0))
+        self.assertIn("No answer was written without the file", message)
+        self.assertEqual(message.count("report.pdf"), 1, "the file is named once")
+        self.assertNotIn("..", message)
+
+    def test_an_unreadable_word_file_never_reaches_generation(self):
+        state, message, generated, readers = self.send(
+            "What does this say about pumps?", [("notes.docx", b"PK\x03\x04 broken")])
+        self.assertEqual((state, generated, readers), ("failed", 0, 0))
+        self.assertIn("notes.docx", message)
+
+    def test_text_and_word_files_never_ask_for_a_page_reader(self):
+        import zipfile, io
+        from backend.coordinator import docgen
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("[Content_Types].xml", docgen._CONTENT_TYPES)
+            archive.writestr("_rels/.rels", docgen._ROOT_RELS)
+            archive.writestr("word/document.xml", (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                f'<w:document xmlns:w="{docgen.W}"><w:body><w:p><w:r><w:t>Pump P-204 '
+                "vibration is 7.9 mm/s.</w:t></w:r></w:p></w:body></w:document>"))
+        for files in ([("notes.txt", b"Pump P-204 vibration is 7.9 mm/s.\n")],
+                      [("notes.docx", buffer.getvalue())]):
+            with self.subTest(files=files[0][0]):
+                state, _message, generated, readers = self.send("Summarise this file", files)
+                self.assertEqual((state, generated, readers), ("completed", 1, 0))
+
+    def test_a_chat_with_files_reaches_the_runtime_with_one_leading_system_message(self):
+        """Found in the walkthrough: the identity block and the untrusted-file
+        note arrived as two system messages, which the Refinix engine's Qwen
+        template refuses ("System message must be at the beginning")."""
+        chat = db.create_chat(self.c.conn, self.c.workspace_id, "one system")
+        db.add_attachment(self.c.conn, self.c.attachments_root,
+                          workspace_id=self.c.workspace_id, chat_id=chat,
+                          filename="notes.txt", data=b"Pump P-204 vibration is 7.9 mm/s.\n")
+        self.c.observations()
+        with patch("backend.coordinator.server.threading.Thread.start"):
+            job = self.c.submit(chat, "Summarise this file")
+        seen = []
+
+        def stream(messages, **_kwargs):
+            seen.append(messages)
+            yield "delta", "Summary."
+            yield "done", {"done_reason": "stop"}
+
+        with patch.object(runtime, "stream_chat", stream):
+            self.c._run(job, chat)
+        (messages,) = seen
+        roles = [m["role"] for m in messages]
+        self.assertEqual(roles.count("system"), 1)
+        self.assertEqual(roles[0], "system")
+        self.assertIn("Refinix", messages[0]["content"])
+        self.assertIn(docflow.UNTRUSTED_NOTE[:40], messages[0]["content"])
+        self.assertIn("7.9 mm/s", messages[-1]["content"], "the file stays data in the user turn")
+
+    def test_one_system_message_keeps_order_and_leaves_single_ones_alone(self):
+        from backend.coordinator.server import one_system_message
+        single = [{"role": "system", "content": "a"}, {"role": "user", "content": "q"}]
+        self.assertIs(one_system_message(single), single)
+        merged = one_system_message([{"role": "system", "content": "a"},
+                                     {"role": "system", "content": "b"},
+                                     {"role": "user", "content": "q"}])
+        self.assertEqual(merged, [{"role": "system", "content": "a\n\nb"},
+                                  {"role": "user", "content": "q"}])
+
+    def test_writing_a_document_without_files_never_asks_for_a_page_reader(self):
+        reply = json.dumps({"title": "Backups", "sections": [
+            {"heading": "Steps", "paragraphs": ["Copy the folder every Friday."]}]})
+        state, _message, generated, readers = self.send(
+            "Write a short note about Friday backups", skill_id=docflow.WRITE_SKILL,
+            doc_workflow=docflow.WORKFLOW_GENERAL, reply=reply)
+        self.assertEqual(readers, 0)
+        self.assertEqual((state, generated), ("completed", 1))
+
+    def test_a_picture_asks_for_the_reader_once_and_only_then(self):
+        state, message, generated, readers = self.send(
+            "transcribe this", [("note.png", ocr.selftest_image())])
+        self.assertEqual((readers, generated, state), (1, 0, "failed"))
+
+
+READER = "acme/reader:1"
+
+
+class TestPageReaderFallback(CoordinatorCase):
+    """Review finding: the page reader was one model, with no second choice,
+    and its record named Ollama whatever ran."""
+
+    STATE = runtime.merge({
+        runtime.LLAMA_CPP: managed_state(GEMMA, capabilities={GEMMA.id: ["completion", "vision"]}),
+        runtime.OLLAMA: ollama_state({READER: "6" * 64},
+                                     capabilities={READER: ["completion", "vision"]},
+                                     model_tags={READER: ["ocr"]})})
+    READER_KEY, GEMMA_KEY = f"ollama|{READER}", f"llama.cpp|{GEMMA.id}"
+
+    def test_the_reader_is_admitted_before_the_first_page_or_the_next_one_reads(self):
+        observed = self.c.observations()
+        self.assertEqual(self.c.choose_model("documents.ocr")["key"], self.READER_KEY)
+        real_admit = self.c._admit
+
+        def admit(token, item, window, **kwargs):
+            if item and item["key"] == self.READER_KEY:
+                return capacity.Decision("refuse", "Not enough free memory (test).")
+            return real_admit(token, item, window, **kwargs)
+
+        with patch.object(self.c, "_admit", side_effect=admit):
+            key, profile = self.c._page_reader("job-r", observed)
+        self.assertEqual(key, self.GEMMA_KEY)
+        self.assertEqual(profile.model.runtime, "llama.cpp")
+        self.assertEqual(self.c.ledger.snapshot(), [], "the check holds nothing afterwards")
+
+    def test_a_pinned_reader_is_not_swapped(self):
+        self.c.select_model("documents.ocr", self.READER_KEY)
+        with patch.object(self.c, "_admit",
+                          return_value=capacity.Decision("refuse", "Not enough memory.")):
+            key, _profile = self.c._page_reader("job-p", self.c.observations())
+        self.assertEqual(key, self.READER_KEY)
+
+
+class TestCategoriesAndSetup(CoordinatorCase):
+    STATE = TestRoutingAcrossRuntimes.STATE
+
+    def test_categories_come_from_evidence_and_installed_models_come_first(self):
+        status = self.c.status()
+        cats = {c["id"]: c for c in status["categories"]}
+        self.assertEqual(set(cats), {"chat", "code", "documents", "page_reading",
+                                     "vision", "reasoning", "other"})
+        chat = [o["key"] for o in cats["chat"]["initial"]]
+        self.assertIn(TestRoutingAcrossRuntimes.HELPER_KEY, chat)
+        self.assertTrue(all(o["installed"] for o in cats["chat"]["initial"][:2]))
+        self.assertIn(TestRoutingAcrossRuntimes.CODER_KEY,
+                      [o["key"] for o in cats["code"]["initial"] + cats["code"]["more"]])
+        # A model nobody described is in no strength category; its image input
+        # still makes it a page-reading choice.
+        self.assertNotIn(TestRoutingAcrossRuntimes.READER_KEY, chat)
+        self.assertIn(TestRoutingAcrossRuntimes.READER_KEY,
+                      [o["key"] for o in cats["page_reading"]["initial"]
+                       + cats["page_reading"]["more"]])
+
+    def test_one_model_serves_every_category_it_fits_without_a_second_download(self):
+        ids = capacity.category_ids(("general", "vision"), accepts_images=True)
+        self.assertEqual(ids, {"chat", "documents", "page_reading", "vision"})
+        self.assertEqual(capacity.category_ids(("ocr",), accepts_images=True,
+                                               limited_to=("ocr",)), {"page_reading"})
+        self.assertEqual(capacity.category_ids((), accepts_images=False), set())
+
+    def test_setup_choices_persist_and_change_no_model(self):
+        before = self.c.choose_model("chat")["key"]
+        self.assertFalse(self.c.setup_state()["intro_dismissed"])
+        self.c.update_setup({"intro_dismissed": True, "choice": "existing_models"})
+        self.c.conn.close()
+        reopened = Coordinator(self.c.state_path)
+        self.addCleanup(reopened.conn.close)
+        self.assertEqual(reopened.setup_state()["choice"], "existing_models")
+        self.assertTrue(reopened.setup_state()["intro_dismissed"])
+        with patch.object(reopened, "preflight", return_value=None):
+            self.assertEqual(reopened.choose_model("chat")["key"], before)
+        with self.assertRaises(RequestError):
+            reopened.update_setup({"choice": "something else"})
 
 
 class TestAutoInTheCoordinator(CoordinatorCase):
@@ -836,7 +1522,7 @@ def _pinned(model_id, files, revision="1" * 40):
         format="GGUF", parameters=None, storage_bytes=sum(f.size for f in files),
         minimum_runtime=None, evidence="test", evidence_state=models.LISTED,
         engine="llama.cpp", files=files, revision=revision, repo="owner/repo",
-        context_length=4096, hints=("general",))
+        context_length=4096, repo_tags=("conversational",))
 
 
 class TestResolvedInstalls(unittest.TestCase):
@@ -882,8 +1568,10 @@ class TestResolvedInstalls(unittest.TestCase):
         self.addCleanup(reopened.conn.close)
         record = db.get_model_install(reopened.conn, entry.id)
         again = models.entry_from_record(record)
-        self.assertEqual((again.repo, again.revision, again.hints),
-                         ("owner/repo", "1" * 40, ("general",)))
+        self.assertEqual((again.repo, again.revision, again.repo_tags, again.hints),
+                         ("owner/repo", "1" * 40, ("conversational",), ()))
+        self.assertEqual(models.task_evidence(again)["strengths"], ("general",))
+        self.assertEqual(models.task_evidence(again)["level"], models.EVIDENCE_REPOSITORY)
         legacy = {"model_id": "old-model", "source": "download from somewhere",
                   "manifest_sha256": "a" * 64}
         self.assertIsNone(models.entry_from_record(legacy))
@@ -1110,8 +1798,11 @@ class TestHub(unittest.TestCase):
                          ["weights", "weights-part", "projector"])
         self.assertTrue(all(REVISION in f.url for f in entry.files))
         self.assertEqual((entry.quantizer, entry.base_model), ("Quant", "Publisher/Base"))
-        self.assertIn("vision", entry.hints)
-        self.assertIn("code", entry.hints)
+        # Only what the repository publishes: its "code" tag. Nothing assumes
+        # "general", and a chosen projector is a capability, not a strength.
+        self.assertEqual(entry.hints, ())
+        self.assertEqual(entry.repo_tags, ("code",))
+        self.assertEqual(models.task_evidence(entry)["strengths"], ("code",))
 
     def test_a_gated_repository_is_explained_not_fetched(self):
         with self.assertRaises(hub.HubError) as caught:
@@ -1162,7 +1853,7 @@ class TestHub(unittest.TestCase):
         self.assertEqual(caught.exception.code, "projector_mismatch")
         entry = hub.resolve("Quant/Model-GGUF", "gemma-3-4b-it-Q4_K_M.gguf", REVISION,
                             projector="mmproj-gemma-3-4b-it-f16.gguf", pool=self.pool(info))
-        self.assertIn("vision", entry.hints)
+        self.assertIn("projector", [f.role for f in entry.files])
 
     def test_a_related_name_is_a_choice_not_a_pairing(self):
         """Review finding: `Model-A-v2` was paired with `mmproj-Model-A` by a
@@ -1178,10 +1869,10 @@ class TestHub(unittest.TestCase):
         entry = hub.resolve("Quant/Model-GGUF", "Model-A-v2-Q4_K_M.gguf", REVISION,
                             projector="mmproj-Model-A-f16.gguf", projector_confirmed=True,
                             pool=self.pool(info))
-        self.assertIn("vision", entry.hints)
+        self.assertIn("projector", [f.role for f in entry.files])
         text_only = hub.resolve("Quant/Model-GGUF", "Model-A-v2-Q4_K_M.gguf", REVISION,
                                 pool=self.pool(info))
-        self.assertNotIn("vision", text_only.hints)
+        self.assertNotIn("projector", [f.role for f in text_only.files])
         # An exact name still pairs without being asked.
         exact = self.sibling_info("Model-A-Q4_K_M.gguf", "mmproj-Model-A-f16.gguf")
         (choice,) = hub.repository("Quant/Model-GGUF", pool=self.pool(exact))["choices"]
@@ -1238,6 +1929,27 @@ class TestCheckFingerprints(unittest.TestCase):
                                     fingerprints={"documents.ocr": before})
         self.assertTrue(same["documents.ocr"]["current"])
 
+    def test_matches_now_is_computed_on_read_for_failures_too(self):
+        """A stored failure is evidence only while it describes what is
+        installed now; replacing the bytes or changing the check makes it
+        history at once, with nothing written."""
+        record = {"model": "k", "scope": "chat", "state": "failed", "detail": "no",
+                  "digest": "c" * 64, "runtime_version": "x",
+                  "ran_at": "2026-10-07T00:00:00Z", "check_fingerprint": "f" * 64,
+                  "failure_kind": "missing_label", "reply_excerpt": "unsafe; 2.4"}
+        now = models.selftest_view([record], model="k", digest="c" * 64,
+                                   fingerprints={"chat": "f" * 64})["chat"]
+        self.assertTrue(now["matches_now"])
+        self.assertFalse(now["current"], "only a pass is current")
+        self.assertEqual(now["reply_excerpt"], "unsafe; 2.4")
+        replaced = models.selftest_view([record], model="k", digest="d" * 64,
+                                        fingerprints={"chat": "f" * 64})["chat"]
+        self.assertFalse(replaced["matches_now"])
+        changed = models.selftest_view([record], model="k", digest="c" * 64,
+                                       fingerprints={"chat": "e" * 64})["chat"]
+        self.assertFalse(changed["matches_now"])
+        self.assertNotIn("matches_now", db.selftests.__doc__ or "")
+
     def test_a_result_without_recorded_settings_is_never_current(self):
         record = {"model": "k", "scope": "chat", "state": "passed", "detail": "ok",
                   "digest": "c" * 64, "runtime_version": "x",
@@ -1269,10 +1981,35 @@ class TestSchemaFourteen(unittest.TestCase):
         self.addCleanup(conn.close)
         columns = {r["name"] for r in conn.execute("PRAGMA table_info(model_selftests)")}
         self.assertIn("check_fingerprint", columns)
+        self.assertTrue({"failure_kind", "reply_excerpt"} <= columns)
         rows = db.selftests(conn)
-        self.assertEqual((rows[0]["state"], rows[0]["check_fingerprint"]), ("passed", None))
+        self.assertEqual((rows[0]["state"], rows[0]["check_fingerprint"],
+                          rows[0]["failure_kind"], rows[0]["reply_excerpt"]),
+                         ("passed", None, None, None))
         self.assertEqual(conn.execute(
-            "SELECT value FROM meta WHERE key='schema_version'").fetchone()[0], "14")
+            "SELECT value FROM meta WHERE key='schema_version'").fetchone()[0],
+            str(db.SCHEMA_VERSION))
+
+    def test_a_schema_14_store_gains_the_diagnostic_columns(self):
+        conn = db.connect(self.path)
+        db.record_selftest(conn, model="qwen", scope="chat", state="failed",
+                           detail="old", digest="c" * 64, runtime_version="0.35.1",
+                           check_fingerprint="f" * 64)
+        conn.execute("ALTER TABLE model_selftests DROP COLUMN failure_kind")
+        conn.execute("ALTER TABLE model_selftests DROP COLUMN reply_excerpt")
+        conn.execute("UPDATE meta SET value='14' WHERE key='schema_version'")
+        conn.execute("PRAGMA user_version = 14")
+        conn.commit()
+        conn.close()
+        conn = db.connect(self.path)
+        self.addCleanup(conn.close)
+        (row,) = db.selftests(conn)
+        self.assertEqual((row["state"], row["check_fingerprint"], row["failure_kind"]),
+                         ("failed", "f" * 64, None))
+        view = models.selftest_view([row], model="qwen", digest="c" * 64,
+                                    fingerprints={"chat": "f" * 64})["chat"]
+        self.assertTrue(view["matches_now"])
+        self.assertIsNone(view["failure_kind"])
 
     def test_an_interrupted_upgrade_completes_on_the_next_open(self):
         self.make_v13()
@@ -1300,16 +2037,33 @@ class TestRecommendations(unittest.TestCase):
     FACTS = {"os_family": "macos", "architecture": "arm64",
              "memory_total_bytes": 16 * GIB, "memory_available_bytes": 9 * GIB}
 
-    def test_six_starting_choices_then_everything_else_never_an_allowlist(self):
+    def test_categories_start_small_and_never_become_an_allowlist(self):
         offered = [e for e in models.CATALOGUE if e.engine == "llama.cpp" and e.files]
-        result = capacity.recommend(offered, capacity.pool(self.FACTS), free_disk=500 * GIB)
-        self.assertLessEqual(len(result["initial"]), capacity.INITIAL)
-        listed = {row["id"] for row in result["initial"] + result["more"]}
-        self.assertEqual(listed, {e.id for e in offered}, "every model can be chosen")
-        rows = {row["id"]: row for row in result["initial"] + result["more"]}
+        result = capacity.categories(offered, [], capacity.pool(self.FACTS),
+                                     free_disk=500 * GIB)
+        rows = {}
+        for category in result:
+            self.assertLessEqual(len(category["initial"]), capacity.PER_CATEGORY)
+            for row in category["initial"] + category["more"]:
+                rows[row["id"]] = row
+        self.assertEqual(set(rows), {e.id for e in offered}, "every model can be chosen")
         self.assertEqual(rows["gpt-oss-120b-mxfp4"]["fit"], capacity.TOO_LARGE)
         self.assertEqual(rows["qwen3-1.7b-q8_0"]["fit"], capacity.GOOD)
-        self.assertTrue(all(row["estimated"] for row in rows.values()))
+        self.assertTrue(all("estimated" in row["fit_label"] or row["fit"] == "unknown"
+                            for row in rows.values()))
+        reasoning = next(c for c in result if c["id"] == "reasoning")
+        self.assertNotIn("gpt-oss-120b-mxfp4", [r["id"] for r in reasoning["initial"]],
+                         "a model too large here is offered under Show more, with a warning")
+
+    def test_the_disk_check_counts_downloads_already_chosen(self):
+        offered = [models.entry_for("qwen3-1.7b-q8_0")]
+        free = offered[0].storage_bytes + 2 * GIB
+        alone = capacity.categories(offered, [], capacity.pool(self.FACTS), free_disk=free)
+        busy = capacity.categories(offered, [], capacity.pool(self.FACTS), free_disk=free,
+                                   pending_bytes=2 * GIB)
+        first = lambda result: next(r for c in result for r in c["initial"] + c["more"])
+        self.assertFalse(first(alone)["disk_short"])
+        self.assertTrue(first(busy)["disk_short"])
 
     def test_unified_discrete_and_cpu_memory_are_told_apart(self):
         self.assertEqual(capacity.pool(self.FACTS)["kind"], capacity.UNIFIED)

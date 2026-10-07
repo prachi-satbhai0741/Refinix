@@ -550,6 +550,28 @@ test('model choices fill the three grid columns instead of the tick column', () 
   assert.equal(selected.getAttribute('aria-checked'), 'true');
 });
 
+test('a model Auto avoids says why in the menu, before it is chosen', () => {
+  const p = page();
+  p.run(`
+    models = [{
+      id: 'reader:1', key: 'ollama|reader:1', installed: true,
+      eligible_scopes: ['chat'], locations: ['this computer'],
+      auto_excluded: { chat: 'did not finish its answer within the check limit' }
+    }, {
+      id: 'plain:1', key: 'ollama|plain:1', installed: true,
+      eligible_scopes: ['chat'], locations: ['this computer'], hints: ['general']
+    }];
+    modelSelections = { chat: 'auto' };
+    appendModelChoices(document.body, 'chat', 'Chat model');
+  `);
+  const group = p.document.body.children[0];
+  const reader = group.children[2];
+  const plain = group.children[3];
+  assert.equal(reader.disabled, false, 'still the person\'s to choose');
+  assert.match(reader.textContent, /Auto does not use it for Chat: its check here did not finish/);
+  assert.doesNotMatch(plain.textContent, /Auto does not use it/);
+});
+
 test('a Chat-backed document skill is not told its model is unavailable', () => {
   // On the limited route the model selected for Documents runs under its Chat
   // profile. The capability row says so with model_scope, and the pill must

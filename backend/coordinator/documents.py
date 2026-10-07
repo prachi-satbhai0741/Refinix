@@ -571,9 +571,19 @@ def _page_list(numbers: list[int]) -> str:
             else "Pages " + ", ".join(str(n) for n in numbers))
 
 
+def _reader(ocr_model, ocr_profile, ocr_reader):
+    """The page reader, chosen now that a page needs reading.
+
+    `ocr_reader`, when given, is the coordinator's callback that picks and
+    admits a reader; it is called only here, so text, Word, workbook and
+    text-layer PDF reading never wait for a page-reading model.
+    """
+    return ocr_reader() if ocr_reader is not None else (ocr_model, ocr_profile)
+
+
 def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
                  ocr_model: str | None = ocr.runtime.OCR_MODEL,
-                 ocr_profile=None, ocr_chat=None):
+                 ocr_profile=None, ocr_chat=None, ocr_reader=None):
     """Read the text layer; render and read pages with a model only for a scan.
 
     The text layer comes first and needs no model. Only when no page carries
@@ -590,6 +600,7 @@ def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
             return text
         # Said only when the text layer was actually checked and found empty.
         scanned = f"{filename} has no usable text layer (scanned pages). "
+    ocr_model, ocr_profile = _reader(ocr_model, ocr_profile, ocr_reader)
     if ocr_model is None:
         raise DocumentError(
             "model_disabled",
@@ -649,12 +660,13 @@ def _extract_xlsx(data: bytes, filename: str) -> tuple[list[Page], str, list[str
 def _extract_image(data: bytes, filename: str, media_type: str, *,
                    should_cancel=None,
                    ocr_model: str | None = ocr.runtime.OCR_MODEL,
-                   ocr_profile=None, ocr_chat=None):
+                   ocr_profile=None, ocr_chat=None, ocr_reader=None):
     """Send one supplied image to the local vision model, as page 1.
 
     No renderer at all: the file already is a page image. The method string says
     exactly that, so a reader is never told a PDF was rendered when none was.
     """
+    ocr_model, ocr_profile = _reader(ocr_model, ocr_profile, ocr_reader)
     if ocr_model is None:
         raise DocumentError(
             "model_disabled", ocr.no_profile_detail(None))
@@ -716,7 +728,7 @@ def verified_bytes(path: Path, *, filename: str, expected_sha256: str) -> bytes:
 def extract(path: Path, *, source_id: str, filename: str, media_type: str,
             expected_sha256: str, should_cancel=None,
             ocr_model: str | None = ocr.runtime.OCR_MODEL,
-            ocr_profile=None, ocr_chat=None) -> Extraction:
+            ocr_profile=None, ocr_chat=None, ocr_reader=None) -> Extraction:
     """Read one attachment, after proving it is the file that was accepted.
 
     `ocr_chat` is the page-reading call (the runtime's own when omitted); the
@@ -748,11 +760,12 @@ def extract(path: Path, *, source_id: str, filename: str, media_type: str,
     elif suffix in IMAGE_SUFFIXES:
         pages, method, uncertain, declared_pages = _extract_image(
             data, filename, media_type, should_cancel=should_cancel,
-            ocr_model=ocr_model, ocr_profile=ocr_profile, ocr_chat=ocr_chat)
+            ocr_model=ocr_model, ocr_profile=ocr_profile, ocr_chat=ocr_chat,
+            ocr_reader=ocr_reader)
     elif suffix == PDF_SUFFIX:
         pages, method, uncertain, declared_pages = _extract_pdf(
             data, filename, should_cancel=should_cancel, ocr_model=ocr_model,
-            ocr_profile=ocr_profile, ocr_chat=ocr_chat)
+            ocr_profile=ocr_profile, ocr_chat=ocr_chat, ocr_reader=ocr_reader)
     else:
         readable = sorted([*TEXT_SUFFIXES, WORD_SUFFIX, SHEET_SUFFIX,
                            PDF_SUFFIX, *IMAGE_SUFFIXES])

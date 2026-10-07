@@ -632,7 +632,10 @@ class ChatBackedGeneration(GenerationHarness):
         stream = scripted_stream(MARKDOWN)
         self.run_write(stream)
         systems = [m["content"] for m in stream.messages[0] if m["role"] == "system"]
-        self.assertIn(docflow.CHAT_WRITE_INSTRUCTION, systems)
+        # One leading system message carries every instruction (some chat
+        # templates refuse a second); the instruction keeps its system role.
+        self.assertEqual(len(systems), 1)
+        self.assertIn(docflow.CHAT_WRITE_INSTRUCTION, systems[0])
         self.assertEqual(stream.messages[0][-1]["content"], self.REQUEST)
 
     def test_a_document_from_an_attached_file_carries_no_reading_note(self):

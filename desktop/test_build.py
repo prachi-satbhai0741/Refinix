@@ -16,6 +16,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 DESKTOP = Path(__file__).resolve().parent
@@ -308,6 +309,87 @@ class TestMacFloor(unittest.TestCase):
         if not engine.is_file():
             self.skipTest("engine not fetched")
         self.assertEqual(build.macho_minos(engine), (13, 3))
+
+
+
+class TestWebView2InTheWindowsSetup(unittest.TestCase):
+    """The Windows setup installs WebView2 itself, from a pinned file, only
+    when this computer lacks it, and never downloads during installation."""
+
+    def setUp(self):
+        self.tools = json.loads(build.TOOLS.read_text(encoding="utf-8"))
+        self.iss = (DESKTOP / "windows" / "refinix.iss").read_text(encoding="utf-8")
+
+    def test_the_offline_installer_is_pinned_by_size_and_sha256(self):
+        pin = self.tools["webview2_standalone_x64"]
+        self.assertTrue(pin["url"].startswith("https://"))
+        self.assertTrue(pin["url"].endswith("MicrosoftEdgeWebView2RuntimeInstallerX64.exe"))
+        self.assertRegex(pin["sha256"], r"^[0-9a-f]{64}$")
+        self.assertGreater(pin["size"], 100 * 1024 * 1024)
+        self.assertTrue(pin["shipped"])
+        self.assertIn("licence", pin)
+
+    def test_the_setup_runs_it_only_when_webview2_is_missing(self):
+        self.assertIn('Parameters: "/silent /install"', self.iss)
+        self.assertIn("StatusMsg:", self.iss)
+        run = [line for line in self.iss.splitlines()
+               if "MicrosoftEdgeWebView2RuntimeInstallerX64.exe" in line]
+        self.assertTrue(run and all("Check: NeedsWebView2" in line for line in run))
+        self.assertIn("UpdateReadyMemo", self.iss, "the Ready page says what is installed")
+        self.assertIn("PrivilegesRequired=lowest", self.iss, "per-user, no administrator")
+        self.assertNotIn("fwlink", self.iss, "nothing is downloaded during installation")
+
+    def test_the_build_passes_the_verified_file_to_inno_setup(self):
+        source = (DESKTOP / "build.py").read_text(encoding="utf-8")
+        self.assertIn('obtain_tool("webview2_standalone_x64", cache)', source)
+        self.assertIn("verify_microsoft_signature(webview2)", source)
+        self.assertIn("/DWebView2Installer=", source)
+
+    def run_signature(self, stdout, returncode=0):
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return SimpleNamespace(returncode=returncode, stdout=stdout, stderr="")
+        return calls, fake_run
+
+    def test_the_path_reaches_powershell_through_the_environment(self):
+        """Review finding: trailing arguments after -Command are joined into
+        the command text, so `$args[0]` was never the installer path."""
+        calls, fake_run = self.run_signature(
+            "Valid|CN=Microsoft Corporation, O=Microsoft Corporation, C=US")
+        build.verify_microsoft_signature(Path("C:/x/setup.exe"), run=fake_run)
+        (argv, kwargs), = calls
+        self.assertEqual(argv[:4], ["powershell", "-NoProfile", "-NonInteractive", "-Command"])
+        self.assertEqual(len(argv), 5, "the script is the last argument; no path after it")
+        self.assertIn("$env:" + build.SIGNATURE_PATH_VARIABLE, argv[4])
+        self.assertNotIn("$args", argv[4])
+        self.assertTrue(kwargs["env"][build.SIGNATURE_PATH_VARIABLE].endswith("setup.exe"))
+
+    def test_an_invalid_or_foreign_signature_is_refused(self):
+        for stdout in ("NotSigned|", "HashMismatch|CN=Microsoft Corporation, O=Microsoft Corporation",
+                       "Valid|CN=Someone Else, O=Someone Else", ""):
+            with self.subTest(stdout=stdout):
+                _calls, fake_run = self.run_signature(stdout)
+                with self.assertRaises(build.BuildError):
+                    build.verify_microsoft_signature(Path("setup.exe"), run=fake_run)
+        _calls, failing = self.run_signature("Valid|O=Microsoft Corporation", returncode=1)
+        with self.assertRaises(build.BuildError):
+            build.verify_microsoft_signature(Path("setup.exe"), run=failing)
+
+    def test_a_tampered_download_is_refused(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            cache = Path(scratch)
+            pin = self.tools["webview2_standalone_x64"]
+
+            def fake_download(_url, path):
+                Path(path).write_bytes(b"not the pinned installer")
+
+            with patch.object(build.engine_fetch, "_download", side_effect=fake_download):
+                with self.assertRaises(build.BuildError) as caught:
+                    build.obtain_tool("webview2_standalone_x64", cache)
+            self.assertIn("pinned SHA-256", str(caught.exception))
+            self.assertFalse((cache / f"{pin['sha256']}-{Path(pin['url']).name}").exists())
 
 
 if __name__ == "__main__":

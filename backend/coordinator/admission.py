@@ -196,7 +196,12 @@ def evidence_label(profile: v1.ExecutionProfile | None, *, checked: bool) -> str
 
 # Bump when a self-test's prompt, parser, render settings or pass criteria
 # change, so a result recorded under the old definition stops counting.
-CHECK_DEFINITION_VERSION = "selftest-v2"
+# v3 (2026-10-07): the Chat check rejects a reply spread over several lines
+# before normalising whitespace, and failures record their kind.
+# v4 (2026-10-07): the Chat check accepts the verdict and number without the
+# "smaller number:" label (D1), and an answer cut off by the check's output
+# limit is a recorded failure of kind "incomplete" (D9).
+CHECK_DEFINITION_VERSION = "selftest-v4"
 
 
 def check_fingerprint(profile: v1.ExecutionProfile | None, scope: str,

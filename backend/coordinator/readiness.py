@@ -6,7 +6,7 @@ has to change first:
 
     engine_missing, engine_unverified, engine_stop_blocked, engine_failed,
     engine_not_running, ollama_update_recommended, setup_incomplete,
-    model_not_installed, model_integrity_mismatch, model_disabled,
+    no_suitable_model, model_not_installed, model_integrity_mismatch, model_disabled,
     cloud_model_excluded, locality_unknown, no_usable_model, ready
 
 A hardware class nobody measured, or a model/runtime combination without a
@@ -32,6 +32,8 @@ _ACTIONS = {
     "enable": {"kind": "open_settings", "target": "models",
                "label": "Switch the model back on"},
     "start_ollama": {"kind": "start_ollama", "label": "Start Ollama"},
+    "open_setup": {"kind": "open_setup", "target": "setup",
+                   "label": "Set up local AI"},
     "update_ollama": {"kind": "open_url", "url": "https://ollama.com/download",
                       "label": "Get the current Ollama"},
 }
@@ -45,7 +47,7 @@ def _result(code, state, message, detail="", action=None) -> dict:
 def assess(*, runtime_state: dict, engine: dict | None, chat_row: dict | None,
            model_id: str, chat_profile_found: bool, device_tier: str | None,
            managed: bool, refusal: str | None = None, ollama: dict | None = None,
-           usable_models: int | None = None) -> dict:
+           usable_models: int | None = None, refusal_code: str | None = None) -> dict:
     """The single readiness answer for ordinary Chat on this computer.
 
     `device_tier` is accepted for the status page's description only: a
@@ -113,6 +115,15 @@ def assess(*, runtime_state: dict, engine: dict | None, chat_row: dict | None,
             + (", or start Ollama to use the models you have there."
                if ollama.get("startable") else "."),
             "start_ollama" if ollama.get("startable") else "settings_models")
+
+    if refusal_code == "unsuitable" and refusal:
+        # Models are installed and could run, but each one's documentation
+        # says it does other work only. Not "nothing installed": the next step
+        # is choosing one deliberately or setting up a general model.
+        return _result("no_suitable_model", "attention", refusal,
+                       "Auto does not send ordinary Chat to a model documented for "
+                       "other work. Choose one yourself, or set up a general model.",
+                       "open_setup")
 
     integrity = (((chat_row or {}).get("integrity") or {}).get("local") or {})
     # Before "not installed": changed files withhold their digest, and are
