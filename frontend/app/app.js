@@ -4138,6 +4138,12 @@ let updateNoticeShown = false;
 let uiReadySent = false;
 let updatePopoverOpen = false;
 
+function setUpdateBusy(state) {
+  updateBusy = state;
+  renderUpdateControl(lastStatus);
+  renderUpdatesCard(lastStatus || {});
+}
+
 function online() {
   return !(typeof navigator !== 'undefined' && navigator && navigator.onLine === false);
 }
@@ -4154,11 +4160,16 @@ function updateView(u) {
   const last = u.last_check || null;
   const since = last && last.last_success ? ` Last successful check: ${last.last_success}.` : '';
   if (updateBusy === 'checking') return { state: 'checking', label: 'Checking for updates…', detail: '' };
+  if (updateBusy === 'importing') return { state: 'importing', label: 'Importing the update…', detail: '' };
+  if (updateBusy === 'cancelling') return { state: 'cancelling', label: 'Cancelling the download…', detail: '' };
   if (updateBusy === 'installing') {
     return { state: 'installing', label: 'Installing — Refinix will close and open again',
              detail: 'Your conversations, documents and models are kept.' };
   }
-  if (install.state === 'preparing') return { state: 'preparing', label: 'Preparing the update…', detail: '' };
+  if (updateBusy === 'preparing' || install.state === 'preparing') return { state: 'preparing', label: 'Preparing the update…', detail: '' };
+  if (updateBusy === 'downloading' && (!d || d.state !== 'running')) {
+    return { state: 'downloading', label: 'Starting the download…', detail: '' };
+  }
   if (install.state === 'ready') {
     return { state: 'ready', label: `Version ${install.version} is ready to install`,
              detail: u.install_note || '' };
@@ -4250,10 +4261,12 @@ function renderUpdatesCard(s) {
   const kinds = { ready: 'enforced', verified: 'enforced', current: 'enforced',
                   available: 'caution', downloading: 'caution', preparing: 'caution',
                   checking: 'caution', installing: 'caution', incomplete: 'caution',
+                  importing: 'caution', cancelling: 'caution',
                   unreachable: 'fault', failed: 'fault' };
   const chips = { ready: 'ready to install', verified: 'package verified', current: 'up to date',
                   available: 'update available', downloading: 'downloading',
                   preparing: 'preparing', checking: 'checking', installing: 'installing',
+                  importing: 'importing', cancelling: 'cancelling',
                   incomplete: 'not all checked', unreachable: "couldn't reach",
                   failed: 'check failed', idle: 'not checked' };
   chip($('c-updates-chip'), chips[v.state] || 'not checked', kinds[v.state] || 'unknown');
@@ -4311,7 +4324,7 @@ function renderUpdateControl(s) {
   const label = `Updates: ${v.label}`;
   btn.setAttribute('aria-label', label);
   btn.title = label;
-  if (['checking', 'downloading', 'preparing', 'installing'].includes(v.state)) {
+  if (['checking', 'downloading', 'preparing', 'installing', 'importing', 'cancelling'].includes(v.state)) {
     btn.setAttribute('data-busy', '');
   } else {
     btn.removeAttribute('data-busy');
@@ -4422,31 +4435,40 @@ function afterStatus(s) {
 }
 
 async function checkForUpdates(source) {
-  updateBusy = 'checking';
-  renderUpdateControl(lastStatus);
+  if (updateBusy) return;
+  setUpdateBusy('checking');
   try {
     await postJson(source === 'folder' ? '/v1/updates/check-folder' : '/v1/updates/check', {});
   } catch (err) {
     // The coordinator records why; the card and panel show it after reloading.
   } finally {
-    updateBusy = '';
+    await loadStatus().catch(() => {});
+    setUpdateBusy('');
   }
-  await loadStatus().catch(() => {});
 }
 
 async function updateStep(path, poll) {
+  if (updateBusy) return;
+  const d = lastStatus && lastStatus.updates && lastStatus.updates.download;
+  if (path === '/v1/updates/download' && d && ['running', 'verified'].includes(d.state)) return;
+  setUpdateBusy(path === '/v1/updates/cancel' ? 'cancelling' : 'downloading');
   try {
     await postJson(path, {});
   } catch (err) {
     notice('That update step did not complete.', 'error', err.message);
+  } finally {
+    await loadStatus().catch(() => {});
+    setUpdateBusy('');
   }
-  await loadStatus().catch(() => {});
 }
 
 /* Prepare (verify again offline and expand beside the app), then hand over to
    the window, which drains work, keeps the data, closes and reopens. */
 async function installAndRestart() {
+  if (updateBusy) return;
   let u = (lastStatus && lastStatus.updates) || {};
+  setUpdateBusy(u.install && u.install.state === 'ready' ? 'installing' : 'preparing');
+  let closing = false;
   try {
     if (!u.install || u.install.state !== 'ready') {
       await postJson('/v1/updates/prepare', {});
@@ -4462,28 +4484,33 @@ async function installAndRestart() {
         return;
       }
     }
-    updateBusy = 'installing';
-    renderUpdateControl(lastStatus);
-    renderUpdatesCard(lastStatus || {});
+    setUpdateBusy('installing');
     const result = await nativeBridge().install_update();
-    if (result && result.installing) return;            // the window is closing
-    updateBusy = '';
+    closing = Boolean(result && result.installing);
+    if (closing) return;                              // the window is closing
     if (result && result.error) notice('The update was not installed.', 'error', result.error);
   } catch (err) {
-    updateBusy = '';
     notice('The update was not installed.', 'error', err.message);
+  } finally {
+    if (!closing) {
+      await loadStatus().catch(() => {});
+      setUpdateBusy('');
+    }
   }
-  await loadStatus().catch(() => {});
 }
 
 async function importUpdate() {
+  if (updateBusy) return;
+  setUpdateBusy('importing');
   try {
     const result = await nativeBridge().choose_update_bundle();
     if (result?.error) notice('That update was not imported.', 'error', result.error);
   } catch (err) {
     notice('That update was not imported.', 'error', err.message);
+  } finally {
+    await loadStatus().catch(() => {});
+    setUpdateBusy('');
   }
-  await loadStatus().catch(() => {});
 }
 
 /* One line per download or import: how far, or why it stopped. */

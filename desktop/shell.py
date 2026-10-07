@@ -428,6 +428,7 @@ class DesktopApp:
         self._closing = threading.Event()
         self._retry = threading.Event()
         self._lifecycle_lock = threading.Lock()
+        self._install_lock = threading.Lock()
         self.on_started = on_started
         self._startup_worker = None
 
@@ -658,6 +659,18 @@ class DesktopApp:
         return {"committed": bool(journal)}
 
     def install_update(self) -> dict:
+        """One native install call, including its confirmation, at a time."""
+        if not self._install_lock.acquire(blocking=False):
+            return {"error": "An update is already being installed."}
+        try:
+            with self._lifecycle_lock:
+                if self._closing.is_set():
+                    return {"error": "Refinix is already closing."}
+            return self._install_update()
+        finally:
+            self._install_lock.release()
+
+    def _install_update(self) -> dict:
         """Close, replace and reopen: drain, close the data, set it aside, hand off.
 
         Until the database is closed nothing has changed, and any refusal

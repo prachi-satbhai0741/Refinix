@@ -912,46 +912,55 @@ class UpdateService:
 
     # -- downloading -------------------------------------------------------
     def start_download(self) -> dict:
-        with self._lock:
-            offer = self.offer
-            running = self._thread is not None and self._thread.is_alive()
-        if offer is None:
-            raise UpdateError("no_offer", "Check for updates first.")
-        if running:
-            raise UpdateError("busy", "An update is already being downloaded.")
-        source = (offer.get("source") or {"kind": "https"})
-        if source.get("kind") == "bundle":
-            return self._start_bundle_copy(offer, source)
         self._claim()
+        started = False
         try:
+            with self._lock:
+                offer, cached = self.offer, self.download
+            if offer is None:
+                raise UpdateError("no_offer", "Check for updates first.")
+            if cached and cached.state == "verified" \
+                    and (cached.version, cached.target) == (offer["version"], offer["target"]):
+                try:
+                    verified = self.admit_staged()
+                    if (verified["size"], verified["sha256"]) != (offer["size"], offer["sha256"]):
+                        raise UpdateError("changed", "The offer disagrees with the verified package.")
+                except UpdateError as exc:
+                    cached.state, cached.error = "failed", str(exc)
+                    raise
+                return cached.as_dict()
+            source = offer.get("source") or {"kind": "https"}
+            if source.get("kind") == "bundle":
+                result = self._start_bundle_copy(offer, source)
+                started = True
+                return result
             fetcher, updater = self._online()
-        except BaseException:
-            self._busy.release()
-            raise
-        operation = Download(offer["version"], offer["target"], bytes_total=offer["size"])
-        self._run_stage(fetcher, updater, operation, offer)
-        return operation.as_dict()
+            operation = Download(offer["version"], offer["target"], bytes_total=offer["size"])
+            self._run_stage(fetcher, updater, operation, offer)
+            started = True
+            return operation.as_dict()
+        finally:
+            if not started:
+                self._busy.release()
 
     def _start_bundle_copy(self, offer: dict, source: dict) -> dict:
         path = Path(source["path"])
-        self._claim()
+        info = path.stat()
+        if (info.st_size, info.st_mtime_ns) != (source["size"], source["mtime_ns"]) \
+                or _sha256_file(path, MAX_BUNDLE_BYTES) != source["sha256"]:
+            raise UpdateError("changed", "The bundle changed after it was checked; check again.")
+        _, BundleFetcher = _fetcher_classes()
+        archive = zipfile.ZipFile(path)
         try:
-            info = path.stat()
-            if (info.st_size, info.st_mtime_ns) != (source["size"], source["mtime_ns"]) \
-                    or _sha256_file(path, MAX_BUNDLE_BYTES) != source["sha256"]:
-                raise UpdateError("changed", "The bundle changed after it was checked; "
-                                             "check again.")
-            _, BundleFetcher = _fetcher_classes()
-            archive = zipfile.ZipFile(path)
+            fetcher = BundleFetcher(archive)
+            updater = self._updater(fetcher, f"{BUNDLE_SCHEME}:///metadata/",
+                                    f"{BUNDLE_SCHEME}:///targets/")
+            operation = Download(offer["version"], offer["target"], bytes_total=offer["size"],
+                                 source="bundle")
+            self._run_stage(fetcher, updater, operation, offer, archive=archive)
         except BaseException:
-            self._busy.release()
+            archive.close()
             raise
-        fetcher = BundleFetcher(archive)
-        updater = self._updater(fetcher, f"{BUNDLE_SCHEME}:///metadata/",
-                                f"{BUNDLE_SCHEME}:///targets/")
-        operation = Download(offer["version"], offer["target"], bytes_total=offer["size"],
-                             source="bundle")
-        self._run_stage(fetcher, updater, operation, offer, archive=archive)
         return operation.as_dict()
 
     def _run_stage(self, fetcher, updater, operation, offer, archive=None):
@@ -1155,17 +1164,34 @@ class UpdateService:
         install_path, reason = self.install_location()
         if reason:
             raise UpdateError("install_unavailable", reason)
-        with self._lock:
-            if self.install.get("state") == "preparing":
-                raise UpdateError("busy", "The update is already being prepared.")
-            running = self._thread is not None and self._thread.is_alive()
-            if running:
-                raise UpdateError("busy", "Wait for the download to finish first.")
-            self.install = {"state": "preparing", "started_at": _stamp()}
-        thread = threading.Thread(target=self._prepare, args=(install_path,), daemon=True,
-                                  name="refinix-update-prepare")
-        self._install_thread = thread
-        thread.start()
+        self._claim()
+        started = False
+        try:
+            with self._lock:
+                ready = dict(self.install) if self.install.get("state") == "ready" else None
+            if ready:
+                verified = self.admit_staged()
+                if (ready["version"], ready["install_path"]) != (verified["version"], str(install_path)):
+                    raise UpdateError("changed", "Cancel the prepared update before preparing another.")
+                from backend.coordinator import app_archive
+                kwargs = {} if self._codesign is None else {"codesign": self._codesign}
+                try:
+                    app_archive.verify_bundle(Path(ready["incoming"]), version=ready["version"],
+                                              lane=self.lane, channel=self.identity["channel"],
+                                              trust_root=self.identity.get("trust_root"), **kwargs)
+                except app_archive.ArchiveError as exc:
+                    raise UpdateError(exc.code, str(exc)) from exc
+                return self.describe()
+            with self._lock:
+                self.install = {"state": "preparing", "started_at": _stamp()}
+            thread = threading.Thread(target=self._prepare, args=(install_path,), daemon=True,
+                                      name="refinix-update-prepare")
+            self._install_thread = thread
+            thread.start()
+            started = True
+        finally:
+            if not started:
+                self._busy.release()
         if wait:
             thread.join()
         return self.describe()
@@ -1213,6 +1239,8 @@ class UpdateService:
                 self.install = {"state": "failed", "error": message,
                                 "code": getattr(exc, "code", "failed"),
                                 "failed_at": _stamp()}
+        finally:
+            self._busy.release()
 
     def cancel_install(self) -> dict:
         """Forget a prepared (not yet started) install and remove its expanded copy."""

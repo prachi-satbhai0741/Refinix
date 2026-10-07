@@ -15,6 +15,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, patch
 
 from backend.coordinator import ownership, recovery, server, updates
@@ -82,6 +83,31 @@ class Base(unittest.TestCase):
 
 
 class TestRefusals(Base):
+    def test_repeated_native_calls_show_one_confirmation_and_cancel_allows_retry(self):
+        entered, release = threading.Event(), threading.Event()
+        def confirm(*args):
+            if not entered.is_set():
+                entered.set()
+                if not release.wait(5):
+                    raise AssertionError("test confirmation was not released")
+            return False
+        self.app.window.create_confirmation_dialog.side_effect = confirm
+        with patch.object(self.app, "active_jobs", return_value=[{"job_id": "reply"}]):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                first = pool.submit(self.app.install_update)
+                try:
+                    self.assertTrue(entered.wait(2))
+                    for _ in range(20):
+                        self.assertIn("already", self.app.install_update()["error"])
+                    self.assertEqual(self.app.window.create_confirmation_dialog.call_count, 1)
+                finally:
+                    release.set()
+                self.assertEqual(first.result(2), {"cancelled": True})
+            self.assertEqual(self.app.install_update(), {"cancelled": True})
+            self.assertEqual(self.app.window.create_confirmation_dialog.call_count, 2)
+        self.assertIsNone(update_apply.read_journal(self.db))
+        self.assertIsNone(self.data_journal())
+
     def test_nothing_happens_unless_a_verified_update_is_ready(self):
         self.c.updates.install = {"state": "idle"}
         self.assertIn("not ready", self.app.install_update()["error"])

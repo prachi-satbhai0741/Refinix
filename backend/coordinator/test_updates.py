@@ -12,9 +12,11 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+import threading
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from backend.coordinator import updates
 from scripts import update_repository as repository
@@ -171,6 +173,56 @@ class TestCheck(Base):
 
 
 class TestDownload(Base):
+    def test_repeated_requests_run_one_transfer_and_reuse_the_verified_package(self):
+        self.publish(self.package())
+        service = self.service()
+        service.check()
+        entered, release = threading.Event(), threading.Event()
+        stage = service._stage
+        def paused(*args):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError("test transfer was not released")
+            stage(*args)
+        with patch.object(service, "_stage", side_effect=paused) as transfer:
+            service.start_download()
+            try:
+                self.assertTrue(entered.wait(2))
+                for _ in range(20):
+                    with self.assertRaises(updates.UpdateError) as caught:
+                        service.start_download()
+                    self.assertEqual(caught.exception.code, "busy")
+            finally:
+                release.set()
+                service.wait(10)
+            self.assertEqual(service.download.state, "verified")
+            requests = list(self.server.requests)
+            path = Path(service.download.path)
+            modified = path.stat().st_mtime_ns
+            for _ in range(20):
+                self.assertEqual(service.start_download()["state"], "verified")
+            self.assertEqual(transfer.call_count, 1)
+            self.assertEqual(self.server.requests, requests, "reuse must stay offline")
+            self.assertEqual(path.stat().st_mtime_ns, modified)
+
+    def test_corrupted_cached_bytes_are_not_reused_and_can_be_downloaded_again(self):
+        self.publish(self.package())
+        service = self.service()
+        service.check()
+        service.start_download()
+        service.wait(10)
+        Path(service.download.path).write_bytes(b"tampered")
+        requests = list(self.server.requests)
+        with self.assertRaises(updates.UpdateError) as caught:
+            service.start_download()
+        self.assertEqual(caught.exception.code, "evidence")
+        self.assertEqual(service.download.state, "failed")
+        self.assertEqual(self.server.requests, requests)
+        service.start_download()
+        service.wait(10)
+        self.assertEqual(service.download.state, "verified")
+        self.assertEqual(Path(service.download.path).read_bytes(), b"new package bytes")
+
     def test_a_verified_package_is_staged_and_its_location_shown(self):
         self.publish(self.package())
         service = self.service()

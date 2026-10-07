@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -320,6 +321,55 @@ class TestEvidence(Base):
 
 
 class TestPrepare(Base):
+    def test_repeated_preparation_reuses_one_verified_incoming_app(self):
+        service = self.staged()
+        first = service.prepare_install(wait=True)["install"]
+        self.assertEqual(first["state"], "ready")
+        for _ in range(20):
+            self.assertEqual(service.prepare_install(wait=True)["install"], first)
+        self.assertEqual([p.name for p in (service.home / "install").iterdir()],
+                         [first["update_id"]])
+        package = Path(service.download.path)
+        original = package.read_bytes()
+        package.write_bytes(b"tampered")
+        with self.assertRaises(updates.UpdateError):
+            service.prepare_install()
+        self.assertEqual(service.install, first, "refusal cannot discard the prepared app")
+        package.write_bytes(original)
+        identity = Path(first["incoming"]) / "Contents" / "Resources" / "refinix-build.json"
+        value = json.loads(identity.read_text())
+        value["version"] = "0.1.0-internal.99"
+        identity.write_text(json.dumps(value))
+        with self.assertRaises(updates.UpdateError):
+            service.prepare_install()
+        self.assertEqual(service.install, first)
+
+    def test_preparation_excludes_other_update_work_until_it_finishes(self):
+        from backend.coordinator import app_archive
+        service = self.staged()
+        entered, release = threading.Event(), threading.Event()
+        extract = app_archive.extract
+        def paused(*args):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError("test preparation was not released")
+            return extract(*args)
+        with patch.object(app_archive, "extract", side_effect=paused) as expansion:
+            service.prepare_install()
+            try:
+                self.assertTrue(entered.wait(2))
+                for action in (service.prepare_install, service.start_download, service.check):
+                    for _ in range(5):
+                        with self.assertRaises(updates.UpdateError) as caught:
+                            action()
+                        self.assertEqual(caught.exception.code, "busy")
+            finally:
+                release.set()
+                service._install_thread.join(10)
+            self.assertEqual(expansion.call_count, 1)
+            self.assertEqual(service.install["state"], "ready")
+        self.assertEqual(service.prepare_install(wait=True)["install"], service.install)
+
     def test_the_verified_app_is_expanded_beside_the_installation(self):
         service = self.staged()
         state = service.prepare_install(wait=True)

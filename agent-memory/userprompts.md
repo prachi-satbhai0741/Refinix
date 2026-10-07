@@ -2418,3 +2418,17 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: UP-20261007-009
 - supersedes: none
 - linked_changes: [AC-20261008-001](agentchangelog.md#ac-20261008-001)
+
+## UP-20261008-002 — Prevent duplicate update actions and prepare the next package
+- date: 2026-10-08
+- status: done
+- scope: implementation, review, packaging
+- tags: updater, rapid-clicks, idempotency, internal-package, offline-tests
+- aliases: execute this carefully, check it, update the package, impatient repeated clicks
+- paths: frontend/app/app.js, frontend/app/test-update-control.cjs, backend/coordinator/updates.py, backend/coordinator/test_updates.py, backend/coordinator/test_update_install.py, desktop/shell.py, desktop/test_install_flow.py, desktop/out/updater-n6
+- summary: After asking whether repeated button clicks could download an update twice, the user authorised careful execution and a new package, and will update the installed app personally.
+- constraints: Preserve the installed app, real data, original ZIP sets/build records, existing signing keys and public release boundaries; no Git/GitHub writes or protected-document edits.
+- acceptance: Guard repeated check/download/import/prepare/install actions, verify focused and full offline regressions, build and authenticate internal.6, then place its signed bundle in the existing update folder for the user's native install.
+- follow_up_to: UP-20261008-001
+- supersedes: none
+- linked_changes: [AC-20261008-002](agentchangelog.md#ac-20261008-002)

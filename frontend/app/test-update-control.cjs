@@ -117,6 +117,92 @@ const STATES = {
   failed: { last_check: { at: 't', result: 'unreachable', detail: 'no route' } },
 };
 
+function updatePage(state, bridge = null) {
+  const p = page({ bridge });
+  p.run(`lastStatus = ${status(state)};
+    loadStatus = async () => {
+      renderUpdateControl(lastStatus); renderUpdatesCard(lastStatus); return lastStatus;
+    };
+    renderUpdatesCard(lastStatus); renderUpdateControl(lastStatus); openUpdatePopover();`);
+  return p;
+}
+
+test('rapid clicks share one request across Settings and the header, and retry after failure', async () => {
+  for (const [label, state, path] of [
+    ['Check for updates', {}, '/v1/updates/check'],
+    ['Download 0.1.0-internal.2', STATES.offered, '/v1/updates/download'],
+    ['Cancel download', STATES.downloading, '/v1/updates/cancel'],
+  ]) {
+    const p = updatePage(state);
+    const click = (id) => p.el(id).children.find(b => b.textContent === label).onclick;
+    const settings = click('c-updates-actions');
+    const header = click('update-popover-actions');
+    const attempts = Array.from({ length: 20 }, (_, i) => (i % 2 ? header : settings)());
+    assert.equal(p.requests.length, 1, `${label}: only one request`);
+    assert.equal(p.requests[0].path, path);
+    assert.deepEqual(buttons(p, 'c-updates-actions'), [], 'Settings locks immediately');
+    assert.deepEqual(buttons(p, 'update-popover-actions'), ['Later'], 'header locks too');
+    p.requests[0].fail('request failed');
+    await Promise.all(attempts);
+    assert.equal(p.run('updateBusy'), '', `${label}: failure allows retry`);
+    const retry = settings();
+    assert.equal(p.requests.length, 2);
+    p.requests[1].reply({});
+    await retry;
+  }
+});
+
+test('rapid import clicks open one chooser and cancellation allows retry', async () => {
+  let count = 0, reply;
+  const p = updatePage({}, { choose_update_bundle() {
+    count += 1;
+    return new Promise(resolve => { reply = resolve; });
+  } });
+  const click = p.el('c-updates-actions').children.find(b => b.textContent === 'Import update…').onclick;
+  const attempts = Array.from({ length: 20 }, () => click());
+  assert.equal(count, 1);
+  assert.match(p.text('update-popover-state'), /Importing/);
+  reply({ cancelled: true });
+  await Promise.all(attempts);
+  const retry = click();
+  assert.equal(count, 2);
+  reply({ cancelled: true });
+  await retry;
+});
+
+test('Install locks before preparation and calls the native installer once', async () => {
+  for (const state of [STATES.verified, STATES.ready]) {
+    let count = 0, reply;
+    const p = updatePage(state, { install_update() {
+      count += 1;
+      return new Promise(resolve => { reply = resolve; });
+    } });
+    const click = p.el('c-updates-actions').children.find(b => b.textContent === 'Install and restart').onclick;
+    const attempts = Array.from({ length: 20 }, () => click());
+    assert.deepEqual(buttons(p, 'c-updates-actions'), []);
+    if (state === STATES.verified) {
+      assert.equal(p.requests.length, 1, 'one preparation request');
+      assert.equal(p.requests[0].path, '/v1/updates/prepare');
+      p.requests[0].reply({});
+      await new Promise(setImmediate);
+      p.run(`lastStatus = ${status(STATES.ready)}; timer()`);
+      await new Promise(setImmediate);
+    }
+    assert.equal(count, 1);
+    await Promise.all(Array.from({ length: 20 }, () => click()));
+    assert.equal(count, 1, 'no extra native calls while confirmation is pending');
+    reply({ cancelled: true });
+    await Promise.all(attempts);
+    assert.equal(p.run('updateBusy'), '', 'declined installation allows retry');
+    const retry = click();
+    assert.equal(count, 2);
+    reply({ installing: true });
+    await retry;
+    await click();
+    assert.equal(count, 2, 'keep locked while the app closes');
+  }
+});
+
 test('offline, the header control is hidden in every state', () => {
   for (const [name, state] of Object.entries(STATES)) {
     const p = page({ online: false });
