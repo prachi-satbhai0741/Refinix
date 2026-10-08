@@ -1,0 +1,147 @@
+name: Refresh the Beta feed
+
+# Daily: a fresh timestamp (and a fresh snapshot when it has under 14 days
+# left), signed with the online keys in the `beta-feed-refresh` environment
+# (no reviewer, so the schedule can run), committed, deployed and read back
+# live. The commit also keeps the repository active, so GitHub does not
+# disable the schedule. Any failure, or a role close to expiring (timestamp
+# under 3 days, snapshot 7, targets 45, root 90), fails the run and opens or
+# updates an issue. Renewing targets and root is the release manager's
+# offline job (docs/releases.md).
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-feed
+  cancel-in-progress: false
+
+env:
+  TOOLING_REPOSITORY: prachi-satbhai0741/Refinix
+  FEED_URL: https://refinix.runs-on.dev/updates/beta/
+
+jobs:
+  sign:
+    runs-on: ubuntu-24.04
+    environment: beta-feed-refresh
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.commit.outputs.commit }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ env.TOOLING_REPOSITORY }}
+          ref: ${{ vars.REFINIX_TOOLING_COMMIT }}
+          path: tooling
+          persist-credentials: false
+      - name: Install the hash-pinned release tooling
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check --require-hashes \
+            -r tooling/backend/requirements-runtime.lock -r tooling/scripts/requirements-release.lock
+      - name: Re-sign, check and commit
+        id: commit
+        env:
+          SNAPSHOT_KEY: ${{ secrets.REFINIX_SNAPSHOT_KEY }}
+          TIMESTAMP_KEY: ${{ secrets.REFINIX_TIMESTAMP_KEY }}
+          REFINIX_KEY_PASSPHRASE_SNAPSHOT: ${{ secrets.REFINIX_KEY_PASSPHRASE_SNAPSHOT }}
+          REFINIX_KEY_PASSPHRASE_TIMESTAMP: ${{ secrets.REFINIX_KEY_PASSPHRASE_TIMESTAMP }}
+        run: |
+          keys="$RUNNER_TEMP/keys"; mkdir -m 700 "$keys"
+          printf '%s\n' "$SNAPSHOT_KEY" > "$keys/snapshot.pem"
+          printf '%s\n' "$TIMESTAMP_KEY" > "$keys/timestamp.pem"
+          chmod 600 "$keys"/*.pem
+          before=$(git rev-parse HEAD)
+          "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py refresh \
+            --keys "$keys" --repo updates/beta
+          rm -rf "$keys"
+          "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py verify \
+            --repo updates/beta --monitor
+          git config user.name "refinix-feed"
+          git config user.email "refinix-feed@users.noreply.github.com"
+          git add updates/beta/metadata
+          git commit -m "Refresh the Beta feed"
+          git push origin "HEAD:refs/heads/main" --force-with-lease="main:$before"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: sign
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.sign.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: .
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  live:
+    needs: deploy
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ env.TOOLING_REPOSITORY }}
+          ref: ${{ vars.REFINIX_TOOLING_COMMIT }}
+          path: tooling
+          persist-credentials: false
+      - name: The live feed is fresh
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check --require-hashes \
+            -r tooling/backend/requirements-runtime.lock
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py verify \
+                --url "$FEED_URL" --trust-root updates/beta/metadata/1.root.json --monitor; then
+              exit 0
+            fi
+            sleep 60
+          done
+          exit 1
+
+  alert:
+    needs: [sign, deploy, live]
+    if: failure()
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the feed alert
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Beta update feed needs attention"
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" \
+                   --json number --jq '.[0].number')
+          body="The daily feed refresh failed or a role is close to expiring: $RUN_URL"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi

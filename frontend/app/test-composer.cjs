@@ -507,6 +507,11 @@ test('the model selector lists inventory and offers Auto as a real choice', () =
     'search does not claim to select a model it never runs');
 });
 
+test('reading scanned pages is labelled Beta wherever its model is chosen or named', () => {
+  assert.match(source, /appendModelChoices\(box, 'documents\.ocr', 'Document OCR model \(Beta\)'\)/);
+  assert.match(source, /'documents\.ocr': 'Page reading \(Beta\)'/);
+});
+
 test('Auto says which model it would use now, by its display name', () => {
   const p = page();
   p.run(`
@@ -984,4 +989,20 @@ test('sending still works unchanged from the new layout', async () => {
   assert.equal(p.requests[0].body.doc_workflow, APPROVAL);
   assert.equal(p.requests[0].body.text, 'Draft the approval note');
   p.requests.shift().reply({ job_id: 'job-1' }); await sending;
+});
+
+test('the context indicator opens its details and Escape closes them', async () => {
+  const p = page();
+  await estimate(p, OK_ESTIMATE);
+  p.run('openContextPopover()');
+  const meter = p.document.getElementById('context-meter');
+  assert.equal(meter.getAttribute('aria-expanded'), 'true');
+  assert.ok(p.run('contextPopover !== null'));
+  p.run('closeContextPopover(true)');
+  assert.equal(meter.getAttribute('aria-expanded'), 'false');
+  assert.ok(p.run('contextPopover === null'));
+  // The page wires the meter to open them, and typing to refresh the estimate.
+  assert.match(source, /meter\.addEventListener\('click'[\s\S]*?openContextPopover\(\)/);
+  assert.match(source, /saveDraftSoon\(\);\s*\/\/[^\n]*\n\s*refreshContextSoon\(\);/);
+  assert.match(source, /e\.key === 'Escape' && contextPopover\) closeContextPopover\(true\)/);
 });

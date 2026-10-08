@@ -16,14 +16,17 @@ file, exhaust the disk, or install something other than a Refinix app.
     check_tree  walk what was written (lstat, never following a link) and
               compare it with the listing.
     verify_bundle  the app's own identity: bundle id, embedded build identity,
-              the code-signature seal (integrity only, not who published it)
-              and the shipped engine files.
+              the shipped trust root (this build's own, or a newer root the
+              update client authenticated starting from it), the code-signature
+              seal, the publisher's Team ID for a signed Beta build, and the
+              shipped engine files.
 
 Standard library plus the engine verifier already in the application.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import plistlib
@@ -39,6 +42,7 @@ from pathlib import Path
 TOP = "Refinix.app"
 BUNDLE_ID = "com.refinix.desktop"
 IDENTITY_NAME = "refinix-build.json"
+ROOT_FILE = "refinix-update-root.json"
 MAX_ENTRIES = 10_000
 MAX_TOTAL_BYTES = 2 * 1024 ** 3
 MAX_TOTAL_RATIO = 8                     # uncompressed total / archive size
@@ -305,6 +309,24 @@ def _codesign(app: Path) -> str | None:
     return None
 
 
+def _team_requirement(app: Path, team_id: str) -> str | None:
+    """Developer ID from this Team ID; None when the requirement is met."""
+    if sys.platform != "darwin":
+        return "a signed macOS app can only be checked on macOS"
+    requirement = ("=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] "
+                   "and certificate leaf[field.1.2.840.113635.100.6.1.13] and "
+                   f'certificate leaf[subject.OU] = "{team_id}"')
+    try:
+        result = subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict",
+                                 f"-R{requirement}", str(app)], capture_output=True,
+                                text=True, timeout=300)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"the publisher check could not run: {exc}"
+    if result.returncode != 0:
+        return (result.stderr or result.stdout or "another publisher").strip()[:400]
+    return None
+
+
 def bundle_identity(app: Path) -> dict | None:
     try:
         data = json.loads((Path(app) / "Contents" / "Resources" / IDENTITY_NAME)
@@ -315,8 +337,14 @@ def bundle_identity(app: Path) -> dict | None:
 
 
 def verify_bundle(app: Path, *, version: str, lane: str, channel: str,
-                  trust_root: str | None, codesign=_codesign) -> dict:
-    """The expanded app is the offered Refinix and is intact. Returns its identity."""
+                  trust_root: str | None = None, trust_roots=None, publisher: str | None = None,
+                  codesign=_codesign, team_check=_team_requirement) -> dict:
+    """The expanded app is the offered Refinix and is intact. Returns its identity.
+
+    `trust_roots` are the roots it may ship: the running build's own and any
+    newer root authenticated from it (`UpdateService.accepted_roots`). The
+    older single `trust_root` form means exactly that one root.
+    """
     app = Path(app)
     try:
         info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
@@ -330,15 +358,33 @@ def verify_bundle(app: Path, *, version: str, lane: str, channel: str,
     identity = bundle_identity(app)
     if identity is None:
         raise ArchiveError("identity", "The app carries no build identity.")
-    for key, wanted in (("version", version), ("lane", lane), ("channel", channel),
-                        ("trust_root", trust_root)):
+    for key, wanted in (("version", version), ("lane", lane), ("channel", channel)):
         if identity.get(key) != wanted:
             raise ArchiveError("identity", f"The app's {key.replace('_', ' ')} "
                                            f"({identity.get(key)}) is not the offered "
                                            f"one ({wanted}).")
+    accepted = set(trust_roots) if trust_roots is not None else {trust_root}
+    shipped = identity.get("trust_root")
+    if shipped not in accepted:
+        raise ArchiveError("identity", "The app trusts an update root that is neither this "
+                                       "build's nor a newer one authenticated from it.")
+    if shipped is not None:
+        root_file = app / "Contents" / "Resources" / ROOT_FILE
+        try:
+            digest = hashlib.sha256(root_file.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise ArchiveError("identity", "The app's update trust root is missing.") from exc
+        if digest != shipped:
+            raise ArchiveError("identity", "The app's update trust root is not the one "
+                                           "its identity names.")
     problem = codesign(app)
     if problem:
         raise ArchiveError("seal", f"The app's code seal does not verify: {problem}")
+    if publisher:
+        problem = team_check(app, publisher)
+        if problem:
+            raise ArchiveError("publisher", f"The app is not signed by the expected "
+                                            f"publisher: {problem}")
     from backend.coordinator import engine as engine_module
     for item in identity.get("engines") or []:
         root = app / "Contents" / "Resources" / "engine" / str(item.get("lane"))

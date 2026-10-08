@@ -515,13 +515,20 @@ class TestDistributedPathUnchanged(Base):
                     self.c.code.apply(self.repo_id, proposal["proposal_id"])
                 self.assertEqual(self.disk(), ORIGINAL)
 
-    def test_sandbox_validation_still_requires_the_paired_worker(self):
+    def test_a_local_proposal_is_never_sent_to_the_paired_worker(self):
+        # Plan v4.3 W2.4: a local proposal is validated on this computer's own
+        # sandbox when it is in force, and refused when it is not; the worker
+        # route is never consulted for it either way.
         proposal = self.propose_local()
+        self.c.local_sandbox.status = lambda: {"available": False,
+                                               "detail": "no sandbox on this computer"}
         with patch.object(self.c, "choose_route") as route:
             with self.assertRaises(CodeError) as caught:
                 self.c.code.validate(self.repo_id, proposal["proposal_id"])
-        self.assertEqual(caught.exception.code, "not_distributed")
+        self.assertEqual(caught.exception.code, "no_sandbox")
         route.assert_not_called()
+        self.assertIsNone(db.latest_validation(self.c.conn, proposal["proposal_id"],
+                                               self.c.workspace_id))
 
 
 class TestDeniedActionsUnchanged(unittest.TestCase):

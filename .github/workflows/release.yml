@@ -1,0 +1,238 @@
+name: Beta packages
+
+# Builds the public (`beta` channel) Windows and Ubuntu packages for one
+# designated `main` commit, on GitHub-hosted runners (fresh virtual machines
+# discarded after each job). Started by hand only. It never publishes, tags,
+# releases or writes to the repository: its only outputs are workflow
+# artifacts and build records, which scripts/release_assemble.py checks
+# against the same commit before anything is published (docs/releases.md).
+#
+# The macOS package is built, signed and notarised on the release Mac with the
+# same desktop/build.py command; the matching shared snapshot digest ties it to
+# these lanes.
+#
+# Windows release signing runs only in the `beta-sign` environment, whose
+# secrets exist only there; without it the Windows package is built unsigned
+# and is shown as unavailable on the website, never published.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Public label: 0.1.0-preview.N (tester preview), 0.1.0-beta.N or 0.1.0"
+        required: true
+        type: string
+      public_build:
+        description: "Public build number, above every earlier public build"
+        required: true
+        type: string
+      build_set:
+        description: "Build-set label, for example bs-0101"
+        required: true
+        type: string
+      designated_commit:
+        description: "The full main commit SHA this release is built from"
+        required: true
+        type: string
+      lanes:
+        description: "Which packages to build"
+        required: true
+        default: all
+        type: choice
+        options: [all, windows-x64, linux-x64]
+      windows_signing:
+        description: "Authenticode-sign the Windows package (needs the beta-sign environment)"
+        required: true
+        default: none
+        type: choice
+        options: [none, release]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-packages-${{ inputs.build_set }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the designated commit and labels
+    runs-on: ubuntu-24.04
+    outputs:
+      include: ${{ steps.lanes.outputs.include }}
+    env:
+      REFINIX_VERSION: ${{ inputs.version }}
+      REFINIX_PUBLIC_BUILD: ${{ inputs.public_build }}
+      REFINIX_BUILD_SET: ${{ inputs.build_set }}
+      REFINIX_COMMIT: ${{ inputs.designated_commit }}
+      REFINIX_LANES: ${{ inputs.lanes }}
+      REFINIX_SIGNING: ${{ inputs.windows_signing }}
+    steps:
+      - name: Only main, only the designated commit
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "start this from main"; exit 1; }
+          [ "$GITHUB_SHA" = "$REFINIX_COMMIT" ] || {
+            echo "main is at $GITHUB_SHA, not the designated $REFINIX_COMMIT"; exit 1; }
+          [[ "$REFINIX_PUBLIC_BUILD" =~ ^[1-9][0-9]{0,5}$ ]] || {
+            echo "public_build must be a whole number"; exit 1; }
+          [[ "$REFINIX_BUILD_SET" =~ ^bs-[0-9A-Za-z-]{1,32}$ ]] || {
+            echo "build_set must look like bs-0101"; exit 1; }
+
+      - name: Check out the designated commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: The label is a public label of this application version
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, ".")
+          from backend.coordinator import build_info, release
+          label = release.parse(os.environ["REFINIX_VERSION"])
+          if label.channel != "beta" or label.core != build_info.APP_VERSION:
+              sys.exit(f"{label} is not a public label of {build_info.APP_VERSION}")
+          print(f"{label}: maturity {label.maturity}, Debian {label.debian()}")
+          PY
+
+      - name: The Beta trust root and feed are committed
+        run: |
+          test -f desktop/updates/beta-root.json
+          test -f desktop/updates/beta-feed.json
+
+      - id: lanes
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          lanes = [
+              {"lane": "windows-x64", "runner": "windows-2025",
+               "locks": "desktop/requirements-windows.lock backend/requirements-runtime.lock backend/requirements-render.lock desktop/requirements-build-windows.lock"},
+              {"lane": "linux-x64", "runner": "ubuntu-24.04",
+               "locks": "desktop/requirements-linux.lock backend/requirements-runtime.lock backend/requirements-render.lock desktop/requirements-build-linux.lock"},
+          ]
+          wanted = os.environ["REFINIX_LANES"]
+          print("include=" + json.dumps([i for i in lanes if wanted in ("all", i["lane"])]))
+          PY
+
+  package:
+    name: ${{ matrix.lane }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.check.outputs.include) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    # Signing secrets live only in this environment, and only the Windows job
+    # with release signing asks for it.
+    environment: ${{ (matrix.lane == 'windows-x64' && inputs.windows_signing == 'release') && 'beta-sign' || '' }}
+    env:
+      REFINIX_VERSION: ${{ inputs.version }}
+      REFINIX_PUBLIC_BUILD: ${{ inputs.public_build }}
+      REFINIX_BUILD_SET: ${{ inputs.build_set }}
+      REFINIX_CACHE: ${{ runner.temp }}/refinix-build-cache
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out the designated commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        if: matrix.lane == 'windows-x64'
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version-file: desktop/python-version-windows.txt
+
+      # Ubuntu: the system Python 3.12, whose GTK/WebKitGTK bindings come from
+      # Ubuntu's python3-gi package.
+      - name: Install Ubuntu build packages
+        if: matrix.lane == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-venv python3-gi \
+            python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 libwebkit2gtk-4.1-0 dpkg-dev \
+            libpython3.12
+
+      - name: Create the build environment
+        run: |
+          if [ "${{ matrix.lane }}" = "linux-x64" ]; then
+            /usr/bin/python3 -m venv --system-site-packages "$RUNNER_TEMP/venv"
+          else
+            python -m venv "$RUNNER_TEMP/venv"
+          fi
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "$RUNNER_TEMP/venv/Scripts" >> "$GITHUB_PATH"
+          else
+            echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Install pinned dependencies
+        run: |
+          args=()
+          for lock in ${{ matrix.locks }}; do args+=(-r "$lock"); done
+          python -m pip install --require-hashes "${args[@]}"
+          python -m pip check
+
+      - name: Restore verified engine archives and packaging tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/refinix-build-cache
+          key: engine-${{ matrix.lane }}-${{ runner.arch }}-${{ hashFiles('desktop/engine/engine-pins.json', 'desktop/packaging-tools.json') }}
+
+      - name: Run the build and update checks natively
+        run: |
+          python -m unittest desktop.test_build desktop.test_update_methods -q
+          if [ "${{ matrix.lane }}" = "linux-x64" ]; then
+            python -m unittest backend.coordinator.test_release -q
+          fi
+
+      - name: Build the package
+        env:
+          REFINIX_WINDOWS_SIGN_COMMAND: ${{ secrets.REFINIX_WINDOWS_SIGN_COMMAND }}
+          REFINIX_WINDOWS_PUBLISHER: ${{ vars.REFINIX_WINDOWS_PUBLISHER }}
+        run: |
+          signing=unsigned
+          if [ "${{ matrix.lane }}" = "windows-x64" ] && [ "${{ inputs.windows_signing }}" = "release" ]; then
+            signing=release
+          fi
+          python desktop/build.py --channel beta --version "$REFINIX_VERSION" \
+            --build-set "$REFINIX_BUILD_SET" --build-number "$REFINIX_PUBLIC_BUILD" \
+            --source-commit "$GITHUB_SHA" --cache "$REFINIX_CACHE" --out out \
+            --trust-root desktop/updates/beta-root.json \
+            --update-feed desktop/updates/beta-feed.json \
+            --signing "$signing" --disposable-host
+
+      # The .deb's own install, update and recovery rules, with the real dpkg
+      # and APT on this throwaway Ubuntu machine.
+      # The release tooling's own lock (throwaway feed signing) goes in only
+      # after the package is built, so it can never end up inside the package.
+      - name: Qualify the Ubuntu package natively
+        if: matrix.lane == 'linux-x64'
+        run: |
+          python -m pip install --require-hashes -r scripts/requirements-release.lock
+          # These build throwaway signed feeds, so they need the release lock too.
+          python -m unittest desktop.test_deb_root backend.coordinator.test_updates_beta -q
+          sudo env REFINIX_QUALIFY_DISPOSABLE=1 "$RUNNER_TEMP/venv/bin/python" \
+            scripts/qualify_deb.py --real out/refinix_*_amd64.deb \
+            --report out/deb-qualification.json
+
+      - name: Show the recorded hashes
+        run: cat out/*.sha256
+
+      - name: Keep the packages and their records
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: refinix-${{ inputs.version }}-${{ matrix.lane }}
+          path: |
+            out/Refinix-*
+            out/refinix_*
+            out/build-record-*.json
+            out/deb-qualification.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0

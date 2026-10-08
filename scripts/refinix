@@ -2,8 +2,10 @@
 # Presentation launcher for the paired Mac coordinator and Ubuntu worker.
 set -eu
 
-MAC_IP="10.177.11.113"
-WORKER_IP="10.177.11.160"
+# The hotspot addresses the two devices are bound to. A different network is
+# given as REFINIX_MAC_IP / REFINIX_WORKER_IP instead of editing this file.
+MAC_IP="${REFINIX_MAC_IP:-10.177.11.113}"
+WORKER_IP="${REFINIX_WORKER_IP:-10.177.11.160}"
 WORKER_PORT="30443"
 
 die() {

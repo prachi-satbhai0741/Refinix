@@ -414,9 +414,6 @@ MANAGED_DEFAULTS = {CHAT: MANAGED_MAIN, CODE: MANAGED_MAIN,
                     DOCUMENTS_GENERATE: MANAGED_MAIN, DOCUMENTS_OCR: MANAGED_MAIN}
 
 
-def entries_for(engine_kind: str) -> tuple[Entry, ...]:
-    """Catalogue entries the given engine can run."""
-    return tuple(entry for entry in CATALOGUE if entry.engine == engine_kind)
 
 # Models Refinix has looked at and deliberately does **not** offer. Used only
 # to annotate one that is already installed, so the interface can say why it is

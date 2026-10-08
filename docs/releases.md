@@ -50,18 +50,52 @@ is a prototype path, not evidence of signed public installers for all platforms.
 
 | Milestone | Required distribution scope |
 |---|---|
-| Beta 0.1 / SIH Reviewer Preview | Qualified standalone workflows on all three OS families, authenticated immutable packages, accepted in-app updates/offline import and tested manual recovery; no unfinished updater |
+| Tester preview `0.1.0-preview.N` | Verified, immutable packages published for device testing before acceptance: Ubuntu `.deb`, and macOS/Windows only once signed (otherwise shown as unavailable); labelled "pending device testing"; in-app updates offered between previews (install capability `preview-test`) |
+| Beta 0.1 (accepted) `0.1.0-beta.N` | Qualified standalone workflows on all three OS families, authenticated immutable packages, accepted in-app updates/offline import and tested manual recovery; no unfinished updater |
 | Beta 0.2 / 0.3 | Deferred mesh and incremental product improvements; each changed/new profile repeats affected install/workflow/security/update checks |
 | Finals candidate | A rehearsed version with a frozen, evidence-backed claim set; broader capabilities only when accepted |
 | Production-qualified release | Full advertised OS/backend, upgrade/recovery, interoperability and managed-deployment matrices, as applicable |
 
-Use a clearly labelled **Beta/preview channel** initially. Add a stable channel
-only when its production gates pass; never label the reviewer preview stable.
+Use a clearly labelled **Beta channel** initially, with two maturities: tester previews and accepted
+builds. Add a stable channel only when its production gates pass; never label a preview stable.
 Display versions such as Beta 0.1 consistently, with one authoritative package
 version and explicit pre-release status. The prototype's existing `0.1.0` value
 is not itself a published Beta. Current scope and sequencing are in
 [PROJECT.md](PROJECT.md#28-release-phases) and [tasks](../tasks.md).
 Historical release bands and P-task identifiers are not active publication gates.
+
+<a id="tester-preview-publication"></a>
+### Tester preview publication
+
+A tester preview exists so real devices can try the actual packages **before** acceptance. It is a
+separate class beside the accepted Beta, never a substitute for it.
+
+**Before publishing**, all of these hold:
+
+- final source verified and the offline regression suites passing on the designated `main` commit;
+- native builds, and installation smoke checks where a native machine or runner is available;
+- identities, dependencies and final hashes verified (`scripts/release_assemble.py`);
+- each platform's required signing done — Developer ID and notarisation for macOS, Authenticode
+  for Windows. **A platform without it is shown as unavailable, never published unsigned.** Ubuntu
+  packages carry no platform signature (see [Linux authentication](#beta-channel));
+- install and update recovery reviewed; no known problem that risks data or breaks a security
+  boundary;
+- "pending device testing" labels, limitations and recovery/removal instructions in place.
+
+**Order:**
+
+1. A fixed, immutable version (`0.1.0-preview.N`, with its own public build number B) from a
+   reviewed `main` commit.
+2. Verify the full set (`release_assemble.py`).
+3. Upload to a **draft** GitHub release and verify the uploaded assets' names and sizes.
+4. Publish the GitHub prerelease (immutable from then on).
+5. Deploy the website links and the preview feed pointer (`latest-preview.json`).
+6. Download anonymously **through the website** and check the bytes against `SHA256SUMS`.
+7. Send testers a short install checklist that names the SHA-256 to record with observations.
+
+Website download cards show OS/architecture, minimum requirements, version, "Tester preview",
+device-testing status and limitations before download. A blocked platform is shown as
+**unavailable**, never hidden.
 
 <a id="beta-01-publication"></a>
 ### Beta 0.1 publication acceptance
@@ -110,7 +144,7 @@ accepts the evidence. This scope change grants no profile or updater acceptance.
    the matching package without an account. Record version, hash, profile and
    review date with the evidence. A source archive does not satisfy this gate.
 
-The website/PPT can describe sovereign local AI, trusted heterogeneous compute,
+The website and presentations can describe sovereign local AI, trusted heterogeneous compute,
 model/device routing, sandboxing, recovery and organisation deployment. Every
 functional claim uses Working now / Beta-experimental / Planned labels under
 [current scope](PROJECT.md#25-platform-support-and-beta-scope); no unsupported Download option is
@@ -201,6 +235,50 @@ real devices before any Beta release; they are not releases.
   never appear in the Beta update feed; a released Beta installation is never offered an
   internal build.
 
+<a id="beta-channel"></a>
+### Beta channel: build, sign, assemble, publish
+
+Implemented in source (8 October 2026); not yet exercised against live hosting.
+
+| Step | Where | What |
+|---|---|---|
+| Version | reviewed `main` commit | `0.1.0-preview.N` / `0.1.0-beta.N` / `0.1.0`, public build number N above every earlier build of that lane — internal builds included, since macOS orders apps by `CFBundleVersion` (internal builds 1–6 already exist, so the first public build is 7 or higher); [release identity](../backend/coordinator/release.py) gives one ordering key and its Debian (`X.Y.Z~R.S`), macOS (`CFBundleVersion` N) and Windows (`X.Y.Z.N`) forms |
+| Windows, Ubuntu | [`release.yml`](../.github/workflows/release.yml), manual, `contents: read`, hosted runners | refuses unless started from `main` at the designated commit; builds with the committed Beta trust root and feed (`desktop/updates/beta-*.json`); Authenticode signing only in the `beta-sign` environment; the Ubuntu job runs the native `.deb` qualification ([`qualify_deb.py`](../scripts/qualify_deb.py)); outputs workflow artifacts only |
+| macOS | the release Mac, `desktop/build.py --channel beta --signing release` | clean checkout of the designated commit; inside-out Developer ID signing with the hardened runtime ([entitlements](../desktop/macos/entitlements.plist)), engine binaries signed before their manifest is written, notarise and staple the app, re-zip it as the update payload, build the DMG from the same stapled app, then sign, notarise and staple the DMG |
+| Assemble | locally, [`release_assemble.py`](../scripts/release_assemble.py) | the run's commit/event/workflow/conclusion; every lane's identity agrees (shared snapshot digest ties the Mac lane to CI); bytes re-hashed; Mac Team ID, stapled ticket and Gatekeeper on a quarantined copy; the Ubuntu qualification report; unsigned macOS/Windows marked unavailable; writes `SHA256SUMS`, `release.json`, release notes and the exact owner commands; [`build-site.sh`](../scripts/build-site.sh) renders the website's download cards from `release.json`, offering a file only from that release's own download folder with its SHA-256 |
+| Release assets | GitHub release on the source repository | draft → verify → publish (prerelease for previews); immutable once published |
+| Feed | the website repository (`refinix.runs-on.dev/updates/beta/`), Pages deployed by GitHub Actions | targets signed offline on the release Mac (`update_repository.py stage`); then [`advance-feed.yml`](../deploy/distribution/workflows/advance-feed.yml), behind a required reviewer, downloads each new asset anonymously, checks size and SHA-256, signs snapshot and timestamp, commits, deploys exactly that commit and reads the live feed back |
+
+**Feed rules.** Consistent snapshots; every file immutable except `timestamp.json`; versions only
+increase; a published package target is never changed or dropped; an accepted release carries every
+lane, a preview may carry only the ready ones. All feed writers and site deploys share one queue
+(`beta-feed`); a deploy never replaces a newer tree. Failure before the commit changes nothing;
+after it, redeploy the same commit or fix forward with higher versions — **never restore older
+metadata**. Withdrawing an offer is a new targets version whose pointer names the previous build.
+
+**Freshness.** Expiry: timestamp 7 days, snapshot 30, targets 180, root 365.
+[`refresh-feed.yml`](../deploy/distribution/workflows/refresh-feed.yml) re-signs the timestamp daily
+(and the snapshot below 14 days), deploys, reads it back and opens an issue below the alert levels
+(timestamp 3 days, snapshot 7, targets 45, root 90). The release manager renews targets offline at
+60 days or fewer and the root at 120 or fewer.
+
+**Starting the feed (once).** On the release Mac, the release manager creates the Beta keys and the feed's first root, with the keys in a folder outside every repository:
+`python scripts/update_repository.py init --channel beta --keys <offline keys folder> --repo <refinix-site checkout>/updates/beta`. That root (`updates/beta/metadata/1.root.json`) is committed twice: to the website repository, where the feed starts, and byte for byte as `desktop/updates/beta-root.json` in the source repository, where every Beta package embeds it as its update trust root (`release.yml` refuses to build without it). Passphrases come from `REFINIX_KEY_PASSPHRASE_<ROLE>` or a prompt, never from a file in a repository.
+
+**Keys.** Root and targets keys stay offline (encrypted PEM, two copies). Snapshot and timestamp
+keys live only as secrets of the website repository's `beta-publish` and `beta-feed-refresh`
+environments. Someone holding only those online keys can never add a package; they could hide
+updates for up to the remaining targets lifetime (180 days) or push versions ahead. Recovery: a new
+root version, signed offline, replaces those keys; installed clients re-check cached metadata
+against the newest root and drop what the revoked keys signed.
+
+**Linux authentication.** No platform signature: first downloads are authenticated by HTTPS from
+the release page and the published SHA-256; updates by the Beta TUF root embedded in the package.
+
+**Credentials.** Only the website repository's own `GITHUB_TOKEN` (inside its environments) writes
+the feed; the release itself is made with a maintainer's own GitHub credentials. No cross-repository
+token is used. Workflow templates live in [`deploy/distribution/`](../deploy/distribution/README.md).
+
 ## 3. User update workflow
 
 **Beta 0.1 qualification target.** Trace and reuse suitable existing update/packaging code before
@@ -247,6 +325,30 @@ updater libraries and platform facilities accordingly. Application use does not
 require accepting an update, renewing a cloud account or contacting the website.
 An expired/invalid update offer is rejected without disabling existing offline work.
 
+### Install and recovery by platform
+
+Every attempt is journalled before each step and resumed from disk by the next launch; the user's
+data is set aside before the app changes and restored if the new version does not commit (it
+commits only after its window has loaded).
+
+| Platform | Install | Going back |
+|---|---|---|
+| macOS (ZIP payload) | expanded and checked beside the app, swapped in with one atomic rename; the previous app kept | swap back; restore data |
+| Windows (setup payload) | `{app}` set aside with its uninstall registration recorded; the verified setup runs silently inside a kill-on-close job it can never leave (created into the job from its first instruction); accepted only when every packaged file is present and unchanged and the registration names the new version | a crash before `install_verified` always goes back, even when the new identity file exists; previous `{app}` and registration restored exactly |
+| Ubuntu (`.deb`) | **Download and prepare** ends with an administrator prompt: root copies the package, the installed version's package and the signed metadata into root-owned storage and authenticates the copies with the full TUF client, including expiry. **Install** asks again: `dpkg --audit` clean, `apt-get --simulate --no-download --no-remove` plans exactly unpack + configure of Refinix, then `dpkg -i` under dpkg's front-end lock | by dpkg state: same-copy repair, `dpkg --configure refinix`, the recorded trigger packages, or the exact recorded previous package; unrelated unfinished package work blocks with steps; root never writes user data |
+
+After an admission, install, resume and rollback re-verify root's copies **without a clock**, so an
+update interrupted today can still be recovered later; a **new** import with expired metadata is
+refused. Accepted installations never take a preview from any source; previews may move on to
+accepted builds. A package whose shipped root is neither the running one nor a newer root
+authenticated from it is refused.
+
+**Manual recovery.** macOS: drag the previous Refinix from the release page into Applications.
+Windows: run the previous setup from the release page. Ubuntu: open the recovery `.deb` the update
+kept in the data folder (`updates/recovery-packages/`, with its SHA-256) or the same version from
+the website with App Center. The launch check reconciles the journals and checks the app before
+the workspace reopens.
+
 ### Offline update import
 
 Provide Import update for a verified package brought through removable media or an
@@ -263,11 +365,14 @@ strategy is full-package replacement with staged verification and tested recover
 delta downloads are conditional on bandwidth/size evidence. The app should not
 self-modify arbitrary source files or execute scripts from a mutable branch.
 
-Evaluate Sparkle for macOS and qualified signed platform installation paths for
-Windows/Linux. Evaluate TUF-compatible metadata handling where appropriate. These
-are candidates: do not force a desktop-shell rewrite to obtain an updater, invent
-cryptography, or assume a framework's defaults meet offline requirements.
-[Sparkle](https://sparkle-project.org/), [TUF specification](https://theupdateframework.github.io/specification/latest/).
+Adopted: TUF metadata through python-tuf 7.0.1's client (Apache-2.0 OR MIT; verification only in
+the app, pure-Python Ed25519), with consistent snapshots and two signed pointers per lane
+(`latest.json` accepted, `latest-preview.json` previews). Packages are release assets fetched
+through the public TUF calls (`get_targetinfo`, the fetcher, `verify_length_and_hashes`); only those
+downloads may follow HTTPS redirects, at most three, and only to hosts listed in the package's feed
+configuration (`release-assets.githubusercontent.com`, observed by an anonymous request). Metadata
+never follows a redirect. Platform installation uses each OS's own mechanism (atomic rename,
+Inno Setup, dpkg). [TUF specification](https://theupdateframework.github.io/specification/latest/).
 
 Before adopting an updater, record source, exact version, licence, supported OSes,
 network behaviour, signing/verification, elevation requirements, crash recovery,

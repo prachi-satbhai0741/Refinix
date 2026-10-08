@@ -4,14 +4,14 @@ Read-only: it reads `/proc`, `/sys` and `systemctl --version`, and asks the
 kernel for its Landlock ABI. It starts nothing, installs nothing and changes
 no setting.
 
-Generated code is never run on this computer in this build, whatever this
-reports. The approved Ubuntu profile (a systemd user service with seccomp,
-Landlock and delegated cgroup limits) also needs a hard limit on the total
-bytes and files its temporary workspace may use, and no mechanism for that
-limit has been qualified without a host change. `available` is therefore
-always False here, and the result names each control that is present or
-missing, so a person testing on Ubuntu sees the computer's actual state
-instead of a single "not available".
+This module only observes; it never decides on its own that code may run, so
+`available` is always False here. `sandbox_local.LocalSandbox.status()` adds
+the one control a probe cannot see — a fixed-size workspace image mounted
+through udisks or fuse2fs, which caps the total bytes and files — and the
+launcher then checks every control again from inside before anything runs.
+The result names each control that is present or missing, so a person testing
+on Ubuntu sees the computer's actual state instead of a single "not
+available".
 
 Windows (AppContainer and Jobs) is the later candidate; macOS validation is
 not offered in Beta.

@@ -135,6 +135,8 @@ OPTIONS = {
                  # data recovery and the install helper the app re-runs itself as.
                  "backend.coordinator.updates", "backend.coordinator.app_archive",
                  "backend.coordinator.recovery", "desktop.update_apply",
+                 "backend.coordinator.release", "backend.coordinator.tuf_offline",
+                 "backend.coordinator.install_methods", "desktop.install_check",
                  "tuf.api.metadata", "plistlib",
                  "psutil", "tuf.ngclient", "securesystemslib",
                  "securesystemslib._vendor.ed25519.ed25519", "urllib3"],

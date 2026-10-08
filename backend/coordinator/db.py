@@ -1402,18 +1402,6 @@ def set_reasoning(conn, model: str, enabled: bool) -> bool:
 
 
 @serialized
-def get_model_enabled(conn, model: str) -> bool:
-    """Whether this model may be chosen for new work.
-
-    Absent means enabled. Disabling is an explicit act, so a model nobody has
-    touched must not arrive switched off.
-    """
-    row = conn.execute("SELECT enabled FROM model_prefs WHERE model=?",
-                       (model,)).fetchone()
-    return bool(row["enabled"]) if row else True
-
-
-@serialized
 def set_model_enabled(conn, model: str, enabled: bool) -> bool:
     if not isinstance(model, str) or not model.strip() or len(model) > 200:
         raise ValueError("a model name is required")
@@ -1427,13 +1415,6 @@ def set_model_enabled(conn, model: str, enabled: bool) -> bool:
             " updated_at=excluded.updated_at",
             (model, int(DEFAULT_REASONING), int(enabled), now()))
     return enabled
-
-
-@serialized
-def model_enablement(conn) -> dict:
-    """Every explicit enable/disable decision, for one read instead of many."""
-    return {row["model"]: bool(row["enabled"])
-            for row in conn.execute("SELECT model, enabled FROM model_prefs")}
 
 
 @serialized
@@ -2703,31 +2684,6 @@ def save_extraction(conn, *, workspace_id, chat_id, message_id, job_id,
                  page["number"], page["text"], page["confidence"], page["note"]))
     return extraction
 
-
-@serialized
-def get_sources(conn, workspace_id: str, source_ids: list[str]) -> list[dict]:
-    """Extractions plus their pages, for citation resolution and prompting."""
-    if not source_ids:
-        return []
-    placeholders = ",".join("?" for _ in source_ids)
-    rows = conn.execute(
-        f"SELECT * FROM document_sources WHERE workspace_id=?"
-        f" AND source_id IN ({placeholders}) ORDER BY created_at, rowid",
-        (workspace_id, *source_ids)).fetchall()
-    found = []
-    for row in rows:
-        pages = [{"number": p["page"], "text": p["text"],
-                  "confidence": p["confidence"], "note": p["note"]}
-                 for p in conn.execute(
-                     "SELECT * FROM document_pages WHERE source_id=? ORDER BY page",
-                     (row["source_id"],))]
-        found.append({"source_id": row["source_id"], "filename": row["filename"],
-                      "media_type": row["media_type"], "sha256": row["sha256"],
-                      "byte_size": row["byte_size"], "method": row["method"],
-                      "page_count": row["page_count"],
-                      "uncertain": json.loads(row["uncertain_json"]),
-                      "pages": pages})
-    return found
 
 
 # ---- artifacts ------------------------------------------------------------

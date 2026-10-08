@@ -28,7 +28,7 @@ import time
 from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
 from backend.coordinator import (codeflow, context, db, dispatch, pairing, policy,
-                                 repo, runtime)
+                                 repo, runtime, sandbox_local)
 
 # One proposal is one bounded local model call.
 PROPOSAL_DEADLINE_SECONDS = 240
@@ -72,6 +72,9 @@ DEFAULT_TARGET = TARGET_DISTRIBUTED
 # What a local proposal's validation actually is. It is not a sandbox result
 # and must never be shown or stored as one.
 LOCAL_VALIDATION_NOTE = "Not sandbox tested — local device mode"
+# The node a validation run on this computer's own sandbox is recorded under.
+LOCAL_SANDBOX_NODE = "local-sandbox"
+APPLY_MODES = ("sandbox_validated", "unsandboxed")
 
 
 def normalise_target(raw) -> str:
@@ -1044,11 +1047,7 @@ class CodeService:
             raise CodeError("no_edits", "That proposal contains no file changes.")
         target = stored_target(proposal)
         if target != TARGET_DISTRIBUTED:
-            raise CodeError(
-                "not_distributed",
-                "This-device changes are not sent to the Ubuntu sandbox. Review "
-                "the diff and apply them locally, or request a distributed change.",
-                409)
+            return self._validate_local(repo_id, proposal, conversation_id)
         route = self.c.choose_route(required=["code.validate"], require_model=False)
         if not route.remote:
             raise CodeError(
@@ -1130,6 +1129,168 @@ class CodeService:
                                 "job_name": record["job_name"],
                                 "observed": record["observed"],
                                 "exit_status": record["exit_status"]})
+        return record
+
+    # -- this computer's own sandbox (local proposals) -----------------------
+    def _staged_inputs(self, proposal: dict, contents: list[dict]) -> list[dict]:
+        """What a local validation stages: every selected file as it would be
+        after Apply, with the SHA-256 of exactly that content."""
+        edited = {edit["path"]: edit for edit in contents}
+        selected = proposal["selection"] or [
+            {"path": edit["path"], "sha256": edit["base_sha256"]} for edit in contents]
+        staged = []
+        for item in selected:
+            edit = edited.get(item["path"])
+            staged.append({"path": item["path"],
+                           "sha256": edit["after_sha256"] if edit else item["sha256"]})
+        return staged
+
+    def _local_binding(self, proposal: dict) -> dict:
+        """What a local validation must match for Apply to rely on it."""
+        contents = db.proposal_edit_contents(self.conn, proposal["proposal_id"])
+        return {"patch_sha256": proposal["digest"],
+                "inputs_sha256": sandbox_local.inputs_digest(
+                    self._staged_inputs(proposal, contents)),
+                "command": list(VALIDATION_COMMAND), "profile": sandbox_local.PROFILE,
+                "profile_version": sandbox_local.PROFILE_VERSION}
+
+    def _local_validation_matches(self, proposal: dict, validation: dict | None) -> bool:
+        if not validation or validation.get("node_id") != LOCAL_SANDBOX_NODE:
+            return False
+        binding, pod = self._local_binding(proposal), validation.get("pod") or {}
+        return (validation["observed"] and validation["passed"]
+                and validation["patch_sha256"] == binding["patch_sha256"]
+                and pod.get("inputs_sha256") == binding["inputs_sha256"]
+                and pod.get("command") == binding["command"]
+                and pod.get("profile") == binding["profile"]
+                and pod.get("profile_version") == binding["profile_version"])
+
+    def _local_apply_mode(self, proposal: dict, requested: str | None) -> str:
+        """Which local Apply this is. A failed validation is never turned into
+        a pass or a silent bypass: going ahead without the sandbox is its own
+        explicit choice, recorded with the failure."""
+        if requested not in (None,) + APPLY_MODES:
+            raise CodeError("bad_mode", "Unknown Apply mode.")
+        latest = db.latest_validation(self.conn, proposal["proposal_id"], self.workspace_id)
+        if latest and latest.get("node_id") != LOCAL_SANDBOX_NODE and latest["passed"]:
+            # A passing row from somewhere else on a local proposal means
+            # evidence it did not earn.
+            raise CodeError("validation_mismatch",
+                            "That local proposal carries a sandbox result it did not "
+                            "produce. It was not applied.", 409)
+        if requested == "sandbox_validated" or (requested is None and latest):
+            if self._local_validation_matches(proposal, latest):
+                return "sandbox_validated"
+            if requested == "sandbox_validated" or latest:
+                reason = ("the sandbox did not pass it" if latest and not latest["passed"]
+                          else "its sandbox result no longer matches this change")
+                raise CodeError("validation_failed",
+                                f"This change was not applied: {reason}. Review the result, "
+                                "or choose Apply without the sandbox to go ahead anyway.",
+                                409)
+        return "unsandboxed"
+
+    def local_sandbox_status(self) -> dict:
+        sandbox = getattr(self.c, "local_sandbox", None)
+        if sandbox is None:
+            return {"available": False, "detail": "No sandbox is set up in this run."}
+        try:
+            return sandbox.status()
+        except Exception as exc:                           # noqa: BLE001
+            return {"available": False, "detail": f"The sandbox check failed: {exc}"}
+
+    def _validate_local(self, repo_id: str, proposal: dict,
+                        conversation_id: str | None) -> dict:
+        """Run the approved command on this computer's own sandbox."""
+        status = self.local_sandbox_status()
+        if not status.get("available"):
+            raise CodeError("no_sandbox", status.get("detail") or
+                            "Code validation in a sandbox is not available here.", 503)
+        root = self._root(repo_id)
+        contents = db.proposal_edit_contents(self.conn, proposal["proposal_id"])
+        edited = {edit["path"]: edit for edit in contents}
+        files = []
+        for item in self._staged_inputs(proposal, contents):
+            edit = edited.get(item["path"])
+            if edit is not None:
+                current_sha = next((s["sha256"] for s in (proposal["selection"] or [])
+                                    if s["path"] == item["path"]), edit["base_sha256"])
+                try:
+                    _text, identity = repo.read_text_file(root, item["path"])
+                except repo.RepositoryError as exc:
+                    raise CodeError(exc.code, str(exc)) from exc
+                if identity.sha256 != current_sha:
+                    raise CodeError("stale", f"{item['path']} changed since the proposal "
+                                             "was reviewed, so it was not validated.", 409)
+                text = edit["content"]
+            else:
+                try:
+                    text, identity = repo.read_text_file(root, item["path"])
+                except repo.RepositoryError as exc:
+                    raise CodeError(exc.code, str(exc)) from exc
+                if identity.sha256 != item["sha256"]:
+                    raise CodeError("stale", f"{item['path']} changed since the proposal "
+                                             "was reviewed, so it was not validated.", 409)
+            files.append({"path": item["path"], "text": text, "sha256": item["sha256"]})
+        cancel = threading.Event()
+        with self._lock:
+            if repo_id in self._cancels:
+                raise CodeError("busy", "Wait for this project's current step to finish "
+                                        "or stop it.", 409)
+            self._cancels[repo_id] = cancel
+        job_id = self._code_job(f"validate {proposal['proposal_id']} locally", conversation_id)
+        try:
+            for state in ("context_preparing", "queued", "routing", "running"):
+                db.set_job_state(self.conn, job_id, state)
+            try:
+                report = self.c.local_sandbox.validate(files, cancel=cancel)
+            except sandbox_local.SandboxError as exc:
+                db.set_job_state(self.conn, job_id, "failed")
+                raise CodeError(exc.code, str(exc), 503) from exc
+        finally:
+            with self._lock:
+                if self._cancels.get(repo_id) is cancel:
+                    self._cancels.pop(repo_id)
+        ok = sandbox_local.passed(report)
+        observed = bool(report.get("ran"))
+        binding = self._local_binding(proposal)
+        result = {"observed": observed, "job_state": "succeeded" if ok else "failed",
+                  "passed": ok, "job_name": report.get("unit"),
+                  "pod": {"profile": report.get("profile"),
+                          "profile_version": report.get("profile_version"),
+                          "qualification": report.get("qualification"),
+                          "controls": report.get("controls"),
+                          "limits": report.get("limits_requested"),
+                          "limits_checked": report.get("limits"),
+                          "landlock_abi": report.get("landlock_abi"),
+                          "storage": report.get("storage"),
+                          "inputs_sha256": report.get("inputs_sha256"),
+                          "command": binding["command"]},
+                  "result": {"command": report.get("command"), "passed": ok,
+                             "exit_status": report.get("exit_status"),
+                             "tests_run": report.get("tests_run"),
+                             "stdout": report.get("output") or "",
+                             "result_sha256": hashlib.sha256(json.dumps(
+                                 report, sort_keys=True, default=str).encode()).hexdigest()}}
+        detail = None if ok else (report.get("error") or (
+            f"{report.get('refused')} check failed" if report.get("refused")
+            else f"exit status {report.get('exit_status')}, "
+                 f"{report.get('tests_run') or 0} test(s) ran"))
+        db.set_job_state(self.conn, job_id, "validating" if observed else "failed")
+        if observed:
+            db.set_job_state(self.conn, job_id, "completed")
+        record = db.record_validation(
+            self.conn, workspace_id=self.workspace_id, proposal_id=proposal["proposal_id"],
+            job_id=job_id, attempt_id=None, node_id=LOCAL_SANDBOX_NODE, result=result,
+            patch_sha256=proposal["digest"], detail=detail)
+        db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
+                        action="sandbox.validate", outcome="applied" if ok else "failed",
+                        conversation_id=conversation_id,
+                        detail={"proposal_id": proposal["proposal_id"],
+                                "profile": report.get("profile"),
+                                "qualification": report.get("qualification"),
+                                "observed": observed, "exit_status": report.get("exit_status"),
+                                "refused": report.get("refused")})
         return record
 
     def _fail_code_job(self, job_id: str | None, attempt_id: str | None,
@@ -1254,16 +1415,16 @@ class CodeService:
 
     def apply(self, repo_id: str, proposal_id: str,
               approval_id: str | None = None,
-              conversation_id: str | None = None) -> dict:
+              conversation_id: str | None = None, mode: str | None = None) -> dict:
         self._begin_mutation(repo_id)
         try:
-            return self._apply(repo_id, proposal_id, approval_id, conversation_id)
+            return self._apply(repo_id, proposal_id, approval_id, conversation_id, mode)
         finally:
             self._end_mutation(repo_id)
 
     def _apply(self, repo_id: str, proposal_id: str,
                approval_id: str | None = None,
-               conversation_id: str | None = None) -> dict:
+               conversation_id: str | None = None, mode: str | None = None) -> dict:
         """Apply a stored proposal, one exact atomic file replacement at a time.
 
         The approval is consumed and the durable write record is created in one
@@ -1295,22 +1456,22 @@ class CodeService:
                     "Run sandbox validation and get a current passing result before applying.",
                     409)
         else:
-            # Local mode. There is no sandbox result and none is invented: a
-            # fabricated passing row here would be the single worst thing this
-            # module could do. The proposal is still gated by the access mode,
-            # still shown as a complete diff, still digest-checked against the
-            # files on disk, and its originals are backed up before any write.
-            existing = db.latest_validation(self.conn, proposal_id, self.workspace_id)
-            if existing and existing["passed"]:
-                # A passing row against a local proposal means a digest was
-                # reused from somewhere it did not belong. Refuse rather than
-                # accept evidence this proposal did not earn.
-                raise CodeError(
-                    "validation_mismatch",
-                    "That local proposal carries a sandbox result it did not "
-                    "produce. It was not applied.", 409)
+            # Local mode. A sandbox result counts only when this computer's own
+            # sandbox produced it for exactly this proposal; none is invented.
+            # The proposal is still gated by the access mode, still shown as a
+            # complete diff, still digest-checked against the files on disk,
+            # and its originals are backed up before any write.
+            mode = self._local_apply_mode(proposal, mode)
         paths = [e["path"] for e in proposal["edits"]]
         contents = db.proposal_edit_contents(self.conn, proposal_id)
+        if target != TARGET_DISTRIBUTED:
+            db.record_audit(self.conn, workspace_id=self.workspace_id, repo_id=repo_id,
+                            action="code.apply_mode", outcome="applied",
+                            conversation_id=conversation_id,
+                            detail={"proposal_id": proposal_id, "mode": mode,
+                                    "validation": (db.latest_validation(
+                                        self.conn, proposal_id, self.workspace_id)
+                                        or {}).get("validation_id")})
         plan = [{"path": edit["path"], "edit_id": edit["edit_id"],
                  "base_sha256": edit["base_sha256"],
                  "after_sha256": edit["after_sha256"]} for edit in contents]
@@ -1796,8 +1957,12 @@ class CodeService:
         except CodeError as exc:
             target, target_note = None, str(exc)
         local_proposal = bool(proposal) and target == TARGET_LOCAL
-        if local_proposal or target_note:
+        if target_note or (local_proposal and validation
+                           and validation.get("node_id") != LOCAL_SANDBOX_NODE):
             validation = None
+        if local_proposal and validation:
+            validation = {**validation, "matches": self._local_validation_matches(
+                proposal, validation)}
         attempt_row = None
         if proposal and proposal.get("attempt_id"):
             attempt_row = self.conn.execute(
@@ -1841,7 +2006,9 @@ class CodeService:
             "target_note": target_note,
             "validation_note": (target_note if target_note
                                 else LOCAL_VALIDATION_NOTE if local_proposal
+                                and not (validation or {}).get("matches")
                                 else None),
+            "local_sandbox": self.local_sandbox_status() if local_proposal else None,
             "can_undo": local_proposal and bool(
                 db.proposal_backups(self.conn, proposal["proposal_id"],
                                     self.workspace_id)),

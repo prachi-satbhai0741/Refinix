@@ -30,7 +30,8 @@ from backend.coordinator import (admission, build_info, capacity, code_service,
                                  docgen, documents, hub, identity, models, ocr,
                                  ownership, pairing, pdfgen, policy, observer, proof,
                                  provisioning, readiness, repo, retrieval, router,
-                                 runtime, sandbox_probe, updates)
+                                 runtime, sandbox_local, sandbox_probe,
+                                 updates)
 from backend.coordinator import engine as engine_module
 
 repo_errors = repo.RepositoryError
@@ -314,6 +315,14 @@ class Coordinator:
         # rather than written twice and a file someone else changed is left
         # alone.
         self.resumed_writes = self.code.resume_writes()
+        # Code validation on this computer's own sandbox (Ubuntu only). Units,
+        # mounts or images an earlier run left behind are removed first.
+        self.local_sandbox = sandbox_local.LocalSandbox(self.state_path.parent)
+        if sys.platform.startswith("linux"):
+            try:
+                self.local_sandbox.cleanup_leftovers()
+            except Exception:                              # noqa: BLE001
+                pass
         # Checked, downloaded or imported only when the person asks.
         self.updates = updates.UpdateService(
             self.state_path.parent, schema_version=db.SCHEMA_VERSION,
@@ -354,19 +363,11 @@ class Coordinator:
     # install engine, the catalogue entry's engine and what each runtime
     # reports now, and an ambiguous name is never silently given a runtime.
 
-    @staticmethod
-    def _engine_kind() -> str:
-        return "llama.cpp" if runtime.managed_engine() is not None else "ollama"
-
-    def default_model(self, scope: str) -> str:
-        """Every workflow defaults to automatic assignment."""
-        return models.AUTO
-
     def code_validation(self) -> dict:
         """Which sandbox controls this computer has; observed once per run."""
         if getattr(self, "_code_validation", None) is None:
             try:
-                self._code_validation = sandbox_probe.probe()
+                self._code_validation = self.local_sandbox.status()
             except Exception as exc:                       # noqa: BLE001
                 self._code_validation = {"available": False, "controls": [],
                                          "detail": f"The sandbox check failed: {exc}"}
@@ -761,11 +762,6 @@ class Coordinator:
                 evidence_source=item.get("evidence_source") or "",
                 check=check, check_kind=check_kind, structured=structured))
         return found
-
-    def preview_model(self, scope: str, observed: dict | None = None) -> str | None:
-        """The model a generic request in this workflow would use now, as a key."""
-        choice = self.choose_model(scope, observed=observed)
-        return choice["key"]
 
     def request_task(self, scope: str, text: str = "", *, images: bool = False,
                      estimated_tokens: int = 0, default_budget: int = 6000) -> router.Task:
@@ -4677,7 +4673,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._text(payload, "repo_id", 36),
                     self._text(payload, "proposal_id", 36),
                     payload.get("approval_id") or None,
-                    self._text(payload, "conversation_id", 36)))
+                    self._text(payload, "conversation_id", 36),
+                    payload.get("mode") or None))
             elif route == "/v1/code/decision":
                 # Opaque id, yes/no and the owning Code conversation. No
                 # target, digest, mode, path or replacement content is accepted.

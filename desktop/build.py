@@ -25,8 +25,15 @@ What it guarantees:
   and `<artifact>.manifest.json` record the final bytes, and the embedded
   identity is extracted from the finished artifact and compared.
 
-Internal packages are unsigned test evidence. Signing, notarisation and
-publication are separate, user-authorised steps.
+Internal packages are unsigned test evidence. Public (`beta` channel) builds
+carry a maturity from their label (`-preview.N` tester preview, `-beta.N`
+accepted, plain final) and a public build number that only ever goes up. With
+`--signing release` (Beta only, clean checkout at the designated commit) the
+macOS lane signs inside-out with Developer ID and the hardened runtime,
+notarises and staples the app, re-zips it and builds a signed, notarised DMG
+from the same app; the Windows lane signs its program files and setup with
+the configured Authenticode signer. Publication is a separate, user-authorised
+step.
 """
 
 from __future__ import annotations
@@ -69,10 +76,15 @@ def schema_version() -> int:
 
 
 CHANNELS = ("internal", "beta")
-CAPABILITIES = ("qualified", "internal-test", "unavailable")
+CAPABILITIES = ("qualified", "internal-test", "preview-test", "unavailable")
 # Lanes whose install-and-restart helper exists in this application
-# (desktop/update_apply.py). Others ship with install capability "unavailable".
-HELPER_LANES = ("macos-arm64",)
+# (desktop/update_apply.py: macOS app swap, Windows setup in a job, Ubuntu .deb).
+HELPER_LANES = ("macos-arm64", "windows-x64", "linux-x64")
+SIGNING = ("unsigned", "release")
+# What a release-signed package of each lane is signed with.
+RELEASE_SIGNING = {"macos-arm64": "developer-id", "windows-x64": "authenticode",
+                   "linux-x64": "unsigned"}
+FILES_NAME = "refinix-files.json"
 
 
 def update_files(trust_root: Path | None, feed: Path | None,
@@ -110,6 +122,13 @@ def update_files(trust_root: Path | None, feed: Path | None,
                 raise BuildError(f"{path} names no update source")
             if channel == "beta" and not https:
                 raise BuildError(f"{path}: a Beta build needs an HTTPS feed")
+            if channel == "beta" and (
+                    not str(data.get("packages_url", "")).startswith("https://")
+                    or not data.get("package_hosts")
+                    or not all(isinstance(h, str) and re.fullmatch(r"[a-z0-9.-]+", h)
+                               for h in data["package_hosts"])):
+                raise BuildError(f"{path}: a Beta feed names an HTTPS packages_url and "
+                                 "the package_hosts its downloads may be redirected to")
         found[label] = {"path": str(path.resolve()), "name": name,
                         "sha256": sha256_file(path)}
     if channel == "beta" and not (found["trust_root"] and found["update_feed"]):
@@ -123,17 +142,33 @@ def app_version() -> str:
 
 
 def label_number(version: str, channel: str) -> int | None:
-    """The `<n>` of `<APP_VERSION>-<channel>.<n>`; None for a plain release label."""
-    base = re.escape(app_version())
-    tag = {"internal": "internal", "beta": "beta"}[channel]
-    match = re.fullmatch(rf"{base}(?:-{tag}\.(\d+))?", version)
-    if not match:
-        raise BuildError(f"version {version!r} must be {app_version()}-{tag}.<n>"
-                         + (f" or {app_version()}" if channel == "beta" else "")
-                         + " (the application version is set in build_info.py)")
-    if channel == "internal" and match.group(1) is None:
-        raise BuildError(f"an internal build is labelled {app_version()}-internal.<n>")
-    return int(match.group(1)) if match.group(1) else None
+    """The `<n>` of the label; None for a plain final release label.
+
+    Internal: `<APP_VERSION>-internal.<n>`. Beta: `<APP_VERSION>-preview.<n>`
+    (tester preview), `<APP_VERSION>-beta.<n>` (accepted) or `<APP_VERSION>`.
+    """
+    sys.path.insert(0, str(REPO))
+    from backend.coordinator import release  # noqa: PLC0415
+    tags = ("internal",) if channel == "internal" else ("preview", "beta", None)
+    try:
+        label = release.parse(version)
+    except release.LabelError:
+        label = None
+    if label is None or label.core != app_version() or label.tag not in tags:
+        wanted = (f"{app_version()}-internal.<n>" if channel == "internal" else
+                  f"{app_version()}-preview.<n>, {app_version()}-beta.<n> or "
+                  f"{app_version()}")
+        raise BuildError(f"version {version!r} must be {wanted} (the application version "
+                         "is set in build_info.py)")
+    return label.number
+
+
+def maturity_of(version: str, channel: str) -> str | None:
+    if channel == "internal":
+        return None
+    sys.path.insert(0, str(REPO))
+    from backend.coordinator import release  # noqa: PLC0415
+    return release.parse(version).maturity
 
 
 def recorded_numbers(lane: str, records: list[dict], out_root: Path) -> list[int]:
@@ -160,11 +195,17 @@ def recorded_numbers(lane: str, records: list[dict], out_root: Path) -> list[int
 
 def bundle_build(version: str, channel: str, explicit: int | None, lane: str,
                  records: list[dict], out_root: Path) -> int:
-    """The whole-number CFBundleVersion: the label's <n>, strictly increasing."""
+    """The whole-number build (CFBundleVersion, Windows X.Y.Z.N), strictly increasing.
+
+    Internal builds use the label's <n>. Every public build names a public
+    build number with --build-number: one linear history across previews and
+    accepted builds, so build-number order is release order.
+    """
     number = label_number(version, channel)
-    if number is None:
-        if explicit is None:
-            raise BuildError("a release label needs --build-number")
+    if channel == "beta":
+        if explicit is None or explicit < 1:
+            raise BuildError("a public build needs --build-number, its public build "
+                             "number, above every earlier public build")
         number = explicit
     elif explicit is not None and explicit != number:
         raise BuildError("--build-number must equal the label's number")
@@ -177,10 +218,16 @@ def bundle_build(version: str, channel: str, explicit: int | None, lane: str,
 
 
 def install_capability(lane: str, channel: str, requested: str | None,
-                       evidence: Path | None) -> dict:
-    """Whether this package may offer Install and restart, and on what basis."""
+                       evidence: Path | None, maturity: str | None = None) -> dict:
+    """Whether this package may offer Install and restart, and on what basis.
+
+    internal-test: internal builds. preview-test: tester previews, whose
+    installs are themselves the device test. qualified: accepted or final
+    builds, naming the accepted qualification record. Otherwise unavailable.
+    """
     if requested is None:
         requested = ("internal-test" if channel == "internal" and lane in HELPER_LANES
+                     else "preview-test" if maturity == "preview" and lane in HELPER_LANES
                      else "unavailable")
     if requested not in CAPABILITIES:
         raise BuildError(f"unknown install capability {requested!r}")
@@ -189,6 +236,10 @@ def install_capability(lane: str, channel: str, requested: str | None,
                          "unavailable")
     if requested == "internal-test" and channel != "internal":
         raise BuildError("internal-test install capability is for internal builds")
+    if requested == "preview-test" and maturity != "preview":
+        raise BuildError("preview-test install capability is for tester previews")
+    if requested == "qualified" and maturity == "preview":
+        raise BuildError("a tester preview is not a qualified install; it is the test")
     record = {"capability": requested, "evidence_sha256": None}
     if requested == "qualified":
         # Configuration is not qualification: a qualified capability names the
@@ -345,7 +396,8 @@ def toolchain_identity(lane: str) -> dict:
 def input_identity(lane: str, *, toolchain: dict | None = None,
                    trust_root: str | None = None, update_feed: str | None = None,
                    channel: str = "internal", version: str | None = None,
-                   capability: dict | None = None) -> dict:
+                   capability: dict | None = None, signing: str = "unsigned",
+                   publisher: str | None = None) -> dict:
     snapshot, listing = packaging_plan.snapshot_digest(lane)
     pins = json.loads((DESKTOP / "engine" / "engine-pins.json").read_text(encoding="utf-8"))
     entry = packaging_plan.LANES[lane]
@@ -368,6 +420,8 @@ def input_identity(lane: str, *, toolchain: dict | None = None,
         "channel": channel,
         "version": version,
         "install_capability": capability,
+        "maturity": maturity_of(version, channel) if version else None,
+        "signing": signing, "publisher": publisher,
         "schema_version": schema_version(),
     }
     return {"input_digest": canonical_digest(components), "components": components,
@@ -376,7 +430,7 @@ def input_identity(lane: str, *, toolchain: dict | None = None,
 
 # The finished files each lane produces; a record missing any of them is
 # not a complete build set and cannot stand in for one.
-ARTIFACT_KINDS = {"macos-arm64": (".zip",), "windows-x64": (".exe",),
+ARTIFACT_KINDS = {"macos-arm64": (".zip", ".dmg"), "windows-x64": (".exe",),
                   "linux-x64": (".AppImage", ".deb")}
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -454,14 +508,20 @@ def trim_engine(root: Path) -> None:
             path.unlink()
 
 
-def prepare_engines(lane: str, work: Path, cache: Path) -> list[dict]:
+def prepare_engines(lane: str, work: Path, cache: Path, sign=None) -> list[dict]:
+    """Fetch, verify and trim each engine; with `sign`, sign its binaries
+    before the manifest is written, so the manifest describes signed bytes
+    (it still records the upstream archive's SHA-256)."""
     pins = engine_fetch.load_pins()
     prepared = []
     for engine_lane in packaging_plan.LANES[lane].engines:
         target = work / "engine" / engine_lane
         engine_fetch.fetch(engine_lane, destination=target, cache=cache, pins=pins)
         trim_engine(target)
+        signed = sign(target) if sign else []
         manifest = engine_fetch.describe(target, pins, engine_lane)
+        if signed:
+            manifest["re_signed"] = {"signing": "developer-id", "files": signed}
         (target / engine_fetch.MANIFEST_NAME).write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         prepared.append({"lane": engine_lane, "path": target, "manifest": manifest,
@@ -588,6 +648,123 @@ def verify_update_files(resources: Path) -> None:
             raise BuildError(f"{Path(source).name} is missing from the package or changed")
 
 
+# --------------------------------------------------------------------------
+# Release signing (Beta only; credentials come from the release host, never
+# from source, and are never printed)
+# --------------------------------------------------------------------------
+
+ENTITLEMENTS = DESKTOP / "macos" / "entitlements.plist"
+MAC_SIGN_IDENTITY = "REFINIX_MAC_SIGN_IDENTITY"      # "Developer ID Application: … (TEAMID)"
+MAC_TEAM_ID = "REFINIX_MAC_TEAM_ID"
+MAC_NOTARY_PROFILE = "REFINIX_NOTARY_PROFILE"         # a notarytool keychain profile name
+WINDOWS_SIGN_COMMAND = "REFINIX_WINDOWS_SIGN_COMMAND"  # signtool command line with {file}
+WINDOWS_PUBLISHER = "REFINIX_WINDOWS_PUBLISHER"       # the expected certificate subject
+
+
+def release_signing(lane: str, signing: str, environ=None) -> dict:
+    """What this build is signed with and by whom; refuses missing credentials."""
+    environ = os.environ if environ is None else environ
+    if signing != "release" or RELEASE_SIGNING[lane] == "unsigned":
+        return {"signing": "unsigned", "publisher": None}
+    if lane == "macos-arm64":
+        missing = [v for v in (MAC_SIGN_IDENTITY, MAC_TEAM_ID, MAC_NOTARY_PROFILE)
+                   if not environ.get(v)]
+        if missing:
+            raise BuildError(f"release signing on macOS needs {', '.join(missing)} set on "
+                             "this release Mac (Developer ID identity, Team ID, notarytool "
+                             "keychain profile)")
+        if not re.fullmatch(r"[A-Z0-9]{10}", environ[MAC_TEAM_ID]):
+            raise BuildError(f"{MAC_TEAM_ID} is not a 10-character Team ID")
+        return {"signing": "developer-id", "publisher": environ[MAC_TEAM_ID]}
+    missing = [v for v in (WINDOWS_SIGN_COMMAND, WINDOWS_PUBLISHER) if not environ.get(v)]
+    if missing:
+        raise BuildError(f"release signing on Windows needs {', '.join(missing)} set on the "
+                         "signing host")
+    if "{file}" not in environ[WINDOWS_SIGN_COMMAND]:
+        raise BuildError(f"{WINDOWS_SIGN_COMMAND} must contain {{file}}")
+    return {"signing": "authenticode", "publisher": environ[WINDOWS_PUBLISHER]}
+
+
+def check_release_checkout(source_commit: str | None, run=subprocess.run) -> None:
+    """Release builds come from a clean checkout of the designated commit."""
+    head = run(["git", "rev-parse", "HEAD"], cwd=str(REPO), capture_output=True, text=True,
+               check=False).stdout.strip()
+    dirty = run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=str(REPO),
+                capture_output=True, text=True, check=False).stdout.strip()
+    if not source_commit or head != source_commit:
+        raise BuildError(f"a release build needs --source-commit equal to HEAD ({head})")
+    if dirty:
+        raise BuildError("a release build needs a clean checkout (tracked files changed)")
+
+
+def codesign_file(path: Path, identity: str, *, entitlements: Path | None = None,
+                  run=None) -> None:
+    run = run or _check
+    argv = ["/usr/bin/codesign", "--force", "--timestamp", "--options", "runtime",
+            "--sign", identity]
+    if entitlements is not None:
+        argv += ["--entitlements", str(entitlements)]
+    run(argv + [str(path)])
+
+
+def sign_engine_files(root: Path, identity: str, run=None) -> list[str]:
+    """Developer ID on the engine's own binaries, before its manifest is written,
+    so the manifest's file hashes are of the signed bytes."""
+    signed = []
+    for path in sorted(macho_files(root)):
+        codesign_file(path, identity, run=run)
+        signed.append(path.name)
+    return signed
+
+
+def sign_app(app: Path, identity: str, team: str, engines_root: Path, run=None) -> None:
+    """Inside-out: nested code first, then frameworks, then the app itself."""
+    run = run or _check
+    nested = [p for p in macho_files(app)
+              if engines_root not in p.parents
+              and p != app / "Contents" / "MacOS" / "Refinix"]
+    for path in sorted(nested, key=lambda p: len(p.parts), reverse=True):
+        codesign_file(path, identity, run=run)
+    for framework in sorted((app / "Contents" / "Frameworks").glob("*.framework"),
+                            reverse=True):
+        codesign_file(framework, identity, run=run)
+    codesign_file(app, identity, entitlements=ENTITLEMENTS, run=run)
+    run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)])
+    run(["/usr/bin/codesign", "--verify", "--deep", "--strict",
+         f'-R=anchor apple generic and certificate leaf[subject.OU] = "{team}"', str(app)])
+
+
+def notarize(path: Path, profile: str, run=None) -> dict:
+    """Submit to Apple's notary service and wait; refuse anything but Accepted."""
+    result = subprocess.run(["/usr/bin/xcrun", "notarytool", "submit", str(path),
+                             "--keychain-profile", profile, "--wait",
+                             "--output-format", "json"], capture_output=True, text=True,
+                            check=False) if run is None else run(path, profile)
+    try:
+        answer = json.loads(result.stdout)
+    except (ValueError, AttributeError):
+        answer = {}
+    if result.returncode != 0 or answer.get("status") != "Accepted":
+        raise BuildError(f"notarisation of {path.name} was not accepted: "
+                         f"{answer.get('status') or (result.stderr or '')[-400:]}")
+    return {"id": answer.get("id"), "status": answer.get("status")}
+
+
+def make_dmg(app: Path, dmg: Path, work: Path, run=None) -> Path:
+    """The website download: the same app, with a link to Applications."""
+    run = run or _check
+    stage = work / "dmg"
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir()
+    _check(["/usr/bin/ditto", "--norsrc", "--noextattr", str(app), str(stage / app.name)])
+    os.symlink("/Applications", stage / "Applications")
+    dmg.unlink(missing_ok=True)
+    run(["/usr/bin/hdiutil", "create", "-volname", "Refinix", "-srcfolder", str(stage),
+         "-fs", "HFS+", "-format", "UDZO", "-ov", str(dmg)])
+    return dmg
+
+
 def build_macos(args, work: Path, identity_file: Path, engines: list[dict]) -> list[Path]:
     floor = expected_macos_floor(engines)
     env = dict(os.environ, REFINIX_BUILD_IDENTITY=str(identity_file),
@@ -606,17 +783,44 @@ def build_macos(args, work: Path, identity_file: Path, engines: list[dict]) -> l
     if actual > floor:
         raise BuildError(f"{which} needs macOS {'.'.join(map(str, actual))}, above the "
                          f"declared minimum {'.'.join(map(str, floor))}")
-    # Adding the engine changed the bundle, so the ad-hoc signature is redone.
-    # This is not Developer ID signing or notarisation.
-    _check(["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)])
-    _check(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)])
     artifact = Path(args.out) / f"Refinix-{args.version}-macos-arm64.zip"
-    # No resource forks or extended attributes: the archive is the app's files
-    # and links only, which is what the in-app installer expects.
-    _check(["/usr/bin/ditto", "-c", "-k", "--norsrc", "--noextattr", "--keepParent",
-            str(app), str(artifact)])
+    dmg = Path(args.out) / f"Refinix-{args.version}-macos-arm64.dmg"
+
+    def archive():
+        # No resource forks or extended attributes: the archive is the app's
+        # files and links only, which is what the in-app installer expects.
+        artifact.unlink(missing_ok=True)
+        _check(["/usr/bin/ditto", "-c", "-k", "--norsrc", "--noextattr", "--keepParent",
+                str(app), str(artifact)])
+
+    if args.signed["signing"] == "developer-id":
+        identity_name = os.environ[MAC_SIGN_IDENTITY]
+        profile = os.environ[MAC_NOTARY_PROFILE]
+        sign_app(app, identity_name, args.signed["publisher"], resources / "engine")
+        # Notarise the app (as a ZIP), staple the ticket to the app, then the
+        # update payload is the re-zipped stapled app.
+        archive()
+        args.notarization = {"app": notarize(artifact, profile)}
+        _check(["/usr/bin/xcrun", "stapler", "staple", str(app)])
+        _check(["/usr/bin/xcrun", "stapler", "validate", str(app)])
+        archive()
+        # The website download is a DMG of the same stapled app, itself
+        # signed, notarised and stapled.
+        make_dmg(app, dmg, work)
+        _check(["/usr/bin/codesign", "--force", "--timestamp", "--sign", identity_name,
+                str(dmg)])
+        args.notarization["dmg"] = notarize(dmg, profile)
+        _check(["/usr/bin/xcrun", "stapler", "staple", str(dmg)])
+        _check(["/usr/bin/xcrun", "stapler", "validate", str(dmg)])
+    else:
+        # Adding the engine changed the bundle, so the ad-hoc signature is
+        # redone. This is not Developer ID signing or notarisation.
+        _check(["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)])
+        _check(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)])
+        archive()
+        make_dmg(app, dmg, work)
     args.min_os = ".".join(map(str, floor))
-    return [artifact]
+    return [artifact, dmg]
 
 
 def build_pyinstaller(work: Path, identity_file: Path, staged: Path,
@@ -639,6 +843,16 @@ def build_pyinstaller(work: Path, identity_file: Path, staged: Path,
         raise BuildError("the build identity is missing from the package")
     verify_update_files(resources)
     return onedir
+
+
+def write_file_listing(onedir: Path) -> Path:
+    """Every shipped file's size and SHA-256, for the in-app "completely
+    installed" check after an update (desktop/install_check.py)."""
+    from install_check import file_listing  # noqa: PLC0415 - desktop/ is on sys.path
+    path = onedir / "_internal" / FILES_NAME
+    path.write_text(json.dumps(file_listing(onedir), indent=1, sort_keys=True) + "\n",
+                    encoding="utf-8")
+    return path
 
 
 SIGNATURE_PATH_VARIABLE = "REFINIX_SIGNATURE_PATH"
@@ -666,6 +880,9 @@ def verify_microsoft_signature(path: Path, run=subprocess.run) -> None:
 def build_windows(args, work: Path, identity_file: Path, staged: Path,
                   engines: list[dict], cache: Path) -> list[Path]:
     onedir = build_pyinstaller(work, identity_file, staged, engines)
+    if args.signed["signing"] == "authenticode":
+        sign_windows_files(onedir)
+    write_file_listing(onedir)
     iscc = find_iscc()
     if not iscc:
         raise BuildError("Inno Setup (ISCC.exe) was not found on this build host")
@@ -674,17 +891,58 @@ def build_windows(args, work: Path, identity_file: Path, staged: Path,
     webview2 = obtain_tool("webview2_standalone_x64", cache)
     verify_microsoft_signature(webview2)
     base = f"Refinix-{args.version}-windows-x64-setup"
-    _check([iscc, f"/DAppVersion={args.version}", f"/DSourceDir={onedir}",
-            f"/DOutputDir={Path(args.out).resolve()}", f"/DOutputBase={base}",
-            f"/DWebView2Installer={webview2}",
-            str(DESKTOP / "windows" / "refinix.iss")])
+    sys.path.insert(0, str(REPO))
+    from backend.coordinator import release  # noqa: PLC0415
+    command = [iscc, f"/DAppVersion={args.version}", f"/DSourceDir={onedir}",
+               f"/DOutputDir={Path(args.out).resolve()}", f"/DOutputBase={base}",
+               f"/DWebView2Installer={webview2}",
+               f"/DVersionInfo={release.parse(args.version).windows(args.bundle_build)}"]
+    if args.signed["signing"] == "authenticode":
+        # Inno signs the setup and its uninstaller with the same signer.
+        template = os.environ[WINDOWS_SIGN_COMMAND].replace("{file}", "$f")
+        command += [f"/Srefinix={template}", "/DSignTool=refinix"]
+    _check(command + [str(DESKTOP / "windows" / "refinix.iss")])
+    setup = Path(args.out) / f"{base}.exe"
+    if args.signed["signing"] == "authenticode":
+        for path in (setup, onedir / "Refinix.exe"):
+            verify_authenticode(path, args.signed["publisher"])
     args.min_os = "Windows 11 (10.0.22000)"
-    return [Path(args.out) / f"{base}.exe"]
+    return [setup]
+
+
+def sign_windows_files(onedir: Path, run=None) -> list[str]:
+    """Authenticode on Refinix's own program before the file list is written."""
+    run = run or _check
+    template = os.environ[WINDOWS_SIGN_COMMAND]
+    signed = []
+    for path in [onedir / "Refinix.exe"]:
+        import shlex  # noqa: PLC0415
+        run([part.replace("{file}", str(path)) for part in shlex.split(template, posix=False)])
+        signed.append(path.name)
+    return signed
+
+
+def verify_authenticode(path: Path, publisher: str, run=subprocess.run) -> None:
+    env = dict(os.environ, **{SIGNATURE_PATH_VARIABLE: str(Path(path).resolve())})
+    result = run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                  SIGNATURE_SCRIPT], capture_output=True, text=True, env=env)
+    status, _, subject = (result.stdout or "").strip().partition("|")
+    if result.returncode != 0 or status != "Valid" or subject != publisher:
+        raise BuildError(f"{path.name} is not validly signed by {publisher} "
+                         f"({status or result.stderr.strip()[-200:]}; {subject!r})")
+
+
+DEB_NOTES = {None: "Internal test build. Unsigned. Not for distribution.",
+             "preview": "Tester preview: pending device testing. Not an accepted release.",
+             "accepted": "Refinix Beta.", "final": "Refinix."}
 
 
 def build_linux(args, work: Path, identity_file: Path, staged: Path,
                 engines: list[dict], cache: Path) -> list[Path]:
+    sys.path.insert(0, str(REPO))
+    from backend.coordinator import release  # noqa: PLC0415
     onedir = build_pyinstaller(work, identity_file, staged, engines)
+    write_file_listing(onedir)
     icon = packaging_plan.ICONS / "refinix-256.png"
     outputs = []
     # AppImage: one user-writable file; replaced atomically on update.
@@ -711,15 +969,44 @@ def build_linux(args, work: Path, identity_file: Path, staged: Path,
         folder = tree / "usr" / "share" / "icons" / "hicolor" / f"{size}x{size}" / "apps"
         folder.mkdir(parents=True)
         shutil.copy2(packaging_plan.ICONS / f"refinix-{size}.png", folder / "refinix.png")
+    # In-app updates of the .deb: the polkit actions that let exactly
+    # /opt/refinix/Refinix --deb-* run as root, each behind an administrator
+    # password (desktop/deb_root.py).
+    actions = tree / "usr" / "share" / "polkit-1" / "actions"
+    actions.mkdir(parents=True)
+    shutil.copy2(DESKTOP / "linux" / "com.refinix.desktop.policy",
+                 actions / "com.refinix.desktop.policy")
     (tree / "DEBIAN").mkdir()
+    label = release.parse(args.version)
+    installed_kb = sum(p.stat().st_size for p in tree.rglob("*")
+                       if p.is_file() and not p.is_symlink()) // 1024 + 1
     control = (DESKTOP / "linux" / "control.in").read_text(encoding="utf-8")
-    (tree / "DEBIAN" / "control").write_text(
-        control.replace("@DEB_VERSION@", args.version.replace("-", "~")), encoding="utf-8")
-    deb = Path(args.out) / f"refinix_{args.version.replace('-', '~')}_amd64.deb"
+    for key, value in {"@DEB_VERSION@": label.debian(),
+                       "@INSTALLED_SIZE@": str(installed_kb),
+                       "@DESCRIPTION_NOTE@": DEB_NOTES[label.maturity]}.items():
+        control = control.replace(key, value)
+    check_control(control)
+    (tree / "DEBIAN" / "control").write_text(control, encoding="utf-8")
+    deb = Path(args.out) / release.asset_name(args.version, "linux-x64", "deb")
     _check(["dpkg-deb", "--build", "--root-owner-group", str(tree), str(deb)])
     outputs.append(deb)
     args.min_os = f"Ubuntu 24.04 or later (glibc {_platform.libc_ver()[1]} build host)"
     return outputs
+
+
+# The only control fields a Refinix package carries; the root update step
+# refuses any other (desktop/deb_root.py ALLOWED_FIELDS).
+DEB_FIELDS = ("Package", "Version", "Architecture", "Maintainer", "Installed-Size",
+              "Section", "Priority", "Homepage", "Description", "Depends")
+
+
+def check_control(text: str) -> None:
+    names = [line.split(":", 1)[0] for line in text.splitlines()
+             if line and not line.startswith((" ", "\t"))]
+    extra = sorted(set(names) - set(DEB_FIELDS))
+    if extra or "@" in text:
+        raise BuildError(f"the package control file has unsupported or unfilled fields: "
+                         f"{extra or 'placeholder left'}")
 
 
 # --------------------------------------------------------------------------
@@ -758,6 +1045,17 @@ def extract_identity(artifact: Path, work: Path, *, disposable_host: bool = Fals
     disposable (a fresh CI runner) that has no Refinix registered.
     """
     name = artifact.name
+    if name.endswith(".dmg"):
+        mount = work / "dmg-check"
+        mount.mkdir(exist_ok=True)
+        _check(["/usr/bin/hdiutil", "attach", "-nobrowse", "-readonly", "-noautoopen",
+                "-mountpoint", str(mount), str(artifact)])
+        try:
+            return json.loads((mount / "Refinix.app" / "Contents" / "Resources" / IDENTITY_NAME)
+                              .read_text(encoding="utf-8"))
+        finally:
+            subprocess.run(["/usr/bin/hdiutil", "detach", str(mount)], capture_output=True,
+                           check=False, timeout=120)
     if name.endswith(".zip"):
         with zipfile.ZipFile(artifact) as bundle:
             return json.loads(bundle.read(f"Refinix.app/Contents/Resources/{IDENTITY_NAME}"))
@@ -804,13 +1102,51 @@ def extract_identity(artifact: Path, work: Path, *, disposable_host: bool = Fals
     raise BuildError(f"unknown artifact type: {name}")
 
 
+BUILD_TITLES = {None: "Refinix internal test build", "preview": "Refinix tester preview",
+                "accepted": "Refinix Beta", "final": "Refinix"}
+BUILD_STATUS = {
+    (None, "unsigned"): "**Internal test build. Unsigned. Not for distribution.** This package "
+                        "is test evidence only; it is not a Beta release and is never offered "
+                        "as an update to a released Refinix.",
+    ("preview", "unsigned"): "**Tester preview — pending device testing.** Not an accepted "
+                             "release. This platform's package is unsigned.",
+    ("preview", "developer-id"): "**Tester preview — pending device testing.** Signed with "
+                                 "Developer ID and notarised by Apple. Not an accepted "
+                                 "release.",
+    ("preview", "authenticode"): "**Tester preview — pending device testing.** Authenticode "
+                                 "signed. Not an accepted release.",
+    ("accepted", "developer-id"): "**Refinix Beta.** Signed with Developer ID and notarised.",
+    ("accepted", "authenticode"): "**Refinix Beta.** Authenticode signed.",
+    ("accepted", "unsigned"): "**Refinix Beta.**",
+    ("final", "developer-id"): "**Refinix.** Signed with Developer ID and notarised.",
+    ("final", "authenticode"): "**Refinix.** Authenticode signed.",
+    ("final", "unsigned"): "**Refinix.**",
+}
+
+
+def install_steps(lane: str, signing: str) -> str:
+    if lane == "macos-arm64" and signing == "developer-id":
+        return ("1. Open the DMG and drag **Refinix** onto **Applications**.\n"
+                "2. Open Refinix from Applications. It is signed and notarised, so macOS "
+                "opens it after the usual first-open question.")
+    if lane == "windows-x64" and signing == "authenticode":
+        return ("1. Run the setup file. It is signed; Windows shows the publisher.\n"
+                "2. Setup installs for your account only; no administrator password is "
+                "needed.")
+    return INSTALL_STEPS[lane]
+
+
 INSTALL_STEPS = {
-    "macos-arm64": "1. Unzip the file and move **Refinix.app** to Applications.\n"
+    "macos-arm64": "1. Open the DMG and drag **Refinix** onto **Applications** (or unzip "
+                   "the ZIP and move **Refinix.app** to Applications).\n"
                    "2. Open it. Because this build is unsigned, macOS blocks the first "
                    "open: open System Settings → Privacy & Security and choose "
                    "**Open Anyway** for Refinix, then confirm.",
     "windows-x64": "1. Run the setup file. Because it is unsigned, Windows SmartScreen "
-                   "may warn: choose **More info → Run anyway**.\n"
+                   "may warn: choose **More info → Run anyway**. With **Smart App "
+                   "Control** turned on, Windows 11 blocks unsigned programs entirely and "
+                   "this build cannot be installed; it does not ask you to turn that "
+                   "protection off.\n"
                    "2. Setup installs for your account only; no administrator password "
                    "is needed.",
     "linux-x64": "Recommended — **.deb:** double-click it to install with App Center. "
@@ -839,8 +1175,9 @@ UNINSTALL = {
 }
 UPDATE_LIMITATION = ("- Updates: Check for updates works only in a build given an update trust "
                      "root and an update source. Install and restart is offered only where "
-                     "this package's install capability allows it (internal macOS test "
-                     "builds installed in Applications); elsewhere Settings explains why.")
+                     "this package's install capability allows it and Refinix was installed "
+                     "the standard way (Applications on macOS, the per-user setup on "
+                     "Windows, the .deb on Ubuntu); elsewhere Settings explains why.")
 LIMITATIONS = {
     "macos-arm64": "- Code validation in a sandbox is not available on macOS in this "
                    "build; Code changes keep the \"Not sandbox tested\" label.\n"
@@ -855,8 +1192,14 @@ LIMITATIONS = {
 }
 
 
+def _format(name: str) -> str | None:
+    sys.path.insert(0, str(REPO))
+    from backend.coordinator import release  # noqa: PLC0415
+    return release.format_of(name)
+
+
 def finalize(artifact: Path, identity: dict, *, lane: str, min_os: str,
-             work: Path, disposable_host: bool = False) -> dict:
+             work: Path, disposable_host: bool = False, notarization=None) -> dict:
     extracted = extract_identity(artifact, work, disposable_host=disposable_host)
     if extracted != identity:
         raise BuildError(f"{artifact.name}: the embedded identity does not match the "
@@ -864,7 +1207,10 @@ def finalize(artifact: Path, identity: dict, *, lane: str, min_os: str,
     digest, size = sha256_file(artifact), artifact.stat().st_size
     record = {"artifact": artifact.name, "size": size, "sha256": digest, "lane": lane,
               "minimum_os": min_os, "channel": identity["channel"],
-              "signing": identity["signing"], "embedded_identity": identity,
+              "maturity": identity.get("maturity"),
+              "format": "dmg" if artifact.name.endswith(".dmg") else _format(artifact.name),
+              "signing": identity["signing"], "notarization": notarization,
+              "embedded_identity": identity,
               "embedded_identity_sha256": canonical_digest(identity),
               "finalized_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     (artifact.parent / f"{artifact.name}.sha256").write_text(
@@ -874,11 +1220,16 @@ def finalize(artifact: Path, identity: dict, *, lane: str, min_os: str,
     engines = ", ".join(f"{e['release']} {e['backend']}" for e in identity["engines"])
     notes = (DESKTOP / "TESTING.md.in").read_text(encoding="utf-8")
     for key, value in {
+            "@TITLE@": BUILD_TITLES[identity.get("maturity")],
+            "@STATUS@": BUILD_STATUS[(identity.get("maturity"), identity["signing"])
+                                     if identity["signing"] != "unsigned"
+                                     else (identity.get("maturity"), "unsigned")],
             "@ARTIFACT@": artifact.name, "@VERSION@": identity["version"],
             "@BUILD_SET@": identity["build_set"], "@SHA256@": digest,
             "@OS_LABEL@": lane, "@MIN_OS@": min_os, "@ENGINE@": engines,
             "@SOURCE_DIGEST@": identity["shared_snapshot_digest"],
-            "@INSTALL_STEPS@": INSTALL_STEPS[lane], "@PREREQUISITES@": PREREQUISITES[lane],
+            "@INSTALL_STEPS@": install_steps(lane, identity["signing"]),
+            "@PREREQUISITES@": PREREQUISITES[lane],
             "@UNINSTALL_STEPS@": UNINSTALL[lane],
             "@LIMITATIONS@": LIMITATIONS[lane] + "\n" + UPDATE_LIMITATION}.items():
         notes = notes.replace(key, value)
@@ -893,8 +1244,14 @@ def build_identity(args, lane: str, inputs: dict, engines: list[dict]) -> dict:
         "identity_version": 2, "product": "Refinix", "version": args.version,
         "build_set": args.build_set,
         "channel": inputs["components"].get("channel") or "internal",
-        # No publisher signature or notarisation is applied by this driver.
-        "signing": "unsigned", "bundle_build": getattr(args, "bundle_build", None),
+        # preview / accepted / final for a public build; None for internal.
+        "maturity": inputs["components"].get("maturity"),
+        # What the package is signed with ("unsigned", "developer-id",
+        # "authenticode") and the expected publisher (Team ID or certificate
+        # subject) an update must also carry.
+        "signing": inputs["components"].get("signing") or "unsigned",
+        "publisher": inputs["components"].get("publisher"),
+        "bundle_build": getattr(args, "bundle_build", None),
         "install_capability": capability["capability"],
         "install_qualification": capability["evidence_sha256"],
         "qualified_migrations": [],
@@ -940,6 +1297,11 @@ def main(argv=None) -> int:
     parser.add_argument("--build-number", type=int, default=None,
                         help="whole-number CFBundleVersion for a release label")
     parser.add_argument("--rebuild-reason")
+    parser.add_argument("--signing", choices=SIGNING, default="unsigned",
+                        help="release: Developer ID + notarisation (macOS) or Authenticode "
+                             "(Windows), Beta only, from a clean checkout of "
+                             "--source-commit; credentials come from this host's "
+                             "environment and keychain")
     parser.add_argument("--disposable-host", action="store_true",
                         help="this host is a throwaway runner: the Windows installer "
                              "may be installed and removed to read its identity")
@@ -948,17 +1310,25 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         lane = detect_lane()
+        if args.signing == "release":
+            if args.channel != "beta":
+                raise BuildError("release signing is for Beta builds")
+            check_release_checkout(args.source_commit)
+        args.signed = release_signing(lane, args.signing)
+        args.notarization = None
         update = update_files(args.trust_root, args.update_feed, args.channel)
         records = (json.loads(args.records.read_text(encoding="utf-8"))
                    if args.records.is_file() else [])
         args.bundle_build = bundle_build(args.version, args.channel, args.build_number,
                                          lane, records, REPO / "desktop" / "out")
         capability = install_capability(lane, args.channel, args.install_capability,
-                                        args.qualification_evidence)
+                                        args.qualification_evidence,
+                                        maturity_of(args.version, args.channel))
         inputs = input_identity(
             lane, trust_root=(update["trust_root"] or {}).get("sha256"),
             update_feed=(update["update_feed"] or {}).get("sha256"),
-            channel=args.channel, version=args.version, capability=capability)
+            channel=args.channel, version=args.version, capability=capability,
+            signing=args.signed["signing"], publisher=args.signed["publisher"])
         reuse = find_reuse(records, lane=lane, input_digest=inputs["input_digest"],
                            store=args.store)
         plan = {"lane": lane, "input_digest": inputs["input_digest"],
@@ -979,7 +1349,11 @@ def main(argv=None) -> int:
             (folder / ".metadata_never_index").touch(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="refinix-build-") as directory:
             work = Path(directory)
-            engines = prepare_engines(lane, work, args.cache)
+            sign = None
+            if args.signed["signing"] == "developer-id":
+                identity_name = os.environ[MAC_SIGN_IDENTITY]
+                sign = lambda root: sign_engine_files(root, identity_name)  # noqa: E731
+            engines = prepare_engines(lane, work, args.cache, sign=sign)
             identity = build_identity(args, lane, inputs, engines)
             identity_file = work / IDENTITY_NAME
             identity_file.write_text(json.dumps(identity, indent=2, sort_keys=True) + "\n",
@@ -1005,10 +1379,14 @@ def main(argv=None) -> int:
                 artifacts = build_linux(args, work, identity_file, staged, engines,
                                         args.cache)
             finals = [finalize(a, identity, lane=lane, min_os=args.min_os, work=work,
-                               disposable_host=args.disposable_host)
+                               disposable_host=args.disposable_host,
+                               notarization=(args.notarization or {}).get(
+                                   "dmg" if a.name.endswith(".dmg") else "app"))
                       for a in artifacts]
         record = {"build_set": args.build_set, "version": args.version, "lane": lane,
                   "channel": args.channel, "bundle_build": args.bundle_build,
+                  "maturity": maturity_of(args.version, args.channel),
+                  "signing": args.signed["signing"], "source_commit": args.source_commit,
                   "input_digest": inputs["input_digest"],
                   "shared_snapshot_digest": inputs["components"]["shared_snapshot_digest"],
                   "rebuild_reason": args.rebuild_reason,

@@ -210,3 +210,22 @@ class TestPinnedToolkit(unittest.TestCase):
         problem = shell.toolkit_problem("linux", gtk_probe=lambda: False)
         self.assertIn("WebKitGTK 4.1", problem)
         self.assertIsNone(shell.toolkit_problem("linux", gtk_probe=lambda: True))
+
+    def test_linux_messages_reach_the_person_without_gtk(self):
+        calls = []
+
+        def run(argv, **kwargs):
+            calls.append(argv)
+            return type("R", (), {"returncode": 0})()
+        # GTK first; zenity when GTK is the missing piece; stderr last.
+        self.assertEqual(shell._native_message("T", "x", platform="linux",
+                                               gtk=lambda t, m: True, run=run), "gtk")
+        self.assertEqual(shell._native_message("T", "x", platform="linux",
+                                               gtk=lambda t, m: False,
+                                               which=lambda n: "/usr/bin/zenity", run=run),
+                         "zenity")
+        self.assertEqual(calls[-1][:2], ["/usr/bin/zenity", "--error"])
+        self.assertIn("--no-markup", calls[-1])
+        self.assertEqual(shell._native_message("T", "x", platform="linux",
+                                               gtk=lambda t, m: False,
+                                               which=lambda n: None, run=run), "stderr")

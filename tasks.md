@@ -17,14 +17,51 @@ Keep the phase identifiers for historical references. For the standalone Beta, e
 Phase 2 -> local Phase 4 acceptance -> Phase 5**. **Phase 3 and peer-specific Phase 4 work are deferred
 until after Beta 0.1.** The Beta includes qualified in-app updates on Windows, macOS and Linux.
 
-**Current active phase: Phase 1 — Cross-platform foundation.**
+**Current active phase: Phase 5 — tester preview, device acceptance and publication.** The source
+work of Phases 1, 2, local Phase 4 and Phase 5 is implemented and offline-tested (8 October 2026
+batch, plan v4.3); device acceptance is open on every platform, so none of those phases is complete.
 
-**5 October 2026 planning correction:** the [full user statements](docs/beta-user-direction-2026-10-05.md)
-are preserved verbatim. Align the next owner plan with broad upstream model choice, existing Ollama
-reuse, managed llama.cpp, lightweight recommendations and automatic local task-to-model routing.
-Do not require team certification of every model/device/version. Preserve the existing foundation
-and defer distribution. The user will send the handoff and return the owner's plan for independent
-review before implementation; this document update is not execution authorization.
+**5 October 2026 direction:** the [full user statements](docs/beta-user-direction-2026-10-05.md) are
+preserved verbatim: broad upstream model choice, existing Ollama reuse, managed llama.cpp,
+lightweight recommendations and automatic local task-to-model routing, without team certification
+of every model/device/version, on the existing foundation, with distribution deferred.
+
+### Preview-first sequence (current)
+
+1. Implement and verify (done in source; offline suites and native Ubuntu package checks pass).
+2. Publish a **tester preview** (`0.1.0-preview.N`) through the website: Ubuntu `.deb`; macOS and
+   Windows only once signed, otherwise shown as unavailable. Anonymous website downloads are checked
+   against the published SHA-256 before testers are invited.
+3. The user's device walkthrough on the downloaded packages, alongside an independent deep review
+   of the repository.
+4. One ranked repair batch, published as new immutable versions.
+5. Beta acceptance on the evidence; only then an accepted `0.1.0-beta.N` and a **Download Refinix
+   Beta** link.
+
+### Completed in source (offline-tested; not device-accepted)
+
+- Public Beta update channel: signed TUF feed with tester-preview and accepted pointers, one version
+  ordering key, forward-only publisher, daily refresh, root rotation, offline bundles.
+- In-app updates on all three platforms: macOS app swap; Windows per-user setup inside a
+  kill-on-close job with registry restore and file-list completeness; Ubuntu `.deb` through a
+  password-protected root step with dpkg-state recovery (natively qualified in an Ubuntu 24.04
+  container).
+- Release tooling: Beta package workflow, release assembly, website feed workflows (templates for
+  the website repository), Developer ID/notarisation/DMG and Authenticode build paths.
+- Ubuntu Code sandbox (provisional until device qualification) wired into validation and Apply.
+- Linux native messages, context indicator details, dead-code removal, launcher drift fix.
+- Website tester-preview download section rendered from the release record; scan reading
+  labelled Beta; release workflow lock and Ubuntu build repairs found by local package builds.
+
+### Open acceptance items
+
+- Every device walkthrough (Windows, macOS, Ubuntu) on published packages.
+- Ubuntu sandbox feasibility and qualification on a real desktop (W2.1/W2.3).
+- Developer ID and Windows signing; until then macOS and Windows downloads are unavailable.
+- Native Windows job/installer crash checks on a real Windows machine or runner.
+- The website deployment, Beta keys and live feed (repository owners' steps).
+- The first public build number is 7 or higher: internal builds 1–6 already exist on the
+  release Mac, and macOS orders apps by build number.
 
 Phase 1 is only the first part of the total Refinix Beta path. Completing Phase 1 does **not** mean
 Refinix is Beta-complete, release-ready or production-qualified. It establishes the portable
@@ -42,7 +79,7 @@ detail remain in their focused authorities.
 - Continue prototype work from the existing repository and preserve merged capabilities. Trace each
   relevant UI/API, coordinator, runtime/tool, storage and validator path before adding code; repair
   or adapt the existing path instead of rebuilding it or overlooking available behaviour.
-- Reuse upstream infrastructure and published evidence within the college/hackathon scope. Local
+- Reuse upstream infrastructure and published evidence within the Beta scope. Local
   model admission uses actual compatibility and capacity; team measurements are evidence, not a
   general allowlist. Keep graphical setup, a managed engine path and existing Ollama reuse.
 - Keep the current orchestration harness. LangGraph remains a considered option under
@@ -164,11 +201,11 @@ credential storage, Windows-safe bounded filesystem operations, a desktop packag
 contain the full peer execution role, and unqualified runtime/installer/sandbox paths on the three
 OS families.
 
-### Current SIH reviewer priority
+### Standalone-first priority
 
-For the current SIH reviewer cycle, prioritise a dependable standalone Refinix
-installation on the selected Windows, macOS and Linux profiles before expanding
-the trusted-device mesh.
+For Beta 0.1, prioritise a dependable standalone Refinix installation on the
+selected Windows, macOS and Linux profiles before expanding the trusted-device
+mesh.
 
 The immediate target is:
 
@@ -187,10 +224,10 @@ During this portability pass:
   for the dedicated stabilization pass rather than interrupting cross-platform
   foundation work;
 - after standalone operation is established across all three OS families, run a
-  focused stabilization/bug-fix pass before reviewer packaging and publication;
+  focused stabilization/bug-fix pass before tester-preview packaging and publication;
 - trusted-device discovery, pairing, distributed execution and scheduling remain
   part of the product architecture, but should not delay a usable standalone
-  reviewer build. Resume that work after Beta 0.1 when the standalone baseline is
+  build. Resume that work after Beta 0.1 when the standalone baseline is
   stable and schedule permits.
 
 This is a **Beta 0.1 release-scope reduction**. Discovery, pairing, peer-agent packaging, remote
@@ -475,8 +512,9 @@ observed/enforced evidence.
 
 ## Phase 5 outcome
 
-Produce the first defensible standalone **Refinix Beta 0.1 / SIH Reviewer Preview** on Windows,
-macOS and Linux, including qualified in-app updates and recovery.
+Produce the first defensible standalone **Refinix Beta 0.1** on Windows, macOS and Linux, including
+qualified in-app updates and recovery — reached through the preview-first sequence above: a
+verified tester preview first, device testing on its downloads, one repair batch, then acceptance.
 
 ## Phase 5 required outcomes
 

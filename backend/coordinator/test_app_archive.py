@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import shutil
 import os
 import plistlib
 import stat
@@ -18,8 +20,11 @@ from backend.coordinator import app_archive
 
 REPO = Path(__file__).resolve().parents[2]
 REAL_7G = REPO / "desktop" / "out" / "local-review-20261007g" / "Refinix-0.1.0-macos-arm64.zip"
+# The update trust root an app ships, and its identity's record of it.
+ROOT_BYTES = b'{"signed": {"_type": "root", "version": 1}}'
+ROOT_SHA = hashlib.sha256(ROOT_BYTES).hexdigest()
 IDENTITY = {"version": "0.1.1-internal.2", "lane": "macos-arm64", "channel": "internal",
-            "trust_root": "abc", "schema_version": 15, "engines": []}
+            "trust_root": ROOT_SHA, "schema_version": 15, "engines": []}
 
 
 class Writer:
@@ -44,7 +49,8 @@ class Writer:
         self.archive.close()
 
 
-def write_app(path: Path, *, identity=None, bundle_id="com.refinix.desktop", extra=None):
+def write_app(path: Path, *, identity=None, bundle_id="com.refinix.desktop", extra=None,
+              root=ROOT_BYTES):
     w = Writer(path)
     w.folder("Refinix.app/Contents")
     w.file("Refinix.app/Contents/Info.plist", plistlib.dumps(
@@ -52,6 +58,8 @@ def write_app(path: Path, *, identity=None, bundle_id="com.refinix.desktop", ext
     w.file("Refinix.app/Contents/MacOS/Refinix", b"#!/bin/sh\nexit 0\n", 0o755)
     w.file("Refinix.app/Contents/Resources/refinix-build.json",
            json.dumps(identity or IDENTITY).encode())
+    if root is not None:
+        w.file("Refinix.app/Contents/Resources/refinix-update-root.json", root)
     # The two-link chain the real app carries: Python -> Versions/Current/Python,
     # with Versions/Current -> 3.12.
     w.file("Refinix.app/Contents/Frameworks/Python.framework/Versions/3.12/Python",
@@ -177,7 +185,7 @@ class TestVerifyBundle(Base):
 
     def verify(self, app, **overrides):
         values = dict(version="0.1.1-internal.2", lane="macos-arm64", channel="internal",
-                      trust_root="abc", codesign=lambda _app: None)
+                      trust_root=ROOT_SHA, codesign=lambda _app: None)
         values.update(overrides)
         return app_archive.verify_bundle(app, **values)
 
@@ -192,6 +200,35 @@ class TestVerifyBundle(Base):
             with self.subTest(overrides=list(overrides)):
                 with self.assertRaises(app_archive.ArchiveError):
                     self.verify(app, **overrides)
+
+    def test_a_newer_root_authenticated_from_this_one_is_accepted(self):
+        newer = b'{"signed": {"_type": "root", "version": 2}}'
+        newer_sha = hashlib.sha256(newer).hexdigest()
+        app = self.expand(identity={**IDENTITY, "trust_root": newer_sha}, root=newer)
+        accepted = self.verify(app, trust_root=None, trust_roots={ROOT_SHA, newer_sha})
+        self.assertEqual(accepted["trust_root"], newer_sha)
+        with self.assertRaises(app_archive.ArchiveError) as caught:
+            self.verify(app, trust_root=None, trust_roots={ROOT_SHA})
+        self.assertEqual(caught.exception.code, "identity")
+
+    def test_a_shipped_root_file_that_is_not_the_named_one_is_refused(self):
+        for root in (None, b"another root"):
+            with self.subTest(root=root):
+                shutil.rmtree(self.base / "out", ignore_errors=True)
+                with self.assertRaises(app_archive.ArchiveError) as caught:
+                    self.verify(self.expand(root=root))
+                self.assertEqual(caught.exception.code, "identity")
+
+    def test_a_signed_beta_build_must_come_from_the_expected_team(self):
+        app = self.expand()
+        calls = []
+        self.verify(app, publisher="TEAM123456",
+                    team_check=lambda path, team: calls.append(team))
+        self.assertEqual(calls, ["TEAM123456"])
+        with self.assertRaises(app_archive.ArchiveError) as caught:
+            self.verify(app, publisher="TEAM123456",
+                        team_check=lambda path, team: "signed by OTHERTEAM")
+        self.assertEqual(caught.exception.code, "publisher")
 
     def test_an_app_with_another_bundle_identifier_is_refused(self):
         with self.assertRaises(app_archive.ArchiveError) as caught:

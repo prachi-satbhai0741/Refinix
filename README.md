@@ -1,312 +1,350 @@
 <div align="center">
 
+<img src="frontend/app/assets/refinix-wordmark.png" alt="Official Refinix wordmark" width="460">
+
 # Refinix
 
-**Refinix — a private local agent harness for confidential industrial knowledge work**
+**Private AI for the documents, decisions, and technical work inside an organization.**
 
-*A Smart India Hackathon 2026 submission for running open-weight, multimodal AI entirely on local infrastructure, with trusted-device task orchestration and demonstrable, verifiable offline operation.*
+Work with selected internal information using local models, controlled workflows, and reviewable outputs. Refinix keeps workspace state and action authority with the coordinator that owns the task.
 
-[![SIH 2026](https://img.shields.io/badge/Smart%20India%20Hackathon-2026-FF6B00?style=flat-square)](https://www.sih.gov.in/)
-![Problem Statement](https://img.shields.io/badge/Problem%20Statement-SIH26117-0057B8?style=flat-square)
-![Category](https://img.shields.io/badge/Category-Software-2E8B57?style=flat-square)
-![Theme](https://img.shields.io/badge/Theme-Smart%20Automation-7B2CBF?style=flat-square)
-![Status](https://img.shields.io/badge/Status-Prototype%20%7C%20Beta%20in%20progress-F59E0B?style=flat-square)
-![License](https://img.shields.io/badge/License-Apache--2.0-green?style=flat-square)
+[How it works](#how-refinix-works) · [Architecture](#architecture) · [Security boundary](#security-and-trust-boundary) · [Quick start](#quick-start)
 
 </div>
 
----
+## Why Refinix
 
-## Table of Contents
+An inspection report can contain equipment conditions. A procedure can describe restricted operating practices. An internal repository can expose designs or business logic. Sending this material to an external AI service changes who receives it and which infrastructure processes it—decisions an organization needs to control.
 
-- [SIH Problem Statement](#sih-problem-statement-117)
-- [What Is Refinix?](#what-is-refinix)
-- [Why This Problem Statement](#why-this-problem-statement)
-- [Design Philosophy: Coordinator, Not a Cluster](#design-philosophy-coordinator-not-a-cluster)
-- [Product Surfaces and Setup](#product-surfaces-and-setup)
-- [Proposed Innovation: The Sovereign Proof Card](#proposed-innovation-the-sovereign-proof-card)
-- [Project Boundaries & Trust Model](#project-boundaries--trust-model)
-- [Repository Structure](#repository-structure)
-- [Current Status](docs/evaluation.md#current-status)
-- [Getting Started](#start-here)
-- [Contributing](#contributing)
-- [License](#licence)
+Refinix provides a workspace for using local AI on that work. Chat handles questions and document tasks; Code handles selected repository files and reviewable changes. The coordinator manages context, workflow steps, permissions, saved state, and deliverables around the model.
 
----
+The useful output may be an answer with source references, an approval-note draft, a Word document, or a proposed code change. The model generates content; Refinix determines which inputs it receives and which actions the workflow can perform.
 
-## SIH Problem Statement 117
+### The core idea
 
-| Field | Details |
-|---|---|
-| **Problem Statement ID** | SIH26117 |
-| **Title** | Sovereign On-Premise Agentic AI Workbench using Open-Weight Multimodal LLMs for Confidential Industrial Work |
-| **Organisation** | Mangalore Refinery and Petrochemicals Limited (MRPL) |
-| **Category** | Software |
-| **Theme** | Smart Automation |
-| **Team Name** | Rokunin Sync |
-
-### Challenge Description
-
-Industrial and public-sector organisations — refineries, PSUs, defence-linked manufacturing units, and government offices — generate a large volume of sensitive but routine knowledge work: approval notes, board presentations, engineering calculations, internal tooling code, review of scanned drawings, and inspection reports. This work regularly involves confidential material such as Piping & Instrument Diagrams (P&IDs), financial data, vendor negotiations, unreleased designs, and internal correspondence.
-
-Company policy keeps this data strictly on-premises, which means employees today face a binary choice: do the work manually and forfeit the productivity gains modern AI tools offer, or informally paste confidential material into public cloud AI assistants — a real and growing data-leak risk that policy alone does not prevent.
-
-The challenge calls for a **self-hosted, air-gapped AI workbench** that:
-
-- Runs multiple open-weight multimodal models locally and **automatically selects** the appropriate model for a given task (a coding request should not be handled by the same model or strategy as a document summarisation request).
-- Supports adding new open-weight models over time **without redesigning the system**, given how quickly this space evolves.
-- Behaves as a genuine **agent** — planning multi-step work, invoking local tools (file I/O, sandboxed code execution, spreadsheet operations, internal document search), and iterating rather than answering once and stopping.
-- Handles **multimodal input**: scanned PDFs, handwritten notes, engineering drawings, and photographs, using on-device OCR and vision models.
-- Produces **real deliverables** — approval notes, Word/Excel/PowerPoint files, working code, calculations with visible steps — not chat transcripts.
-- Grounds itself in the **organisation's own knowledge base** (manuals, SOPs, past correspondence) through a local retrieval connector, with nothing leaving the premises.
-- Provides **visible, demonstrable proof** — through logs or a live network monitor — that no external network call is made at any point during operation. This proof, not a written claim, is what the challenge treats as evidence of sovereignty.
-
-The current product requirements, architecture and open decisions are maintained in
-[PROJECT.md](docs/PROJECT.md), the canonical project contract. The older PRD and design documents
-remain historical/reference material.
-
----
-
-<a id="what-is-aegisforge"></a>
-
-## What Is Refinix?
-
-**Refinix** is the product name; **refinix** is the selected repository name
-(formerly AegisForge). The GitHub rename is pending a repository administrator: the
-current remote remains `prachi-satbhai0741/AegisForge`. Existing checkout paths and
-compatibility-sensitive `.aegisforge` application data remain unchanged.
-
-Refinix is one installable application with dedicated **Chat** and **Code**
-surfaces over a shared local agent harness. **Settings**, reached from secondary
-navigation, manages models, jobs, approvals, paired compute, health, and
-sovereignty evidence. Document work is a capability inside Chat rather than a
-separate top-level surface.
-
-Refinix targets Windows, macOS and Linux, with three offline execution modes:
-this device, trusted local-network peers and an organisation's private server.
-A device can request and contribute work; only execution targets need the selected
-models/tools installed. Pairing never merges personal workspaces. Automatic routing
-chooses compatible model/device pairs using task needs, permissions and available
-capacity, while the user retains model and execution-target control.
-
-The open-source platform and a specialised paid offering share this core. The paid
-offering adds authorised customer corpora, workflows, templates, deployment and
-support; it does not require a cloud inference service.
-
-> **Release direction, 2026-10-03:** Continue from the existing prototype and merged source.
-> The [current phase plan](tasks.md) leads to standalone **Refinix Beta 0.1 / SIH Reviewer Preview**
-> on Windows, macOS and Linux with qualified in-app updates. Mesh execution follows after Beta.
-> Historical app/worker observations remain in the [source audit](docs/evaluation.md#beta-source-audit).
-> This scope change establishes no package, device or updater acceptance; a working checkout or
-> old Mac bundle is not a release.
-
----
-
-## Why This Problem Statement
-
-It's worth being explicit about why "just run a local LLM" doesn't satisfy the challenge, because the difficulty is exactly what the evaluation will probe:
-
-- **Model diversity without redesign.** No single open-weight model is simultaneously the best choice for OCR-heavy document work, code generation, and long-context summarisation. A workbench that hardcodes one model becomes obsolete the moment a better open-weight release ships. The router has to be a first-class component, not a wrapper around one model.
-- **"Agentic" is not "chatty."** A system that answers a question well once is not the same as a system that can plan a multi-step task, call tools, check its own output, and recover from a failed step. The challenge explicitly asks for the latter.
-- **Proof, not policy.** Any team can claim "no data leaves the premises." The challenge specifically asks for a way to *show* it — live, during a demo — which means network isolation and evidence-collection have to be designed into the system from the start, not retrofitted for a demo screenshot.
-- **Real file outputs, correctly formatted.** Producing a `.docx`, `.xlsx`, or `.pptx` that actually opens correctly and looks like something a human would sign off on is a meaningfully different engineering problem than producing well-formatted chat text.
-
----
-
-## Design Philosophy: Coordinator, Not a Cluster
-
-Beta 0.1 / SIH Reviewer Preview targets useful **standalone Windows, macOS and Linux** installations
-with qualified local workflows and user-initiated in-app updates. Trusted-device execution is deferred
-until after Beta. Continue from the existing prototype and shared code; the broader architecture
-below is retained product direction, not a first-Beta release claim.
-
-Refinix distributes complete jobs or bounded workflow steps among trusted devices.
-Each model invocation runs on one selected target; there is no model sharding or
-pooled VRAM. Keep canonical workspace state and final-write authority with the
-requester's coordinator. Independent Code and Chat jobs may run concurrently on
-different targets, using receiver-side capacity reservations to avoid overloading
-a device.
-
-The existing Docker/K3s/Redis backend remains useful for managed services and
-isolated validation Jobs. It is an **optional server execution profile**, not a
-requirement for desktop installation or peer membership. Windows/macOS/Linux
-peers communicate through Refinix's authenticated application API; they do not
-need to become Kubernetes nodes. See the current [project contract](docs/PROJECT.md).
-
----
-
-## Product Surfaces and Setup
-
-The production installer packages or graphically provisions its qualified
-dependencies. First launch scans hardware and offers up to six compatible model
-recommendations, highest suitability first, plus Show more and supported user
-choices. Scores distinguish estimates from measured results; a fit score is not
-accuracy. Warn for heavy choices and refuse known-incompatible execution.
-
-Model downloads, imports and updates are explicit. Ordinary runtime, retrieval,
-discovery and LAN execution require no Internet connection or cloud account.
-The installer should not require terminal/package-manager/certificate setup;
-unavoidable OS permissions and unsupported prerequisites must be explained.
-A remote-only client can skip local models. These are target installer behaviours,
-not a claim that the existing prototype package already provides them.
-
-The college/hackathon Beta direction is to reuse existing local Ollama models through its API without
-copying weights and offer a managed upstream llama.cpp path for people who need it. Users may browse
-compatible upstream models and choose beyond lightweight hardware recommendations. Model origin
-selects the runtime internally; automatic task-to-model routing is required, with optional manual
-preferences. Team measurements are evidence rather than a general model/device/version allowlist.
-These are updated requirements, not a claim that the current source completes them. See the
-[runtime contract](docs/PROJECT.md#13-runtime-and-resource-policy) and the
-[user's full verbatim direction](docs/beta-user-direction-2026-10-05.md).
-
-Keep the existing orchestration harness for now. LangGraph remains an unadopted alternative to
-evaluate for a demonstrated workflow gap; comparative benefit in Refinix is unmeasured. See the
-[orchestration decision](docs/PROJECT.md#70-orchestration-choice-and-alternatives).
-
-The first Beta is gated by a complete standalone reviewer journey on a narrow qualified
-matrix containing all three OS families, without pairing or a managed backend. Qualify Code sandbox
-validation on an eligible local profile and disclose other profiles' validation limits.
-Settings → Models remains available after onboarding for supported
-provisioning, selection and safe removal. See the [model lifecycle](docs/model-catalog.md#persistent-model-management).
-The [release contract](docs/releases.md#beta-01-publication) requires qualified in-app updates and
-authenticated manual recovery for 0.1; broader platform/upgrade/mesh matrices follow. These are
-targets, not a claim that packages or the updater are accepted. A main change reaches users only
-as an accepted, versioned release.
-
-Preserve the existing UI:
-
-| Surface | Purpose |
-|---|---|
-| Chat | General local agent and local knowledge; document work arrives here as a selectable skill with attachments |
-| Code | Repository context, isolated execution, validation, and patches |
-| Settings | Models, devices, jobs, approvals, health, and sovereignty evidence — secondary navigation |
-
-For each task the user may choose Auto, this device, trusted devices, or a
-specific paired target in the full product direction. Beta execution stays on this device;
-any offered automatic model choice is local, and unfinished peer controls remain unavailable.
-Independent jobs can run concurrently where hardware
-permits. The coordinator retains canonical state and exactly-once final-write
-authority.
-
----
-
-## Proposed Innovation: The Sovereign Proof Card
-
-For every completed job, the proposed **Sovereign Proof Card** is intended to bundle together, in one inspectable artifact:
-
-- The **routing decision and its rationale** — which model and device were selected, and why.
-- **File checksums** for any generated deliverables, so outputs can be verified as untampered.
-- **Validation results** — for example, sandbox test output for a coding task, or extraction confidence for an OCR task.
-- **Observed zero-egress evidence** — a record, tied to that specific job, that no external network call occurred during its execution.
-
-The goal of the Proof Card is to make the project's central sovereignty claim
-**inspectable during a live demonstration**, rather than something judges are
-asked to take on faith. The current [builder](backend/coordinator/proof.py) and UI
-exist; network evidence is still unavailable. Source existence does not verify
-egress enforcement. The [evidence contract](docs/evaluation.md#7-sovereign-proof-card)
-and [Beta acceptance](docs/evaluation.md#beta-acceptance) govern claims.
-
----
-
-## Project Boundaries & Trust Model
-
-These constraints are treated as non-negotiable design requirements, not aspirational goals:
-
-- **No silent network dependency.** Runtime operation must not require the public Internet, telemetry, analytics, or any background network call the user has not explicitly authorised.
-- **Least-privilege workers.** Worker devices receive only the context required for the specific task assigned to them, and may write only inside a temporary workspace assigned to that job — never directly to the coordinator's file system.
-- **Local-only network exposure.** Local model runtimes bind to loopback (`127.0.0.1`) by default; worker APIs expose only the minimum LAN surface needed for coordinator–worker communication, and nothing is exposed beyond the local network.
-- **Isolated sandboxes.** Coding sandboxes run without network access by default and under bounded CPU/memory/time limits, so that a runaway or malicious generated script cannot exfiltrate data or exhaust host resources.
-- **Full model provenance.** For every model in use, the system records its source, license, file hash, runtime, and version — both for reproducibility and so that license compliance can be audited.
-- **Nothing sensitive enters version control.** Model weights, installers, secrets, private documents, confidential scans, and local chat databases must never be committed to this repository. `.gitignore` and contributor review are both relied upon to enforce this.
-
----
-
-## Repository Structure
-
-```text
-refinix/
-├── backend/
-│   ├── contracts/         # Shared job, attempt, event and approval contract (draft)
-│   ├── coordinator/       # The running local application: state, runtime, API, UI server
-│   └── worker-image/      # C04 build inputs; no image built yet
-├── desktop/               # Native window, startup lifecycle, icons and macOS packaging
-├── frontend/
-│   ├── app/               # The application interface actually served by the coordinator
-│   └── design/            # Design track's visual reference; not served by the app
-├── docs/
-│   ├── PROJECT.md         # Canonical product, architecture and workflow contract
-│   ├── prd.md             # Historical/reference product snapshot
-│   ├── architecture.md    # Historical/reference architecture snapshot
-│   ├── workflows.md       # Historical/reference workflow snapshot
-│   ├── security.md        # Trust, privacy, sandbox, and proof boundaries
-│   ├── model-catalog.md   # Model packs, manifests, and provisioning
-│   ├── releases.md        # Packages, publication, updates and recovery
-│   └── evaluation.md      # Prototype plan, acceptance, metrics, and demo
-├── agent-memory/         # Searchable record of repository-affecting work and decisions
-├── TechStack.md          # Recommended languages and technologies for each layer
-├── CONTRIBUTING.md       # Branch, review, and release workflow
-├── AGENTS.md             # Repository-wide implementation rules and conventions
-└── README.md
+```mermaid
+flowchart LR
+    subgraph E["External-service workflow"]
+        E1["Internal task and information"] --> E2["External AI service"]
+        E2 --> E3["Response"]
+    end
+    subgraph R["Refinix local workflow"]
+        R1["Task and selected sources"] --> R2["Workspace coordinator"]
+        R2 --> R3["Local model or document tool"]
+        R3 --> R4["Workflow checks and action policy"]
+        R4 --> R5["Answer, document, or reviewed change"]
+    end
 ```
 
-## Start Here
+This describes the intended data-handling choice. Whether an installation enforces an offline boundary still depends on its runtime, network controls, and observed behavior. Refinix's evidence surfaces make those distinctions explicit.
 
-The following is the **existing developer/prototype launch path**, not the
-production installer experience. On the configured macOS coordinator, double-click `desktop/dist/Refinix.app`,
-or run:
+## How Refinix works
 
-```bash
-open /Users/adityatadge/Documents/GitHub/AegisForge/desktop/dist/Refinix.app
+The current harness follows named workflows. A request's surface, selected skill, attachments, and workflow settings determine its execution path. It does not require a separate model to classify every request.
+
+```mermaid
+flowchart TD
+    A["User task in Chat or Code"] --> B["Identify the workflow and its requirements"]
+    B --> C["Build allowed context: history, selected files, or document pages"]
+    C --> D{"Does this step need a model?"}
+    D -->|Yes| E["Use the configured model for the workflow and check its execution profile"]
+    D -->|No| F["Run local keyword search or prior-answer conversion"]
+    E --> G["Bounded inference and workflow-controlled processing"]
+    F --> H["Check the result for this workflow"]
+    G --> H
+    H --> I["Answer, document artifact, or code proposal"]
+    I --> J["Apply the action policy before export or file changes"]
+    J --> K["Deliver the result and retain job records"]
 ```
 
-The native app uses the installed Ollama model `qwen3.5:4b-q4_K_M` and starts
-Ollama when needed. Keep its Dock icon for later launches. Setup on another
-machine requires the [desktop setup handoff](desktop/README.md#setup-handoff).
-For a source run, `desktop/.venv/bin/python -m desktop` opens the native window;
-`./.venv/bin/python -m desktop --no-window` starts local services using the
-existing backend dependencies, including Pydantic. `python3 -m backend.coordinator`
-still starts the coordinator on its own, unchanged.
+1. **Establish the task boundary.** The coordinator records the request and a job. A document request binds its selected sources; Code binds a connected repository and selected files. Instructions inside those files remain untrusted task data.
+2. **Prepare useful context.** Saved conversation history is selected within a context budget. Document extraction preserves source identity and page associations; keyword retrieval finds passages from the selected documents. A bounded prompt can omit context without deleting saved history.
+3. **Execute the eligible path.** Model steps use the configured workflow model, runtime settings, and capability/profile checks. Some operations, including keyword search and copying a completed answer into a document, need no new model generation. Automatic task-to-model routing is a target capability.
+4. **Check and deliver.** Validators check the relevant structure, paths, hashes, references, or artifact format. File changes and artifact export follow their action policy. Attempts and events retain the result, failures, and available evidence.
 
-Details, including what the application deliberately does **not** do, are in
-[backend/coordinator/README.md](backend/coordinator/README.md) and
-[desktop/README.md](desktop/README.md).
+## From an inspection report to an approval-note draft
 
-### What reads what, right now
+Consider an engineer preparing a maintenance review. The inputs are a selected inspection report and supporting procedures. The request is: “Prepare an approval-note draft from these sources; keep missing facts and unresolved references visible.”
 
-See the [current source snapshot](docs/evaluation.md#current-status) for document,
-image, Code, worker and packaging boundaries. Runtime capability reports must
-reflect installed models/tools, host compatibility and observed self-tests;
-source availability alone is not proof that a capability works on every device.
+The repository implements this named document workflow as `inspection_report_to_approval_note`. It is available only with an eligible structured Documents profile and the required local reading tools.
 
-Before implementation:
+```mermaid
+sequenceDiagram
+    actor Engineer
+    participant Coordinator
+    participant Reader as Local document reader
+    participant Search as SQLite FTS5
+    participant Model as Local model
+    participant Artifact as Document artifact
+    Engineer->>Coordinator: Select report, supporting procedures, and task
+    Coordinator->>Reader: Verify source hashes and extract pages
+    Reader-->>Coordinator: Text, page mapping, and reading limitations
+    Coordinator->>Search: Find relevant wording in supporting sources
+    Search-->>Coordinator: Passages with source and page identifiers
+    Coordinator->>Model: Bounded request with selected context
+    Model-->>Coordinator: Structured approval-note draft
+    Coordinator->>Coordinator: Check schema, references, and unresolved items
+    Coordinator->>Artifact: Write and reopen a DOCX for structural validation
+    Coordinator-->>Engineer: Show draft, source references, and artifact
+    Engineer->>Coordinator: Approve an export of this artifact
+    Coordinator-->>Engineer: Return the approved copy
+```
 
-1. Read [AGENTS.md](AGENTS.md) for permissions and execution rules, then
-   [PROJECT.md](docs/PROJECT.md) for the current product contract.
-2. Follow [tasks.md](tasks.md) for the active major section and Beta gates. Reuse the existing
-   implementation and complete the authorised section without further task tiers or delegation.
-3. Read the focused security, model or release authority only when relevant. Historical C/E/AF/P
-   records explain the prototype; they do not prescribe permanent OS roles, release gates,
-   production deadlines or a new frontend framework.
+The draft does not approve maintenance or establish that equipment is safe. The engineer reviews its conclusions. A reference resolving to a real page is useful traceability, but it does not prove that the page supports every interpretation.
 
-## Contributing
+### Organizational knowledge and memory
 
-Follow the process in [CONTRIBUTING.md](CONTRIBUTING.md).
-Server-side branch protection is **not yet active**, so this workflow is currently enforced by team discipline rather than tooling — please follow it deliberately until protection rules are configured.
+Today, document knowledge is **scoped to the sources selected for a request**. Text, Word, spreadsheet, PDF, and supported image readers feed extracted material into the workflow. PDF text is read locally; scans and images need an eligible local vision/OCR path. Unavailable reading capabilities are reported rather than replaced with invented content.
 
-## Licence
+Retrieval uses [SQLite FTS5](https://www.sqlite.org/fts5.html) keyword matching. Source identifiers, hashes, and page records connect retrieved passages to their origin. Earlier attachments require explicit same-chat reuse and revalidation. General document drafts and prior-answer conversions do not acquire the citation guarantees of the structured approval-note workflow.
 
-This repository is currently licensed under [Apache-2.0](LICENSE). The open-source core and specialised paid offering follow [PROJECT.md](docs/PROJECT.md); this documentation change does not relicense the repository, publish a release or grant rights to third-party corpora.
+Saved conversations and drafts provide continuity. They are separate from document indexes, and neither constitutes model training. A governed organization corpus with access-aware hybrid retrieval is part of the target architecture.
 
----
+## Architecture
 
-<div align="center">
+The application UI is plain HTML, CSS, and JavaScript, served by the Python coordinator. A [pywebview](https://pywebview.flowrl.com/) shell supplies the native window and a small bridge for actions such as file and repository selection. The coordinator uses Python's HTTP server, SQLite, and shared Pydantic contracts; the retained worker API uses FastAPI.
 
-*Built for Smart India Hackathon 2026 — Problem Statement SIH26117 — Mangalore Refinery and Petrochemicals Limited (MRPL)*
+```mermaid
+flowchart TB
+    subgraph LOCAL["Local workspace"]
+        UI["Chat / Code / Settings"] --> API["Loopback HTTP API and SSE events"]
+        API --> CO["Python coordinator"]
+        CO --> CTX["Context and document retrieval"]
+        CO --> WF["Named workflow runners"]
+        WF --> RT["Runtime adapters"]
+        RT --> OL["Local Ollama API"]
+        RT --> LL["Managed llama.cpp server"]
+        WF --> POLICY["Action policy"]
+        POLICY --> TOOLS["Document readers / artifact writers / bounded file operations"]
+        TOOLS --> VAL["Workflow validators"]
+        CTX --> DB[("SQLite canonical state")]
+        CO --> DB
+        VAL --> DB
+        TOOLS --> FILES[("Attachments, artifacts, and backups")]
+        DB --> PROOF["Job history and Proof Cards"]
+        PROOF --> UI
+    end
+    subgraph MANAGED["Retained managed-worker profile"]
+        WA["Authenticated worker API"] --> Q["Redis dispatch and leases"]
+        Q --> EX["Executor"]
+        EX --> KV["Restricted Kubernetes validation Jobs"]
+    end
+    CO -.->|"Explicit bounded dispatch"| WA
+    EX -.->|"Results and observations"| CO
+```
 
-</div>
+The coordinator holds the canonical request, conversation, approvals, and final-write authority. Redis carries disposable coordination state in the managed-worker profile; it is not the workspace database. Worker results return to the coordinator for acceptance.
 
----
+The two runtime adapters serve different current installation paths. Source checkouts can use an existing local Ollama service. Managed-engine builds use pinned llama.cpp files, checked before launch, with a loopback listener and a per-launch API key. The broader product direction makes model origin choose between these paths without duplicating Ollama weights.
 
-## Team
+The current curated model artifacts are `qwen3.5:4b-q4_K_M` for Ollama and a pinned Unsloth Qwen3.5 4B Q4_K_M GGUF with a vision projector for the managed engine. Their source revisions, licences, hashes, and workflow evidence are recorded separately in the [model catalogue](docs/model-catalog.md). The catalogue does not imply that every capability is ready on every computer.
 
-**Team Name: Rokunin Sync**
+Desktop work does not require Docker, Kubernetes, or Redis. The worker infrastructure is retained for bounded managed execution and later trusted-device support.
+
+## Controlled agent execution
+
+Refinix's current agent behavior is implemented through workflow-specific steps and output contracts. The harness owns tool use. For Code, the model receives labelled selected-file content and returns proposed replacements; it receives no command runner or authority to alter the access mode.
+
+```mermaid
+flowchart LR
+    A["Connected folder and selected files"] --> P{"Access policy"}
+    P -->|Denied| STOP["Record refusal"]
+    P -->|"Approval required"| APPROVE["User decision"]
+    APPROVE -->|Approved| M["Local model proposes replacements"]
+    P -->|Automatic| M
+    M --> V["Check JSON, selected paths, base hashes, and size limits"]
+    V --> D["Complete reviewable diff"]
+    D --> G{"Write policy"}
+    G -->|"Approval required"| REVIEW["Approve the exact change"]
+    G -->|Automatic| WRITE["Bounded file write with backup record"]
+    REVIEW --> WRITE
+```
+
+The default **Partial access** mode permits selected reads and proposals, then requires approval for writes. **Ask before actions** also requires approval for reads. **Full access** permits eligible existing-file replacements inside the connected folder without asking each time; it does not enable project commands, Git, installs, network access, or file creation/deletion/renaming.
+
+Local Apply/Undo is explicitly labelled **not sandbox tested**. The retained worker route has a bounded Python validation path with separate results. Neither a well-formed proposal nor a successful write proves the generated code is correct.
+
+## Security and trust boundary
+
+The boundary is defined by what each component can read, send, and write.
+
+| Boundary | Mechanism and scope |
+|---|---|
+| UI to coordinator | A loopback listener, local Host/Origin checks, bounded requests, and a native bridge that does not accept arbitrary commands or filesystem paths from the page. |
+| Documents to model | Request-bound sources, hash revalidation, page mapping, bounded context, and untrusted-data framing. Prompt framing helps describe the boundary; policy and validators enforce actions. |
+| Model to files | Strict output parsing and selected-path/base-hash checks. The coordinator applies the access policy; model output cannot approve itself. |
+| Artifact to user | Generated files remain in local artifact storage until a recorded, single-use export approval bound to the digest allows a copy out. |
+| Coordinator to worker | The retained path uses pairing credentials, pinned TLS identity, bounded task packages, and receiver checks. Pairing does not merge workspaces or grant final-write authority. |
+| Code to execution environment | Retained Kubernetes validation jobs have restricted resources and network policy. Standalone desktop sandbox support still needs qualification per offered profile. |
+| Setup to upstream sources | Model downloads and update checks are user initiated. Managed files have recorded provenance and integrity checks. Connected setup is distinct from ordinary task execution. |
+
+Canonical state lives in SQLite and adjacent local storage outside replaceable application files. The path resolver supports platform data roots, an explicit portable root, and legacy `.aegisforge` state without silently relocating it. Selected Code files remain in the connected repository; writes there use the Code policy and recovery records.
+
+Local inference is the product requirement. A loopback endpoint alone cannot prove model locality or block traffic from another process. The current observer watches coordinator connections and samples the owned engine's sockets; it does not block traffic, cover the whole host, or observe externally owned Ollama as an owned engine. Network isolation claims need named enforcement and observation evidence.
+
+See the [security contract](docs/security.md) for the detailed boundaries.
+
+## Evidence and traceability
+
+Refinix records jobs, attempts, lifecycle events, model/profile information, document sources, approvals, validation results, and artifact hashes where those records exist. A Proof Card assembles evidence for an attempt from those records and identifies the source of each displayed value.
+
+A reviewer can inspect the recorded request and route, the document references or selected-file authorization, the resulting artifact or proposal, and the associated approvals. This is a local application record, not a certified immutable audit service.
+
+Evidence has a scope. A missing observation stays **unavailable**. A validation attempt that ran no model has no model evidence. A configured network policy is not a measured traffic count. An observed count covers its stated window and processes, not permanent host-wide isolation.
+
+## Current Implementation
+
+The repository contains a working macOS-first prototype and portable foundation work. Its current paths include local Chat, request-bound document reading/search, document generation, Code proposals and Apply/Undo, durable state and recovery, model management, and Proof Cards.
+
+| State | What the checkout contains |
+|---|---|
+| Implemented paths | Native shell and served UI; local runtime adapters; persisted conversations/jobs; FTS5 retrieval; DOCX artifacts; Code policy, proposals, backups, and approvals. Availability still depends on the installed runtime and capability/profile checks. |
+| Conditional or partial | Structured document workflows need an eligible profile. Scan/image reading needs a local vision model. PDF generation uses macOS frameworks. Package and update tooling exists, with acceptance still pending. |
+| Retained prototype infrastructure | Worker API/executor, pairing/revocation, Redis coordination, and Kubernetes validation. Broader desktop-peer placement is deferred from the first Beta. |
+| Target capabilities | Automatic local model assignment, broader compatible model discovery/admission, complete standalone packages across Windows/macOS/Linux, qualified local sandbox profiles, and governed organizational retrieval. |
+
+Installed weights can currently be refused when no checked execution profile exists for that runtime/hardware/workflow combination. The current product contract calls for replacing blanket measurement gates with actual compatibility, locality, capacity, and policy checks. That change is pending.
+
+Synthetic fixtures and frontend test surfaces are available for verification. They are distinct from ordinary application inference and do not establish customer deployments or model accuracy.
+
+## Target Architecture
+
+The first Beta is intended to provide a complete standalone journey on qualified Windows, macOS, and Linux profiles. It reuses the existing coordinator and workflow harness.
+
+```mermaid
+flowchart TD
+    TASK["Task, attachments, and workflow requirements"] --> ROUTER["Automatic local capability and model routing"]
+    MODELS["Compatible installed models and published evidence"] --> ROUTER
+    HW["Lightweight hardware facts and current capacity"] --> ROUTER
+    POLICY["Data scope and action policy"] --> ROUTER
+    KNOW["Authorized document retrieval"] --> ROUTER
+    ROUTER --> LOCAL["Local Ollama or managed llama.cpp"]
+    LOCAL --> TOOLS["Bounded workflow tools"]
+    TOOLS --> CHECK["Validators and action authorization"]
+    CHECK --> OUT["Deliverable and attempt evidence"]
+    ROUTER -.->|"After standalone Beta"| PEER["Trusted peer or private-server execution"]
+    PEER -.->|"Validated bounded result"| CHECK
+```
+
+**Local model routing.** Choose an eligible installed model from task needs, supported capabilities, current resources, and published evidence. Record the choice and reason. Users retain preferences and may choose beyond recommendations; there is no claim of an optimal choice for every task.
+
+**Standalone operation.** Complete graphical setup, compatible model provisioning/reuse, supported document and Code workflows, local isolation on eligible profiles, and authenticated user-initiated updates. Package/device/recovery evidence must support each advertised platform profile.
+
+**Organizational knowledge.** Extend selected-document keyword retrieval into authorized corpus ingestion and qualified lexical/semantic retrieval, preserving source identity, version, and access scope. Indexing remains separate from training.
+
+**Trusted compute after Beta.** Send complete jobs or bounded steps to authenticated peers or private servers, with receiver capacity admission and minimal inputs. The requesting coordinator retains canonical state and final writes. This direction does not shard a model across laptops or pool their VRAM.
+
+The [project contract](docs/PROJECT.md), [model catalogue](docs/model-catalog.md), and [release contract](docs/releases.md) define this direction.
+
+## Industrial use cases
+
+| Work | Refinix's role | Human responsibility |
+|---|---|---|
+| Inspection review | Prepare a structured approval-note draft from a selected report and supporting procedures, on an eligible Documents profile. | Confirm source applicability, technical findings, and the final decision. |
+| Procedure and internal-document lookup | Find wording across selected documents and return source/page references; use local generation where supported. | Check that the selected documents are current and sufficient. |
+| Internal technical maintenance | Propose changes to selected existing code files, expose the diff, and apply according to the repository access mode. | Review correctness and arrange appropriate execution tests. |
+
+These describe product workflows and intended organizational use, not reported customer installations.
+
+## Quick start
+
+Run commands from the repository root. This is a **developer source setup**. Use Python 3.12 for the current desktop packaging profiles; CI separately exercises Python 3.13. A native window also requires the platform's WebView dependencies. Inference needs compatible local weights and an eligible runtime/profile.
+
+Create an environment:
+
+```sh
+python -m venv .venv
+```
+
+Activate it with `. .venv/bin/activate` on macOS/Linux or `.venv\Scripts\Activate.ps1` in Windows PowerShell. Install the shared source dependencies, then open the app:
+
+```sh
+python -m pip install -r desktop/requirements-desktop.txt
+python -m pip install --require-hashes -r backend/requirements-runtime.lock
+python -m desktop
+```
+
+These dependency installs use network access unless suitable packages are already available locally. The desktop [platform lockfiles and setup notes](desktop/README.md) describe the more constrained build environments, including native dependencies.
+
+For services without a native window:
+
+```sh
+python -X utf8 -m desktop --no-window
+```
+
+Or run the coordinator alone:
+
+```sh
+python -m backend.coordinator
+```
+
+The coordinator defaults to `http://127.0.0.1:8770`. The desktop startup checks the local runtime and reports model readiness; the coordinator-only command does not provide that desktop startup sequence.
+
+The current Ollama baseline is `qwen3.5:4b-q4_K_M`. Reuse installed weights when available. Obtaining missing weights is a separate, explicit connected action; the catalogue records this baseline command:
+
+```sh
+ollama pull qwen3.5:4b-q4_K_M
+```
+
+A source checkout without a managed engine uses the local Ollama path. Managed model/engine setup follows its recorded manifests and provisioning path. Hardware suitability depends on weights, context, runtime buffers, and available memory; no universal hardware minimum is release-accepted.
+
+### Configuration
+
+| Setting | Purpose |
+|---|---|
+| `--state` | Select an explicit SQLite workspace database outside the repository. |
+| `--port` | Set the preferred loopback port. Desktop startup selects another free port when necessary. |
+| Settings → Models | Select workflow models, inspect readiness/provenance, and run available explicit self-tests. |
+| `REFINIX_ENGINE=ollama` | Choose the external Ollama development path in a source checkout. |
+| `REFINIX_DATA_ROOT` | Select an explicit absolute data root; legacy-store conflicts are handled separately by the path resolver. |
+
+## Verification
+
+The [CI workflow](.github/workflows/ci.yml) contains offline source checks and their dependency lockfiles. Representative commands are:
+
+```sh
+python -m unittest discover -s backend/contracts -t . -p 'test_*.py' -q
+python -m unittest discover -s backend/coordinator -p 'test_*.py' -q
+node --test frontend/app/test-*.cjs
+```
+
+The retained worker suite is intended for a suitable Unix/Linux environment:
+
+```sh
+python -m unittest discover -s backend/worker -p 'test_*.py' -q
+```
+
+The frontend glob is the form used in Linux CI. On shells that do not expand it, pass the individual test filenames.
+
+<details>
+<summary>Observed Windows checks from the October 2026 README review</summary>
+
+- Frontend: **203/203 passed**.
+- Shared contracts: **20/20 passed** with normal temporary-file access.
+- Local desktop services reached `127.0.0.1:8770` using UTF-8 console output. The temporary service was stopped afterward and the listener was confirmed closed.
+- Ollama 0.30.10 and the installed Qwen model were detected. This host lacked a checked execution profile, so inference was unavailable; no model-response verification passed.
+- The coordinator suite terminated without a completed result on Windows with an access-violation exit. The worker suite could not run fully because its validator imports Unix-only `resource`.
+- Earlier sandboxed attempts were also blocked by temporary-file and loopback permissions. Those runs are not passes.
+
+These are bounded observations from one environment. They do not establish package acceptance, model quality, standalone sandbox qualification, or host-wide network isolation. See the [evaluation record](docs/evaluation.md) for separately recorded evidence.
+
+</details>
+
+## Repository structure
+
+| Path | Responsibility |
+|---|---|
+| [`frontend/app/`](frontend/app) | Served Chat, Code, Settings UI and frontend checks. |
+| [`desktop/`](desktop) | Native shell, lifecycle, engine/build inputs, platform packaging. |
+| [`backend/coordinator/`](backend/coordinator) | API, context, document/Code workflows, runtime adapters, policy, state, artifacts, and evidence. |
+| [`backend/contracts/`](backend/contracts) | Typed job/attempt/event/approval records and execution profiles. |
+| [`backend/worker/`](backend/worker) | Retained worker API, dispatch, executor, and validation. |
+| [`deploy/k3s/`](deploy/k3s) | Optional managed worker, Redis, and restricted validation manifests. |
+| [`fixtures/c07/`](fixtures/c07) | Synthetic document and Code examples with expected results. |
+| [`docs/PROJECT.md`](docs/PROJECT.md) | Current product contract, with focused security, model, and release documents beside it. |
+
+The [design reference](frontend/design) is separate from the application UI served by the coordinator. Contributions follow [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+Refinix source is licensed under [Apache License 2.0](LICENSE). Model weights, runtimes, dependencies, and organizational corpora retain their own licences and provenance requirements. The repository licence does not grant rights to third-party data.

@@ -1,12 +1,15 @@
-"""py2app entry point for Refinix.app.
+"""Entry point of the packaged app (py2app on macOS, PyInstaller on Windows and Linux).
 
-py2app launches a script, not a module, so this is the bundle's main script. It
+Both launch a script, not a module, so this is the package's main script. It
 does exactly what `python3 -m desktop` does with default arguments, and two
 more things for in-app updates:
 
 * `Refinix --apply-update|--resume <database>` runs the update helper
   (desktop/update_apply.py) — no window, no interface — from a clone of the
   app that started it;
+* `Refinix --deb-admit|--deb-install|--deb-recover|--deb-rollback <folder>`,
+  started only by pkexec on Ubuntu, runs the root package step
+  (desktop/deb_root.py) and nothing else;
 * before anything opens the workspace, a launch asks the update journal what
   it may do (`update_apply.on_launch`): continue, hand an unfinished update
   back to a helper, or explain why an update stopped safely.
@@ -30,7 +33,7 @@ def _update_gate(instance, state_db):
     from desktop import update_apply
     try:
         return update_apply.on_launch(instance, state_db, build_info.describe()["version"],
-                                      bundle=updates.running_bundle())
+                                      bundle=updates.running_install())
     except Exception as exc:                               # noqa: BLE001
         # Opening the workspace beside an update journal that cannot be read
         # could undo the update's protection; stop and say so instead.
@@ -39,7 +42,16 @@ def _update_gate(instance, state_db):
             f"not open your workspace: {exc}"))
 
 
+# Ubuntu `.deb` updates: the only steps that run as root. Dispatched before
+# anything else is imported, so as root nothing opens a window, the workspace,
+# the coordinator or a model runtime (desktop/deb_root.py).
+DEB_ROOT_MODES = ("--deb-admit", "--deb-install", "--deb-recover", "--deb-rollback")
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] in DEB_ROOT_MODES:
+        from desktop import deb_root
+        return deb_root.main(sys.argv[1:])
     if len(sys.argv) > 1 and sys.argv[1] in ("--apply-update", "--resume"):
         return _helper(sys.argv[1:])
     from desktop import lifecycle, shell

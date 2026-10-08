@@ -376,6 +376,7 @@ BUILD_DEFINITION = (
     "desktop/engine/fetch.py", "desktop/packaging-tools.json",
     "desktop/windows/refinix.iss", "desktop/linux/refinix.desktop",
     "desktop/linux/AppRun", "desktop/linux/control.in", "desktop/TESTING.md.in",
+    "desktop/linux/com.refinix.desktop.policy", "desktop/macos/entitlements.plist",
     ".github/workflows/package.yml",
 )
 

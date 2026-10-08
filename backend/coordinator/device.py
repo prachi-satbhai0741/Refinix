@@ -227,21 +227,6 @@ def hardware(*, data_root=None, engine_devices=None) -> dict:
     return facts
 
 
-def target_identities(facts: dict | None = None) -> list[str]:
-    """Every qualification target this computer can claim, exact device first.
-
-    The exact measured device keeps the developer-baseline Ollama profiles; the
-    hardware tiers carry the managed engine's presets and profiles.
-    """
-    targets = []
-    exact = qualified_target_profile()
-    if exact:
-        targets.append(exact)
-    if facts is not None:
-        targets.extend(tier.tier_id for tier in inference_profiles.matching_tiers(facts))
-    return targets
-
-
 def qualified_target_profile(*, platform: str | None = None,
                              machine: str | None = None,
                              hardware_model: str | None = None,

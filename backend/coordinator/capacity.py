@@ -323,9 +323,6 @@ class Ledger:
                            if k == group or r.group == group]:
                 del self._reservations[job_id]
 
-    def _pending(self) -> int:
-        return sum(r.resident_bytes + r.state_bytes for r in self._reservations.values())
-
     def decide(self, *, job_id: str, key: str, origin: str, weights_bytes: int | None,
                window: int, resident: bool, memory: dict,
                loaded_window: int | None = None, group: str | None = None,

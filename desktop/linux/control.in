@@ -4,6 +4,8 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: Refinix
-Depends: libgtk-3-0t64 | libgtk-3-0, libwebkit2gtk-4.1-0, gir1.2-gtk-3.0, gir1.2-webkit2-4.1
+Installed-Size: @INSTALLED_SIZE@
+Homepage: https://refinix.runs-on.dev
+Depends: libgtk-3-0t64 | libgtk-3-0, libwebkit2gtk-4.1-0, gir1.2-gtk-3.0, gir1.2-webkit2-4.1, libsecret-tools, pkexec, python3
 Description: Offline AI workbench that runs on this computer
- Internal test build. Unsigned. Not for distribution.
+ @DESCRIPTION_NOTE@

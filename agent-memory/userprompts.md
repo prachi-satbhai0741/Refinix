@@ -2432,3 +2432,28 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: UP-20261008-001
 - supersedes: none
 - linked_changes: [AC-20261008-002](agentchangelog.md#ac-20261008-002)
+
+<a id="up-20261008-003"></a>
+## UP-20261008-003 — Execute plan v4.3: the whole remaining standalone Beta batch
+- date: 2026-10-08
+- status: in progress
+- scope: implementation, packaging, release infrastructure, cleanup, documentation, GitHub presentation, publication (gated)
+- tags: beta, plan-v4.3, updater, deb, windows-installer, tuf, sandbox, cleanup, sih-removal, tester-preview
+- aliases: /execute plan v4.3, complete the whole agreed batch, tester preview before device walkthrough
+- paths: backend/coordinator, desktop, scripts, frontend, deploy/distribution, .github/workflows, docs, README.md, tasks.md
+- summary: After the planning loop with the reviewing agent passed plan v4.3, the user authorised the listed execution permissions (including computer-use) and accepted the recommendations. Checkpoint answers: repository owners run their own admin steps (website repo and source-repo settings); neither Apple Developer ID nor Windows signing is ready, so unsigned platforms are shown unavailable; no Windows PC or clean Ubuntu desktop exists yet, so device checks stay visibly pending and installers are built in available authorised build environments; archived SIH material goes to ~/Documents/Refinix-private-archive.
+- constraints: No planning rewrite. Git commits and member→dev→main merges need CP-A approval; publication needs CP-B approval. Never weaken update-trust, sandbox, approval or data boundaries; preserve internal.6 artifacts, user data and deferred mesh/worker code.
+- acceptance: Implementation, optimisation, justified cleanup, verification, documentation and GitHub updates (including SIH removal from current public presentation); then the website DMG/EXE/DEB tester preview (unsigned platforms unavailable) before the user's device walkthrough, Codex's deep review, one repair batch and Beta acceptance.
+- follow_up_to: UP-20261008-002
+- supersedes: none
+- linked_changes: [AC-20261008-003](agentchangelog.md#ac-20261008-003), [AC-20261008-004](agentchangelog.md#ac-20261008-004)
+
+
+<a id="up-20261008-readme-sync"></a>
+## UP-20261008-README-SYNC — Import the final main README and revise the release direction
+- date: 2026-10-08
+- agent: agent
+- request: The user has no budget for paid Apple/Windows platform signing, wants public Refinix Beta naming rather than tester-preview branding, and wants remaining packaging/publication continued with device checks afterward. The user confirmed the final teammate README reached main, requested importing only that file, and requested current docs/GitHub presentation with real application images.
+- authorised_and_performed_here: Import only README.md from main, with recovery of the previous local README and no branch merge.
+- scope_boundary: The implementation owner retains the remaining release tooling, documentation, screenshot and publication work. Unsigned-platform publication is the user's new direction; it does not establish device acceptance or waive package integrity, signed update metadata, data recovery or honest compatibility claims.
+- linked_changes: [AC-20261008-README-SYNC](agentchangelog.md#ac-20261008-readme-sync)

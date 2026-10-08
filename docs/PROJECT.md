@@ -5,10 +5,11 @@
 | Field | Value |
 |---|---|
 | Product | Refinix |
-| Repository | `refinix` direction; repository rename may lag the product name |
-| SIH problem | SIH26117 — Sovereign On-Premise Agentic AI Workbench using Open-Weight Multimodal LLMs for Confidential Industrial Work |
+| Repository | `prachi-satbhai0741/Refinix` (public); website `refinix.runs-on.dev` |
 | Product target | Installable offline-first desktop AI workbench for Windows, macOS and Linux |
-| Current release direction | Refinix Beta 0.1 / SIH Reviewer Preview, followed by additional Beta and finals/production work |
+| Current release direction | Refinix Beta 0.1: a tester preview (`0.1.0-preview.N`) published for device testing first, then accepted Beta builds (`0.1.0-beta.N`); further Beta and production work follow |
+| Install routes | Ubuntu 24.04 `.deb` (App Center); macOS DMG (first install) with ZIP update payloads; Windows 11 per-user setup. A platform without its required code signing (Developer ID, Authenticode) is shown as unavailable, never published unsigned — see [`releases.md`](releases.md) |
+| Preview vs accepted | A tester preview is verified and published so it can be tried on devices; it is not accepted. Accepted builds never receive previews; previews may move on to accepted builds (one ordering key, [`releases.md`](releases.md)) |
 | Beta 0.1 scope | Standalone Windows/macOS/Linux application, broad compatible local models, automatic task-to-model routing and user-initiated in-app updates; trusted-device mesh follows after Beta |
 | Status | Production direction recorded; implementation, verification and release acceptance remain separate |
 
@@ -34,8 +35,8 @@ A requirement in this file is a target contract. It does not by itself prove sou
 quality, platform compatibility, security or release readiness.
 
 The user's [5 October 2026 direction and follow-up](beta-user-direction-2026-10-05.md) are preserved
-verbatim. This is a college/hackathon Beta using existing infrastructure, not a programme to certify
-every model or build another inference platform. The model, runtime, recommendation and routing
+verbatim. This Beta reuses existing infrastructure; it is not a programme to certify every model
+or build another inference platform. The model, runtime, recommendation and routing
 rules below reflect that correction; older measured-only admission designs are not the current
 local requirement. Implementation and the owner's next execution plan remain pending.
 
@@ -1446,7 +1447,7 @@ recommendation and obtain permission before changing those docs.
 
 | ID | Current boundary |
 |---|---|
-| OD-01 | Independently confirm official SIH wording/submission terms; confidential datasets are not assumed |
+| OD-01 | Confidential customer datasets are not assumed; any evaluation corpus needs its owner's authorisation |
 | OD-02 | Open-source core + specialised paid offering remain direction; repository licence is unchanged until separately authorised |
 | OD-03 | Existing local Ollama reuse and managed upstream llama.cpp are Beta product paths; model origin selects the backend, measured profiles are evidence rather than a local allowlist, and customers do not own qualification |
 | OD-04 | Keep current UI/desktop shell; qualify installer formats, native dependencies, signing and recovery per platform |
@@ -1527,5 +1528,5 @@ being removed.
 
 ## Presentation/research
 
-SIH presentation/research material may explain the product but is non-normative. It must not override
-this contract or turn planned features into verified claims.
+Presentation and research material may explain the product but is non-normative. It must not
+override this contract or turn planned features into verified claims.

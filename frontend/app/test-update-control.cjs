@@ -343,3 +343,21 @@ test('a saved document reads as a document in the lifecycle, never "undefined"',
     data: { kind: 'attempt.state', previous: 'running', current: 'completed' } })`);
   assert.match(p.el('events').children[0].textContent, /running → completed/);
 });
+
+
+test('the Ubuntu package route prepares behind a password before Install appears', () => {
+  const bridge = { install_update: async () => ({}) };
+  const deb = { ...STATES.verified, install_method: 'deb', maturity: 'preview',
+                version: '0.1.0-preview.1', channel: 'beta' };
+  let p = updatePage(deb, bridge);
+  assert.deepEqual(buttons(p, 'c-updates-actions').filter((b) => /Prepare|Install/.test(b)),
+                   ['Prepare (asks for your password)']);
+  assert.match(p.text('c-updates-note'), /administrator password/);
+  assert.match(p.text('c-updates-facts'), /0\.1\.0-preview\.1 \(tester preview\)/);
+  p = updatePage({ ...deb, install: { state: 'ready', version: '0.1.0-preview.2' } }, bridge);
+  assert.deepEqual(buttons(p, 'c-updates-actions').filter((b) => /Prepare|Install/.test(b)),
+                   ['Install and restart']);
+  // The macOS and Windows routes keep the single Install and restart step.
+  p = updatePage({ ...STATES.verified, install_method: 'windows-setup' }, bridge);
+  assert.ok(buttons(p, 'c-updates-actions').includes('Install and restart'));
+});

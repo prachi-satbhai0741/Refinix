@@ -10,6 +10,7 @@ whose binaries need a newer macOS than it declares is refused.
 from __future__ import annotations
 
 import json
+import subprocess
 import plistlib
 import sys
 import tempfile
@@ -417,8 +418,15 @@ class TestChannelsAndLabels(unittest.TestCase):
     def test_beta_needs_its_own_root_and_an_https_feed(self):
         with tempfile.TemporaryDirectory() as folder:
             https = self.feed(folder, {"metadata_url": "https://u.example/m/",
-                                       "targets_url": "https://u.example/t/"})
+                                       "targets_url": "https://u.example/t/",
+                                       "packages_url": "https://g.example/releases/",
+                                       "package_hosts": ["assets.example"]})
             build.update_files(self.root(folder), https, "beta")
+            for missing in ({"packages_url": "http://g.example/"}, {"package_hosts": []},
+                            {"package_hosts": ["bad host/"]}):
+                bad = self.feed(folder, {**json.loads(https.read_text()), **missing})
+                with self.subTest(missing=missing), self.assertRaises(build.BuildError):
+                    build.update_files(self.root(folder), bad, "beta")
             with self.assertRaises(build.BuildError):
                 build.update_files(None, https, "beta")
             with self.assertRaises(build.BuildError):
@@ -453,19 +461,41 @@ class TestChannelsAndLabels(unittest.TestCase):
             with self.assertRaises(build.BuildError):
                 build.bundle_build(base, "beta", None, "macos-arm64", [], out)
             self.assertEqual(build.bundle_build(base, "beta", 9, "macos-arm64", [], out), 9)
+            # Public builds name one linear public build number, whatever the label.
+            self.assertEqual(build.label_number(f"{base}-preview.3", "beta"), 3)
+            self.assertEqual(build.label_number(f"{base}-beta.1", "beta"), 1)
+            with self.assertRaises(build.BuildError):
+                build.bundle_build(f"{base}-preview.3", "beta", None, "linux-x64", [], out)
+            (out / "set-b").mkdir()
+            (out / "set-b" / "build-record-linux-x64.json").write_text(json.dumps(
+                {"lane": "linux-x64", "version": f"{base}-preview.3", "bundle_build": 12}))
+            with self.assertRaises(build.BuildError):
+                build.bundle_build(f"{base}-beta.1", "beta", 12, "linux-x64", [], out)
+            self.assertEqual(build.bundle_build(f"{base}-beta.1", "beta", 13, "linux-x64",
+                                                [], out), 13)
+            self.assertEqual(build.maturity_of(f"{base}-preview.3", "beta"), "preview")
+            self.assertIsNone(build.maturity_of(f"{base}-internal.3", "internal"))
 
     def test_install_capability_is_never_assumed(self):
         cap = build.install_capability
         self.assertEqual(cap("macos-arm64", "internal", None, None)["capability"],
                          "internal-test")
+        # Every lane now has an install helper.
         self.assertEqual(cap("windows-x64", "internal", None, None)["capability"],
+                         "internal-test")
+        self.assertEqual(cap("linux-x64", "internal", "internal-test", None)["capability"],
+                         "internal-test")
+        # A tester preview's install is itself the test; an accepted build is
+        # unavailable until it names accepted qualification evidence.
+        self.assertEqual(cap("linux-x64", "beta", None, None, "preview")["capability"],
+                         "preview-test")
+        self.assertEqual(cap("macos-arm64", "beta", None, None, "accepted")["capability"],
                          "unavailable")
-        self.assertEqual(cap("macos-arm64", "beta", None, None)["capability"],
-                         "unavailable")
-        with self.assertRaises(build.BuildError):
-            cap("linux-x64", "internal", "internal-test", None)
-        with self.assertRaises(build.BuildError):
-            cap("macos-arm64", "beta", "qualified", None)
+        for args in (("macos-arm64", "beta", "qualified", None, "accepted"),
+                     ("macos-arm64", "beta", "preview-test", None, "accepted"),
+                     ("macos-arm64", "beta", "internal-test", None, "preview")):
+            with self.subTest(args=args), self.assertRaises(build.BuildError):
+                cap(*args)
         with tempfile.TemporaryDirectory() as folder:
             evidence = Path(folder) / "accepted.json"
             evidence.write_text("{}", encoding="utf-8")
@@ -491,6 +521,89 @@ class TestChannelsAndLabels(unittest.TestCase):
         identity = build.build_identity(args, "linux-x64", beta, [])
         self.assertEqual((identity["channel"], identity["install_capability"],
                           identity["bundle_build"]), ("beta", "unavailable", 1))
+
+    def test_release_signing_needs_its_credentials_and_names_the_publisher(self):
+        with self.assertRaises(build.BuildError):
+            build.release_signing("macos-arm64", "release", environ={})
+        with self.assertRaises(build.BuildError):
+            build.release_signing("macos-arm64", "release", environ={
+                build.MAC_SIGN_IDENTITY: "Developer ID Application: X", build.MAC_TEAM_ID:
+                "not-a-team", build.MAC_NOTARY_PROFILE: "p"})
+        mac = build.release_signing("macos-arm64", "release", environ={
+            build.MAC_SIGN_IDENTITY: "Developer ID Application: X (ABCDE12345)",
+            build.MAC_TEAM_ID: "ABCDE12345", build.MAC_NOTARY_PROFILE: "refinix"})
+        self.assertEqual(mac, {"signing": "developer-id", "publisher": "ABCDE12345"})
+        with self.assertRaises(build.BuildError):
+            build.release_signing("windows-x64", "release", environ={
+                build.WINDOWS_SIGN_COMMAND: "signtool sign", build.WINDOWS_PUBLISHER: "CN=X"})
+        self.assertEqual(build.release_signing("linux-x64", "release", environ={}),
+                         {"signing": "unsigned", "publisher": None})
+        self.assertEqual(build.release_signing("macos-arm64", "unsigned", environ={})
+                         ["signing"], "unsigned")
+
+    def test_a_release_build_needs_a_clean_checkout_of_the_designated_commit(self):
+        def git(head, dirty=""):
+            def run(argv, **kwargs):
+                out = head if "rev-parse" in argv else dirty
+                return subprocess.CompletedProcess(argv, 0, out + "\n", "")
+            return run
+        build.check_release_checkout("a" * 40, run=git("a" * 40))
+        for source, run in (("b" * 40, git("a" * 40)), (None, git("a" * 40)),
+                            ("a" * 40, git("a" * 40, " M desktop/build.py"))):
+            with self.subTest(source=source), self.assertRaises(build.BuildError):
+                build.check_release_checkout(source, run=run)
+
+    def test_the_mac_app_is_signed_inside_out_with_the_runtime_and_team_check(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as folder:
+            app = Path(folder) / "Refinix.app"
+            for name in ("Contents/MacOS/Refinix", "Contents/Frameworks/libz.dylib",
+                         "Contents/Resources/lib/python3.14/x.so",
+                         "Contents/Resources/engine/macos-arm64/llama-server"):
+                path = app / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"\xcf\xfa\xed\xfe binary")
+            build.sign_app(app, "Developer ID Application: X (ABCDE12345)", "ABCDE12345",
+                           app / "Contents" / "Resources" / "engine", run=calls.append)
+        signed = [Path(c[-1]).name for c in calls if "--sign" in c]
+        self.assertEqual(signed[-1], "Refinix.app")
+        self.assertNotIn("llama-server", signed)       # signed before its manifest
+        self.assertIn("x.so", signed)
+        self.assertTrue(all("runtime" in c for c in calls if "--sign" in c))
+        self.assertIn("--entitlements", calls[len(signed) - 1])
+        self.assertTrue(any('subject.OU] = "ABCDE12345"' in " ".join(c) for c in calls))
+
+    def test_notarisation_must_be_accepted(self):
+        def answer(status, code=0):
+            return lambda path, profile: subprocess.CompletedProcess(
+                [], code, json.dumps({"id": "1", "status": status}), "")
+        self.assertEqual(build.notarize(Path("a.zip"), "p", run=answer("Accepted"))["status"],
+                         "Accepted")
+        for status, code in (("Invalid", 0), ("In Progress", 0), ("Accepted", 1)):
+            with self.subTest(status=status), self.assertRaises(build.BuildError):
+                build.notarize(Path("a.zip"), "p", run=answer(status, code))
+
+    def test_the_deb_control_file_carries_only_supported_fields(self):
+        text = (Path(build.DESKTOP) / "linux" / "control.in").read_text()
+        filled = (text.replace("@DEB_VERSION@", "0.1.0~1.1")
+                  .replace("@INSTALLED_SIZE@", "1").replace("@DESCRIPTION_NOTE@", "x"))
+        build.check_control(filled)
+        self.assertIn("libsecret-tools", filled)
+        self.assertIn("pkexec", filled)
+        for bad in (filled + "Conflicts: other\n", text):
+            with self.assertRaises(build.BuildError):
+                build.check_control(bad)
+        from desktop import deb_root
+        self.assertEqual(tuple(build.DEB_FIELDS), deb_root.ALLOWED_FIELDS)
+
+    def test_the_polkit_policy_allows_only_the_installed_program_behind_a_password(self):
+        text = (Path(build.DESKTOP) / "linux" / "com.refinix.desktop.policy").read_text()
+        self.assertEqual(text.count("<allow_active>auth_admin</allow_active>"), 4)
+        self.assertNotIn("auth_admin_keep", text)
+        self.assertNotIn("<allow_active>yes", text)
+        for mode in ("--deb-admit", "--deb-install", "--deb-recover", "--deb-rollback"):
+            self.assertIn(f'exec.argv1">{mode}<', text)
+        self.assertEqual(text.count('exec.path">/opt/refinix/Refinix<'), 4)
 
     def test_the_mac_archive_carries_no_finder_metadata(self):
         text = Path(build.__file__).read_text(encoding="utf-8")

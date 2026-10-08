@@ -585,7 +585,10 @@ function openContextPopover() {
   box.style.top = `${Math.round(Math.max(8, rect.top - height - 8))}px`;
   contextPopover = box;
   meter.setAttribute('aria-expanded', 'true');
-  box.querySelector('p').setAttribute('tabindex', '-1');
+  // Focus moves into the details so a keyboard or screen-reader user lands on
+  // them; Escape or the meter returns it.
+  headline.setAttribute('tabindex', '-1');
+  headline.focus();
 }
 
 /* ---- capabilities, skills and attachments ---------------------------- */
@@ -828,7 +831,8 @@ function openModelPopover() {
                      modelScope() === 'code' ? 'Code model'
                      : modelScope() === 'chat' ? 'Chat model' : 'Document model');
   if (modelScope() === 'documents.generate') {
-    appendModelChoices(box, 'documents.ocr', 'Document OCR model');
+    // Reading scanned pages is Beta: its results are evidence, never an allow-list.
+    appendModelChoices(box, 'documents.ocr', 'Document OCR model (Beta)');
   }
   if (selectedSkill()?.id === 'write-document') {
     appendDocumentChoices(box);
@@ -2459,27 +2463,48 @@ function proposalCard(proposal) {
     const validation = codeState?.validation;
     const passed = !!(validation?.observed && validation?.passed
       && validation.patch_sha256 === proposal.digest);
+    const sandbox = codeState?.local_sandbox;
+    const localPassed = local && !!validation?.matches;
+    const localFailed = local && validation && !validation.matches;
     const action = document.createElement('button');
     action.className = 'btn btn-primary';
     // A local change is applied after review here; a distributed one still
-    // has to come back from the sandbox first. One button, two honest labels.
-    action.textContent = local ? 'Accept and apply'
+    // has to come back from the sandbox first. After a local sandbox run the
+    // label says which Apply this is, and a failed run is never applied by
+    // the ordinary button.
+    action.textContent = localPassed ? 'Apply (sandbox passed)'
+      : localFailed ? 'Apply without the sandbox…'
+      : local ? 'Accept and apply'
       : passed ? 'Apply this change' : 'Validate in sandbox';
-    action.onclick = () => (local || passed)
-      ? applyProposal(proposal.proposal_id, null)
-      : validateProposal(proposal.proposal_id);
+    action.onclick = () => {
+      if (localFailed) return applyAfterFailedValidation(proposal, validation);
+      if (localPassed) return applyProposal(proposal.proposal_id, null, 'sandbox_validated');
+      return (local || passed) ? applyProposal(proposal.proposal_id, null)
+        : validateProposal(proposal.proposal_id);
+    };
     actions.append(action);
+    if (local && sandbox?.available && !validation) {
+      const check = document.createElement('button');
+      check.className = 'btn';
+      check.textContent = sandbox.qualification === 'provisional'
+        ? 'Validate in sandbox (provisional)' : 'Validate in sandbox';
+      check.title = sandbox.detail || '';
+      check.onclick = () => validateProposal(proposal.proposal_id);
+      actions.append(check);
+    }
     const reject = document.createElement('button');
     reject.className = 'btn';
     reject.textContent = 'Reject';
     reject.onclick = () => rejectProposal(proposal.proposal_id);
     actions.append(reject);
-    if (validation && !local) {
+    if (validation) {
       const result = document.createElement('span');
       result.className = 'lbl';
-      result.textContent = passed
-        ? `Sandbox passed ${validation.tests_run} test(s).`
-        : `Sandbox did not pass${validation.detail ? `: ${validation.detail}` : '.'}`;
+      const where = local ? `This computer's sandbox (${validation.pod?.qualification
+        || 'provisional'})` : 'Sandbox';
+      result.textContent = (local ? localPassed : passed)
+        ? `${where} passed ${validation.tests_run} test(s).`
+        : `${where} did not pass${validation.detail ? `: ${validation.detail}` : '.'}`;
       actions.append(result);
     }
     card.append(actions);
@@ -2825,13 +2850,14 @@ async function proposeChange(approvalId) {
   }
 }
 
-async function applyProposal(proposalId, approvalId) {
+async function applyProposal(proposalId, approvalId, mode) {
   if (!proposalId || !codeState?.active) return;
   try {
     const body = await codeApi('/v1/code/apply', {
       repo_id: codeState.active, proposal_id: proposalId,
       approval_id: approvalId || undefined,
       conversation_id: codeConversation,
+      mode: mode || undefined,
     });
     if (body.needs_approval) {
       notice('Refinix needs your approval before writing.', 'warn',
@@ -2853,6 +2879,17 @@ async function applyProposal(proposalId, approvalId) {
   // Re-read from disk, so the centre column shows the file rather than the
   // text that was proposed for it.
   await refreshOpenFile();
+}
+
+/* After a failed sandbox run, applying is its own explicit, recorded choice,
+   and the failure stays attached to the change. */
+async function applyAfterFailedValidation(proposal, validation) {
+  const why = validation.detail || 'the sandbox did not pass this change';
+  const ok = window.confirm('Apply without the sandbox?\n\nThe sandbox did not pass this '
+    + `change: ${why}.\n\nRefinix will still back up every file it replaces, and the `
+    + 'failed result stays recorded with the change.');
+  if (!ok) return;
+  await applyProposal(proposal.proposal_id, null, 'unsandboxed');
 }
 
 async function validateProposal(proposalId) {
@@ -3334,7 +3371,7 @@ const EVIDENCE_WORDS = {
   measured: 'measured in Refinix', not_usable: 'not usable',
 };
 const SCOPE_WORDS = { chat: 'Chat', code: 'Code', 'documents.generate': 'Documents',
-                      'documents.ocr': 'Page reading' };
+                      'documents.ocr': 'Page reading (Beta)' };
 // Pinned workflows, then the ones Auto would give this model right now.
 function usedForWords(model, choices) {
   const pinned = (model.selected_for || []).map((scope) => `${SCOPE_WORDS[scope] || scope} (pinned)`);
@@ -4183,8 +4220,12 @@ function updateView(u) {
     return { state: 'downloading', label: `Getting version ${d.version}… ${pct}%`, detail: '' };
   }
   if (d && d.state === 'verified') {
+    const needsPrepare = u.install_supported && u.install_method === 'deb';
     return { state: 'verified', label: `Version ${d.version} is downloaded and verified`,
-             detail: u.install_supported ? (u.install_note || '') : (u.install_reason || '') };
+             detail: needsPrepare
+               ? 'Next, prepare it: Ubuntu asks for an administrator password so the '
+                 + 'package can be checked again in protected storage. Nothing is installed yet.'
+               : u.install_supported ? (u.install_note || '') : (u.install_reason || '') };
   }
   if (d && (d.state === 'failed' || d.state === 'cancelled')) {
     return { state: 'failed', label: d.state === 'cancelled' ? 'The download was cancelled'
@@ -4229,7 +4270,12 @@ function updateActions(u, header) {
     return list;
   }
   const verified = d && d.state === 'verified';
-  if ((verified || install.state === 'ready') && u.install_supported
+  // Ubuntu .deb: preparing is its own step, behind an administrator password;
+  // Install and restart appears only once that admission succeeded.
+  const separatePrepare = u.install_method === 'deb' && install.state !== 'ready';
+  if (verified && separatePrepare && u.install_supported) {
+    list.push({ label: 'Prepare (asks for your password)', run: () => prepareUpdate() });
+  } else if ((verified || install.state === 'ready') && u.install_supported
       && nativeBridge() && nativeBridge().install_update) {
     list.push({ label: 'Install and restart', run: () => installAndRestart() });
   }
@@ -4278,7 +4324,8 @@ function renderUpdatesCard(s) {
   const last = u.last_check;
   const kept = u.kept;
   facts($('c-updates-facts'), [
-    ['Installed version', u.version ? `${u.version} (${u.channel})` : null, 'not reported'],
+    ['Installed version', u.version ? `${u.version} (${u.maturity === 'preview'
+      ? 'tester preview' : u.channel})` : null, 'not reported'],
     ['Updates come from', u.source === 'folder' ? `the update folder ${u.folder}`
       : u.source === 'https' ? 'the online update channel' : null, 'no update source'],
     ['Last check', last ? `${last.at} — ${last.detail}` : null, 'not checked yet'],
@@ -4456,6 +4503,33 @@ async function updateStep(path, poll) {
     await postJson(path, {});
   } catch (err) {
     notice('That update step did not complete.', 'error', err.message);
+  } finally {
+    await loadStatus().catch(() => {});
+    setUpdateBusy('');
+  }
+}
+
+/* Ubuntu .deb: the administrator-password admission on its own. A dismissed
+   prompt leaves the download as it was: downloaded, not prepared. */
+async function prepareUpdate() {
+  if (updateBusy) return;
+  setUpdateBusy('preparing');
+  try {
+    await postJson('/v1/updates/prepare', {});
+    let u = {};
+    for (let i = 0; i < 1200; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const s = await loadStatus();
+      u = (s && s.updates) || {};
+      if (u.install && u.install.state !== 'preparing') break;
+    }
+    if (!u.install || u.install.state !== 'ready') {
+      notice('The update was not prepared.', 'error',
+             ((u.install && u.install.error) || 'It was not verified.')
+             + ' It stays downloaded; nothing was installed.');
+    }
+  } catch (err) {
+    notice('The update was not prepared.', 'error', err.message);
   } finally {
     await loadStatus().catch(() => {});
     setUpdateBusy('');
@@ -5881,7 +5955,17 @@ window.addEventListener('DOMContentLoaded', () => {
     draftReady = true;
     if ($('draft-mark')) $('draft-mark').hidden = !draftInput.value;
     saveDraftSoon();
+    // The context meter follows the draft, without a request per keystroke.
+    refreshContextSoon();
   });
+  const meter = $('context-meter');
+  if (meter) {
+    meter.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (contextPopover) closeContextPopover(true);
+      else openContextPopover();
+    });
+  }
   document.addEventListener('click', (e) => {
     if (openMenu && !openMenu.contains(e.target)) closeMenu();
     if (plusMenu && !plusMenu.contains(e.target) && e.target !== $('plus-btn')) {
@@ -5892,11 +5976,13 @@ window.addEventListener('DOMContentLoaded', () => {
         && !(pill && pill.contains(e.target))) {
       closeModelPopover(false);
     }
+    if (contextPopover && !contextPopover.contains(e.target)) closeContextPopover(false);
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && openMenu) closeMenu();
     if (e.key === 'Escape' && plusMenu) { closePlusMenu(); $('plus-btn').focus(); }
     if (e.key === 'Escape' && modelPopover) closeModelPopover(true);
+    if (e.key === 'Escape' && contextPopover) closeContextPopover(true);
   });
   publishSlot();
   wirePairForm();

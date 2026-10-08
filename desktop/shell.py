@@ -40,20 +40,61 @@ DIALOG_FILE_TYPES = ("Documents and images (*.pdf;*.png;*.jpg;*.jpeg;*.tif;"
                      "*.xlsx;*.pptx)", "All files (*.*)")
 
 
-def _native_message(title: str, text: str) -> None:
-    """A last-resort native message when no web window can be shown."""
+def _native_message(title: str, text: str, *, platform: str | None = None,
+                    gtk=None, which=None, run=None) -> str:
+    """A last-resort native message when no web window can be shown.
+
+    Linux tries GTK first, then zenity (which needs no Python bindings, so it
+    still works when GTK/WebKitGTK is what is missing), then standard error.
+    Returns how the message was shown.
+    """
+    import shutil                                       # noqa: PLC0415
+    import subprocess                                   # noqa: PLC0415
+    platform = sys.platform if platform is None else platform
+    run = run or subprocess.run
     try:
-        if sys.platform == "win32":
+        if platform == "win32":
             import ctypes                               # noqa: PLC0415
             ctypes.windll.user32.MessageBoxW(None, text, title, 0x10)
-        elif sys.platform == "darwin":
-            import subprocess                           # noqa: PLC0415
+            return "messagebox"
+        if platform == "darwin":
             script = ('display alert ' + json.dumps(title) + ' message '
                       + json.dumps(text) + ' as critical')
-            subprocess.run(["/usr/bin/osascript", "-e", script], timeout=120,
-                           check=False)
+            run(["/usr/bin/osascript", "-e", script], timeout=120, check=False)
+            return "osascript"
+        if (gtk or _gtk_dialog)(title, text):
+            return "gtk"
+        zenity = (which or shutil.which)("zenity")
+        if zenity:
+            result = run([zenity, "--error", "--title", title, "--text", text,
+                          "--no-markup", "--width", "420"], timeout=600, check=False)
+            if getattr(result, "returncode", 1) in (0, 1):
+                return "zenity"
     except Exception:                                  # noqa: BLE001
         pass
+    print(f"{title}: {text}", file=sys.stderr)
+    return "stderr"
+
+
+def _gtk_dialog(title: str, text: str) -> bool:
+    """A GTK message dialog, when GTK itself is usable."""
+    try:
+        import gi                                      # noqa: PLC0415
+        gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk                  # noqa: PLC0415
+        if not Gtk.init_check()[0]:
+            return False
+        dialog = Gtk.MessageDialog(message_type=Gtk.MessageType.ERROR,
+                                   buttons=Gtk.ButtonsType.OK, text=title)
+        dialog.format_secondary_text(text)
+        dialog.set_title(title)
+        dialog.run()
+        dialog.destroy()
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+        return True
+    except Exception:                                  # noqa: BLE001
+        return False
 
 
 class MissingToolkit(RuntimeError):
@@ -712,12 +753,18 @@ class DesktopApp:
         environment = {key: os.environ[key] for key in update_apply.CARRIED
                        if os.environ.get(key)}
         try:
+            extra = {key: install[key] for key in ("installer_sha256", "admission",
+                                                   "recovery_copy", "to_maturity",
+                                                   "trust_roots") if install.get(key)}
             journal = update_apply.plan_attempt(
                 self.owner, database, update_id=install["update_id"],
                 from_version=u.version, to_version=install["version"],
                 install_path=path, incoming=Path(install["incoming"]),
                 lane=identity.get("lane"), channel=identity.get("channel"),
-                trust_root=identity.get("trust_root"), environment=environment)
+                trust_root=identity.get("trust_root"), environment=environment,
+                method=install.get("method") or "mac-app",
+                extra={**extra, "from_maturity": u.maturity,
+                       "publisher": u.expected_publisher()})
         except update_apply.InstallError as exc:
             return {"error": str(exc)}
         c.begin_install()
@@ -761,7 +808,7 @@ class DesktopApp:
                 mode = "--resume"      # the helper finishes or discards the copy
         try:
             update_apply.hand_off(self.owner, database, journal,
-                                  bundle=updates_module.running_bundle(), mode=mode)
+                                  bundle=updates_module.running_install(), mode=mode)
         except Exception as exc:                       # noqa: BLE001
             # The app files are untouched; the next launch resumes the attempt.
             print(f"update helper did not start: {exc}", file=sys.stderr)

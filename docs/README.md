@@ -142,8 +142,8 @@ When one of these snapshots disagrees with `PROJECT.md`, current product truth c
 
 ## Presentation and research material
 
-Presentation/research documents such as the SIH submission brief or workflow diagram may explain the
-idea, demo story and judge Q&A. They are non-normative.
+Presentation/research documents such as the workflow diagram may explain the idea and the demo
+story. They are non-normative.
 
 Presentation copy may describe the broader product vision, but claims about current functionality
 must preserve the distinction between:

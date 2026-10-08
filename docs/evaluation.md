@@ -7,7 +7,85 @@ inspection; it does not establish fresh device, inference, packaged-runtime or r
 
 ## Current status
 
-Source and test bodies re-inspected on **2026-09-16**, at
+<a id="tester-preview-batch-20261008"></a>
+### Tester-preview batch — 2026-10-08
+
+Run by the agent on the development Mac (Apple M5, 16 GB, macOS 26.7.1, Python 3.12) and in
+Docker containers on that Mac, against the uncommitted working tree on `aditya` (base
+`e234a0a`). These are **build and offline checks**, not device acceptance: no Windows computer
+and no clean Ubuntu desktop was available, so every device walkthrough below stays pending.
+
+| Check | Where it ran | Result |
+|---|---|---|
+| Coordinator, desktop, scripts, contracts suites | Mac | See [the final run](#tester-preview-batch-suites) |
+| Frontend suite | Mac (Node) | See [the final run](#tester-preview-batch-suites) |
+| Linux-only unit tests (deb root step, update methods, sandbox) | Ubuntu 24.04 amd64 container (emulated), unprivileged user | 66 passed |
+| `.deb` update root step against real dpkg 1.22.6 / apt 2.8.3 (`scripts/qualify_deb.py`) | Same container, disposable root environment | 14/14 passed: exact Inst+Conf plan, same-version reinstall, refusal of plans needing other packages, admission on root's copies, install, rollback, held dpkg lock, refusal with other unfinished packages, repair after a killed unpack, unpacked → configured |
+| Landlock in the Code sandbox launcher | Ubuntu 24.04 arm64 container (native) | ABI 8 enforced: paths outside the workspace denied, tests inside ran |
+| `systemd-run --user` sandbox properties, udisks image mount | — | **Not run**: needs a real Ubuntu desktop session. The Ubuntu sandbox stays provisional |
+| Windows setup inside a job, registry undo, Authenticode | — | **Not run**: no Windows computer. Source and fakes only |
+| macOS app swap with a Developer ID build | — | **Not run**: no Developer ID identity; the DMG is unsigned and not published |
+
+<a id="tester-preview-batch-suites"></a>
+**Final offline run on the Mac** (same tree, Python 3.12, Node): coordinator 1635 passed (5
+skipped), desktop 224 passed (1 skipped), scripts 62 passed, contracts 20 passed, frontend 247
+passed; `git diff --check` clean. Baseline at `e234a0a` before the batch: coordinator 1584,
+desktop 188, scripts with 2 failures (launcher address drift, fixed at its cause), contracts 20,
+frontend 242.
+
+**Packages built locally** (not publishable: uncommitted tree, throwaway update trust root):
+
+| Package | Where | Result |
+|---|---|---|
+| macOS ZIP + DMG, Beta `0.1.0-preview.1`, public build 7, unsigned | the development Mac | Built in 20 s; DMG checksum valid; ad-hoc signature verifies; Gatekeeper rejects it, as expected for an unsigned app; embedded identity preview/build 7/`preview-test`. `LSMinimumSystemVersion` is 26.0 because this Mac's Python is Homebrew's; the release Mac should build with a python.org framework Python to lower it |
+| Ubuntu `.deb` (+ AppImage), Beta `0.1.0-preview.1` | Ubuntu 24.04 amd64 container (emulated) | Built in 45 s (`.deb` 58 MB, AppImage 62 MB); see [the container build](#tester-preview-batch-deb) |
+| Windows setup | — | **Not built**: needs the hosted Windows runner (`release.yml`) from the reviewed `main` commit |
+
+<a id="tester-preview-batch-deb"></a>
+**The Ubuntu package, built the way `release.yml` builds it** (system Python 3.12 with Ubuntu's
+GTK/WebKitGTK bindings, the lane's pinned locks, PyInstaller, the pinned engine archives), then
+qualified as root in the same throwaway container with `scripts/qualify_deb.py --real`: 23/23
+checks passed with dpkg 1.22.6 and APT 2.8.3. They include the 14 update-rule checks above plus,
+on the real package, only supported control fields; the program, build identity, file list,
+polkit policy and desktop entry present; installation through APT with its dependencies; the
+installed tree matching its file list; and the root entry refusing to run without pkexec. A dry run
+of `release_assemble.py` and `build-site.sh` on that package produced `SHA256SUMS`, release
+notes and download cards offering only the `.deb`.
+
+Building it found four defects in the release workflow, fixed in this batch and covered by
+`scripts/test_workflows.py`. The Windows and Ubuntu jobs installed only part of the packaging plan's
+locks, so the bundle would have lacked the update client, `psutil` and PDF rendering. The Ubuntu
+job lacked `libpython3.12`, without which PyInstaller refuses Ubuntu's Python. The qualification
+step used the wrong arguments, interpreter and guard. The `.deb` root-step tests ran before the
+lock they need. Docker's amd64 emulation cannot execute AppImages (their header magic fails the
+emulator's match), so in the container only, the build ran AppImages from copies with those three
+bytes zeroed; hosted x86_64 runners run them directly. The trust root inside these packages was a
+throwaway one: they are for checking only and are never published.
+
+**Refinix's own overhead** (`scripts/measure_performance.py`, no model running, Ollama stopped):
+
+| Measure | Result |
+|---|---|
+| Launch to first answered `/v1/status` | 330 ms |
+| `/v1/status` (30 calls) | median 4.3 ms, p95 6.0 ms, 62 KB |
+| Idle after 20 s | 0% CPU, 107 MB resident, 3 threads |
+| Rendering a 3-page scanned PDF (warm) | 111 ms, about 40 MB peak traced memory |
+| 256 MB update package: check / download and stage / offline admission | 19 ms / 326 ms / 200 ms; 512 MB staged including the recovery package |
+
+No Refinix-side cost was large enough to justify an optimisation in this batch. Model time
+(first token, OCR) was not measured: no live model ran.
+
+**Removed as dead code** (no caller in source or tests): `db.get_sources`,
+`db.get_model_enabled`, `db.model_enablement`, `engine.ManagedEngine._blocked`,
+`capacity.Ledger._pending`, `models.entries_for`, `server.preview_model`, `server._engine_kind`,
+`server.default_model`, `device.target_identities`. Deferred paired-device, worker, Kubernetes and
+Redis code was kept.
+
+**Moved out of the repository** (recoverable, with a hash manifest, in a private archive outside
+Git): the former presentation brief and generated PDFs, an old Beta-foundation checkpoint folder
+under `tmp/`, and ignored build output. Git history still contains the files that were tracked.
+
+Earlier snapshot, kept for history: source and test bodies re-inspected on **2026-09-16**, at
 `942b87deaf9fbb5d070e069ebbe0bb1f74322604` (clean `aditya` before this documentation
 change). This supersedes the 2026-09-15 snapshot for **source status**; it is not a
 new runtime, package, model, worker or egress verification. No application tests,

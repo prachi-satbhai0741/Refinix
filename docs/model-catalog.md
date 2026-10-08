@@ -578,6 +578,12 @@ inputs and outcomes. Record limitations and offline evidence; do not infer quali
 reply. Release checks use representative integrated app/workflow examples rather than benchmarking
 all downloadable models. Package and tool-security acceptance remain separate.
 
+**Reading scanned pages (OCR) is Beta.** Any installed local model that declares vision and offers
+structured output may read page images; the app labels the choice "Document OCR model (Beta)" and
+"Page reading (Beta)". Results observed on one computer — including the Mac scan-reading records
+in 3.2 — are evidence about that model and setting, never an allow-list that admits or excludes
+other models. Each extraction records the exact model tag and renderer in its method line.
+
 ## 11. Personalisation and optional model adaptation
 
 Personalisation does not require changing model weights. Use the following order;

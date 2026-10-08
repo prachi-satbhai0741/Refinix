@@ -1,7 +1,6 @@
-# Refinix internal test build — @ARTIFACT@
+# @TITLE@ — @ARTIFACT@
 
-**Internal test build. Unsigned. Not for distribution.** This package is test evidence
-only; it is not a Beta release and is never offered as an update to a released Refinix.
+@STATUS@
 
 | Field | Value |
 |---|---|

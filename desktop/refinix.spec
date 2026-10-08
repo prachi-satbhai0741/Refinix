@@ -24,6 +24,9 @@ datas = [(source, destination)
          for destination, sources in packaging_plan.frontend_data_files()
          for source in sources]
 datas.append((str(IDENTITY), "."))
+# Run by Ubuntu's own /usr/bin/python3 inside the Code-validation sandbox, so it
+# ships as a plain file rather than inside the bundled archive.
+datas.append((str(STAGED / "backend" / "coordinator" / "sandbox_launcher.py"), "sandbox"))
 # The update trust root and channel feed, when this build has them.
 for _name in ("REFINIX_UPDATE_ROOT", "REFINIX_UPDATE_FEED"):
     if os.environ.get(_name):

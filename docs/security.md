@@ -335,6 +335,41 @@ Finished validation Jobs use a cleanup TTL. Inputs mount read-only, output uses
 one disposable volume, and the coordinator accepts only validated artifacts
 whose hashes match the active attempt.
 
+### 8.1 Standalone Code validation on Ubuntu (provisional)
+
+Profile `ubuntu-systemd-landlock` ([`sandbox_local.py`](../backend/coordinator/sandbox_local.py),
+[`sandbox_launcher.py`](../backend/coordinator/sandbox_launcher.py)). Generated code runs only when
+every control below is in force; otherwise nothing runs and the missing controls are named. There is
+no fallback to running code directly on the computer. macOS and Windows do not offer sandbox
+validation in Beta and say so.
+
+- **Service:** a transient systemd user service — `RestrictAddressFamilies=none`, a system-call
+  filter from `@system-service` that also denies sockets, signals (`kill`, `tkill`, `tgkill`,
+  `pidfd_*`), tracing (`ptrace`, `process_vm_*`), io_uring, BPF, keyrings, namespace creation and
+  mounts (failing with `EPERM`), `NoNewPrivileges`, `RestrictNamespaces`, and memory (no swap),
+  process, CPU, run-time, file-size, descriptor and core-dump limits.
+- **Storage:** a fixed-size ext4 image (256 MB, 4096 inodes) mounted `nosuid,nodev` through udisks
+  without user interaction, or `fuse2fs` where udisks would ask; the filesystem itself caps bytes
+  and files.
+- **Launcher (Ubuntu's `/usr/bin/python3`, standard library only):** closes every inherited
+  descriptor except stdin/stdout/stderr, replaces the environment (no D-Bus, display, XDG or
+  credential variables; `HOME` is the workspace), applies Landlock (read-only interpreter, standard
+  library and shared libraries; read-write workspace only; abstract-socket and signal scoping on
+  ABI 6+), then checks from the inside that a socket cannot be created, an outside path cannot be
+  read, signals and io_uring are refused and the cgroup limits are the requested ones. It hashes the
+  staged copies against the reviewed digests before running `python3 -I -m unittest`; output is
+  capped.
+- **Binding:** a local result is bound to the proposal digest, the staged-input digest, the command
+  and the profile. Apply relies on a pass only when all four match. After a failed or mismatched
+  run, applying without the sandbox is a separate, explicit, audited choice; a failure is never
+  turned into a pass.
+- **"No sockets"** is claimed only as a property of the complete policy plus the qualification
+  tests, never of `RestrictAddressFamilies=none` alone.
+- **Status:** provisional. Landlock was observed enforced (ABI 8) in a Linux container; the systemd,
+  storage and limit controls await the Ubuntu 24.04 desktop feasibility check and qualification
+  (connections, host files and escapes, signals and tracing, process/memory/disk/file/time/output
+  limits, cleanup after cancel and failures).
+
 ## 9. Models and dependencies
 
 The curated catalogue accepts only components with:
@@ -354,7 +389,7 @@ Third-party conversions and missing evidence are disclosed. Runtime-owned user a
 from models endorsed or redistributed by Refinix. Arbitrary remote model code is excluded from the MVP.
 
 Prefer suitable local/open-source components over reimplementing standard
-functionality, but reject competing SIH submissions, unlicensed snippets,
+functionality, but reject code copied from other teams' competition entries, unlicensed snippets,
 incompatible copyleft obligations, unreviewed installers, and components that
 silently contact external services.
 
@@ -386,6 +421,39 @@ accepted in the reproducible demo path.
 - Release binaries and model weights are not committed to this repository.
   The public site contains no secrets, private data, chats or telemetry; offline
   runtime never depends on that site remaining available.
+
+### 10.1 The Beta update channel as implemented
+
+- **Trust root.** Each Beta package embeds the channel's TUF root and feed configuration. An
+  incoming package may ship the same root or a **newer root authenticated from it** (in the kept
+  evidence or the client's validated root history); older or unconnected roots are refused, and the
+  shipped root file must hash to the identity's record. The publisher refuses a package whose root
+  is not already in the feed.
+- **Redirects.** Metadata and pointers never follow a redirect. Package downloads may follow at
+  most three HTTPS redirects, only to hosts listed in the embedded feed configuration; the bytes are
+  authenticated by their signed length and SHA-256 either way.
+- **Freshness and replay.** A check or import judges expiry and rollback with the full client. An
+  already-verified download installs, resumes and recovers later without a clock, from its kept
+  evidence. On Ubuntu the privileged admission repeats the full check, including expiry, on
+  root-owned copies against root's own trust state; later privileged steps re-verify those copies
+  offline.
+- **Online-key compromise.** The snapshot/timestamp keys alone cannot authorise a package. Their
+  holder could hide updates for up to the remaining targets lifetime (180 days) or push versions
+  ahead until recovery: a new root version, signed offline, replaces those keys, and clients drop
+  cached metadata the revoked keys signed (tested).
+- **Privileged step (Ubuntu).** Only `/opt/refinix/Refinix` with one fixed first argument, through
+  polkit `auth_admin` every time; dispatched before anything else loads; never starts the UI, the
+  coordinator or a runtime and never touches user data. The request folder must be the caller's own,
+  in their home, writable by nobody else, reached without following links; only fixed names are read,
+  sizes are bounded, and nothing the caller supplied is trusted after it is copied. Only the
+  `refinix` package changes: Debian's own tools plan and install it under dpkg's front-end lock.
+- **Windows installer containment.** The setup is created inside a job object only the helper holds,
+  killing every process in it when the helper ends, with no breakaway; if the job cannot be made,
+  nothing is installed.
+- **Maturity.** Accepted installations never take a preview, from any source; the label's tag, the
+  build identity, the signed pointer and the package target must all agree.
+- **Custody.** Root and targets keys offline; online keys only in the website repository's
+  environments; Windows signing secrets only in the source repository's `beta-sign` environment.
 
 ## 11. Repository content
 

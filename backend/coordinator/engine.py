@@ -591,10 +591,6 @@ class ManagedEngine:
         except FileNotFoundError:
             pass
 
-    def _blocked(self, record: dict, why: str) -> EngineError:
-        self.last_error = _stop_blocked(record, why)
-        return self.last_error
-
     def reap_orphan(self) -> bool:
         """Stop an engine a crashed Refinix left behind, only if provably ours.
 

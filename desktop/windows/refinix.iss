@@ -27,12 +27,20 @@
 #ifndef OutputBase
   #define OutputBase "Refinix-" + AppVersion + "-windows-x64-setup"
 #endif
+; X.Y.Z.N: the numeric version Windows shows, N the public build number
+; (backend/coordinator/release.py), so file versions sort like releases.
+#ifndef VersionInfo
+  #define VersionInfo "0.0.0.0"
+#endif
 
 [Setup]
 AppId={{6F4C2E7A-6E3B-4C55-9C8E-2B6B9E9B5A31}
 AppName=Refinix
 AppVersion={#AppVersion}
 AppPublisher=Refinix
+VersionInfoVersion={#VersionInfo}
+VersionInfoProductVersion={#VersionInfo}
+VersionInfoProductTextVersion={#AppVersion}
 DefaultDirName={localappdata}\Programs\Refinix
 DisableProgramGroupPage=yes
 DisableDirPage=yes
@@ -50,6 +58,12 @@ SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
+; Release builds: build.py defines SignTool and passes the signer as /Srefinix=…,
+; so the setup program and its uninstaller carry the same Authenticode signature.
+#ifdef SignTool
+SignTool={#SignTool}
+SignedUninstaller=yes
+#endif
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

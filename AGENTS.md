@@ -13,7 +13,7 @@ qualified, user-initiated in-app update path. Distributed execution is deferred
 until after Beta; preserve its existing code and trust boundaries for later reuse.
 
 The user's [5 October 2026 direction](docs/beta-user-direction-2026-10-05.md) is preserved verbatim.
-For this college/hackathon Beta, reuse existing upstream infrastructure and the current foundation.
+For this Beta, reuse existing upstream infrastructure and the current foundation.
 Existing local Ollama models and Refinix-managed llama.cpp are both product paths; model origin
 selects the runtime without a mandatory technical chooser or duplicate weights. Broad compatible
 model choice and automatic local task-to-model routing are required. Team-measured model/device/

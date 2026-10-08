@@ -31,10 +31,24 @@ target. The client:
    hashed again, and the package is expanded and checked by `app_archive`.
    Replacing the app and restarting is the desktop shell's and the update
    helper's job (`desktop/update_apply.py`).
+
+The public `beta` channel uses consistent snapshots: versioned metadata, and
+two signed pointers per lane, `beta/<lane>/latest.json` (accepted builds) and
+`beta/<lane>/latest-preview.json` (tester previews). A preview installation
+reads both and takes the newest; an accepted one reads only `latest.json` and
+refuses a preview from any source. A pointer lists one package per install
+format (`zip`, `exe`, `deb`, `appimage`); the client takes only the format this
+copy was installed with. Packages are release assets named `v<version>/<asset>`
+in the signed targets, fetched from the feed's `packages_url` through the
+public TUF calls (`get_targetinfo`, the fetcher, `verify_length_and_hashes`);
+only that download may follow HTTPS redirects, and only to the feed's listed
+download hosts. Metadata never follows a redirect. See `release` for labels,
+maturity and the ordering key.
 """
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -49,9 +63,9 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
-from backend.coordinator import build_info
+from backend.coordinator import build_info, release, tuf_offline
 
 TRUST_ROOT_NAME = "refinix-update-root.json"
 FEED_NAME = "refinix-update-feed.json"
@@ -69,12 +83,17 @@ MAX_BUNDLE_MEMBERS = 64
 MAX_JSON_MEMBER = 1024 ** 2
 BUNDLE_SLACK = 8 * 1024 ** 2
 MEMBER = re.compile(r"metadata/(?:\d+\.root|root|timestamp|snapshot|targets)\.json"
-                    r"|targets/[a-z]+/[a-z0-9-]+/[A-Za-z0-9._+-]+")
+                    r"|metadata/\d+\.(?:snapshot|targets)\.json"
+                    r"|targets/internal/[a-z0-9-]+/[A-Za-z0-9._+-]+"
+                    r"|targets/beta/[a-z0-9-]+/[0-9a-f]{64}\.latest(?:-preview)?\.json"
+                    r"|targets/v\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?/[A-Za-z0-9._+~-]+")
 
 # Installing: which lanes have a helper in this application, and the test-only
 # install root an internal build may also use.
-CAPABILITIES = ("qualified", "internal-test", "unavailable")
-HELPER_PLATFORMS = {"macos-arm64": "darwin"}
+CAPABILITIES = ("qualified", "internal-test", "preview-test", "unavailable")
+HELPER_PLATFORMS = {"macos-arm64": "darwin", "windows-x64": "win32", "linux-x64": "linux"}
+# Redirects a package download may follow, each to a listed HTTPS host.
+MAX_REDIRECTS = 3
 TEST_INSTALL_ROOT = "REFINIX_TEST_INSTALL_ROOT"
 INSTALL_MARGIN = 256 * 1024 ** 2
 
@@ -94,13 +113,8 @@ def _stamp() -> str:
 
 
 def version_key(text: str) -> tuple:
-    """Order `1.2.3`, `1.2.3-internal.4`, `1.2.3-beta.2`; a release sorts last."""
-    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?", str(text or ""))
-    if not match:
-        raise ValueError(f"not a Refinix version: {text!r}")
-    major, minor, patch, tag, number = match.groups()
-    pre = (0, tag, int(number)) if tag else (1, "", 0)
-    return (int(major), int(minor), int(patch), pre)
+    """The one ordering key (`release.key`); ValueError for anything else."""
+    return release.key(text)
 
 
 def bundled(name: str) -> Path | None:
@@ -149,7 +163,9 @@ class Download:
                 "source": self.source}
 
 
+@functools.lru_cache(maxsize=None)
 def _fetcher_classes():
+    """The fetcher classes, made once so `isinstance` checks hold."""
     from tuf.api import exceptions
     from tuf.ngclient import FetcherInterface
 
@@ -166,25 +182,45 @@ def _fetcher_classes():
                 yield block
 
     class HttpsFetcher(Watched):
-        """HTTPS only, OS-backed certificate verification, progress and Stop."""
+        """HTTPS only, OS-backed certificate verification, progress and Stop.
 
-        def __init__(self, pool=None):
+        Metadata and pointers never follow a redirect. A fetcher made with
+        `redirect_hosts` (package downloads only) follows at most
+        MAX_REDIRECTS HTTPS redirects, each to one of those hosts.
+        """
+
+        def __init__(self, pool=None, redirect_hosts=()):
             self._pool = pool
+            self.redirect_hosts = frozenset(h.lower() for h in redirect_hosts)
 
         def _fetch(self, url: str):
-            if urlsplit(url).scheme != "https":
-                raise exceptions.DownloadError(f"refusing a non-HTTPS update URL: {url}")
             if self._pool is None:
                 from backend.coordinator import provisioning
                 self._pool = provisioning._pool()
-            response = self._pool.request("GET", url, preload_content=False,
-                                          redirect=False)
-            if response.status in (301, 302, 303, 307, 308):
+            hops = 0
+            while True:
+                if urlsplit(url).scheme != "https":
+                    raise exceptions.DownloadError(f"refusing a non-HTTPS update URL: {url}")
+                response = self._pool.request("GET", url, preload_content=False,
+                                              redirect=False)
+                if response.status not in (301, 302, 303, 307, 308):
+                    break
+                location = (getattr(response, "headers", None) or {}).get("Location")
                 response.release_conn()
-                raise exceptions.DownloadHTTPError(
-                    f"the update server redirected the request (answer "
-                    f"{response.status}); a sign-in page or proxy may be in the way",
-                    response.status)
+                following = urljoin(url, location) if location else ""
+                if not self.redirect_hosts or hops >= MAX_REDIRECTS or not following:
+                    raise exceptions.DownloadHTTPError(
+                        f"the update server redirected the request (answer "
+                        f"{response.status}); a sign-in page or proxy may be in the way",
+                        response.status)
+                parts = urlsplit(following)
+                if parts.scheme != "https" or (parts.hostname or "").lower() \
+                        not in self.redirect_hosts:
+                    raise exceptions.DownloadHTTPError(
+                        "the download was redirected to an address that is not one of "
+                        "this channel's download hosts, so it was not followed",
+                        response.status)
+                url, hops = following, hops + 1
             if response.status >= 400:
                 response.release_conn()
                 raise exceptions.DownloadHTTPError(
@@ -314,27 +350,18 @@ def unreachable(exc: Exception) -> str | None:
 # --------------------------------------------------------------------------
 
 def _metadata(data: bytes, role: str):
-    from tuf.api.metadata import Metadata
     try:
-        item = Metadata.from_bytes(data)
-    except Exception as exc:                               # noqa: BLE001
-        raise UpdateError("evidence", f"Kept {role} metadata cannot be read: {exc}") from exc
-    if item.signed.type != role:
-        raise UpdateError("evidence", f"Kept {role} metadata is of another kind.")
-    return item
+        return tuf_offline.metadata(data, role)
+    except tuf_offline.OfflineError as exc:
+        raise UpdateError("evidence", str(exc)) from exc
 
 
 def _next_root(current, data: bytes):
     """One step of root rotation: exactly the next version, both thresholds met."""
-    item = _metadata(data, "root")
-    if item.signed.version != current.signed.version + 1:
-        raise UpdateError("evidence", "The kept root versions are not consecutive.")
     try:
-        current.signed.verify_delegate("root", item.signed_bytes, item.signatures)
-        item.signed.verify_delegate("root", item.signed_bytes, item.signatures)
-    except Exception as exc:                               # noqa: BLE001
-        raise UpdateError("evidence", f"A kept root is not properly signed: {exc}") from exc
-    return item
+        return tuf_offline.next_root(current, data)
+    except tuf_offline.OfflineError as exc:
+        raise UpdateError("evidence", str(exc)) from exc
 
 
 def verify_evidence(staged: Path, *, anchor: bytes, local_metadata: Path | None = None) -> dict:
@@ -360,11 +387,16 @@ def verify_evidence(staged: Path, *, anchor: bytes, local_metadata: Path | None 
     if record.get("trust_root") != hashlib.sha256(anchor).hexdigest():
         raise UpdateError("evidence", "The update was verified with another trust root.")
     root = _metadata(anchor, "root")
+    # Every root this chain authenticated, as the SHA-256 of its exact bytes:
+    # the roots an incoming package may ship (app_archive root continuity).
+    roots = [hashlib.sha256(anchor).hexdigest()]
     kept = sorted((evidence / "root").glob("*.root.json"),
                   key=lambda p: int(p.name.split(".")[0])) if (evidence / "root").is_dir() \
         else []
     for path in kept:
-        root = _next_root(root, path.read_bytes())
+        data = path.read_bytes()
+        root = _next_root(root, data)
+        roots.append(hashlib.sha256(data).hexdigest())
     # Keys this client has trusted since: continue the chain to them.
     if local_metadata is not None:
         history = Path(local_metadata) / "root_history"
@@ -378,6 +410,7 @@ def verify_evidence(staged: Path, *, anchor: bytes, local_metadata: Path | None 
                     raise UpdateError("evidence", f"Locally trusted root {version} is "
                                                   "missing or unreadable.") from exc
                 root = _next_root(root, data)
+                roots.append(hashlib.sha256(data).hexdigest())
             if root.signed.version == trusted.signed.version \
                     and root.signed_bytes != trusted.signed_bytes:
                 raise UpdateError("evidence", "The authenticated root disagrees with "
@@ -385,38 +418,17 @@ def verify_evidence(staged: Path, *, anchor: bytes, local_metadata: Path | None 
         except OSError as exc:
             raise UpdateError("evidence", "The newest locally trusted root is missing "
                                           "or unreadable.") from exc
-    signed: dict = {}
+    kept = {}
     for role in ("timestamp", "snapshot", "targets"):
         try:
-            data = (evidence / f"{role}.json").read_bytes()
+            kept[role] = (evidence / f"{role}.json").read_bytes()
         except OSError as exc:
             raise UpdateError("evidence", f"The kept {role} metadata is missing.") from exc
-        item = _metadata(data, role)
-        try:
-            root.signed.verify_delegate(role, item.signed_bytes, item.signatures)
-        except Exception as exc:                           # noqa: BLE001
-            raise UpdateError("evidence", f"The kept {role} metadata is not signed by "
-                                          f"the trusted keys: {exc}") from exc
-        signed[role] = (item, data)
-    timestamp, (snapshot, snapshot_bytes), (targets, targets_bytes) = (
-        signed["timestamp"][0], signed["snapshot"], signed["targets"])
     try:
-        link = timestamp.signed.snapshot_meta
-        if link.version != snapshot.signed.version:
-            raise UpdateError("evidence", "The kept snapshot is not the one its "
-                                          "timestamp names.")
-        if link.length is not None or link.hashes:
-            link.verify_length_and_hashes(snapshot_bytes)
-        link = snapshot.signed.meta.get("targets.json")
-        if link is None or link.version != targets.signed.version:
-            raise UpdateError("evidence", "The kept targets metadata is not the one its "
-                                          "snapshot names.")
-        if link.length is not None or link.hashes:
-            link.verify_length_and_hashes(targets_bytes)
-    except UpdateError:
-        raise
-    except Exception as exc:                               # noqa: BLE001
-        raise UpdateError("evidence", f"The kept metadata does not link up: {exc}") from exc
+        _timestamp, _snapshot, targets = tuf_offline.verify_roles(
+            root, kept["timestamp"], kept["snapshot"], kept["targets"])
+    except tuf_offline.OfflineError as exc:
+        raise UpdateError("evidence", str(exc)) from exc
     entries = targets.signed.targets
     latest_name = record.get("latest_target")
     latest_entry = entries.get(latest_name)
@@ -428,35 +440,74 @@ def verify_evidence(staged: Path, *, anchor: bytes, local_metadata: Path | None 
     except Exception as exc:                               # noqa: BLE001
         raise UpdateError("evidence", "The kept offer does not match its signed "
                                       "entry.") from exc
-    latest = json.loads(latest_bytes)
-    package_entry = entries.get(latest.get("artifact"))
+    try:
+        latest = json.loads(latest_bytes)
+    except ValueError as exc:
+        raise UpdateError("evidence", "The kept offer cannot be read.") from exc
+    beta = latest.get("channel") == "beta"
+    name = (latest.get("payloads") or {}).get(record.get("format")) if beta \
+        else latest.get("artifact")
+    package_entry = entries.get(name)
     if package_entry is None:
         raise UpdateError("evidence", "The kept offer names a package that is not signed.")
     custom = package_entry.custom or {}
-    for key in ("version", "lane", "channel"):
-        values = {latest.get(key), record.get(key)}
-        if key in ("version", "lane"):
+    keys = ("version", "lane", "channel") + (("maturity", "format") if beta else ())
+    for key in keys:
+        values = {record.get(key)}
+        if key != "format":
+            values.add(latest.get(key))
+        if beta or key in ("version", "lane"):
             values.add(custom.get(key))
         if len(values) != 1:
             raise UpdateError("evidence", f"The kept details disagree about the {key}.")
-    if record.get("target") != latest.get("artifact"):
+    if beta:
+        try:
+            release.check_identity(latest["version"], "beta", latest.get("maturity"))
+        except (KeyError, release.LabelError) as exc:
+            raise UpdateError("evidence", f"The kept offer is mislabelled: {exc}") from exc
+        if not release.pointer_allows(Path(latest_name).name, latest.get("maturity"), "beta"):
+            raise UpdateError("evidence", "The kept offer came through a pointer that "
+                                          "cannot name it.")
+    if record.get("target") != name:
         raise UpdateError("evidence", "The kept record names another package.")
-    package = staged / Path(latest["artifact"]).name
-    try:
-        with open(package, "rb") as handle:
-            package_entry.verify_length_and_hashes(handle)
-    except Exception as exc:                               # noqa: BLE001
-        raise UpdateError("evidence", "The staged package no longer matches its "
-                                      "signed size and SHA-256.") from exc
+    package = staged / Path(name).name
+    _verify_kept_file(package, package_entry, "The staged package")
     if (record.get("size"), record.get("sha256")) != (package_entry.length,
                                                       package_entry.hashes.get("sha256")):
         raise UpdateError("evidence", "The kept record disagrees with the signed package.")
+    recovery = None
+    if record.get("recovery"):
+        wanted = record["recovery"]
+        entry = entries.get(wanted.get("target"))
+        custom_recovery = (entry.custom or {}) if entry is not None else {}
+        if entry is None or (custom_recovery.get("version"), custom_recovery.get("lane"),
+                             custom_recovery.get("format")) != (
+                wanted.get("version"), latest.get("lane"), record.get("format")):
+            raise UpdateError("evidence", "The kept recovery package is not the signed "
+                                          "package of the installed version.")
+        path = staged / "recovery" / Path(wanted["target"]).name
+        _verify_kept_file(path, entry, "The kept recovery package")
+        recovery = {"version": wanted["version"], "target": wanted["target"],
+                    "maturity": custom_recovery.get("maturity"), "package": str(path),
+                    "size": entry.length, "sha256": entry.hashes.get("sha256")}
     return {"version": latest["version"], "lane": latest.get("lane"),
-            "channel": latest.get("channel"), "schema_version": latest.get("schema_version"),
+            "channel": latest.get("channel"), "maturity": latest.get("maturity"),
+            "format": record.get("format") if beta else None,
+            "public_build": latest.get("public_build"),
+            "schema_version": latest.get("schema_version"),
             "qualified_migrations": latest.get("qualified_migrations") or [],
-            "package": str(package), "size": package_entry.length,
-            "sha256": package_entry.hashes.get("sha256"),
-            "verified_at": record.get("verified_at")}
+            "package": str(package), "target": name, "size": package_entry.length,
+            "sha256": package_entry.hashes.get("sha256"), "recovery": recovery,
+            "roots": roots, "verified_at": record.get("verified_at")}
+
+
+def _verify_kept_file(path: Path, entry, what: str) -> None:
+    try:
+        with open(path, "rb") as handle:
+            entry.verify_length_and_hashes(handle)
+    except Exception as exc:                               # noqa: BLE001
+        raise UpdateError("evidence", f"{what} no longer matches its signed size and "
+                                      "SHA-256.") from exc
 
 
 def compatible_schema(current: int, target: int, migrations) -> str | None:
@@ -470,6 +521,16 @@ def compatible_schema(current: int, target: int, migrations) -> str | None:
         return None
     return ("This update changes the data format and needs a qualified migration, "
             "which this update does not declare.")
+
+
+def running_install() -> Path | None:
+    """The folder this packaged copy runs from: the .app on macOS, the program's
+    folder elsewhere (`%LOCALAPPDATA%\\Programs\\Refinix`, `/opt/refinix`)."""
+    if not getattr(sys, "frozen", False):
+        return None
+    if sys.platform == "darwin":
+        return running_bundle()
+    return Path(sys.executable).resolve().parent
 
 
 def running_bundle() -> Path | None:
@@ -489,11 +550,15 @@ def running_bundle() -> Path | None:
 class UpdateService:
     """Check, download, import and install preparation for this installation."""
 
+    TEST_INSTALL_ROOT = TEST_INSTALL_ROOT
+
     def __init__(self, data_root: Path, *, identity: dict | None = None,
                  trust_root: bytes | None = None, feed: dict | None = None,
                  schema_version: int, os_version=None, pool=None,
                  bundle: Path | None = None, platform: str | None = None,
-                 environ=None, codesign=None):
+                 environ=None, codesign=None, install_format: str | None = None,
+                 program: Path | None = None, dpkg_version=None, privileged=None,
+                 authenticode=None):
         self.data_root = Path(data_root)
         self.home = self.data_root / "updates"
         self.identity = identity if identity is not None else build_info.embedded_identity()
@@ -508,8 +573,14 @@ class UpdateService:
                 feed = None
         self.trust_root = trust_root
         feed = feed if isinstance(feed, dict) else {}
-        self.feed = ({"metadata_url": feed["metadata_url"], "targets_url": feed["targets_url"]}
-                     if feed.get("metadata_url") and feed.get("targets_url") else None)
+        self.feed = None
+        if feed.get("metadata_url") and feed.get("targets_url"):
+            self.feed = {"metadata_url": feed["metadata_url"],
+                         "targets_url": feed["targets_url"],
+                         # Beta: where release assets are, and the only hosts a
+                         # package download may be redirected to.
+                         "packages_url": feed.get("packages_url"),
+                         "package_hosts": tuple(feed.get("package_hosts") or ())}
         folder = feed.get("local_folder")
         self.folder = (Path(os.path.expanduser(folder))
                        if folder and (self.identity or {}).get("channel") == "internal"
@@ -521,6 +592,12 @@ class UpdateService:
         self._platform = platform or sys.platform
         self._environ = os.environ if environ is None else environ
         self._codesign = codesign
+        self._format = install_format
+        self._program = Path(program) if program is not None else (
+            Path(sys.executable) if getattr(sys, "frozen", False) else None)
+        self._dpkg = dpkg_version
+        self._privileged_runner = privileged
+        self._authenticode_check = authenticode
         self._lock = threading.Lock()
         self._busy = threading.Lock()              # one metadata operation at a time
         self.last_check: dict | None = None
@@ -541,6 +618,60 @@ class UpdateService:
     @property
     def lane(self) -> str | None:
         return (self.identity or {}).get("lane")
+
+    @property
+    def channel(self) -> str | None:
+        return (self.identity or {}).get("channel")
+
+    @property
+    def maturity(self) -> str | None:
+        """preview, accepted or final for a public build; None for internal."""
+        return (self.identity or {}).get("maturity") if self.channel == "beta" else None
+
+    def install_format(self) -> str | None:
+        """How this copy was installed: zip (macOS app), exe, deb or appimage."""
+        if self._format is None:
+            from backend.coordinator import install_methods
+            self._format = install_methods.detect_format(
+                self.lane, environ=self._environ,
+                executable=self._program or Path(sys.executable),
+                dpkg_version=self._dpkg_version) or ""
+        return self._format or None
+
+    def _dpkg_version(self) -> str | None:
+        if self._dpkg is not None:
+            return self._dpkg()
+        from backend.coordinator import install_methods
+        return install_methods.installed_deb_version()
+
+    def debian_version(self) -> str | None:
+        try:
+            return release.parse(self.version).debian()
+        except release.LabelError:
+            return None
+
+    def expected_publisher(self) -> str | None:
+        """The code-signing identity an incoming app must carry (Beta only)."""
+        identity = self.identity or {}
+        if identity.get("channel") != "beta" or identity.get("signing") in (None, "unsigned"):
+            return None
+        return identity.get("publisher") or None
+
+    def _authenticode(self, path: Path, publisher: str) -> str | None:
+        if self._authenticode_check is not None:
+            return self._authenticode_check(path, publisher)
+        from backend.coordinator import install_methods
+        return install_methods.authenticode(path, publisher)
+
+    def _privileged(self, mode: str, folder: Path) -> dict:
+        if self._privileged_runner is not None:
+            return self._privileged_runner(mode, folder)
+        from backend.coordinator import install_methods
+        return install_methods.run_privileged(mode, folder)
+
+    def _method(self):
+        from backend.coordinator import install_methods
+        return install_methods.for_service(self)
 
     def unavailable_reason(self) -> str | None:
         if not self.identity:
@@ -563,12 +694,13 @@ class UpdateService:
         return value if value in CAPABILITIES else "unavailable"
 
     def helper_present(self) -> bool:
-        return HELPER_PLATFORMS.get(self.lane or "") == self._platform
+        return HELPER_PLATFORMS.get(self.lane or "", None) == _platform_family(self._platform)
 
     def header_eligible(self) -> bool:
         """The header control may appear (the page adds the online hint)."""
         return (self.unavailable_reason() is None and self.source() is not None
-                and self.capability() != "unavailable" and self.helper_present())
+                and self.capability() != "unavailable" and self.helper_present()
+                and self._method().name != "unsupported")
 
     def install_location(self) -> tuple[Path | None, str | None]:
         """Where the running app is installed, or why it cannot be replaced there."""
@@ -578,30 +710,7 @@ class UpdateService:
         if not self.helper_present():
             return None, "Installing updates from inside Refinix is not available on " \
                          "this kind of computer yet."
-        bundle = self._bundle
-        if bundle is None:
-            return None, "Refinix is not running from an installed app."
-        text = str(bundle)
-        if "/AppTranslocation/" in text:
-            return None, ("macOS is running Refinix from a temporary copy. Move Refinix "
-                          "to Applications, open it from there and try again.")
-        allowed = [Path("/Applications/Refinix.app"),
-                   Path.home() / "Applications" / "Refinix.app"]
-        test_root = self._environ.get(TEST_INSTALL_ROOT)
-        if test_root and (self.identity or {}).get("channel") == "internal":
-            allowed.append(Path(test_root) / "Refinix.app")
-        if Path(os.path.realpath(bundle)) not in {Path(os.path.realpath(p)) for p in allowed}:
-            return None, ("Refinix can update itself only when it is in Applications. "
-                          f"This copy is at {bundle}.")
-        if not os.access(bundle.parent, os.W_OK):
-            return None, f"Refinix cannot write to {bundle.parent}."
-        try:
-            if os.stat(bundle.parent).st_dev != os.stat(self.data_root).st_dev:
-                return None, ("Refinix's data and the app are on different disks, so the "
-                              "app cannot be replaced safely in one step.")
-        except OSError as exc:
-            return None, f"The install location cannot be checked: {exc}"
-        return bundle, None
+        return self._method().location()
 
     def describe(self) -> dict:
         with self._lock:
@@ -613,7 +722,9 @@ class UpdateService:
             return {
                 "version": self.version,
                 "channel": (self.identity or {}).get("channel", "development"),
+                "maturity": self.maturity,
                 "lane": self.lane,
+                "install_format": self.install_format(),
                 "source": source,
                 "folder": str(self.folder) if self.folder is not None else None,
                 "can_check": self.unavailable_reason() is None and source is not None,
@@ -626,8 +737,9 @@ class UpdateService:
                 "install_supported": install_reason is None,
                 "install_reason": install_reason,
                 "install_path": str(install_path) if install_path else None,
+                "install_method": self._method().name,
                 "install": dict(self.install),
-                "install_note": INSTALL_NOTE,
+                "install_note": INSTALL_NOTES.get(self._method().name, INSTALL_NOTE),
                 "notice": self.notice,
                 "kept": self._kept(),
             }
@@ -651,6 +763,7 @@ class UpdateService:
         return {"previous_version": journal.get("from_version"),
                 "previous_app": app if app and Path(app).is_dir() else None,
                 "previous_app_bytes": self._size(app),
+                "previous_package": journal.get("recovery_copy"),
                 "data_copy": copy if copy and Path(copy).is_dir() else None,
                 "data_copy_bytes": self._size(copy)}
 
@@ -732,25 +845,55 @@ class UpdateService:
             if result in ("failed", "unreachable"):
                 self.offer = None
 
+    def _read_pointer(self, updater, name: str) -> dict | None:
+        info = updater.get_targetinfo(name)
+        if info is None:
+            return None
+        with tempfile.TemporaryDirectory() as folder:
+            local = updater.download_target(info, str(Path(folder) / LATEST))
+            try:
+                latest = json.loads(Path(local).read_text(encoding="utf-8"))
+            except ValueError as exc:
+                raise UpdateError("mismatch", "The signed offer cannot be read.") from exc
+        if not isinstance(latest, dict):
+            raise UpdateError("mismatch", "The signed offer is not a record.")
+        return latest
+
     def _decide(self, updater) -> dict | None:
         """The verified offer for this lane and channel, or None when up to date."""
         updater.refresh()
         identity = self.identity
         channel, lane = identity.get("channel"), identity.get("lane")
-        latest_path = f"{channel}/{lane}/{LATEST}"
-        info = updater.get_targetinfo(latest_path)
-        if info is None:
+        candidates = []
+        names = ([f"{channel}/{lane}/{LATEST}"] if channel != "beta" else
+                 [f"beta/{lane}/{pointer}" for pointer in release.pointers_for(self.maturity)])
+        for name in names:
+            latest = self._read_pointer(updater, name)
+            if latest is None:
+                continue
+            if (latest.get("channel"), latest.get("lane")) != (channel, lane):
+                raise UpdateError("mismatch", "The signed offer names another channel or "
+                                              "platform, so it was refused.")
+            try:
+                label = release.check_identity(latest.get("version"), channel,
+                                               latest.get("maturity") if channel == "beta"
+                                               else None)
+            except release.LabelError as exc:
+                raise UpdateError("mismatch", f"The signed offer is malformed: {exc}") from exc
+            if not release.pointer_allows(Path(name).name, label.maturity, channel):
+                raise UpdateError("mismatch", "The signed offer came through a pointer "
+                                              "that cannot name it, so it was refused.")
+            if not release.offered_to(self.maturity, label.maturity):
+                continue
+            candidates.append((label.key, name, latest))
+        if not candidates:
             return None
-        with tempfile.TemporaryDirectory() as folder:
-            local = updater.download_target(info, str(Path(folder) / LATEST))
-            latest = json.loads(Path(local).read_text(encoding="utf-8"))
-        if (latest.get("channel"), latest.get("lane")) != (channel, lane):
-            raise UpdateError("mismatch", "The signed offer names another channel or "
-                                          "platform, so it was refused.")
+        key, latest_path, latest = max(candidates, key=lambda item: item[0])
         try:
-            newer = version_key(latest["version"]) > version_key(self.version)
-        except (KeyError, ValueError) as exc:
-            raise UpdateError("mismatch", f"The signed offer is malformed: {exc}") from exc
+            newer = key > version_key(self.version)
+        except ValueError as exc:
+            raise UpdateError("mismatch", f"This build's version is not a release label: "
+                                          f"{exc}") from exc
         if not newer:
             return None
         target_schema = int(latest.get("schema_version", 0))
@@ -761,12 +904,25 @@ class UpdateService:
                                 latest.get("qualified_migrations"))
         if why:
             raise UpdateError("incompatible", why)
-        package = updater.get_targetinfo(latest["artifact"])
+        fmt = None
+        if channel == "beta":
+            fmt = self.install_format()
+            name = (latest.get("payloads") or {}).get(fmt or "")
+            if not name:
+                raise UpdateError("format", f"Version {latest['version']} is published, but "
+                                            "not as an update for this kind of installation; "
+                                            "download it from the Refinix website.")
+        else:
+            name = latest["artifact"]
+        package = updater.get_targetinfo(name)
         if package is None:
             raise UpdateError("mismatch", "The offered package is not in the signed "
                                           "metadata, so it was refused.")
         custom = package.custom or {}
-        if custom.get("version") != latest["version"] or custom.get("lane") != lane:
+        expected = {"version": latest["version"], "lane": lane}
+        if channel == "beta":
+            expected.update(channel="beta", maturity=latest.get("maturity"), format=fmt)
+        if any(custom.get(k) != v for k, v in expected.items()):
             raise UpdateError("mismatch", "The package's signed details do not match "
                                           "the offer, so it was refused.")
         minimum = latest.get("min_os")
@@ -780,15 +936,35 @@ class UpdateService:
                                       "later on this computer.")
             except ValueError:
                 pass
+        recovery = None
+        if fmt == "deb":
+            recovery = self._recovery_target(updater)
         return {"version": latest["version"], "build_set": latest.get("build_set"),
-                "target": latest["artifact"], "latest_target": latest_path,
+                "maturity": latest.get("maturity"), "format": fmt,
+                "public_build": latest.get("public_build"),
+                "target": name, "latest_target": latest_path,
                 "size": package.length,
                 "sha256": package.hashes.get("sha256"),
+                "recovery": recovery,
                 "notes": str(latest.get("notes") or "")[:4000],
                 "prerequisites": list(latest.get("prerequisites") or [])[:16],
                 "engine_release": latest.get("engine_release"),
                 "schema_version": latest.get("schema_version"),
                 "min_os": minimum}
+
+    def _recovery_target(self, updater) -> dict | None:
+        """The installed version's own signed .deb, kept so an update can go back."""
+        try:
+            name = release.package_target(self.version, self.lane, "deb")
+        except release.LabelError:
+            return None
+        info = updater.get_targetinfo(name)
+        custom = (info.custom or {}) if info is not None else {}
+        if info is None or (custom.get("version"), custom.get("format")) != (self.version,
+                                                                             "deb"):
+            return None
+        return {"target": name, "version": self.version, "size": info.length,
+                "sha256": info.hashes.get("sha256")}
 
     # -- the internal update folder ------------------------------------------
     def _trust_state(self) -> tuple:
@@ -825,11 +1001,7 @@ class UpdateService:
                 raise UpdateError(code, text) from exc
             if offer is None:
                 return None
-            info = members.get(f"targets/{offer['target']}")
-            total = sum(i.file_size for i in members.values())
-            if info is None or info.file_size != offer["size"] \
-                    or total > offer["size"] + BUNDLE_SLACK:
-                raise UpdateError("bad_bundle", "The bundle's package is not the signed size.")
+            _check_bundle_sizes(members, offer)
             return offer
 
     def check_folder(self) -> dict:
@@ -935,7 +1107,8 @@ class UpdateService:
                 started = True
                 return result
             fetcher, updater = self._online()
-            operation = Download(offer["version"], offer["target"], bytes_total=offer["size"])
+            operation = Download(offer["version"], offer["target"],
+                                 bytes_total=offer["size"] + _recovery_size(offer))
             self._run_stage(fetcher, updater, operation, offer)
             started = True
             return operation.as_dict()
@@ -970,7 +1143,7 @@ class UpdateService:
 
         def work():
             try:
-                self._stage(updater, operation, offer)
+                self._stage(updater, operation, offer, fetcher)
             finally:
                 if archive is not None:
                     archive.close()
@@ -982,7 +1155,50 @@ class UpdateService:
                                             name="refinix-update-download")
             self._thread.start()
 
-    def _stage(self, updater, operation: Download, offer: dict) -> None:
+    def _package_fetcher(self, fetcher):
+        """The fetcher a package download uses: bundles as they are; HTTPS with
+        this channel's download hosts allowed as redirect targets."""
+        HttpsFetcher, _ = _fetcher_classes()
+        if not isinstance(fetcher, HttpsFetcher):
+            return fetcher
+        package = HttpsFetcher(self._pool, redirect_hosts=self.feed.get("package_hosts")
+                               or ())
+        package.cancelled, package.progress = fetcher.cancelled, fetcher.progress
+        return package
+
+    def _package_url(self, fetcher, name: str) -> str:
+        HttpsFetcher, _ = _fetcher_classes()
+        if not isinstance(fetcher, HttpsFetcher):
+            return f"{BUNDLE_SCHEME}:///targets/{name}"
+        base = str(self.feed.get("packages_url") or "")
+        if not base.startswith("https://"):
+            raise UpdateError("unavailable", "This build's feed names no HTTPS download "
+                                             "address for packages.")
+        return base.rstrip("/") + "/" + name
+
+    def _fetch_package(self, updater, fetcher, name: str, destination: Path):
+        """A public package through the public TUF calls: signed length cap while
+        downloading, then the signed length and SHA-256 over the stored bytes."""
+        from tuf.api import exceptions
+        info = updater.get_targetinfo(name)
+        if info is None:
+            raise UpdateError("mismatch", "The package is no longer offered.")
+        source = self._package_fetcher(fetcher)
+        seen = 0
+        with open(destination, "xb") as out:
+            for block in source.fetch(self._package_url(fetcher, name)):
+                seen += len(block)
+                if seen > info.length:
+                    raise exceptions.DownloadLengthMismatchError(
+                        f"{name} is longer than its signed length")
+                out.write(block)
+            out.flush()
+            os.fsync(out.fileno())
+        with open(destination, "rb") as handle:
+            info.verify_length_and_hashes(handle)
+        return info
+
+    def _stage(self, updater, operation: Download, offer: dict, fetcher=None) -> None:
         staging = self.home / "staging" / operation.version
         partial = staging.with_name(staging.name + ".partial")
         shutil.rmtree(partial, ignore_errors=True)
@@ -993,18 +1209,27 @@ class UpdateService:
             if info is None:
                 raise UpdateError("mismatch", "The package is no longer offered.")
             name = Path(operation.target).name
-            updater.download_target(info, str(partial / name))
+            if (self.identity or {}).get("channel") == "beta":
+                info = self._fetch_package(updater, fetcher, operation.target, partial / name)
+                recovery = offer.get("recovery")
+                if recovery:
+                    (partial / "recovery").mkdir(mode=0o700)
+                    self._fetch_package(updater, fetcher, recovery["target"],
+                                        partial / "recovery" / Path(recovery["target"]).name)
+            else:
+                updater.download_target(info, str(partial / name))
             self._keep_evidence(updater, partial, offer, info)
             shutil.rmtree(staging, ignore_errors=True)
             partial.rename(staging)
             operation.path, operation.state = str(staging / name), "verified"
-            operation.bytes_done = info.length
+            operation.bytes_done = operation.bytes_total or info.length
         except Exception as exc:                           # noqa: BLE001
             shutil.rmtree(partial, ignore_errors=True)
             operation.state = "cancelled" if operation.cancel.is_set() else "failed"
             why = None if operation.cancel.is_set() else unreachable(exc)
             operation.error = (None if operation.cancel.is_set() else
                                f"Couldn't reach the update server: {why}." if why
+                               else str(exc) if isinstance(exc, UpdateError)
                                else _plain(exc))
 
     def _keep_evidence(self, updater, folder: Path, offer: dict, info) -> None:
@@ -1026,14 +1251,21 @@ class UpdateService:
         if latest_info is None:
             raise UpdateError("mismatch", "The offer is no longer signed.")
         updater.download_target(latest_info, str(evidence / LATEST))
-        _write_json(evidence / RECORD, {
+        record = {
             "version": offer["version"], "target": offer["target"],
             "latest_target": offer["latest_target"], "lane": self.lane,
             "channel": (self.identity or {}).get("channel"),
             "size": info.length, "sha256": info.hashes.get("sha256"),
             "schema_version": offer.get("schema_version"),
             "trust_root": hashlib.sha256(self.trust_root).hexdigest(),
-            "verified_at": _stamp(), "source": (offer.get("source") or {}).get("kind")})
+            "verified_at": _stamp(), "source": (offer.get("source") or {}).get("kind")}
+        if record["channel"] == "beta":
+            record.update(maturity=offer.get("maturity"), format=offer.get("format"),
+                          from_version=self.version, from_maturity=self.maturity)
+            if offer.get("recovery"):
+                record["recovery"] = {"target": offer["recovery"]["target"],
+                                      "version": offer["recovery"]["version"]}
+        _write_json(evidence / RECORD, record)
 
     def cancel(self) -> dict:
         with self._lock:
@@ -1068,8 +1300,8 @@ class UpdateService:
                 raise UpdateError("bad_bundle", f"The bundle cannot be read: {exc}") from exc
             with archive:
                 members = bundle_members(archive)
-                updater = self._updater(BundleFetcher(archive),
-                                        f"{BUNDLE_SCHEME}:///metadata/",
+                fetcher = BundleFetcher(archive)
+                updater = self._updater(fetcher, f"{BUNDLE_SCHEME}:///metadata/",
                                         f"{BUNDLE_SCHEME}:///targets/")
                 try:
                     offer = self._decide(updater)
@@ -1080,15 +1312,17 @@ class UpdateService:
                 if offer is None:
                     raise UpdateError("not_newer", "That bundle is not newer than this "
                                                    "version, so nothing was imported.")
-                info = members.get(f"targets/{offer['target']}")
-                if info is None or info.file_size != offer["size"] or \
-                        sum(i.file_size for i in members.values()) > offer["size"] + BUNDLE_SLACK:
-                    raise UpdateError("bad_bundle", "The bundle's package is not the "
-                                                    "signed size.")
+                if offer.get("recovery") and \
+                        f"targets/{offer['recovery']['target']}" not in members:
+                    # A bundle without this version's own package can still be
+                    # imported; the .deb route then explains what is missing.
+                    offer["recovery"] = None
+                _check_bundle_sizes(members, offer)
                 offer["source"] = {"kind": "import"}
                 operation = Download(offer["version"], offer["target"],
-                                     bytes_total=offer["size"], source="import")
-                self._stage(updater, operation, offer)
+                                     bytes_total=offer["size"] + _recovery_size(offer),
+                                     source="import")
+                self._stage(updater, operation, offer, fetcher)
         finally:
             self._busy.release()
         with self._lock:
@@ -1153,14 +1387,32 @@ class UpdateService:
                                                        identity.get("channel")):
             raise UpdateError("mismatch", "The staged update is for another platform or "
                                           "channel.")
+        if verified["channel"] == "beta":
+            if not release.offered_to(self.maturity, verified.get("maturity")):
+                raise UpdateError("mismatch", "This installation does not take "
+                                              f"{verified.get('maturity')} builds.")
+            if verified.get("format") != self.install_format():
+                raise UpdateError("mismatch", "The staged update is a "
+                                              f"{verified.get('format')} package, not one "
+                                              "for this kind of installation.")
         why = compatible_schema(self.schema_version, int(verified["schema_version"] or 0),
                                 verified["qualified_migrations"])
         if why:
             raise UpdateError("incompatible", why)
         return verified
 
+    def accepted_roots(self, verified: dict) -> set[str]:
+        """Roots an incoming build may ship: this build's own, or a newer one this
+        client authenticated starting from it (in the kept evidence or the
+        locally trusted root history). Older or unconnected roots never count."""
+        roots = set(verified.get("roots") or ())
+        own = (self.identity or {}).get("trust_root")
+        if own:
+            roots.add(own)
+        return roots
+
     def prepare_install(self, *, wait: bool = False) -> dict:
-        """Verify the staged update offline and expand it beside the app, ready to swap."""
+        """Verify the staged update offline and prepare it for this install method."""
         install_path, reason = self.install_location()
         if reason:
             raise UpdateError("install_unavailable", reason)
@@ -1173,13 +1425,10 @@ class UpdateService:
                 verified = self.admit_staged()
                 if (ready["version"], ready["install_path"]) != (verified["version"], str(install_path)):
                     raise UpdateError("changed", "Cancel the prepared update before preparing another.")
-                from backend.coordinator import app_archive
-                kwargs = {} if self._codesign is None else {"codesign": self._codesign}
+                from backend.coordinator import install_methods
                 try:
-                    app_archive.verify_bundle(Path(ready["incoming"]), version=ready["version"],
-                                              lane=self.lane, channel=self.identity["channel"],
-                                              trust_root=self.identity.get("trust_root"), **kwargs)
-                except app_archive.ArchiveError as exc:
+                    self._method().recheck(ready, verified)
+                except install_methods.MethodError as exc:
                     raise UpdateError(exc.code, str(exc)) from exc
                 return self.describe()
             with self._lock:
@@ -1197,44 +1446,32 @@ class UpdateService:
         return self.describe()
 
     def _prepare(self, install_path: Path) -> None:
-        from backend.coordinator import app_archive
         update_id = uuid.uuid4().hex[:16]
         destination = self.home / "install" / update_id
+        method = self._method()
         try:
             verified = self.admit_staged()
-            package = Path(verified["package"])
-            listing = app_archive.inspect(package)
-            needed = listing.total_bytes + _tree_bytes(install_path) + _database_bytes(
-                self.data_root) + INSTALL_MARGIN
-            free = shutil.disk_usage(self.home).free
-            if free < needed:
-                raise UpdateError("disk", f"Installing needs about {needed // 1024 ** 2} MB "
-                                          f"free; {free // 1024 ** 2} MB is available.")
-            app = app_archive.extract(package, listing, destination)
-            app_archive.check_tree(destination, listing)
-            kwargs = {} if self._codesign is None else {"codesign": self._codesign}
-            identity = app_archive.verify_bundle(
-                app, version=verified["version"], lane=self.lane,
-                channel=(self.identity or {}).get("channel"),
-                trust_root=(self.identity or {}).get("trust_root"), **kwargs)
-            if int(identity.get("schema_version") or 0) != int(
-                    verified["schema_version"] or 0):
-                raise UpdateError("mismatch", "The app inside the package disagrees with "
-                                              "the signed offer about its data format.")
+            prepared = method.prepare(verified, update_id, destination)
             with self._lock:
                 self.install = {"state": "ready", "update_id": update_id,
-                                "version": verified["version"], "incoming": str(app),
+                                "version": verified["version"],
                                 "install_path": str(install_path),
-                                "build_set": identity.get("build_set"),
-                                "prepared_at": _stamp()}
+                                "method": method.name,
+                                "to_maturity": verified.get("maturity"),
+                                "trust_roots": sorted(self.accepted_roots(verified)),
+                                "prepared_at": _stamp(), **prepared}
         except Exception as exc:                           # noqa: BLE001
-            try:
-                from backend.coordinator import app_archive as archive_module
-                archive_module.remove_tree(destination)
-            except OSError:
-                pass
-            message = str(exc) if isinstance(exc, (UpdateError,)) or \
-                type(exc).__name__ == "ArchiveError" else f"{type(exc).__name__}: {exc}"
+            if method.name != "deb":
+                try:
+                    from backend.coordinator import app_archive as archive_module
+                    archive_module.remove_tree(destination)
+                except OSError:
+                    pass
+            else:
+                shutil.rmtree(destination, ignore_errors=True)
+            known = isinstance(exc, UpdateError) or type(exc).__name__ in (
+                "ArchiveError", "MethodError")
+            message = str(exc) if known else f"{type(exc).__name__}: {exc}"
             with self._lock:
                 self.install = {"state": "failed", "error": message,
                                 "code": getattr(exc, "code", "failed"),
@@ -1243,7 +1480,7 @@ class UpdateService:
             self._busy.release()
 
     def cancel_install(self) -> dict:
-        """Forget a prepared (not yet started) install and remove its expanded copy."""
+        """Forget a prepared (not yet started) install and remove its working copy."""
         with self._lock:
             install = dict(self.install)
             if install.get("state") == "preparing":
@@ -1252,6 +1489,42 @@ class UpdateService:
         if install.get("state") == "ready" and install.get("update_id"):
             shutil.rmtree(self.home / "install" / install["update_id"], ignore_errors=True)
         return self.describe()
+
+
+INSTALL_NOTES = {
+    "mac-app": INSTALL_NOTE,
+    "windows-setup": ("Install and restart closes Refinix, sets the current version aside, "
+                      "runs the verified setup program for your account and opens Refinix "
+                      "again. Your conversations, documents and models are kept, and the "
+                      "previous version is kept for going back."),
+    "deb": ("Download and prepare ends with Ubuntu asking for an administrator password, "
+            "so the verified package can be checked again in protected storage. Install "
+            "and restart asks once more, installs only the Refinix package and opens "
+            "Refinix again. Your conversations, documents and models are kept, and the "
+            "previous package is kept for going back."),
+}
+
+
+def _platform_family(platform: str) -> str:
+    return "linux" if str(platform).startswith("linux") else str(platform)
+
+
+def _recovery_size(offer: dict) -> int:
+    return int((offer.get("recovery") or {}).get("size") or 0)
+
+
+def _check_bundle_sizes(members: dict, offer: dict) -> None:
+    info = members.get(f"targets/{offer['target']}")
+    allowed = offer["size"] + _recovery_size(offer) + BUNDLE_SLACK
+    if info is None or info.file_size != offer["size"] \
+            or sum(i.file_size for i in members.values()) > allowed:
+        raise UpdateError("bad_bundle", "The bundle's package is not the signed size.")
+    recovery = offer.get("recovery")
+    if recovery:
+        item = members.get(f"targets/{recovery['target']}")
+        if item is None or item.file_size != recovery["size"]:
+            raise UpdateError("bad_bundle", "The bundle's recovery package is not the "
+                                            "signed size.")
 
 
 def _tree_bytes(path: Path) -> int:

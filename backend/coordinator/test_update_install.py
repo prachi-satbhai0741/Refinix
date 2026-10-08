@@ -46,7 +46,7 @@ class Base(unittest.TestCase):
         path = Path(self.dir.name) / f"Refinix-{version}-macos-arm64.zip"
         write_app(path, identity={**APP_IDENTITY, "version": version,
                                   "trust_root": self.root_sha, "schema_version": schema,
-                                  **identity})
+                                  **identity}, root=self.root)
         return {"path": str(path), "lane": "macos-arm64", "version": version,
                 "build_set": "bs", "min_os": "26.0", "schema_version": schema,
                 "engine_release": "b1"}
