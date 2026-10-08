@@ -82,7 +82,9 @@ class FakeWindows:
 
         if disposition == winfs.CREATE_NEW:
             try:
-                descriptor = os.open(real, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                descriptor = os.open(
+                    real, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                    | getattr(os, "O_BINARY", 0), 0o600)
             except FileExistsError as exc:
                 raise winfs.WindowsError_(winfs.ERROR_FILE_EXISTS, "exists",
                                           "the name already exists") from exc
@@ -118,7 +120,9 @@ class FakeWindows:
         if not stat.S_ISREG(info.st_mode):
             raise winfs.WindowsError_(winfs.ERROR_ACCESS_DENIED, "unreadable",
                                       "not an ordinary file")
-        descriptor = os.open(real, os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = os.open(
+            real, os.O_RDONLY | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0))
         return self._register(real, descriptor, self._entry(os.fstat(descriptor), 0))
 
     def information(self, handle):
@@ -182,8 +186,16 @@ class WindowsBase(unittest.TestCase):
     def write(self, relative, text):
         path = self.project / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8", newline="")
         return path
+
+    def symlink(self, target, link, *, directory=False):
+        try:
+            os.symlink(target, link, target_is_directory=directory)
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows symlink privilege is unavailable")
+            raise
 
     def sha(self, relative):
         return hashlib.sha256((self.project / relative).read_bytes()).hexdigest()
@@ -237,7 +249,7 @@ class TestReading(WindowsBase):
     def test_a_linked_file_is_refused_rather_than_followed(self):
         outside = Path(self.scratch.name) / "secret.txt"
         outside.write_text("not yours\n")
-        os.symlink(outside, self.project / "link.md")
+        self.symlink(outside, self.project / "link.md")
         with self.assertRaises(repo.RepositoryError) as caught:
             repo.read_text_file(self.project, "link.md")
         self.assertEqual(caught.exception.code, "symlink")
@@ -246,7 +258,7 @@ class TestReading(WindowsBase):
         outside = Path(self.scratch.name) / "elsewhere"
         outside.mkdir()
         (outside / "app.py").write_text("stolen\n")
-        os.symlink(outside, self.project / "linked")
+        self.symlink(outside, self.project / "linked", directory=True)
         with self.assertRaises(repo.RepositoryError) as caught:
             repo.read_text_file(self.project, "linked/app.py")
         self.assertEqual(caught.exception.code, "symlink")
@@ -305,8 +317,8 @@ class TestListing(WindowsBase):
         outside = Path(self.scratch.name) / "elsewhere"
         outside.mkdir()
         (outside / "secret.py").write_text("no\n")
-        os.symlink(outside, self.project / "linked")
-        os.symlink(outside / "secret.py", self.project / "shortcut.py")
+        self.symlink(outside, self.project / "linked", directory=True)
+        self.symlink(outside / "secret.py", self.project / "shortcut.py")
         found = {row["path"] for row in repo.list_text_files(self.project)}
         self.assertEqual(found, {"notes.md", "src/app.py"})
 
@@ -377,7 +389,7 @@ class TestReplacing(WindowsBase):
     def test_a_linked_target_is_refused_and_its_destination_is_untouched(self):
         outside = Path(self.scratch.name) / "victim.txt"
         outside.write_text("original\n")
-        os.symlink(outside, self.project / "link.md")
+        self.symlink(outside, self.project / "link.md")
         with self.assertRaises(repo.RepositoryError) as caught:
             repo.replace_text_file(
                 self.project, "link.md",
@@ -403,6 +415,7 @@ class TestReplacing(WindowsBase):
         def fail_after_create(*args, **kwargs):
             handle = FakeWindows.open(broken, *args, **kwargs)
             if kwargs.get("disposition") == winfs.CREATE_NEW:
+                broken.close(handle)
                 raise OSError(5, "the disk went away")
             return handle
 
@@ -425,6 +438,7 @@ class TestReplacing(WindowsBase):
         def explode(*args, **kwargs):
             handle = FakeWindows.open(self.api, *args, **kwargs)
             if kwargs.get("disposition") == winfs.CREATE_NEW:
+                self.api.close(handle)
                 raise MemoryError("something nobody planned for")
             return handle
 
@@ -537,6 +551,55 @@ class TestTheSharedInvariants(unittest.TestCase):
     def test_the_backend_is_unavailable_off_windows(self):
         with patch.object(winfs.sys, "platform", "darwin"):
             self.assertFalse(winfs.supported())
+
+
+@unittest.skipUnless(os.name == "nt", "requires the real Windows filesystem API")
+class TestLiveWindowsDevice(unittest.TestCase):
+    """Device-observed checks against kernel32, not the portable API stand-in."""
+
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(self.scratch.cleanup)
+        self.project = Path(self.scratch.name) / "Project space Δ"
+        (self.project / "src").mkdir(parents=True)
+        (self.project / "src" / "main.py").write_bytes(
+            "print('Ω')\n".encode("utf-8"))
+
+    def test_real_pinned_handles_read_list_and_replace_unicode_paths(self):
+        text, before = repo.read_text_file(self.project, "src/main.py")
+        self.assertEqual(text, "print('Ω')\n")
+        self.assertEqual(
+            {item["path"] for item in repo.list_text_files(self.project)},
+            {"src/main.py"})
+        after = repo.replace_text_file(
+            self.project, "src/main.py", expected_sha256=before.sha256,
+            text="print('Δ')\n")
+        self.assertEqual((self.project / "src" / "main.py").read_bytes(),
+                         "print('Δ')\n".encode("utf-8"))
+        self.assertNotEqual(after.sha256, before.sha256)
+        self.assertEqual(list((self.project / "src").glob(".refinix-*.tmp")), [])
+
+    def test_real_junctions_are_refused_as_roots_and_components(self):
+        import _winapi
+
+        outside = Path(self.scratch.name) / "outside"
+        outside.mkdir()
+        (outside / "secret.py").write_text("secret\n", encoding="utf-8",
+                                            newline="")
+        linked = self.project / "linked"
+        root_link = Path(self.scratch.name) / "project-junction"
+        _winapi.CreateJunction(str(outside), str(linked))
+        _winapi.CreateJunction(str(self.project), str(root_link))
+        with self.assertRaises(repo.RepositoryError) as caught:
+            repo.read_text_file(self.project, "linked/secret.py")
+        self.assertEqual(caught.exception.code, "symlink")
+        self.assertNotIn(
+            "linked/secret.py",
+            {item["path"] for item in repo.list_text_files(self.project)})
+        with self.assertRaises(repo.RepositoryError) as caught:
+            repo.canonical_root(
+                root_link, state_dir=Path(self.scratch.name) / "state")
+        self.assertEqual(caught.exception.code, "symlinked_root")
 
 
 if __name__ == "__main__":

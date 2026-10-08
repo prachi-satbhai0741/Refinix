@@ -1882,6 +1882,18 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260922-002](#up-20260922-002)
 - linked_changes: [AC-20260922-003](agentchangelog.md#ac-20260922-003)
 
+<a id="up-20260922-004"></a>
+## UP-20260922-004 — Qualify and harden the exact-profile architecture on Windows
+- date: 2026-09-22
+- status: authorised Windows implementation, offline and live local verification, narrow PROJECT update and ledgers; no Git/GitHub write
+- tags: windows, qualification, execution-profile, worker-negotiation, route-parity, portability, native-vision
+- paths: backend/contracts/, backend/coordinator/, backend/worker/, desktop/, docs/PROJECT.md, agent-memory/
+- summary: Reconcile the completed macOS/exact-profile handoff against the live tree, harden confirmed Windows defects, run the real qualification boundary and local runtime/model observations, and prove distributed refusal semantics without fabricating a Windows profile.
+- request: Establish a non-secret Windows device identity, verify exact loopback Ollama/model identity, exercise Chat, Code, Documents and native vision through production paths, validate Windows filesystem/data-root/credential/document behaviour, adversarially test worker advertisement/admission/revalidation and route parity, generate evidence only if every required case passes, and provide a no-commit Git handoff.
+- constraints: Representative Code requires a qualified no-network sandbox; do not omit it, run generated code on the host, widen an envelope, install/download dependencies or models, expose the runtime to LAN, invent Windows/Linux/distributed evidence, auto-admit an artifact, rewrite historical evidence, claim release acceptance or perform Git/GitHub writes. Synthetic credentials and temporary workspaces must be removed.
+- follow_up_to: [UP-20260922-003](#up-20260922-003)
+- linked_changes: [AC-20260922-004](agentchangelog.md#ac-20260922-004)
+
 <a id="up-20260924-001"></a>
 ## UP-20260924-001 — Qualify Ollama 0.34.2 for the current Mac
 - date: 2026-09-24

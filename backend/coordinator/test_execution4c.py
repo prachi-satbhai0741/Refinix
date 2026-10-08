@@ -8,6 +8,7 @@ fake model. No live model call, no worker contact, no Kubernetes, no network.
 
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,13 +30,18 @@ class TestProposalEnvelope(unittest.TestCase):
         return [{"path": "large.py", "sha256": "a" * 64,
                  "text": "x" * size}]
 
-    def test_output_scales_when_a_whole_file_replacement_fits(self):
-        selected = self.selection(9_000)
+    def test_a_fitting_whole_file_uses_the_exact_qualified_ceiling(self):
+        selected = self.selection(3_000)
         messages = codeflow.build_messages("change one line", selected)
-        self.assertGreater(
+        profile = next(
+            p for p in profiles.PROFILES
+            if p.target_profile_id == profiles.MAC_M5_16GB
+            and p.workflow_mode == profiles.CODE
+            and p.model.runtime_version == "0.32.14")
+        self.assertEqual(
             code_service.CodeService._proposal_output_limit(
-                messages, selected, next(p for p in profiles.PROFILES if p.target_profile_id == profiles.MAC_M5_16GB and p.workflow_mode == profiles.CODE and p.model.runtime_version == "0.32.14")),
-            code_service.PROPOSAL_NUM_PREDICT)
+                messages, selected, profile),
+            profile.max_output_tokens)
 
     def test_an_impossible_selection_fails_before_generation(self):
         selected = self.selection(30_000)
@@ -72,8 +78,8 @@ class Base(unittest.TestCase):
         self.addCleanup(self.c.conn.close)
         self.project = self.home / "project"
         self.project.mkdir()
-        (self.project / "limits.py").write_text(ORIGINAL)
-        (self.project / "notes.md").write_text("# notes\n")
+        (self.project / "limits.py").write_bytes(ORIGINAL.encode("utf-8"))
+        (self.project / "notes.md").write_bytes(b"# notes\n")
         self.repo_id = self.c.code.connect(str(self.project))["repo_id"]
         self.set_mode("full")
 
@@ -718,13 +724,19 @@ class TestBackupsAreProvedNotAssumed(Base):
             with self.assertRaises(db.BackupError):
                 db.verify_backup(stored.parent, hostile)
         with self.subTest("permissions"):
-            stored.chmod(0o644)
-            with self.assertRaises(db.BackupError):
-                db.verify_backup(stored.parent, row)
-            stored.chmod(0o600)
+            if os.name != "nt":
+                stored.chmod(0o644)
+                with self.assertRaises(db.BackupError):
+                    db.verify_backup(stored.parent, row)
+                stored.chmod(0o600)
         with self.subTest("symlink"):
             stored.unlink()
-            stored.symlink_to(outside)
+            try:
+                stored.symlink_to(outside)
+            except OSError as exc:
+                if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                    self.skipTest("Windows symlink creation privilege is unavailable")
+                raise
             with self.assertRaises(db.BackupError):
                 db.verify_backup(stored.parent, row)
 
@@ -734,7 +746,12 @@ class TestBackupsAreProvedNotAssumed(Base):
         outside = self.home / "outside.bak"
         outside.write_bytes(ORIGINAL.encode())
         stored.unlink()
-        stored.symlink_to(outside)
+        try:
+            stored.symlink_to(outside)
+        except OSError as exc:
+            if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows symlink creation privilege is unavailable")
+            raise
         result = self.c.code.undo(self.repo_id, proposal["proposal_id"])
         self.assertEqual(result["files"][0]["state"], "failed")
         self.assertEqual(outside.read_bytes(), ORIGINAL.encode())

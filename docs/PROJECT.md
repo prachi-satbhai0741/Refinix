@@ -810,6 +810,34 @@ disabled by default unless an explicitly qualified path provides access control 
 Test batching, prefix reuse, cache quantisation or engine attention optimisations individually before
 enabling them. They are optimisations, not correctness requirements.
 
+## 13.1 Windows qualification observation — 2026-09-22
+
+One Windows device was observed as Windows NT 10.0 build 26200.9457, Home Single Language display
+version 25H2, x64, with a 12th Gen Intel Core i5-12450H, 16,802,910,208 bytes installed memory and
+an NVIDIA GeForce RTX 2050 with 4,096 MiB dedicated memory (driver 592.27), alongside Intel UHD
+Graphics. The process-local candidate label was
+`windows-nt-10.0-26200-i5-12450h-16gb-rtx2050-4gb`; it is not a registered execution profile.
+
+The installed Ollama 0.30.10 runtime listened only on `127.0.0.1:11434`. It reported
+`qwen3.5:4b-q4_K_M`, manifest digest
+`2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd`, with completion, vision,
+tools and thinking capabilities. Process-local candidate runs observed Chat at 8,192 context / 2,048
+output with reasoning disabled and enabled. Documents at 8,192 context / 3,072 output passed the
+disabled-reasoning case but the enabled-reasoning reply stopped at the length bound and was discarded
+as incomplete. Native Chat vision received verified PNG bytes directly for an ordinary description
+and a synthetic OCR request; neither case invoked the document OCR extractor. This is Chat vision
+evidence, not a `documents.ocr` qualification.
+
+Full Windows execution qualification is **blocked**, not failed open: representative Code candidate
+qualification stopped before inference because no qualified no-network sandbox validator was
+connected. The strict runner wrote no qualification artifact and no Windows production profile was
+added. The Windows worker therefore advertised no inference profiles or generation capabilities and
+refused an inference envelope before model invocation. Windows Credential Manager in the observed
+logon session exposed session-only generic-credential persistence rather than the required
+local-machine persistence, so that credential backend also remained unavailable. These observations
+are device evidence only; `release_accepted` remains false and packaging, installer, update/recovery,
+signing, two-device routing and Linux qualification remain unproven.
+
 ---
 
 # 14. Agent profiles and workflows

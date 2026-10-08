@@ -163,6 +163,8 @@ class TestJobManifest(unittest.TestCase):
 # The runner
 # --------------------------------------------------------------------------
 
+@unittest.skipIf(validate.resource is None,
+                 "requires the POSIX resource-limit validation runner")
 class TestRunner(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

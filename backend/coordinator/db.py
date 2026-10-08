@@ -24,7 +24,7 @@ from pathlib import Path
 from unicodedata import category
 
 from backend.contracts import v1
-from backend.coordinator import build_info, ownership
+from backend.coordinator import build_info, ownership, winfs
 
 SCHEMA_VERSION = 15
 
@@ -2473,32 +2473,47 @@ def verify_backup(root: Path, row: dict) -> bytes:
             f"the stored original for {row['path']} has an unsafe name.")
     stored = root / stored_name
     nofollow = getattr(os, "O_NOFOLLOW", 0)
-    if not nofollow:
-        raise BackupError("this computer cannot safely open stored originals.")
     descriptor = None
     try:
-        descriptor = os.open(stored, os.O_RDONLY | nofollow)
-        info = os.fstat(descriptor)
-    except OSError as exc:
+        if os.name == "nt":
+            # Hold the backup directory and open the final name as a reparse
+            # point. This is the Windows equivalent of O_NOFOLLOW: a junction
+            # or symlink is inspected and refused, never followed.
+            with winfs.pinned(root, ()) as folder:
+                descriptor, entry = folder.open_file(stored_name)
+                if entry.links != 1:
+                    raise BackupError(
+                        f"the stored original for {row['path']} is not private.")
+                if entry.size != row["byte_size"]:
+                    raise BackupError(
+                        f"the stored original for {row['path']} changed size since "
+                        "it was written.")
+                with os.fdopen(descriptor, "rb") as handle:
+                    descriptor = None
+                    data = handle.read(int(row["byte_size"]) + 1)
+        else:
+            if not nofollow:
+                raise BackupError(
+                    "this computer cannot safely open stored originals.")
+            descriptor = os.open(
+                stored, os.O_RDONLY | getattr(os, "O_BINARY", 0) | nofollow)
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode):
+                raise BackupError(
+                    f"the stored original for {row['path']} is not an ordinary file.")
+            if stat.S_IMODE(info.st_mode) & 0o077:
+                raise BackupError(
+                    f"the stored original for {row['path']} is not private.")
+            if info.st_size != row["byte_size"]:
+                raise BackupError(
+                    f"the stored original for {row['path']} changed size since it "
+                    "was written.")
+            with os.fdopen(descriptor, "rb") as handle:
+                descriptor = None
+                data = handle.read(int(row["byte_size"]) + 1)
+    except (OSError, winfs.Unavailable) as exc:
         raise BackupError(
             f"the stored original for {row['path']} is missing: {exc}") from exc
-    try:
-        if not stat.S_ISREG(info.st_mode):
-            raise BackupError(
-                f"the stored original for {row['path']} is not an ordinary file.")
-        if stat.S_IMODE(info.st_mode) & 0o077:
-            raise BackupError(
-                f"the stored original for {row['path']} is not private.")
-        if info.st_size != row["byte_size"]:
-            raise BackupError(
-                f"the stored original for {row['path']} changed size since it was "
-                "written.")
-        with os.fdopen(descriptor, "rb") as handle:
-            descriptor = None
-            data = handle.read(int(row["byte_size"]) + 1)
-    except OSError as exc:
-        raise BackupError(
-            f"the stored original for {row['path']} could not be read: {exc}") from exc
     finally:
         if descriptor is not None:
             os.close(descriptor)
@@ -2526,25 +2541,47 @@ def record_backup(conn, root: Path, *, workspace_id, repo_id, conversation_id,
     except OSError:
         pass
     backup_id, stamp = new_id(), now()
-    stored = root / f"{backup_id}.bak"
-    temporary = root / f".{backup_id}.tmp"
-    try:
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                             0o600)
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(original)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, stored)
-        temporary = None
-    finally:
-        if temporary is not None:
-            Path(temporary).unlink(missing_ok=True)
-    try:
-        stored.chmod(0o600)
-    except OSError as exc:
-        stored.unlink(missing_ok=True)
-        raise BackupError(f"The backup of {path} could not be made private.") from exc
+    stored_name = f"{backup_id}.bak"
+    temporary_name = f".{backup_id}.tmp"
+    stored = root / stored_name
+    if os.name == "nt":
+        try:
+            with winfs.pinned(root, ()) as folder:
+                try:
+                    descriptor, _entry = folder.create_file(temporary_name)
+                    with os.fdopen(descriptor, "wb") as handle:
+                        handle.write(original)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    folder.replace(temporary_name, stored_name)
+                except BaseException:
+                    folder.unlink(temporary_name)
+                    raise
+        except (OSError, winfs.Unavailable) as exc:
+            raise BackupError(
+                f"The backup of {path} could not be stored safely: {exc}") from exc
+    else:
+        temporary = root / temporary_name
+        try:
+            descriptor = os.open(
+                temporary,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                | getattr(os, "O_BINARY", 0), 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(original)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, stored)
+            temporary = None
+        finally:
+            if temporary is not None:
+                Path(temporary).unlink(missing_ok=True)
+        try:
+            stored.chmod(0o600)
+        except OSError as exc:
+            stored.unlink(missing_ok=True)
+            raise BackupError(
+                f"The backup of {path} could not be made private.") from exc
     # Read back before the row is written. A backup that cannot be re-read is
     # not a backup, and the caller must be able to trust the row it sees.
     verification_row = {"stored_name": stored.name, "path": path,

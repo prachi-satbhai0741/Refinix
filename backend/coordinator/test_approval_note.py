@@ -1038,7 +1038,7 @@ class ReferenceIdentity(unittest.TestCase):
         came from, which is worth keeping, and neither can steer a comparison.
         A hardcoded branch would need a literal the interpreter can see.
         """
-        tree = ast.parse(pathlib.Path(docflow.__file__).read_text())
+        tree = ast.parse(pathlib.Path(docflow.__file__).read_text(encoding="utf-8"))
         documented = set()
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,

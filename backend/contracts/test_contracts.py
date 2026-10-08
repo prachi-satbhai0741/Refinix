@@ -305,6 +305,16 @@ class ContractChecks(unittest.TestCase):
         self.assertEqual(profiles.for_observation(
             target_profile_id=profiles.MAC_M5_16GB, models=[changed]), [])
 
+    def test_no_registered_mac_code_profile_exceeds_the_accepted_envelope(self):
+        code_profiles = [
+            profile for profile in profiles.PROFILES
+            if profile.target_profile_id == profiles.MAC_M5_16GB
+            and profile.workflow_mode == profiles.CODE
+        ]
+        self.assertTrue(code_profiles)
+        self.assertEqual(
+            {profile.max_output_tokens for profile in code_profiles}, {2048})
+
     def test_legacy_contract_cannot_claim_qualified_semantics(self):
         legacy = deepcopy(EXAMPLES["JobEnvelope"])
         legacy["contract_version"] = "1.0"

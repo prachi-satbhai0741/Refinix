@@ -59,7 +59,8 @@ def verify_application_contents(bundle: Path) -> None:
     shipped = set()
     for root in library.glob("python3.*"):
         for package in ("backend", "desktop"):
-            shipped.update(str(path.relative_to(root)) for path in (root / package).rglob("*")
+            shipped.update(path.relative_to(root).as_posix()
+                           for path in (root / package).rglob("*")
                            if path.is_file())
     for archive in library.glob("python*.zip"):
         with zipfile.ZipFile(archive) as files:
