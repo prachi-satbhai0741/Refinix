@@ -28,6 +28,9 @@ import unittest
 from pathlib import Path
 
 NATIVE = sys.platform == "win32" and os.environ.get("REFINIX_NATIVE_WINDOWS") == "1"
+# The interpreter itself, not a virtual environment's launcher (which would
+# start it as a child and double every process the fixture owns).
+PYTHON = Path(getattr(sys, "_base_executable", None) or sys.executable)
 
 # An "installer" that starts two children, writes every pid it owns, then waits.
 FIXTURE = textwrap.dedent("""
@@ -79,14 +82,17 @@ class TestRealJob(unittest.TestCase):
         return [int(p) for p in self.pids_file.read_text().split()]
 
     def start(self, job):
-        return self.w.start_in_job(job, Path(sys.executable),
-                                   [str(self.script), str(self.pids_file)], self.base)
+        self.addCleanup(job.close)
+        return self.w.start_in_job(job, PYTHON, [str(self.script), str(self.pids_file)],
+                                   self.base)
 
     def test_the_tree_lives_in_a_kill_on_close_job_and_ends_with_it(self):
         job = self.w.Job()
         self.start(job)
         pids = self.pids()
-        self.assertEqual(job.active(), 3)
+        # At least the fixture and its two children; Windows may add console
+        # hosts to the job, which closing it ends as well.
+        self.assertGreaterEqual(job.active(), 3)
         limits = job.limits()
         self.assertTrue(limits & self.w.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
         self.assertFalse(limits & (self.w.JOB_OBJECT_LIMIT_BREAKAWAY_OK
@@ -99,7 +105,7 @@ class TestRealJob(unittest.TestCase):
             [sys.executable, "-c",
              "import sys, time; from pathlib import Path; "
              "from desktop import update_windows as w; job = w.Job(); "
-             "w.start_in_job(job, Path(sys.executable), [sys.argv[1], sys.argv[2]], "
+             "w.start_in_job(job, Path(sys._base_executable), [sys.argv[1], sys.argv[2]], "
              "Path(sys.argv[3])); print('started', flush=True); time.sleep(120)",
              str(self.script), str(self.pids_file), str(self.base)],
             cwd=str(Path(__file__).resolve().parents[1]), stdout=subprocess.PIPE, text=True)

@@ -656,8 +656,11 @@ class TestChannelsAndLabels(unittest.TestCase):
         for bad in (filled + "Conflicts: other\n", text):
             with self.assertRaises(build.BuildError):
                 build.check_control(bad)
-        from desktop import deb_root
-        self.assertEqual(tuple(build.DEB_FIELDS), deb_root.ALLOWED_FIELDS)
+        if sys.platform != "win32":
+            # The root step is Ubuntu-only (fcntl, pwd); the Windows build host
+            # checks the control text above without importing it.
+            from desktop import deb_root
+            self.assertEqual(tuple(build.DEB_FIELDS), deb_root.ALLOWED_FIELDS)
 
     def test_the_polkit_policy_allows_only_the_installed_program_behind_a_password(self):
         text = (Path(build.DESKTOP) / "linux" / "com.refinix.desktop.policy").read_text()
