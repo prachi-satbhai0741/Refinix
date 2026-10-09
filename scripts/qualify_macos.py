@@ -180,6 +180,7 @@ def main(argv=None) -> int:
     parser.add_argument("--merge", type=Path,
                         help="the first run's partial record, to complete")
     parser.add_argument("--commit-tested", default=os.environ.get("GITHUB_SHA"))
+    parser.add_argument("--expect-version")
     args = parser.parse_args(argv)
     if sys.platform != "darwin" or os.environ.get("REFINIX_QUALIFY_DISPOSABLE") != "1":
         print("refused: run on a throwaway Mac with REFINIX_QUALIFY_DISPOSABLE=1",
@@ -194,6 +195,10 @@ def main(argv=None) -> int:
         args.zip)
     earlier = json.loads(args.merge.read_text(encoding="utf-8")) if args.merge else {}
     report = Report(earlier.get("checks"))
+    if args.expect_version is not None:
+        report.record("package is the requested public version",
+                      identity.get("version") == args.expect_version,
+                      {"expected": args.expect_version, "observed": identity.get("version")})
     work = Path(tempfile.mkdtemp(prefix="refinix-qualify-"))
     try:
         qualify(report, args.dmg.resolve(), args.zip.resolve(), identity, work, args.floor)

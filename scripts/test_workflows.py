@@ -12,6 +12,12 @@ out of the deploy and live-check jobs, and never force over a moved branch.
 from __future__ import annotations
 
 import re
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -123,6 +129,46 @@ class TestBetaPackages(unittest.TestCase):
 
 
 class TestQualificationAndPublicChecks(unittest.TestCase):
+    def test_missing_reports_and_failed_mac_checks_fail_the_summary(self):
+        from scripts.qualification_record import REQUIRED
+        text = (WORKFLOWS / "qualify.yml").read_text()
+        summary = text.split("      - name: Summarise\n", 1)[1]
+        code = textwrap.dedent(summary.split("          python - <<'PY'\n", 1)[1]
+                               .split("          PY\n", 1)[0])
+        checks = [{"check": name, "passed": True} for name in REQUIRED["macos-arm64"]
+                  if name != "packaged app starts on the oldest supported macOS runner"]
+        for failure in (None, "missing journey", "failed mac check", "missing mac check",
+                        "old commit", "string pass"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                reports = Path(folder) / "reports"
+                reports.mkdir()
+                native = {"checks": [dict(c) for c in checks], "passed": False,
+                          "commit_tested": "current"}
+                journey = {"checks": [{"check": "journey", "passed": True}],
+                           "passed": True, "commit_tested": "current"}
+                if failure == "failed mac check":
+                    native["checks"][0]["passed"] = False
+                elif failure == "missing mac check":
+                    native["checks"].pop()
+                elif failure == "old commit":
+                    native["commit_tested"] = "older"
+                elif failure == "string pass":
+                    journey["passed"] = "true"
+                (reports / "macos-n-partial.json").write_text(json.dumps(native))
+                if failure != "missing journey":
+                    (reports / "journey.json").write_text(json.dumps(journey))
+                result = subprocess.run([sys.executable, "-c", code], cwd=REPO,
+                                        env={**os.environ, "Q": folder,
+                                             "LANE": "macos-arm64", "GITHUB_SHA": "current"},
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, failure is None,
+                                 result.stdout + result.stderr)
+
+    def test_qualification_failures_propagate_and_artifacts_are_kept(self):
+        text = (WORKFLOWS / "qualify.yml").read_text()
+        self.assertNotIn("|| true", text)
+        self.assertIn("if: always()", text.split("actions/upload-artifact@", 1)[1])
+
     def test_native_qualification_runs_only_when_asked_and_only_private_builds(self):
         text = (WORKFLOWS / "qualify.yml").read_text(encoding="utf-8")
         triggers = text.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]

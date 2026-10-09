@@ -546,18 +546,30 @@ def _read_record(folder: Path) -> dict | None:
 
 
 def _current(ctx: Context) -> tuple[Path, dict] | None:
-    """The computer's current attempt: its folder and record, or None."""
+    """None only when there is no attempt; damaged authority refuses closed."""
+    damaged = RootError("update_state", "Refinix's system update record is missing or "
+                        "damaged. Keep its recovery packages in " + str(ctx.packages)
+                        + "; the update record needs repair before another update. "
+                        "Nothing was changed.")
     try:
         pointer = json.loads((ctx.state / "current.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except FileNotFoundError:
+        for path in ctx.updates.glob("*/record.json"):
+            record = _read_record(path.parent)
+            if record is None or record.get("state") not in FINAL:
+                raise damaged
         return None
+    except (OSError, ValueError) as exc:
+        raise damaged from exc
     admission = pointer.get("admission") if isinstance(pointer, dict) else None
     if not isinstance(admission, str) or not admission.isalnum():
-        return None
+        raise damaged
     folder = ctx.updates / admission
     record = _read_record(folder)
-    if record is None or record.get("admission") != admission:
-        return None
+    if (record is None or record.get("admission") != admission
+            or record.get("uid") != pointer.get("uid")
+            or record.get("state") not in (*UNFINISHED, *ENDED, *FINAL, "admitted")):
+        raise damaged
     return folder, record
 
 

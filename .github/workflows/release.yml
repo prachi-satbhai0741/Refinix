@@ -164,11 +164,12 @@ jobs:
       # Ubuntu's python3-gi package; xvfb and D-Bus for the scratch launch.
       - name: Install Ubuntu build packages
         if: matrix.lane == 'linux-x64'
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-venv python3-gi \
-            python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 libwebkit2gtk-4.1-0 dpkg-dev \
-            libpython3.12 xvfb xauth dbus dbus-x11
+        timeout-minutes: 17
+        uses: ./.github/actions/refinix-apt
+        with:
+          packages: >-
+            python3-venv python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+            libwebkit2gtk-4.1-0 dpkg-dev libpython3.12 xvfb xauth dbus dbus-x11
 
       # macOS and Windows: python.org's pinned 3.13 installer, verified;
       # Ubuntu: the distribution's python3.12 (desktop/python_runtime.py).

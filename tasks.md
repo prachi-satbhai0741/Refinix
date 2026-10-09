@@ -18,10 +18,10 @@ Phase 2 -> local Phase 4 acceptance -> Phase 5**. **Phase 3 and peer-specific Ph
 until after Beta 0.1.** The Beta includes qualified in-app updates on Windows, macOS and Linux.
 
 **Current active phase: Phase 5 — Refinix Beta 0.1 publication, then device acceptance.** The source
-work of Phases 1, 2, local Phase 4 and Phase 5 is implemented and offline-tested; the review A1 repair
-batch (10 October 2026) and its native qualification on hosted runners are recorded in
-[evaluation.md](docs/evaluation.md#beta-01-segment-1), with exactly what passed and what did not. Device acceptance is open on every platform, so
-none of those phases is complete.
+work of Phases 1, 2, local Phase 4 and Phase 5 is implemented and offline-tested. The review A1 repair
+batch (10 October 2026) is repaired and locally checked; fresh hosted qualification of the repaired
+commit is pending. [evaluation.md](docs/evaluation.md#beta-01-segment-1) records the observed results
+and remaining gates. Device acceptance is open on every platform, so none of those phases is complete.
 
 **5 October 2026 direction:** the [full user statements](docs/beta-user-direction-2026-10-05.md) are
 preserved verbatim: broad upstream model choice, existing Ollama reuse, managed llama.cpp,

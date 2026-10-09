@@ -123,6 +123,7 @@ def main(argv=None) -> int:
     parser.add_argument("--setup", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--commit-tested", default=os.environ.get("GITHUB_SHA"))
+    parser.add_argument("--expect-version")
     args = parser.parse_args(argv)
     if sys.platform != "win32" or os.environ.get("REFINIX_QUALIFY_DISPOSABLE") != "1":
         print("refused: run on a throwaway Windows machine with "
@@ -139,6 +140,10 @@ def main(argv=None) -> int:
         report.record("qualification ran to the end", False, f"{type(exc).__name__}: {exc}")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    if args.expect_version is not None:
+        report.record("package is the requested public version",
+                      identity.get("version") == args.expect_version,
+                      {"expected": args.expect_version, "observed": identity.get("version")})
     record = qualification_record.build(
         lane="windows-x64", host=host(),
         packages=[qualification_record.package_entry(args.setup, identity=identity)],

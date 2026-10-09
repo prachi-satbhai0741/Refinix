@@ -82,7 +82,13 @@ class TestRealJob(unittest.TestCase):
         return [int(p) for p in self.pids_file.read_text().split()]
 
     def start(self, job):
-        self.addCleanup(job.close)
+        def close_and_wait():
+            job.close()
+            if self.pids_file.is_file():
+                pids = [int(p) for p in self.pids_file.read_text().split()]
+                self.assertTrue(wait_until(lambda: not any(alive(p) for p in pids), 10),
+                                pids)
+        self.addCleanup(close_and_wait)
         return self.w.start_in_job(job, PYTHON, [str(self.script), str(self.pids_file)],
                                    self.base)
 
@@ -109,7 +115,12 @@ class TestRealJob(unittest.TestCase):
              "Path(sys.argv[3])); print('started', flush=True); time.sleep(120)",
              str(self.script), str(self.pids_file), str(self.base)],
             cwd=str(Path(__file__).resolve().parents[1]), stdout=subprocess.PIPE, text=True)
-        self.addCleanup(helper.kill)
+        def stop_helper():
+            if helper.poll() is None:
+                helper.kill()
+            helper.wait(30)
+            helper.stdout.close()
+        self.addCleanup(stop_helper)
         self.assertEqual(helper.stdout.readline().strip(), "started")
         pids = self.pids()
         helper.kill()            # TerminateProcess: no cleanup code runs in the helper

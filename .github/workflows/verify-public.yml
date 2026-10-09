@@ -39,7 +39,7 @@ jobs:
         with:
           persist-credentials: false
       - name: The live page, its downloads and SHA256SUMS
-        run: python3 scripts/verify_public.py --site "$SITE" --report public.json
+        run: python3 scripts/verify_public.py --site "$SITE" --expect-version "$VERSION" --report public.json
       - name: The live feed offers this version on every lane
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
@@ -80,6 +80,7 @@ jobs:
     env:
       REFINIX_QUALIFY_DISPOSABLE: "1"
       SITE: ${{ inputs.site }}
+      VERSION: ${{ inputs.version }}
     defaults:
       run:
         shell: bash
@@ -89,15 +90,15 @@ jobs:
           persist-credentials: false
       - name: Ubuntu session packages
         if: matrix.lane == 'linux-x64'
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus dbus-x11 \
-            python3-venv
+        timeout-minutes: 17
+        uses: ./.github/actions/refinix-apt
+        with:
+          packages: xvfb xauth dbus dbus-x11 python3-venv
       - name: Download this platform's files from the live website, anonymously
         run: |
           bootstrap=python3; command -v python3 >/dev/null || bootstrap=python
           "$bootstrap" scripts/verify_public.py --site "$SITE" --keep public \
-            --report public.json
+            --expect-version "$VERSION" --report public.json
       - name: Install and start the published bytes on scratch data (Ubuntu)
         if: matrix.lane == 'linux-x64'
         run: |
@@ -109,6 +110,7 @@ jobs:
           from scripts import qualify_package_launch as launch
           import json, os, tempfile
           version = json.load(open("/opt/refinix/_internal/refinix-build.json"))["version"]
+          assert version == os.environ["VERSION"], (version, os.environ["VERSION"])
           root = Path(tempfile.mkdtemp()) / "scratch"
           result = launch.launch_check(Path("/opt/refinix/Refinix"), root,
                                        prefix=["xvfb-run", "-a", "dbus-run-session", "--"],
@@ -123,10 +125,11 @@ jobs:
             -r backend/requirements-runtime.lock
           setup=$(ls public/Refinix-*-windows-x64-setup.exe)
           python - "$setup" <<'PY'
-          import sys; sys.path.insert(0, ".")
+          import os, sys; sys.path.insert(0, ".")
           from pathlib import Path
           from scripts import qualify_windows
           sys.exit(qualify_windows.main(["--setup", sys.argv[1],
+                                         "--expect-version", os.environ["VERSION"],
                                          "--report", "windows-public.json"]))
           PY
       - name: Open the published DMG and start its app on scratch data (macOS)
@@ -134,7 +137,8 @@ jobs:
         run: |
           dmg=$(ls public/Refinix-*-macos-arm64.dmg)
           zip=$(ls public/Refinix-*-macos-arm64.zip)
-          python3 scripts/qualify_macos.py --dmg "$dmg" --zip "$zip" --report macos-public.json
+          python3 scripts/qualify_macos.py --dmg "$dmg" --zip "$zip" \
+            --expect-version "$VERSION" --report macos-public.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

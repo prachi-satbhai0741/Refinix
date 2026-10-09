@@ -80,11 +80,13 @@ jobs:
 
       - name: Install Ubuntu build and session packages
         if: matrix.lane == 'linux-x64'
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-venv python3-gi \
-            python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 libwebkit2gtk-4.1-0 dpkg-dev \
-            libpython3.12 xvfb xauth dbus dbus-x11 pkexec polkitd fuse3 fuse2fs e2fsprogs
+        timeout-minutes: 17
+        uses: ./.github/actions/refinix-apt
+        with:
+          packages: >-
+            python3-venv python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+            libwebkit2gtk-4.1-0 dpkg-dev libpython3.12 xvfb xauth dbus dbus-x11 pkexec
+            polkitd fuse3 fuse2fs e2fsprogs
 
       - name: Set up the pinned build Python
         uses: ./.github/actions/refinix-python
@@ -184,19 +186,19 @@ jobs:
             backend.coordinator.test_sandbox_local -q
           sudo env REFINIX_QUALIFY_DISPOSABLE=1 GITHUB_SHA="$GITHUB_SHA" \
             "$RUNNER_TEMP/venv/bin/python" scripts/qualify_deb.py \
-            --real "$Q/build-901"/refinix_*_amd64.deb --report "$Q/reports/deb-n.json" || true
+            --real "$Q/build-901"/refinix_*_amd64.deb --report "$Q/reports/deb-n.json"
 
       - name: Release-bytes qualifier on package N (Windows)
         if: matrix.lane == 'windows-x64'
         run: |
           python scripts/qualify_windows.py --setup "$Q"/build-901/Refinix-*-setup.exe \
-            --report "$Q/reports/windows-n.json" || true
+            --report "$Q/reports/windows-n.json"
 
       - name: Release-bytes qualifier on package N (macOS)
         if: matrix.lane == 'macos-arm64'
         run: |
           python scripts/qualify_macos.py --dmg "$Q"/build-901/Refinix-*.dmg \
-            --zip "$Q"/build-901/Refinix-*.zip --report "$Q/reports/macos-n-partial.json" || true
+            --zip "$Q"/build-901/Refinix-*.zip --report "$Q/reports/macos-n-partial.json"
 
       - name: Packaged update journeys N -> N+1
         run: |
@@ -208,7 +210,7 @@ jobs:
           fi
           "$TOOLS" scripts/qualify_update_journey.py --lane ${{ matrix.lane }} --old "$old" \
             --new-bundle "$Q/bundle-N1.zip" --old-version "$OLD" --new-version "$NEW" \
-            --report "$Q/reports/journey.json" || true
+            --report "$Q/reports/journey.json"
 
       - name: Ubuntu Code sandbox with a real systemd user service
         if: matrix.lane == 'linux-x64'
@@ -219,25 +221,43 @@ jobs:
           export XDG_RUNTIME_DIR="/run/user/$uid"
           export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
           systemctl --user show-environment >/dev/null && echo "user manager ready"
-          python scripts/qualify_sandbox.py --report "$Q/reports/sandbox.json" || true
+          python scripts/qualify_sandbox.py --report "$Q/reports/sandbox.json"
 
       - name: Summarise
         if: always()
+        env:
+          LANE: ${{ matrix.lane }}
         run: |
           python - <<'PY'
           import json, os, pathlib
+          from scripts.qualification_record import REQUIRED
           folder = pathlib.Path(os.environ["Q"]) / "reports"
+          lane = os.environ["LANE"]
+          native = {"linux-x64": "deb-n.json", "windows-x64": "windows-n.json",
+                    "macos-arm64": "macos-n-partial.json"}[lane]
+          expected = [native, "journey.json"] + (["sandbox.json"] if lane == "linux-x64" else [])
           failed = []
-          for path in sorted(folder.glob("*.json")):
+          for name in expected:
+              path = folder / name
+              if not path.is_file():
+                  failed.append(name)
+                  print(f"MISSING {name}")
+                  continue
               data = json.loads(path.read_text())
               checks = data.get("checks") or []
               bad = [c["check"] for c in checks if c.get("passed") is not True]
+              if name == native:
+                  required = set(REQUIRED[lane])
+                  if lane == "macos-arm64":
+                      required.remove("packaged app starts on the oldest supported macOS runner")
+                  bad += sorted(required - {c["check"] for c in checks})
               print(f"{path.name}: {len(checks) - len(bad)}/{len(checks)} passed")
-              for name in bad:
-                  print(f"   FAILED  {name}")
-              if bad or not checks:
+              for check_name in bad:
+                  print(f"   FAILED  {check_name}")
+              if (bad or not checks or data.get("commit_tested") != os.environ["GITHUB_SHA"]
+                      or (lane != "macos-arm64" or name != native) and data.get("passed") is not True):
                   failed.append(path.name)
-          if failed and not all(n.endswith("partial.json") for n in failed):
+          if failed:
               raise SystemExit(f"failed: {failed}")
           PY
 
@@ -257,7 +277,7 @@ jobs:
   macos-floor:
     name: macos-arm64 on the oldest macOS runner
     needs: lane
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ${{ inputs.macos_floor_runner || 'macos-14' }}
     timeout-minutes: 90
     env:
@@ -287,7 +307,7 @@ jobs:
           sw_vers
           python scripts/qualify_macos.py --dmg "$Q"/build-901/Refinix-*.dmg \
             --zip "$Q"/build-901/Refinix-*.zip --floor \
-            --merge "$Q/reports/macos-n-partial.json" --report "$Q/floor-n.json" || true
+            --merge "$Q/reports/macos-n-partial.json" --report "$Q/floor-n.json"
           python scripts/qualify_update_journey.py --lane macos-arm64 \
             --old "$(ls "$Q"/build-901/*.zip)" --new-bundle "$Q/bundle-N1.zip" \
             --old-version "$OLD" --new-version "$NEW" --report "$Q/floor-journey.json"

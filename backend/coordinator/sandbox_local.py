@@ -282,14 +282,16 @@ class LocalSandbox:
         mount, device = run.get("mount"), run.get("device")
         image = str(Path(run["folder"]) / "workspace.img") if run.get("folder") else None
         if run.get("method") == "udisks" and device:
-            if mount and self.host.mounted(mount) or self.host.mounted(device):
-                self.host.run(["udisksctl", "unmount", "--no-user-interaction", "-b", device],
-                              timeout=60)
-            if (mount and self.host.mounted(mount)) or self.host.mounted(device):
-                problems.append(f"{device} is still mounted")
-            else:
-                backing = self.host.loop_backing(device)
-                if backing and image and Path(backing) == Path(image):
+            # Loop numbers can be reused after a crash; establish ownership
+            # before unmounting as well as before deleting the loop device.
+            backing = self.host.loop_backing(device)
+            if backing and image and Path(backing) == Path(image):
+                if (mount and self.host.mounted(mount)) or self.host.mounted(device):
+                    self.host.run(["udisksctl", "unmount", "--no-user-interaction",
+                                   "-b", device], timeout=60)
+                if (mount and self.host.mounted(mount)) or self.host.mounted(device):
+                    problems.append(f"{device} is still mounted")
+                elif self.host.loop_backing(device) == backing:
                     self.host.run(["udisksctl", "loop-delete", "--no-user-interaction",
                                    "-b", device], timeout=60)
                     backing = self.host.loop_backing(device)

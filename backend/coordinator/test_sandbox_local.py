@@ -293,12 +293,16 @@ class TestRunner(unittest.TestCase):
             host = FakeHost(PASS)
             sandbox = self.sandbox(host, Path(folder))
             host.loops["/dev/loop2"] = "/var/lib/other/disk.img"
+            host.mounts.add("/dev/loop2")
             sandbox._note("odd", unit="someone-elses.service", method="udisks",
                           device="/dev/loop2",
                           folder=str(Path(folder) / "sandbox" / "runs" / "odd"))
             sandbox.cleanup_leftovers()
             self.assertFalse(any("someone-elses.service" in c for c in host.commands))
             self.assertFalse(any(c[:2] == ["udisksctl", "loop-delete"] for c in host.commands))
+            self.assertFalse(any(c[:2] == ["udisksctl", "unmount"] for c in host.commands))
+            self.assertIn("/dev/loop2", host.mounts)
+            self.assertEqual(host.loops["/dev/loop2"], "/var/lib/other/disk.img")
 
     def test_the_launcher_ships_beside_the_package(self):
         self.assertTrue(sandbox_local.launcher_path().is_file())

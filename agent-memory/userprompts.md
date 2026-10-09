@@ -2469,3 +2469,11 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - authorised_and_performed_here: Import only README.md from main, with recovery of the previous local README and no branch merge.
 - scope_boundary: The implementation owner retains the remaining release tooling, documentation, screenshot and publication work. Unsigned-platform publication is the user's new direction; it does not establish device acceptance or waive package integrity, signed update metadata, data recovery or honest compatibility claims.
 - linked_changes: [AC-20261008-README-SYNC](agentchangelog.md#ac-20261008-readme-sync)
+
+<a id="up-20261010-segment1-repair"></a>
+## UP-20261010-SEGMENT1-REPAIR — Continue Beta Segment 1 and repair native CI
+- date: 2026-10-10
+- request: Review the BETA 6 continuation, diagnose the stalled Linux and failed Windows CI, repair those failures and the review findings, then finish Segment 1 before manual checks.
+- authorised: Source repairs and relevant offline checks; hash-pinned test dependencies in an isolated temporary environment; commits and pushes via aditya and the qualification branch; observed-result updates to docs/evaluation.md and tasks.md.
+- constraints: Existing Git identity, no agent watermark or co-author trailers; preserve existing work, user app/data and production keys. No dev/main merge or publication.
+- linked_changes: [AC-20261010-SEGMENT1-REPAIR](agentchangelog.md#ac-20261010-segment1-repair)

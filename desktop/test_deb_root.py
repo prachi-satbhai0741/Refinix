@@ -360,6 +360,49 @@ def dpkg_installs(calls, name: str) -> list:
 class TestCurrentAttempt(Base):
     """One current attempt for the whole installation; stale requests change nothing."""
 
+    def test_damaged_current_authority_never_admits_or_prunes_recovery(self):
+        first = self.request("first")
+        self.assertEqual(self.step("--deb-admit", first)[0], 0)
+        self.dpkg.fail_install = True
+        self.assertEqual(self.step("--deb-install", first)[1]["state"], "incomplete")
+        self.dpkg.fail_install = False
+        again = self.request("again")
+        pointer = self.ctx.state / "current.json"
+        folder, record = deb_root.find_record(self.ctx, str(first), os.getuid())
+        record_path = folder / "record.json"
+        original_pointer, original_record = pointer.read_bytes(), record_path.read_bytes()
+        recovery = {p.name: p.read_bytes() for p in self.ctx.packages.iterdir()}
+        for damage in ("missing pointer", "invalid JSON", "empty pointer", "wrong owner",
+                       "missing record", "invalid record", "unknown state"):
+            with self.subTest(damage=damage):
+                pointer.write_bytes(original_pointer)
+                record_path.write_bytes(original_record)
+                if damage == "missing pointer":
+                    pointer.unlink()
+                elif damage == "invalid JSON":
+                    pointer.write_text("{")
+                elif damage == "empty pointer":
+                    pointer.write_text("{}")
+                elif damage == "wrong owner":
+                    value = json.loads(original_pointer)
+                    value["uid"] += 1
+                    pointer.write_text(json.dumps(value))
+                elif damage == "missing record":
+                    record_path.unlink()
+                elif damage == "invalid record":
+                    record_path.write_text("[]")
+                else:
+                    record_path.write_text(json.dumps({**record, "state": "unknown"}))
+                before = pointer.read_bytes() if pointer.exists() else None
+                self.dpkg.calls.clear()
+                code, answer = self.step("--deb-admit", again)
+                self.assertEqual((code, answer["code"]), (3, "update_state"), answer)
+                self.assertEqual(pointer.read_bytes() if pointer.exists() else None, before)
+                self.assertEqual({p.name: p.read_bytes() for p in self.ctx.packages.iterdir()},
+                                 recovery)
+                self.assertEqual(dpkg_installs(self.dpkg.calls, ".deb"), [])
+                self.assertTrue(folder.is_dir())
+
     def install(self, name, installed=OLD):
         folder = self.request(name, installed=installed)
         code, answer = self.step("--deb-admit", folder)

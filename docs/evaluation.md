@@ -7,6 +7,40 @@ inspection; it does not establish fresh device, inference, packaged-runtime or r
 
 ## Current status
 
+<a id="beta-01-segment-1"></a>
+### Beta 0.1 Segment 1 — 2026-10-10
+
+The continuation preserves the existing `aditya` commits and completes the A1 repair batch before
+production Beta keys, merges or publication. Native qualification uses disposable packages
+`0.1.0-beta.901` and `.902` with throwaway trust keys; they must never be published.
+
+**Repairs checked in this continuation:** sandbox teardown verifies the loop device's backing image
+before unmounting it; damaged Ubuntu current-attempt authority blocks admission and preserves
+recovery copies; native CI fails on missing/failed reports and qualifier exits; public verification
+binds the live website and installed packages to the requested version. Windows native test fixtures
+use the actual interpreter, allow legitimate console processes and wait for cleanup. Ubuntu CI
+bounds APT index fetches and installation, with one authenticated official-mirror fallback.
+
+**Local offline evidence:** Python 3.14.6 on the development Mac, using an isolated temporary
+environment with repository hash-pinned test dependencies and the existing Pydantic environment;
+Node for the frontend. Coordinator: 1,656 tests, OK (16 skipped); desktop: 253 tests, OK (6 skipped);
+scripts: 75 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. The focused recovery/CI/public
+regressions passed 73 tests. `actionlint` passed on all four changed workflows and
+`git diff --check` was clean. Initial broad runs were blocked by the tool sandbox's loopback
+restriction and a missing test dependency; the approved temporary environment resolved both.
+These are source/fixture checks, not native Windows/Linux or device acceptance.
+
+**Earlier hosted run:** [37981019381](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37981019381)
+tested `bbf54225d132b78276f3013f80a531dd00eafae3`, before these repairs. Windows failed native unit
+tests (Linux-only import and process-count assumption); package/install journeys were skipped.
+Linux was cancelled after stalling on the Azure Ubuntu APT mirror, before any build. The Mac lane
+reported success under the older summary gate; this does not qualify the repaired tree.
+
+**Remaining:** fresh hosted qualification of one repaired commit on Windows Server 2025, Ubuntu
+24.04 and macOS 15/14; production Beta keys/root, member → dev → main, release-byte qualification
+and CP-B publication; then the user's device walkthroughs. No production keys, installed user app,
+real model runtime, published feed or device acceptance changed in this continuation.
+
 <a id="tester-preview-batch-20261008"></a>
 ### Tester-preview batch — 2026-10-08
 

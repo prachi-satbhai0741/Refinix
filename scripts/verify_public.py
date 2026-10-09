@@ -66,7 +66,8 @@ def download(url: str, target: Path, timeout: float = 600) -> tuple[int, str, st
     return size, digest.hexdigest(), final
 
 
-def check(site: str, expect_site: Path | None, keep: Path | None) -> dict:
+def check(site: str, expect_site: Path | None, keep: Path | None,
+          expect_version: str | None = None) -> dict:
     checks = []
 
     def record(name, passed, observed):
@@ -77,6 +78,10 @@ def check(site: str, expect_site: Path | None, keep: Path | None) -> dict:
     page, _final = fetch(site + "?" + str(int(time.time())))
     raw_release, _final = fetch(urljoin(site, "release.json") + "?" + str(int(time.time())))
     release = json.loads(raw_release)
+    if expect_version is not None:
+        record("the website offers the requested version",
+               release.get("version") == expect_version,
+               {"expected": expect_version, "observed": release.get("version")})
     if expect_site is not None:
         for name, live in (("index.html", page), ("release.json", raw_release)):
             wanted = (Path(expect_site) / name).read_bytes()
@@ -124,10 +129,11 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--site", required=True)
     parser.add_argument("--expect-site", type=Path)
+    parser.add_argument("--expect-version")
     parser.add_argument("--keep", type=Path)
     parser.add_argument("--report", type=Path)
     args = parser.parse_args(argv)
-    result = check(args.site, args.expect_site, args.keep)
+    result = check(args.site, args.expect_site, args.keep, args.expect_version)
     if args.report:
         args.report.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print("all matched" if result["passed"] else "FAILED")
