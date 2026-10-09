@@ -26,14 +26,17 @@ What it guarantees:
   identity is extracted from the finished artifact and compared.
 
 Internal packages are unsigned test evidence. Public (`beta` channel) builds
-carry a maturity from their label (`-preview.N` tester preview, `-beta.N`
-accepted, plain final) and a public build number that only ever goes up. With
-`--signing release` (Beta only, clean checkout at the designated commit) the
-macOS lane signs inside-out with Developer ID and the hardened runtime,
-notarises and staples the app, re-zips it and builds a signed, notarised DMG
-from the same app; the Windows lane signs its program files and setup with
-the configured Authenticode signer. Publication is a separate, user-authorised
-step.
+carry a maturity from their label (`-preview.N` tester preview, `-beta.N` the
+public Beta, plain final) and a public build number that only ever goes up.
+Every public build comes from a clean checkout of `--source-commit`; a private
+build made only to test something says `--scratch`, and its identity records
+that it can never be published. Unsigned public builds are allowed and say so
+(the macOS app is sealed ad hoc, which is integrity evidence, not Developer ID).
+With `--signing release` the macOS lane signs inside-out with Developer ID and
+the hardened runtime, notarises and staples the app, re-zips it and builds a
+signed, notarised DMG from the same app; the Windows lane signs its program
+files and setup with the configured Authenticode signer. Publication is a
+separate, user-authorised step.
 """
 
 from __future__ import annotations
@@ -76,7 +79,10 @@ def schema_version() -> int:
 
 
 CHANNELS = ("internal", "beta")
-CAPABILITIES = ("qualified", "internal-test", "preview-test", "unavailable")
+CAPABILITIES = ("qualified", "provisional", "internal-test", "preview-test", "unavailable")
+# What a `qualified` capability's acceptance record must show, every one passed.
+ACCEPTANCE_SCHEMA = "refinix-device-acceptance/1"
+ACCEPTANCE_CHECKS = ("install", "launch", "update", "rollback", "data-preserved")
 # Lanes whose install-and-restart helper exists in this application
 # (desktop/update_apply.py: macOS app swap, Windows setup in a job, Ubuntu .deb).
 HELPER_LANES = ("macos-arm64", "windows-x64", "linux-x64")
@@ -145,7 +151,7 @@ def label_number(version: str, channel: str) -> int | None:
     """The `<n>` of the label; None for a plain final release label.
 
     Internal: `<APP_VERSION>-internal.<n>`. Beta: `<APP_VERSION>-preview.<n>`
-    (tester preview), `<APP_VERSION>-beta.<n>` (accepted) or `<APP_VERSION>`.
+    (tester preview), `<APP_VERSION>-beta.<n>` (the public Beta) or `<APP_VERSION>`.
     """
     sys.path.insert(0, str(REPO))
     from backend.coordinator import release  # noqa: PLC0415
@@ -218,16 +224,22 @@ def bundle_build(version: str, channel: str, explicit: int | None, lane: str,
 
 
 def install_capability(lane: str, channel: str, requested: str | None,
-                       evidence: Path | None, maturity: str | None = None) -> dict:
+                       evidence: Path | None, maturity: str | None = None, *,
+                       shared_snapshot_digest: str | None = None) -> dict:
     """Whether this package may offer Install and restart, and on what basis.
 
     internal-test: internal builds. preview-test: tester previews, whose
-    installs are themselves the device test. qualified: accepted or final
-    builds, naming the accepted qualification record. Otherwise unavailable.
+    installs are themselves the device test. provisional: the public Beta (or a
+    preview): the install helper is present and every published package must
+    carry a native qualification report bound to its exact bytes, while
+    testing on people's own computers is still pending. qualified: a Beta or
+    final build whose updater was accepted on devices, naming a validated
+    acceptance record for this same source. Otherwise unavailable.
     """
     if requested is None:
         requested = ("internal-test" if channel == "internal" and lane in HELPER_LANES
                      else "preview-test" if maturity == "preview" and lane in HELPER_LANES
+                     else "provisional" if maturity == "beta" and lane in HELPER_LANES
                      else "unavailable")
     if requested not in CAPABILITIES:
         raise BuildError(f"unknown install capability {requested!r}")
@@ -238,17 +250,60 @@ def install_capability(lane: str, channel: str, requested: str | None,
         raise BuildError("internal-test install capability is for internal builds")
     if requested == "preview-test" and maturity != "preview":
         raise BuildError("preview-test install capability is for tester previews")
-    if requested == "qualified" and maturity == "preview":
-        raise BuildError("a tester preview is not a qualified install; it is the test")
+    if requested == "provisional" and maturity not in ("preview", "beta"):
+        raise BuildError("provisional install capability is for the public Beta and "
+                         "tester previews")
+    if requested == "qualified" and maturity not in ("beta", "final"):
+        raise BuildError("a qualified install capability is for Beta or final builds "
+                         "whose updater was accepted on devices")
     record = {"capability": requested, "evidence_sha256": None}
     if requested == "qualified":
-        # Configuration is not qualification: a qualified capability names the
-        # accepted evidence it rests on.
-        if evidence is None or not Path(evidence).is_file():
-            raise BuildError("a qualified install capability needs "
-                             "--qualification-evidence naming the accepted record")
-        record["evidence_sha256"] = sha256_file(Path(evidence))
+        # Configuration is not qualification, and a file is not acceptance:
+        # the record must be a complete, passing acceptance of this lane's
+        # updater for this same source.
+        record["evidence_sha256"] = check_acceptance_record(
+            evidence, lane=lane, shared_snapshot_digest=shared_snapshot_digest)
     return record
+
+
+def check_acceptance_record(evidence: Path | None, *, lane: str,
+                            shared_snapshot_digest: str | None) -> str:
+    """The SHA-256 of a valid device-acceptance record; BuildError otherwise."""
+    if evidence is None or not Path(evidence).is_file():
+        raise BuildError("a qualified install capability needs "
+                         "--qualification-evidence naming the acceptance record")
+    try:
+        record = json.loads(Path(evidence).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise BuildError(f"{evidence} is not a readable acceptance record: {exc}") from exc
+    problems = []
+    if not isinstance(record, dict) or record.get("schema") != ACCEPTANCE_SCHEMA:
+        raise BuildError(f"{evidence} is not a {ACCEPTANCE_SCHEMA} record")
+    if record.get("lane") != lane:
+        problems.append(f"it is for {record.get('lane')!r}, not {lane}")
+    if not shared_snapshot_digest or \
+            record.get("shared_snapshot_digest") != shared_snapshot_digest:
+        problems.append("it is about another source snapshot")
+    if not (isinstance(record.get("observer"), str) and record["observer"].strip()):
+        problems.append("it names no observer")
+    if not (isinstance(record.get("observed_at"), str)
+            and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", record["observed_at"])):
+        problems.append("it has no observation time")
+    if not (isinstance(record.get("device"), dict) and record["device"].get("os")):
+        problems.append("it names no device")
+    checks = record.get("checks")
+    results = {}
+    if isinstance(checks, list):
+        for item in checks:
+            if isinstance(item, dict) and isinstance(item.get("name"), str):
+                results[item["name"]] = item.get("passed")
+    missing = [name for name in ACCEPTANCE_CHECKS if results.get(name) is not True]
+    if missing:
+        problems.append(f"these checks did not pass: {missing}")
+    if problems:
+        raise BuildError(f"{evidence} does not establish a qualified install: "
+                         + "; ".join(problems))
+    return sha256_file(Path(evidence))
 TOOLS = DESKTOP / "packaging-tools.json"
 CHUNK = 4 * 1024 * 1024
 
@@ -333,7 +388,33 @@ def interpreter_identity() -> dict:
             "base": str(base), "origin": origin,
             "executable": _file_identity(sys.executable),
             "library": _file_identity(library),
-            "macos_deployment_target": sysconfig.get_config_var("MACOSX_DEPLOYMENT_TARGET")}
+            "macos_deployment_target": sysconfig.get_config_var("MACOSX_DEPLOYMENT_TARGET"),
+            "provenance": interpreter_provenance()}
+
+
+PROVENANCE_VARIABLE = "REFINIX_PYTHON_PROVENANCE"
+
+
+def interpreter_provenance() -> dict | None:
+    """Where a release interpreter came from, when the build host recorded it.
+
+    The release lanes build CPython from python.org's signed source (or install
+    a publisher-signed python.org installer) and write a JSON record: version,
+    source archive SHA-256, signature verification, build recipe and flags.
+    The record and its hash travel in the build identity.
+    """
+    path = os.environ.get(PROVENANCE_VARIABLE)
+    if not path:
+        return None
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise BuildError(f"{PROVENANCE_VARIABLE}: {path} is not readable JSON: {exc}") \
+            from exc
+    if data.get("version") != _platform.python_version():
+        raise BuildError(f"{PROVENANCE_VARIABLE} describes Python {data.get('version')}, "
+                         f"but this build runs {_platform.python_version()}")
+    return {"record": data, "sha256": sha256_file(Path(path))}
 
 
 def _folder_identity(folder: Path, suffixes: tuple[str, ...]) -> dict | None:
@@ -382,7 +463,8 @@ def toolchain_identity(lane: str) -> dict:
     if lane == "linux-x64":
         identity["apt"] = {name: _run_text(["dpkg-query", "-W", "-f=${Version}", name])
                            for name in ("python3-gi", "python3-gi-cairo",
-                                        "gir1.2-webkit2-4.1", "libwebkit2gtk-4.1-0")}
+                                        "gir1.2-webkit2-4.1", "libwebkit2gtk-4.1-0",
+                                        "python3.12", "libpython3.12")}
         identity["tools"]["dpkg-deb"] = _run_text(["dpkg-deb", "--version"])
     if lane == "windows-x64":
         iscc = find_iscc()
@@ -397,7 +479,7 @@ def input_identity(lane: str, *, toolchain: dict | None = None,
                    trust_root: str | None = None, update_feed: str | None = None,
                    channel: str = "internal", version: str | None = None,
                    capability: dict | None = None, signing: str = "unsigned",
-                   publisher: str | None = None) -> dict:
+                   publisher: str | None = None, publishable: bool | None = None) -> dict:
     snapshot, listing = packaging_plan.snapshot_digest(lane)
     pins = json.loads((DESKTOP / "engine" / "engine-pins.json").read_text(encoding="utf-8"))
     entry = packaging_plan.LANES[lane]
@@ -422,6 +504,7 @@ def input_identity(lane: str, *, toolchain: dict | None = None,
         "install_capability": capability,
         "maturity": maturity_of(version, channel) if version else None,
         "signing": signing, "publisher": publisher,
+        "publishable": publishable,
         "schema_version": schema_version(),
     }
     return {"input_digest": canonical_digest(components), "components": components,
@@ -686,7 +769,8 @@ def release_signing(lane: str, signing: str, environ=None) -> dict:
 
 
 def check_release_checkout(source_commit: str | None, run=subprocess.run) -> None:
-    """Release builds come from a clean checkout of the designated commit."""
+    """Public builds, signed or not, come from a clean checkout of the
+    designated commit."""
     head = run(["git", "rev-parse", "HEAD"], cwd=str(REPO), capture_output=True, text=True,
                check=False).stdout.strip()
     dirty = run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=str(REPO),
@@ -767,6 +851,11 @@ def make_dmg(app: Path, dmg: Path, work: Path, run=None) -> Path:
 
 def build_macos(args, work: Path, identity_file: Path, engines: list[dict]) -> list[Path]:
     floor = expected_macos_floor(engines)
+    # A minimum may be raised to the oldest macOS the package was actually
+    # observed on; it is never lowered below what a shipped binary declares.
+    wanted = getattr(args, "macos_minimum", None)
+    if wanted:
+        floor = max(floor, _version(wanted))
     env = dict(os.environ, REFINIX_BUILD_IDENTITY=str(identity_file),
                REFINIX_MIN_MACOS=".".join(map(str, floor)),
                REFINIX_BUNDLE_BUILD=str(args.bundle_build))
@@ -819,6 +908,8 @@ def build_macos(args, work: Path, identity_file: Path, engines: list[dict]) -> l
         _check(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)])
         archive()
         make_dmg(app, dmg, work)
+        _check(["/usr/bin/hdiutil", "verify", str(dmg)])
+        args.seal = "ad-hoc"
     args.min_os = ".".join(map(str, floor))
     return [artifact, dmg]
 
@@ -934,7 +1025,7 @@ def verify_authenticode(path: Path, publisher: str, run=subprocess.run) -> None:
 
 DEB_NOTES = {None: "Internal test build. Unsigned. Not for distribution.",
              "preview": "Tester preview: pending device testing. Not an accepted release.",
-             "accepted": "Refinix Beta.", "final": "Refinix."}
+             "beta": "Refinix Beta. Device testing pending.", "final": "Refinix."}
 
 
 def build_linux(args, work: Path, identity_file: Path, staged: Path,
@@ -1103,7 +1194,7 @@ def extract_identity(artifact: Path, work: Path, *, disposable_host: bool = Fals
 
 
 BUILD_TITLES = {None: "Refinix internal test build", "preview": "Refinix tester preview",
-                "accepted": "Refinix Beta", "final": "Refinix"}
+                "beta": "Refinix Beta", "final": "Refinix"}
 BUILD_STATUS = {
     (None, "unsigned"): "**Internal test build. Unsigned. Not for distribution.** This package "
                         "is test evidence only; it is not a Beta release and is never offered "
@@ -1115,9 +1206,16 @@ BUILD_STATUS = {
                                  "release.",
     ("preview", "authenticode"): "**Tester preview — pending device testing.** Authenticode "
                                  "signed. Not an accepted release.",
-    ("accepted", "developer-id"): "**Refinix Beta.** Signed with Developer ID and notarised.",
-    ("accepted", "authenticode"): "**Refinix Beta.** Authenticode signed.",
-    ("accepted", "unsigned"): "**Refinix Beta.**",
+    ("beta", "developer-id"): "**Refinix Beta.** Signed with Developer ID and notarised. "
+                              "Checked on hosted test machines; testing on people's own "
+                              "computers is pending.",
+    ("beta", "authenticode"): "**Refinix Beta.** Authenticode signed. Checked on hosted "
+                              "test machines; testing on people's own computers is "
+                              "pending.",
+    ("beta", "unsigned"): "**Refinix Beta.** This package is not signed by Apple or "
+                          "Microsoft, so the operating system warns before the first "
+                          "open (see Install). It is checked on hosted test machines; "
+                          "testing on people's own computers is pending.",
     ("final", "developer-id"): "**Refinix.** Signed with Developer ID and notarised.",
     ("final", "authenticode"): "**Refinix.** Authenticode signed.",
     ("final", "unsigned"): "**Refinix.**",
@@ -1177,7 +1275,10 @@ UPDATE_LIMITATION = ("- Updates: Check for updates works only in a build given a
                      "root and an update source. Install and restart is offered only where "
                      "this package's install capability allows it and Refinix was installed "
                      "the standard way (Applications on macOS, the per-user setup on "
-                     "Windows, the .deb on Ubuntu); elsewhere Settings explains why.")
+                     "Windows, the .deb on Ubuntu); elsewhere Settings explains why. In "
+                     "this Beta it is provisional: checked on hosted test machines, not "
+                     "yet on people's own computers. Your saved work and the previous "
+                     "version are kept for going back.")
 LIMITATIONS = {
     "macos-arm64": "- Code validation in a sandbox is not available on macOS in this "
                    "build; Code changes keep the \"Not sandbox tested\" label.\n"
@@ -1199,7 +1300,8 @@ def _format(name: str) -> str | None:
 
 
 def finalize(artifact: Path, identity: dict, *, lane: str, min_os: str,
-             work: Path, disposable_host: bool = False, notarization=None) -> dict:
+             work: Path, disposable_host: bool = False, notarization=None,
+             seal: str | None = None) -> dict:
     extracted = extract_identity(artifact, work, disposable_host=disposable_host)
     if extracted != identity:
         raise BuildError(f"{artifact.name}: the embedded identity does not match the "
@@ -1210,6 +1312,7 @@ def finalize(artifact: Path, identity: dict, *, lane: str, min_os: str,
               "maturity": identity.get("maturity"),
               "format": "dmg" if artifact.name.endswith(".dmg") else _format(artifact.name),
               "signing": identity["signing"], "notarization": notarization,
+              "seal": seal,
               "embedded_identity": identity,
               "embedded_identity_sha256": canonical_digest(identity),
               "finalized_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
@@ -1244,8 +1347,11 @@ def build_identity(args, lane: str, inputs: dict, engines: list[dict]) -> dict:
         "identity_version": 2, "product": "Refinix", "version": args.version,
         "build_set": args.build_set,
         "channel": inputs["components"].get("channel") or "internal",
-        # preview / accepted / final for a public build; None for internal.
+        # preview / beta / final for a public build; None for internal.
         "maturity": inputs["components"].get("maturity"),
+        # A public build from a clean checkout of its commit; False for a
+        # private test build, which the release tooling never publishes.
+        "publishable": inputs["components"].get("publishable"),
         # What the package is signed with ("unsigned", "developer-id",
         # "authenticode") and the expected publisher (Team ID or certificate
         # subject) an update must also carry.
@@ -1305,30 +1411,47 @@ def main(argv=None) -> int:
     parser.add_argument("--disposable-host", action="store_true",
                         help="this host is a throwaway runner: the Windows installer "
                              "may be installed and removed to read its identity")
+    parser.add_argument("--scratch", action="store_true",
+                        help="a private Beta-channel build for testing only: no clean "
+                             "checkout needed, recorded as never publishable")
+    parser.add_argument("--macos-minimum", default=None,
+                        help="macOS lane: raise the declared minimum to the oldest "
+                             "macOS the package is tested on (never below its binaries)")
     parser.add_argument("--plan", action="store_true",
                         help="print digests and the reuse decision without building")
     args = parser.parse_args(argv)
     try:
         lane = detect_lane()
-        if args.signing == "release":
-            if args.channel != "beta":
-                raise BuildError("release signing is for Beta builds")
-            check_release_checkout(args.source_commit)
+        if args.signing == "release" and args.channel != "beta":
+            raise BuildError("release signing is for Beta builds")
+        if args.scratch and args.channel != "beta":
+            raise BuildError("--scratch marks a private Beta-channel build")
+        if args.scratch and args.signing == "release":
+            raise BuildError("a release-signed build is a public build, not --scratch")
+        publishable = None
+        if args.channel == "beta":
+            # Signed or not, a public build is the designated commit's bytes.
+            if not args.scratch:
+                check_release_checkout(args.source_commit)
+            publishable = not args.scratch
         args.signed = release_signing(lane, args.signing)
         args.notarization = None
+        args.seal = None
         update = update_files(args.trust_root, args.update_feed, args.channel)
         records = (json.loads(args.records.read_text(encoding="utf-8"))
                    if args.records.is_file() else [])
         args.bundle_build = bundle_build(args.version, args.channel, args.build_number,
                                          lane, records, REPO / "desktop" / "out")
-        capability = install_capability(lane, args.channel, args.install_capability,
-                                        args.qualification_evidence,
-                                        maturity_of(args.version, args.channel))
+        capability = install_capability(
+            lane, args.channel, args.install_capability, args.qualification_evidence,
+            maturity_of(args.version, args.channel),
+            shared_snapshot_digest=packaging_plan.shared_snapshot_digest())
         inputs = input_identity(
             lane, trust_root=(update["trust_root"] or {}).get("sha256"),
             update_feed=(update["update_feed"] or {}).get("sha256"),
             channel=args.channel, version=args.version, capability=capability,
-            signing=args.signed["signing"], publisher=args.signed["publisher"])
+            signing=args.signed["signing"], publisher=args.signed["publisher"],
+            publishable=publishable)
         reuse = find_reuse(records, lane=lane, input_digest=inputs["input_digest"],
                            store=args.store)
         plan = {"lane": lane, "input_digest": inputs["input_digest"],
@@ -1381,12 +1504,14 @@ def main(argv=None) -> int:
             finals = [finalize(a, identity, lane=lane, min_os=args.min_os, work=work,
                                disposable_host=args.disposable_host,
                                notarization=(args.notarization or {}).get(
-                                   "dmg" if a.name.endswith(".dmg") else "app"))
+                                   "dmg" if a.name.endswith(".dmg") else "app"),
+                               seal=args.seal)
                       for a in artifacts]
         record = {"build_set": args.build_set, "version": args.version, "lane": lane,
                   "channel": args.channel, "bundle_build": args.bundle_build,
                   "maturity": maturity_of(args.version, args.channel),
                   "signing": args.signed["signing"], "source_commit": args.source_commit,
+                  "publishable": publishable, "seal": args.seal,
                   "input_digest": inputs["input_digest"],
                   "shared_snapshot_digest": inputs["components"]["shared_snapshot_digest"],
                   "rebuild_reason": args.rebuild_reason,

@@ -4325,7 +4325,8 @@ function renderUpdatesCard(s) {
   const kept = u.kept;
   facts($('c-updates-facts'), [
     ['Installed version', u.version ? `${u.version} (${u.maturity === 'preview'
-      ? 'tester preview' : u.channel})` : null, 'not reported'],
+      ? 'tester preview' : u.maturity === 'beta' ? 'Beta' : u.channel})` : null,
+     'not reported'],
     ['Updates come from', u.source === 'folder' ? `the update folder ${u.folder}`
       : u.source === 'https' ? 'the online update channel' : null, 'no update source'],
     ['Last check', last ? `${last.at} — ${last.detail}` : null, 'not checked yet'],
@@ -4337,6 +4338,9 @@ function renderUpdatesCard(s) {
       : download.state === 'verified' ? `verified — ${download.version}`
       : download.error || download.state) : null, 'not downloaded'],
     ['Install', u.install_supported ? v.label : (u.install_reason || null), 'not available'],
+    ...(u.install_capability === 'provisional' ? [['How installing was checked',
+      'Beta: checked on hosted test machines; not yet confirmed on your kind of computer. '
+        + 'Your work and the previous version are kept for going back.', '—']] : []),
     ['Kept for going back', kept && kept.previous_app
       ? `version ${kept.previous_version} (${mb(kept.previous_app_bytes) || 'size unknown'})`
         + (kept.data_copy ? ` and its data copy (${mb(kept.data_copy_bytes) || 'size unknown'})` : '')

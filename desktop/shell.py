@@ -520,11 +520,30 @@ class DesktopApp:
                     self.window.load_url(self.startup.url)
                 threading.Thread(target=self._focus_poll, daemon=True,
                                  name="focus-poll").start()
+                self._start_qualification_control()
                 return
             # Failed: wait for the person to press Try again.
             self._retry.wait()
             self._retry.clear()
             self.progress = lifecycle.Progress()
+
+    def _start_qualification_control(self):
+        """Private qualification builds only (desktop/qualify_control.py)."""
+        from backend.coordinator import build_info
+        from desktop import qualify_control
+        identity = build_info.embedded_identity()
+        if not qualify_control.enabled(identity):
+            return
+        if qualify_control.should_fail_start(identity):
+            # Stop before the window can confirm an update: the journey watches
+            # the helper put the previous version back.
+            os._exit(3)
+        folder = Path(self.state_path).resolve().parent
+        actions = {"import": lambda request: self.import_update(Path(request["path"])),
+                   "install": lambda request: self.install_update()}
+        threading.Thread(target=qualify_control.serve,
+                         args=(folder, actions, self._closing), daemon=True,
+                         name="qualify-control").start()
 
     def _serve(self):
         try:

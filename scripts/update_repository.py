@@ -31,7 +31,10 @@ passphrase is typed, or given to a workflow as `REFINIX_KEY_PASSPHRASE_<ROLE>`):
     rotate-root    offline: next root version, optionally replacing role keys
     withdraw       offline: point a lane's pointer back at an earlier published build
     verify         the real client against the folder or the live URL; with
-                   --monitor, fail when a role is close to expiring
+                   --monitor, fail when a role is close to expiring; with
+                   --expect, fail unless it serves exactly the expected feed
+    expected       what a feed folder (a signed commit) should serve: metadata
+                   versions and hashes and every lane's offers, for --expect
     preview        what the staged targets change, without changing anything
     bundle         one offline-import file from the current feed
 
@@ -41,7 +44,7 @@ The feed folder is what the distribution site serves at `.../updates/beta/`:
     metadata/<N>.targets.json   immutable; package targets and pointers
     metadata/<N>.snapshot.json  immutable
     metadata/timestamp.json     the only file that changes
-    targets/beta/<lane>/<sha256>.latest.json           accepted / final pointer
+    targets/beta/<lane>/<sha256>.latest.json           Beta / final pointer
     targets/beta/<lane>/<sha256>.latest-preview.json   tester-preview pointer
 
 Packages are not in the folder: they are release assets fetched from
@@ -86,10 +89,15 @@ MONITOR_DAYS = {"timestamp": 3, "snapshot": 7, "targets": 45, "root": 90}
 RENEW_DAYS = {"targets": 60, "root": 120}
 PASSPHRASE_VARIABLE = "REFINIX_KEY_PASSPHRASE_{role}"
 # What a staged Beta package may claim it can do with its own updates.
-CAPABILITIES_FOR = {"preview": ("preview-test", "unavailable"),
-                    "accepted": ("qualified", "unavailable"),
+CAPABILITIES_FOR = {"preview": ("preview-test", "provisional", "unavailable"),
+                    "beta": ("provisional", "qualified", "unavailable"),
                     "final": ("qualified", "unavailable")}
-SIGNED_LANES = {"macos-arm64": "developer-id", "windows-x64": "authenticode"}
+# The signing a staged package of each lane may carry. Unsigned macOS and
+# Windows packages are published as the Beta; their signing is recorded in
+# the signed target, never hidden.
+SIGNING_ALLOWED = {"macos-arm64": ("developer-id", "unsigned"),
+                   "windows-x64": ("authenticode", "unsigned"),
+                   "linux-x64": ("unsigned",)}
 
 
 class PublishError(RuntimeError):
@@ -305,12 +313,35 @@ def bundle(repo: Path, output: Path, *, channel: str, lane: str) -> Path:
     return output
 
 
-def _package_from_record(path: Path) -> dict:
-    """Read lane/version details from the build driver's external manifest."""
+def _package_from_record(path: Path, fixture: bool = False) -> dict:
+    """Read lane/version details from the build driver's external manifest.
+
+    A Beta-channel package must be a public build (never `--scratch`) and,
+    when it offers Install and restart, carry its lane's native qualification
+    record beside it, bound to these exact bytes.
+    """
     manifest = json.loads(Path(f"{path}.manifest.json").read_text(encoding="utf-8"))
     identity = manifest["embedded_identity"]
     if _sha256_file(path) != manifest["sha256"]:
         raise SystemExit(f"{path.name} does not match its manifest")
+    if identity.get("channel") == "beta" and fixture:
+        # Qualification only: private test builds into a throwaway feed whose
+        # keys never sign anything public (scripts/qualify_update_journey.py).
+        if identity.get("publishable") is not False:
+            raise SystemExit(f"{path.name} is a public build; --fixture stages only "
+                             "private test builds into a throwaway feed")
+    elif identity.get("channel") == "beta":
+        if identity.get("publishable") is not True:
+            raise SystemExit(f"{path.name} is a private test build (--scratch); it is "
+                             "never staged")
+        if identity.get("install_capability") in ("provisional", "qualified"):
+            from scripts import qualification_record
+            report = Path(path).parent / qualification_record.REPORT_NAME[manifest["lane"]]
+            try:
+                qualification_record.check(report, manifest["lane"], Path(path), manifest)
+            except qualification_record.QualificationError as exc:
+                raise SystemExit(f"{path.name}: no passing qualification record bound to "
+                                 f"these bytes ({exc})") from exc
     # Numeric minimums the client can compare; the manifest's text says more.
     minimum = {"windows-x64": "10.0.22000",
                "linux-x64": "24.04"}.get(manifest["lane"], manifest.get("minimum_os"))
@@ -322,6 +353,7 @@ def _package_from_record(path: Path) -> dict:
             "engine_release": (identity.get("engines") or [{}])[0].get("release"),
             "public_build": identity.get("bundle_build"),
             "signing": identity.get("signing"),
+            "publishable": identity.get("publishable"),
             "install_capability": identity.get("install_capability"),
             "trust_root": identity.get("trust_root"),
             "shared_snapshot_digest": identity.get("shared_snapshot_digest"),
@@ -530,10 +562,12 @@ def _check_package(package: dict, feed: Feed, maturity: str) -> str:
     if package.get("trust_root") not in feed.root_hashes():
         raise PublishError(f"{name} trusts a root that is not in this feed; publish the "
                            "root first, then build with it")
-    wanted = SIGNED_LANES.get(package["lane"])
-    if wanted and package.get("signing") != wanted:
-        raise PublishError(f"{name} is not {wanted} signed; an unsigned macOS or Windows "
-                           "package is shown as unavailable, never published")
+    if package.get("signing") not in SIGNING_ALLOWED.get(package["lane"], ()):
+        raise PublishError(f"{name} is signed {package.get('signing')!r}; a "
+                           f"{package['lane']} package may be "
+                           f"{' or '.join(SIGNING_ALLOWED.get(package['lane'], ()))}")
+    if package.get("publishable") is False:
+        raise PublishError(f"{name} is a private test build (--scratch)")
     if package.get("install_capability") not in CAPABILITIES_FOR[maturity]:
         raise PublishError(f"{name}: install capability "
                            f"{package.get('install_capability')!r} is not allowed for "
@@ -545,12 +579,12 @@ def _check_package(package: dict, feed: Feed, maturity: str) -> str:
 
 def stage(keys_dir: Path, repo: Path, *, maturity: str, packages: list[dict],
           notes: str = "", passphrases: dict | None = None, now: datetime | None = None,
-          expiry: dict | None = None) -> dict:
+          expiry: dict | None = None, every_lane: bool = True) -> dict:
     """Offline: add packages and pointers in the next targets version, signed.
 
-    Clients see nothing until `advance` signs a snapshot naming it. Accepted
-    and final releases must carry every lane at one version; a tester preview
-    may carry the signed (or Linux) lanes that are ready.
+    Clients see nothing until `advance` signs a snapshot naming it. Beta and
+    final releases must carry every lane at one version; a tester preview may
+    carry the lanes that are ready.
     """
     from tuf.api.metadata import Metadata, TargetFile, Targets
     feed = Feed(repo)
@@ -574,7 +608,7 @@ def stage(keys_dir: Path, repo: Path, *, maturity: str, packages: list[dict],
     for package in packages:
         formats[(package["lane"], _check_package(package, feed, maturity))] = package
     lanes = {lane for lane, _fmt in formats}
-    if maturity != "preview" and lanes != set(LANES):
+    if maturity != "preview" and every_lane and lanes != set(LANES):
         raise PublishError(f"an {maturity} release carries every lane; missing "
                            f"{sorted(set(LANES) - lanes)}")
     root = feed.root()
@@ -613,7 +647,8 @@ def stage(keys_dir: Path, repo: Path, *, maturity: str, packages: list[dict],
             target.unrecognized_fields["custom"] = {
                 "version": version, "lane": lane, "channel": "beta", "maturity": maturity,
                 "format": fmt, "build_set": package.get("build_set"),
-                "public_build": build, "schema_version": package.get("schema_version")}
+                "public_build": build, "schema_version": package.get("schema_version"),
+                "signing": package.get("signing")}
             targets.targets[name] = target
             payloads[fmt] = name
         latest = {"version": version, "channel": "beta", "maturity": maturity,
@@ -667,14 +702,29 @@ def _check_staged(feed: Feed, root, staged) -> None:
                                        f"{fmt} package of {latest.get('version')}")
 
 
-def check_assets(staged, packages_url: str, names, fetch=None) -> list[str]:
-    """Download released assets anonymously; each must match its signed target."""
+def check_assets(staged, packages_url: str, names, fetch=None,
+                 hosts: tuple[str, ...] | None = None) -> list[str]:
+    """Download released assets anonymously; each must match its signed target.
+
+    With `hosts` (the feed's `package_hosts`), the download must also end on
+    one of them: an installed client refuses any other redirect host, so a
+    feed that offers packages it cannot fetch is refused here, before it goes
+    live.
+    """
+    from urllib.parse import urlsplit
     fetch = fetch or _anonymous_download
     checked = []
     for name in sorted(names):
         info = staged.signed.targets[name]
         url = packages_url.rstrip("/") + "/" + name
-        data_path = fetch(url, info.length)
+        fetched = fetch(url, info.length)
+        data_path, final = fetched if isinstance(fetched, tuple) else (fetched, None)
+        if hosts is not None:
+            host = urlsplit(final or "").hostname
+            if final is None or host not in hosts:
+                Path(data_path).unlink(missing_ok=True)
+                raise PublishError(f"{name} downloads from {host!r}, which installed "
+                                   f"clients do not accept ({', '.join(hosts)})")
         try:
             with open(data_path, "rb") as handle:
                 info.verify_length_and_hashes(handle)
@@ -687,8 +737,9 @@ def check_assets(staged, packages_url: str, names, fetch=None) -> list[str]:
     return checked
 
 
-def _anonymous_download(url: str, limit: int) -> str:
-    """No credentials; HTTPS redirects (GitHub's asset hosts) are followed."""
+def _anonymous_download(url: str, limit: int) -> tuple[str, str]:
+    """No credentials; HTTPS redirects (GitHub's asset hosts) are followed.
+    Returns the downloaded file and the final URL it came from."""
     import urllib3
     pool = urllib3.PoolManager(headers={"User-Agent": "refinix-release-check"})
     response = pool.request("GET", url, preload_content=False, redirect=True, retries=3)
@@ -702,8 +753,9 @@ def _anonymous_download(url: str, limit: int) -> str:
             if seen > limit:
                 raise PublishError(f"{url} is longer than its signed length")
             out.write(block)
+    final = response.geturl()
     response.release_conn()
-    return path
+    return path, final
 
 
 def _sign_snapshot_and_timestamp(feed: Feed, targets_version: int, signers: dict, *,
@@ -745,7 +797,7 @@ def _sign_timestamp(feed: Feed, snapshot_version: int, snapshot_bytes: bytes, si
 
 def advance(keys_dir: Path, repo: Path, *, packages_url: str | None = None,
             fetch=None, passphrases: dict | None = None, now: datetime | None = None,
-            expiry: dict | None = None) -> dict:
+            expiry: dict | None = None, package_hosts: tuple[str, ...] | None = None) -> dict:
     """Online: make the staged targets current (snapshot, then timestamp)."""
     feed = Feed(repo)
     staged_version = feed.staged_targets_version()
@@ -759,7 +811,7 @@ def advance(keys_dir: Path, repo: Path, *, packages_url: str | None = None,
     added = [n for n in staged.signed.targets if n.startswith("v") and n not in before]
     checked = []
     if packages_url:
-        checked = check_assets(staged, packages_url, added, fetch)
+        checked = check_assets(staged, packages_url, added, fetch, hosts=package_hosts)
     signers = {role: load_role(keys_dir, role, passphrases) for role in ONLINE_ROLES}
     for role in ONLINE_ROLES:
         if signers[role].public_key.keyid not in root.signed.roles[role].keyids:
@@ -925,13 +977,54 @@ def _folder_fetcher(base: Path):
     return FolderFetcher()
 
 
+def expected(repo: Path) -> dict:
+    """What this feed folder serves once deployed, exactly.
+
+    Read from a checkout of the signed commit and given to `verify --expect`,
+    so a live check passes only on this deployment: the newest root, the
+    current timestamp, snapshot and targets (versions and SHA-256 of their
+    exact bytes) and every lane's offers. A previous feed that is still
+    validly signed does not match.
+    """
+    feed = Feed(repo)
+    timestamp_bytes = (feed.metadata / "timestamp.json").read_bytes()
+    timestamp = feed.load("timestamp")
+    snapshot_version = timestamp.signed.snapshot_meta.version
+    snapshot_bytes = (feed.metadata / f"{snapshot_version}.snapshot.json").read_bytes()
+    snapshot = feed.load("snapshot", snapshot_version)
+    targets_version = snapshot.signed.meta["targets.json"].version
+    targets_bytes = (feed.metadata / f"{targets_version}.targets.json").read_bytes()
+    root_version = max(feed._versions("root"))
+    root_bytes = (feed.metadata / f"{root_version}.root.json").read_bytes()
+    targets = feed.load("targets", targets_version).signed.targets
+    offers = {}
+    for name, info in sorted(targets.items()):
+        if not name.startswith("beta/"):
+            continue
+        lane, pointer = name.split("/")[1:3]
+        stored = feed.targets_dir / "beta" / lane / f"{info.hashes['sha256']}.{pointer}"
+        latest = json.loads(stored.read_bytes())
+        offers[f"{lane}/{pointer}"] = {"version": latest["version"],
+                                       "payloads": latest.get("payloads")}
+    return {"versions": {"root": root_version, "targets": targets_version,
+                         "snapshot": snapshot_version,
+                         "timestamp": timestamp.signed.version},
+            "sha256": {"root": _sha256(root_bytes), "targets": _sha256(targets_bytes),
+                       "snapshot": _sha256(snapshot_bytes),
+                       "timestamp": _sha256(timestamp_bytes)},
+            "offers": offers}
+
+
 def verify(repo: Path | None = None, *, url: str | None = None, now: datetime | None = None,
-           monitor: bool = False, pool=None, trust_root: Path | None = None) -> dict:
+           monitor: bool = False, pool=None, trust_root: Path | None = None,
+           expect: dict | None = None) -> dict:
     """The real client reads the feed; with `monitor`, near expiry is an error.
 
     The client starts from a root it already trusts: `trust_root`, or the
     feed folder's first root. A live check never trusts what the server says
-    its first root is.
+    its first root is. With `expect` (from `expected` on the signed commit),
+    anything but exactly that feed is a problem: a CDN still serving the
+    previous, validly signed feed fails.
     """
     from tuf.ngclient import Updater
     if trust_root is not None:
@@ -979,15 +1072,37 @@ def verify(repo: Path | None = None, *, url: str | None = None, now: datetime | 
                 "targets": trusted.targets.expires - when,
                 "snapshot": trusted.snapshot.expires - when,
                 "timestamp": trusted.timestamp.expires - when}
+        # The exact bytes the client accepted and kept.
+        served = {}
+        for role in ROLES:
+            try:
+                served[role] = _sha256((work / "metadata" / f"{role}.json").read_bytes())
+            except OSError:
+                served[role] = None
     days = {role: round(value.total_seconds() / 86400, 2) for role, value in left.items()}
     problems = [f"{role} expires in {days[role]} days (alert below {limit})"
                 for role, limit in MONITOR_DAYS.items() if days[role] < limit] if monitor else []
     due = [f"renew-{role} is due ({days[role]} days left)"
            for role, limit in RENEW_DAYS.items() if days[role] <= limit]
-    return {"versions": {"root": trusted.root.version, "targets": trusted.targets.version,
-                         "snapshot": trusted.snapshot.version,
-                         "timestamp": trusted.timestamp.version},
-            "days_left": days, "offers": offers, "problems": problems, "renewals_due": due}
+    versions = {"root": trusted.root.version, "targets": trusted.targets.version,
+                "snapshot": trusted.snapshot.version, "timestamp": trusted.timestamp.version}
+    if expect is not None:
+        if versions != expect.get("versions"):
+            problems.append(f"the feed serves versions {versions}, not the expected "
+                            f"{expect.get('versions')}")
+        if served != expect.get("sha256"):
+            differ = sorted(r for r in ROLES if served.get(r) != (expect.get("sha256") or {})
+                            .get(r))
+            problems.append(f"the feed serves other {differ} metadata bytes than the "
+                            "signed commit")
+        if offers != expect.get("offers"):
+            problems.append(f"the feed offers {offers}, not the expected "
+                            f"{expect.get('offers')}")
+    return {"versions": versions, "sha256": served, "days_left": days, "offers": offers,
+            "problems": problems, "renewals_due": due,
+            "matches_expected": None if expect is None else not any(
+                p.startswith("the feed serves") or p.startswith("the feed offers")
+                for p in problems)}
 
 
 def preview(repo: Path) -> dict:
@@ -1072,8 +1187,8 @@ def beta_bundle(repo: Path, packages: Path, output: Path, *, lane: str, fmt: str
 # Command line
 # ==========================================================================
 
-def _manifest_packages(paths) -> list[dict]:
-    return [_package_from_record(Path(path)) for path in paths]
+def _manifest_packages(paths, fixture: bool = False) -> list[dict]:
+    return [_package_from_record(Path(path), fixture) for path in paths]
 
 
 def main(argv=None) -> int:
@@ -1095,12 +1210,18 @@ def main(argv=None) -> int:
     three.add_argument("--maturity", required=True, choices=release.MATURITIES)
     three.add_argument("--notes", default="")
     three.add_argument("--notes-file", type=Path)
+    three.add_argument("--fixture", action="store_true",
+                       help="qualification only: stage private (--scratch) test builds "
+                            "into a throwaway feed")
     three.add_argument("packages", nargs="+", type=Path)
     four = sub.add_parser("advance")
     four.add_argument("--keys", type=Path, required=True)
     four.add_argument("--repo", type=Path, required=True)
     four.add_argument("--packages-url", help="check each new released asset, "
                                              "downloaded anonymously from here")
+    four.add_argument("--feed-config", type=Path,
+                      help="the build's feed file (desktop/updates/beta-feed.json): "
+                           "downloads must end on its package_hosts")
     for name in ("refresh", "renew-targets"):
         item = sub.add_parser(name)
         item.add_argument("--keys", type=Path, required=True)
@@ -1121,6 +1242,10 @@ def main(argv=None) -> int:
     seven.add_argument("--url")
     seven.add_argument("--monitor", action="store_true")
     seven.add_argument("--trust-root", type=Path)
+    seven.add_argument("--expect", type=Path,
+                       help="JSON from `expected` on the signed commit; anything else fails")
+    ten = sub.add_parser("expected")
+    ten.add_argument("--repo", type=Path, required=True)
     eight = sub.add_parser("preview")
     eight.add_argument("--repo", type=Path, required=True)
     nine = sub.add_parser("bundle")
@@ -1151,10 +1276,22 @@ def main(argv=None) -> int:
             _outside_repository(args.keys)
             notes = (args.notes_file.read_text(encoding="utf-8") if args.notes_file
                      else args.notes)
+            packages = _manifest_packages(args.packages, fixture=args.fixture)
+            if args.fixture:
+                for package in packages:
+                    package["publishable"] = None   # private by construction, checked above
+            # A throwaway qualification feed holds one lane's test builds.
             result = stage(args.keys, args.repo, maturity=args.maturity,
-                           packages=_manifest_packages(args.packages), notes=notes)
+                           packages=packages, notes=notes, every_lane=not args.fixture)
         elif args.command == "advance":
-            result = advance(args.keys, args.repo, packages_url=args.packages_url)
+            hosts = None
+            if args.feed_config:
+                config = json.loads(args.feed_config.read_text(encoding="utf-8"))
+                hosts = tuple(config.get("package_hosts") or ())
+                if args.packages_url and args.packages_url != config.get("packages_url"):
+                    raise PublishError("--packages-url differs from the feed's packages_url")
+            result = advance(args.keys, args.repo, packages_url=args.packages_url,
+                             package_hosts=hosts)
         elif args.command == "refresh":
             result = refresh(args.keys, args.repo)
         elif args.command == "renew-targets":
@@ -1169,12 +1306,16 @@ def main(argv=None) -> int:
         elif args.command == "verify":
             if not (args.repo or args.url):
                 raise PublishError("give --repo or --url")
+            wanted = (json.loads(args.expect.read_text(encoding="utf-8"))
+                      if args.expect else None)
             result = verify(args.repo, url=args.url, monitor=args.monitor,
-                            trust_root=args.trust_root)
+                            trust_root=args.trust_root, expect=wanted)
             print(json.dumps(result, indent=2))
             return 1 if result["problems"] else 0
         elif args.command == "preview":
             result = preview(args.repo)
+        elif args.command == "expected":
+            result = expected(args.repo)
         elif args.channel == "internal":
             result = str(bundle(args.repo, args.output, channel="internal", lane=args.lane))
         else:

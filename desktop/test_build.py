@@ -485,22 +485,83 @@ class TestChannelsAndLabels(unittest.TestCase):
                          "internal-test")
         self.assertEqual(cap("linux-x64", "internal", "internal-test", None)["capability"],
                          "internal-test")
-        # A tester preview's install is itself the test; an accepted build is
-        # unavailable until it names accepted qualification evidence.
+        # A tester preview's install is itself the test. The public Beta's is
+        # provisional: offered, with every package's native qualification bound
+        # to its bytes at publication, and device testing still pending.
         self.assertEqual(cap("linux-x64", "beta", None, None, "preview")["capability"],
                          "preview-test")
-        self.assertEqual(cap("macos-arm64", "beta", None, None, "accepted")["capability"],
+        for lane in ("macos-arm64", "windows-x64", "linux-x64"):
+            self.assertEqual(cap(lane, "beta", None, None, "beta")["capability"],
+                             "provisional")
+        # A final build is never provisional; it is unavailable until accepted.
+        self.assertEqual(cap("macos-arm64", "beta", None, None, "final")["capability"],
                          "unavailable")
-        for args in (("macos-arm64", "beta", "qualified", None, "accepted"),
-                     ("macos-arm64", "beta", "preview-test", None, "accepted"),
+        for args in (("macos-arm64", "beta", "qualified", None, "preview"),
+                     ("macos-arm64", "beta", "preview-test", None, "beta"),
+                     ("macos-arm64", "beta", "provisional", None, "final"),
                      ("macos-arm64", "beta", "internal-test", None, "preview")):
             with self.subTest(args=args), self.assertRaises(build.BuildError):
                 cap(*args)
+
+    def test_a_qualified_capability_needs_a_real_acceptance_record(self):
+        cap = build.install_capability
+        digest = "d" * 64
+        good = {"schema": build.ACCEPTANCE_SCHEMA, "lane": "macos-arm64",
+                "shared_snapshot_digest": digest, "observer": "the user",
+                "observed_at": "2026-10-20T10:00:00Z",
+                "device": {"os": "macOS 15.6 (24G84)", "hardware": "MacBook Air M2"},
+                "checks": [{"name": n, "passed": True} for n in build.ACCEPTANCE_CHECKS]}
+        bad = {
+            "an empty file": {},
+            "an unrelated record": {"schema": "something-else/1"},
+            "another lane": {**good, "lane": "windows-x64"},
+            "another source": {**good, "shared_snapshot_digest": "e" * 64},
+            "no observer": {**good, "observer": " "},
+            "a failed check": {**good, "checks": [{"name": n, "passed": n != "rollback"}
+                                                  for n in build.ACCEPTANCE_CHECKS]},
+            "a missing check": {**good, "checks": good["checks"][:-1]},
+            "a string verdict": {**good, "checks": [{"name": n, "passed": "true"}
+                                                    for n in build.ACCEPTANCE_CHECKS]},
+        }
         with tempfile.TemporaryDirectory() as folder:
-            evidence = Path(folder) / "accepted.json"
-            evidence.write_text("{}", encoding="utf-8")
-            record = cap("macos-arm64", "beta", "qualified", evidence)
+            evidence = Path(folder) / "acceptance.json"
+            for name, record in bad.items():
+                with self.subTest(record=name), self.assertRaises(build.BuildError):
+                    evidence.write_text(json.dumps(record), encoding="utf-8")
+                    cap("macos-arm64", "beta", "qualified", evidence, "beta",
+                        shared_snapshot_digest=digest)
+            with self.assertRaises(build.BuildError):
+                cap("macos-arm64", "beta", "qualified", None, "beta",
+                    shared_snapshot_digest=digest)
+            evidence.write_text(json.dumps(good), encoding="utf-8")
+            record = cap("macos-arm64", "beta", "qualified", evidence, "beta",
+                         shared_snapshot_digest=digest)
             self.assertRegex(record["evidence_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_every_public_build_needs_the_clean_designated_checkout(self):
+        calls = []
+
+        def git(argv, **kwargs):
+            calls.append(argv)
+            out = "c" * 40 if argv[1] == "rev-parse" else (" M desktop/build.py"
+                                                         if self.dirty else "")
+            return subprocess.CompletedProcess(argv, 0, out, "")
+        self.dirty = False
+        build.check_release_checkout("c" * 40, run=git)
+        for commit, dirty in (("d" * 40, False), ("c" * 40, True), (None, False)):
+            self.dirty = dirty
+            with self.subTest(commit=commit, dirty=dirty), self.assertRaises(build.BuildError):
+                build.check_release_checkout(commit, run=git)
+        # An unsigned Beta build goes through the same check; --scratch is the
+        # only way past it, and is recorded as never publishable.
+        with patch.object(build, "detect_lane", return_value="linux-x64"), \
+                patch.object(build, "check_release_checkout",
+                                  side_effect=build.BuildError("dirty")) as checked:
+            code = build.main(["--channel", "beta", "--version",
+                               f"{build.app_version()}-beta.1", "--build-set", "bs-1",
+                               "--build-number", "99", "--plan"])
+            self.assertEqual(code, 1)
+            checked.assert_called_once()
 
     def test_channel_label_and_capability_are_bound_into_the_input_digest(self):
         toolchain = {"python": "3.12"}
@@ -517,10 +578,12 @@ class TestChannelsAndLabels(unittest.TestCase):
                               "source_commit": None, "bundle_build": 1})()
         beta = build.input_identity("linux-x64", toolchain=toolchain, channel="beta",
                                     capability={"capability": "unavailable",
-                                                "evidence_sha256": None})
+                                                "evidence_sha256": None},
+                                    publishable=False)
         identity = build.build_identity(args, "linux-x64", beta, [])
         self.assertEqual((identity["channel"], identity["install_capability"],
-                          identity["bundle_build"]), ("beta", "unavailable", 1))
+                          identity["bundle_build"], identity["publishable"]),
+                         ("beta", "unavailable", 1, False))
 
     def test_release_signing_needs_its_credentials_and_names_the_publisher(self):
         with self.assertRaises(build.BuildError):

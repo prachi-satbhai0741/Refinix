@@ -1,0 +1,54 @@
+name: Refinix build Python
+description: >
+  The interpreter a Refinix package is built with, verified and recorded:
+  python.org's pinned 3.13 installer on macOS and Windows (size, SHA-256 and the
+  publisher's signature checked, desktop/packaging-tools.json), Ubuntu's own
+  python3.12 on Ubuntu. Creates the build virtual environment from it, puts it
+  first on PATH and exports REFINIX_PYTHON_PROVENANCE for the build identity.
+  Run after checkout; on Ubuntu, after the apt build packages are installed.
+
+inputs:
+  lane:
+    description: macos-arm64, windows-x64 or linux-x64
+    required: true
+  venv:
+    description: where the build environment goes
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install or record the pinned interpreter
+      shell: bash
+      env:
+        LANE: ${{ inputs.lane }}
+      run: |
+        set -euo pipefail
+        bootstrap=python3
+        command -v python3 >/dev/null || bootstrap=python
+        if [ "$LANE" = "linux-x64" ]; then
+          "$bootstrap" desktop/python_runtime.py record --lane "$LANE" --python /usr/bin/python3 \
+            --out "$RUNNER_TEMP/python-provenance.json" --github-env "$GITHUB_ENV"
+        else
+          "$bootstrap" desktop/python_runtime.py install --lane "$LANE" \
+            --cache "$RUNNER_TEMP/refinix-python" --github-env "$GITHUB_ENV"
+        fi
+
+    - name: Create the build environment from it
+      shell: bash
+      env:
+        LANE: ${{ inputs.lane }}
+        VENV: ${{ inputs.venv }}
+      run: |
+        set -euo pipefail
+        if [ "$LANE" = "linux-x64" ]; then
+          # The GTK/WebKitGTK bindings come from Ubuntu's python3-gi package.
+          "$REFINIX_PYTHON" -m venv --system-site-packages "$VENV"
+        else
+          "$REFINIX_PYTHON" -m venv "$VENV"
+        fi
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          echo "$VENV/Scripts" >> "$GITHUB_PATH"
+        else
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+        fi

@@ -79,7 +79,6 @@ jobs:
       REFINIX_VERSION: ${{ inputs.version }}
       REFINIX_BUILD_SET: ${{ inputs.build_set }}
       REFINIX_REBUILD_REASON: ${{ inputs.rebuild_reason }}
-      REFINIX_CACHE: ${{ runner.temp }}/refinix-build-cache
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     defaults:
       run:
@@ -98,14 +97,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # macOS and Windows: CPython 3.12.10, the last 3.12 release with
-      # python.org installers (desktop/packaging-tools.json). The driver still
-      # refuses a macOS bundle whose binaries need a newer OS than it declares.
-      - name: Set up Python
-        if: matrix.lane != 'linux-x64'
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.12.10"
+      # The runner context only exists inside steps, never in job-level env.
+      - name: Name the cache folder
+        run: echo "REFINIX_CACHE=$RUNNER_TEMP/refinix-build-cache" >> "$GITHUB_ENV"
 
       # Ubuntu: the system Python 3.12, because the GTK/WebKitGTK bindings come
       # from Ubuntu's own python3-gi package rather than a wheel.
@@ -117,18 +111,13 @@ jobs:
             python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 libwebkit2gtk-4.1-0 dpkg-dev \
             libpython3.12
 
-      - name: Create the build environment
-        run: |
-          if [ "${{ matrix.lane }}" = "linux-x64" ]; then
-            /usr/bin/python3 -m venv --system-site-packages "$RUNNER_TEMP/venv"
-          else
-            python -m venv "$RUNNER_TEMP/venv"
-          fi
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            echo "$RUNNER_TEMP/venv/Scripts" >> "$GITHUB_PATH"
-          else
-            echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
-          fi
+      # macOS and Windows: python.org's pinned 3.13 installer, verified;
+      # Ubuntu: the distribution's python3.12 (desktop/python_runtime.py).
+      - name: Set up the pinned build Python
+        uses: ./.github/actions/refinix-python
+        with:
+          lane: ${{ matrix.lane }}
+          venv: ${{ runner.temp }}/venv
 
       - name: Restore verified pip downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

@@ -1,0 +1,145 @@
+name: Verify the public release
+
+# After publication: what an ordinary visitor gets, checked on each operating
+# system's own disposable runner, with no credentials. Started by hand only;
+# read-only; it never publishes or writes anything.
+#
+#   site      the live page and release.json; every listed file downloaded
+#             anonymously and matched against release.json and SHA256SUMS
+#             (scripts/verify_public.py); the live update feed read with the
+#             real client from the committed trust root, offering this version
+#   per OS    the first-install download from the live website, installed and
+#             started on scratch data (the same release-bytes qualifiers as the
+#             release run), so the published bytes are the qualified bytes
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The published version, for example 0.1.0-beta.1"
+        required: true
+        type: string
+      site:
+        description: "The public website"
+        required: true
+        default: https://refinix.runs-on.dev/
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  site:
+    runs-on: ubuntu-24.04
+    env:
+      SITE: ${{ inputs.site }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: The live page, its downloads and SHA256SUMS
+        run: python3 scripts/verify_public.py --site "$SITE" --report public.json
+      - name: The live feed offers this version on every lane
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check --require-hashes \
+            -r backend/requirements-runtime.lock
+          "$RUNNER_TEMP/venv/bin/python" scripts/update_repository.py verify \
+            --url "${SITE%/}/updates/beta/" --trust-root desktop/updates/beta-root.json \
+            --monitor > feed.json
+          python3 - <<'PY'
+          import json, os
+          result = json.load(open("feed.json"))
+          offers = result["offers"]
+          wanted = os.environ["VERSION"]
+          for lane in ("macos-arm64", "windows-x64", "linux-x64"):
+              offer = offers.get(f"{lane}/latest.json") or {}
+              assert offer.get("version") == wanted, (lane, offer)
+          print(json.dumps(result, indent=2))
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: public-site
+          path: |
+            public.json
+            feed.json
+
+  install:
+    name: ${{ matrix.lane }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {"lane": "macos-arm64", "runner": "macos-15"}
+          - {"lane": "windows-x64", "runner": "windows-2025"}
+          - {"lane": "linux-x64", "runner": "ubuntu-24.04"}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      REFINIX_QUALIFY_DISPOSABLE: "1"
+      SITE: ${{ inputs.site }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Ubuntu session packages
+        if: matrix.lane == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth dbus dbus-x11 \
+            python3-venv
+      - name: Download this platform's files from the live website, anonymously
+        run: |
+          bootstrap=python3; command -v python3 >/dev/null || bootstrap=python
+          "$bootstrap" scripts/verify_public.py --site "$SITE" --keep public \
+            --report public.json
+      - name: Install and start the published bytes on scratch data (Ubuntu)
+        if: matrix.lane == 'linux-x64'
+        run: |
+          deb=$(ls public/refinix_*_amd64.deb)
+          sudo apt-get install -y "./$deb"
+          python3 - <<'PY'
+          import sys; sys.path.insert(0, ".")
+          from pathlib import Path
+          from scripts import qualify_package_launch as launch
+          import json, os, tempfile
+          version = json.load(open("/opt/refinix/_internal/refinix-build.json"))["version"]
+          root = Path(tempfile.mkdtemp()) / "scratch"
+          result = launch.launch_check(Path("/opt/refinix/Refinix"), root,
+                                       prefix=["xvfb-run", "-a", "dbus-run-session", "--"],
+                                       expect_version=version)
+          print(json.dumps(result, indent=2))
+          sys.exit(0 if result["passed"] else 1)
+          PY
+      - name: Install and start the published bytes on scratch data (Windows)
+        if: matrix.lane == 'windows-x64'
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes \
+            -r backend/requirements-runtime.lock
+          setup=$(ls public/Refinix-*-windows-x64-setup.exe)
+          python - "$setup" <<'PY'
+          import sys; sys.path.insert(0, ".")
+          from pathlib import Path
+          from scripts import qualify_windows
+          sys.exit(qualify_windows.main(["--setup", sys.argv[1],
+                                         "--report", "windows-public.json"]))
+          PY
+      - name: Open the published DMG and start its app on scratch data (macOS)
+        if: matrix.lane == 'macos-arm64'
+        run: |
+          dmg=$(ls public/Refinix-*-macos-arm64.dmg)
+          zip=$(ls public/Refinix-*-macos-arm64.zip)
+          python3 scripts/qualify_macos.py --dmg "$dmg" --zip "$zip" --report macos-public.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: public-${{ matrix.lane }}
+          path: |
+            public.json
+            *-public.json
+          if-no-files-found: warn

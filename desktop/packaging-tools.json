@@ -19,10 +19,6 @@
     "licence": "MIT (repository LICENSE). Statically links libfuse (LGPL-2.1); review its distribution terms before publication.",
     "shipped": true
   },
-  "macos_interpreter": {
-    "policy": "CPython 3.12 from actions/setup-python or a python.org framework build. The build fails unless every shipped Mach-O minos is at or below the declared LSMinimumSystemVersion, which is set from the highest shipped minos.",
-    "python_org_last_312_installer": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg"
-  },
   "inno_setup": {
     "minimum_version": "6.2",
     "source": "Preinstalled on GitHub windows runners, or the official installer from jrsoftware.org on a native host",
@@ -37,6 +33,40 @@
     "source": "https://go.microsoft.com/fwlink/?linkid=2124701 (Microsoft's x64 standalone link), resolved and downloaded once on 2026-10-07; size and SHA-256 computed from those bytes",
     "licence": "Microsoft Edge WebView2 Runtime licence terms. Including the Evergreen Standalone Installer in an app's installer is Microsoft's documented offline deployment path (learn.microsoft.com/microsoft-edge/webview2/concepts/distribution, read 2026-10-07)",
     "signature": "Authenticode, Microsoft Corporation; verified on the Windows build host",
+    "shipped": true
+  },
+  "python_runtime_macos": {
+    "version": "3.13.16",
+    "url": "https://www.python.org/ftp/python/3.13.16/python-3.13.16-macos11.pkg",
+    "size": 70394335,
+    "sha256": "30666509020b4da0dd8bc2e773255f34d76b7bb80b66960a928d5f6daa0192d7",
+    "signature": "Developer ID Installer: Python Software Foundation (BMM5U3QVKW), notarised; re-checked with pkgutil on the build host",
+    "sigstore": {
+      "identity": "thomas@python.org",
+      "issuer": "https://accounts.google.com",
+      "verified": "2026-10-08 with sigstore-python 3.6.6 against the .sigstore bundle published beside the file on python.org"
+    },
+    "bundled": {
+      "openssl": "3.5.9 (29 Sep 2026)",
+      "framework_minimum_macos": "11.0"
+    },
+    "licence": "PSF-2.0 (Python); OpenSSL is Apache-2.0",
+    "reason": "CPython 3.12's security branch publishes source only, and its own macOS and Windows build recipes still pin OpenSSL 3.0.16 (the 3.0 line ended 7 Sep 2026). The 3.13.16 installers are current, publisher-signed and bundle OpenSSL 3.5.9.",
+    "shipped": true
+  },
+  "python_runtime_windows": {
+    "version": "3.13.16",
+    "url": "https://www.python.org/ftp/python/3.13.16/python-3.13.16-amd64.exe",
+    "size": 29935584,
+    "sha256": "fb4f9f5d438b2396da0086dc70b935c530cb578e37adc6d354f7ad2037fee83b",
+    "signature": "Authenticode, Python Software Foundation; verified on the Windows build host",
+    "sigstore": {
+      "identity": "thomas@python.org",
+      "issuer": "https://accounts.google.com",
+      "verified": "2026-10-08 with sigstore-python 3.6.6 against the .sigstore bundle published beside the file on python.org"
+    },
+    "licence": "PSF-2.0 (Python); OpenSSL is Apache-2.0",
+    "reason": "See python_runtime_macos.",
     "shipped": true
   }
 }

@@ -4,20 +4,25 @@ A label is `X.Y.Z-<tag>.<n>` or a plain `X.Y.Z`:
 
     internal   `0.1.0-internal.6`   the internal test channel (its own trust root)
     preview    `0.1.0-preview.2`    the public `beta` channel, maturity "preview"
-    beta       `0.1.0-beta.1`       the public `beta` channel, maturity "accepted"
+    beta       `0.1.0-beta.1`       the public `beta` channel, maturity "beta"
     (none)     `0.1.0`              the public `beta` channel, maturity "final"
 
 There are two channels, `internal` and `beta`. A public build's maturity is
 recorded in its build identity, its signed offer pointer and its package
 target, and the label's tag must agree with it.
 
+Maturity is the release class a build is published as, never evidence about
+it: a `beta` build is the public Beta, not a device-accepted one. What was
+actually tested travels separately (the release's per-platform device-testing
+state and each package's bound qualification record).
+
 The ordering key is `K = (major, minor, patch, rank, number)`: the numeric
-version always decides first, then the rank (preview 1, accepted 2, final 3;
+version always decides first, then the rank (preview 1, beta 2, final 3;
 internal labels rank 0 and are only ever compared with each other), then the
 label's number. Every platform encodes the same order:
 
     Debian    `X.Y.Z~R.S` (final: `X.Y.Z`); `~` sorts before anything, and R is
-              the numeric rank, so preview < accepted < final for one X.Y.Z.
+              the numeric rank, so preview < beta < final for one X.Y.Z.
     macOS     CFBundleShortVersionString `X.Y.Z`, CFBundleVersion the public
               build number N, which only ever goes up across public builds.
     Windows   version information `X.Y.Z.N`, with the same N.
@@ -35,12 +40,12 @@ import re
 from dataclasses import dataclass
 
 CHANNELS = ("internal", "beta")
-MATURITIES = ("preview", "accepted", "final")
-RANK = {"internal": 0, "preview": 1, "accepted": 2, "final": 3}
-TAG_MATURITY = {"preview": "preview", "beta": "accepted", None: "final"}
+MATURITIES = ("preview", "beta", "final")
+RANK = {"internal": 0, "preview": 1, "beta": 2, "final": 3}
+TAG_MATURITY = {"preview": "preview", "beta": "beta", None: "final"}
 MATURITY_TAG = {maturity: tag for tag, maturity in TAG_MATURITY.items()}
 # The signed pointer each maturity is offered through, per lane.
-POINTERS = {"accepted": "latest.json", "final": "latest.json",
+POINTERS = {"beta": "latest.json", "final": "latest.json",
             "preview": "latest-preview.json"}
 LABEL = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:-(internal|preview|beta)\.([1-9]\d*))?")
 
@@ -67,7 +72,7 @@ class Label:
 
     @property
     def maturity(self) -> str | None:
-        """None for internal builds; preview, accepted or final otherwise."""
+        """None for internal builds; preview, beta or final otherwise."""
         return None if self.tag == "internal" else TAG_MATURITY[self.tag]
 
     @property
@@ -122,14 +127,14 @@ def check_identity(version, channel, maturity) -> Label:
 def offered_to(own_maturity: str | None, offered_maturity: str | None) -> bool:
     """Whether an install of one maturity may take a build of another.
 
-    Preview installs take previews and, later, accepted or final builds.
-    Accepted and final installs never take a preview, from any source.
+    Preview installs take previews and, later, Beta or final builds.
+    Beta and final installs never take a preview, from any source.
     """
     if own_maturity is None or offered_maturity is None:
         return own_maturity == offered_maturity
     if own_maturity == "preview":
         return offered_maturity in MATURITIES
-    return offered_maturity in ("accepted", "final")
+    return offered_maturity in ("beta", "final")
 
 
 def pointers_for(own_maturity: str | None) -> tuple[str, ...]:
@@ -160,12 +165,21 @@ FORMAT_SUFFIX = {"zip": ".zip", "exe": ".exe", "deb": ".deb", "appimage": ".AppI
 
 
 def asset_name(version, lane: str, fmt: str) -> str:
-    """The one file name a lane's package of one format has, everywhere."""
+    """The one file name a lane's package of one format has, everywhere.
+
+    Public `.deb` file names carry the label, not the Debian version: the
+    Debian version's `~` is not a character a release asset name can be
+    trusted to keep, and the signed target, the download URL and the
+    uploaded asset must be the same name. The Debian version inside the
+    package is still `label.debian()`. Internal names are unchanged.
+    """
     label = parse(version)
     if fmt not in LANE_FORMATS.get(lane, ()):
         raise LabelError(f"{lane} has no {fmt} package")
     if fmt == "deb":
-        return f"refinix_{label.debian()}_amd64.deb"
+        if label.tag == "internal":
+            return f"refinix_{label.debian()}_amd64.deb"
+        return f"refinix_{label}_amd64.deb"
     if fmt == "exe":
         return f"Refinix-{label}-windows-x64-setup.exe"
     if fmt == "appimage":

@@ -96,13 +96,17 @@ jobs:
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
   live:
-    needs: deploy
+    needs: [sign, deploy]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # The expectation comes from exactly the signed, deployed commit; a feed
+      # that is merely valid (say, the previous one still cached) fails.
+      - name: Check out exactly the signed commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ needs.sign.outputs.commit }}
           persist-credentials: false
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -110,19 +114,24 @@ jobs:
           ref: ${{ vars.REFINIX_TOOLING_COMMIT }}
           path: tooling
           persist-credentials: false
-      - name: The live feed is fresh
+      - name: The live feed and site are exactly what was signed
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check --require-hashes \
             -r tooling/backend/requirements-runtime.lock
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+          "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py expected \
+            --repo updates/beta > "$RUNNER_TEMP/expected.json"
+          cat "$RUNNER_TEMP/expected.json"
+          ok=""
+          for attempt in $(seq 1 20); do
             if "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py verify \
-                --url "$FEED_URL" --trust-root updates/beta/metadata/1.root.json --monitor; then
-              exit 0
+                --url "$FEED_URL" --trust-root updates/beta/metadata/1.root.json \
+                --expect "$RUNNER_TEMP/expected.json" --monitor; then
+              ok=1; break
             fi
-            sleep 60
+            sleep 30        # Pages and its CDN can take a few minutes
           done
-          exit 1
+          [ -n "$ok" ] || { echo "the live feed never became the signed one"; exit 1; }
 
   alert:
     needs: [sign, deploy, live]

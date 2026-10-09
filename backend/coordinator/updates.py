@@ -90,7 +90,7 @@ MEMBER = re.compile(r"metadata/(?:\d+\.root|root|timestamp|snapshot|targets)\.js
 
 # Installing: which lanes have a helper in this application, and the test-only
 # install root an internal build may also use.
-CAPABILITIES = ("qualified", "internal-test", "preview-test", "unavailable")
+CAPABILITIES = ("qualified", "provisional", "internal-test", "preview-test", "unavailable")
 HELPER_PLATFORMS = {"macos-arm64": "darwin", "windows-x64": "win32", "linux-x64": "linux"}
 # Redirects a package download may follow, each to a listed HTTPS host.
 MAX_REDIRECTS = 3
@@ -397,27 +397,27 @@ def verify_evidence(staged: Path, *, anchor: bytes, local_metadata: Path | None 
         data = path.read_bytes()
         root = _next_root(root, data)
         roots.append(hashlib.sha256(data).hexdigest())
-    # Keys this client has trusted since: continue the chain to them.
+    # Keys this client has trusted since: continue the chain to them
+    # (tuf_offline.continue_to, shared with the Ubuntu root step).
     if local_metadata is not None:
         history = Path(local_metadata) / "root_history"
+
+        def kept(version: int) -> bytes | None:
+            try:
+                return (history / f"{version}.root.json").read_bytes()
+            except OSError:
+                return None
         try:
-            trusted = _metadata((Path(local_metadata) / "root.json").read_bytes(), "root")
-            while root.signed.version < trusted.signed.version:
-                version = root.signed.version + 1
-                try:
-                    data = (history / f"{version}.root.json").read_bytes()
-                except OSError as exc:
-                    raise UpdateError("evidence", f"Locally trusted root {version} is "
-                                                  "missing or unreadable.") from exc
-                root = _next_root(root, data)
-                roots.append(hashlib.sha256(data).hexdigest())
-            if root.signed.version == trusted.signed.version \
-                    and root.signed_bytes != trusted.signed_bytes:
-                raise UpdateError("evidence", "The authenticated root disagrees with "
-                                              "the newest locally trusted root.")
+            trusted_bytes = (Path(local_metadata) / "root.json").read_bytes()
         except OSError as exc:
             raise UpdateError("evidence", "The newest locally trusted root is missing "
                                           "or unreadable.") from exc
+        try:
+            root, added = tuf_offline.continue_to(root, trusted_bytes, kept,
+                                                  allow_newer=True)
+        except tuf_offline.OfflineError as exc:
+            raise UpdateError("evidence", str(exc)) from exc
+        roots.extend(added)
     kept = {}
     for role in ("timestamp", "snapshot", "targets"):
         try:

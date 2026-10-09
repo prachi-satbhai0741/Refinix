@@ -1157,6 +1157,29 @@ class CodeService:
                 "command": list(VALIDATION_COMMAND), "profile": sandbox_local.PROFILE,
                 "profile_version": sandbox_local.PROFILE_VERSION}
 
+    def _changed_inputs(self, proposal: dict) -> list[str]:
+        """Selected files whose bytes on disk are no longer what was validated.
+
+        The sandbox ran on every selected file as it was then: the edited ones
+        (compared with their reviewed originals) and the unedited tests and
+        context. Any of them changed, missing or replaced means the pass
+        describes a different project than the one Apply would write into.
+        """
+        root = self._root(proposal["repo_id"])
+        contents = db.proposal_edit_contents(self.conn, proposal["proposal_id"])
+        selected = proposal["selection"] or [
+            {"path": edit["path"], "sha256": edit["base_sha256"]} for edit in contents]
+        changed = []
+        for item in selected:
+            try:
+                _text, identity = repo.read_text_file(root, item["path"])
+            except repo.RepositoryError:
+                changed.append(f"{item['path']} (missing or not an ordinary file)")
+                continue
+            if identity.sha256 != item["sha256"]:
+                changed.append(item["path"])
+        return changed
+
     def _local_validation_matches(self, proposal: dict, validation: dict | None) -> bool:
         if not validation or validation.get("node_id") != LOCAL_SANDBOX_NODE:
             return False
@@ -1183,6 +1206,15 @@ class CodeService:
                             "produce. It was not applied.", 409)
         if requested == "sandbox_validated" or (requested is None and latest):
             if self._local_validation_matches(proposal, latest):
+                # The pass is about the inputs as they were: check they still are,
+                # immediately before the write record is created.
+                changed = self._changed_inputs(proposal)
+                if changed:
+                    raise CodeError("validation_stale",
+                                    "This change was not applied: files the sandbox "
+                                    f"tested have changed since it passed ({', '.join(changed)}). "
+                                    "Run the sandbox again, or choose Apply without the "
+                                    "sandbox to go ahead anyway.", 409)
                 return "sandbox_validated"
             if requested == "sandbox_validated" or latest:
                 reason = ("the sandbox did not pass it" if latest and not latest["passed"]

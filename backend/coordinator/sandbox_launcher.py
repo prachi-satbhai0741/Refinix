@@ -24,7 +24,11 @@ In order, before any staged code runs:
 
 If any step fails nothing is run, and the report says which control failed.
 The report is one JSON line on standard output, written by this launcher
-after the tests have exited; the tests' own output is size-capped.
+after the tests have exited, marked with the run's own code from the
+manifest (which the tests cannot read); the tests' own output is size-capped
+and read on its own thread, so the time limit holds even when the tests print
+nothing. Signals are denied inside the service, so at the time limit the
+launcher reports and exits, and systemd ends everything left in the service.
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ import resource
 import socket
 import subprocess
 import sys
+import threading
 
 # Landlock (include/uapi/linux/landlock.h).
 SYS = {"x86_64": {"create": 444, "add_rule": 445, "restrict": 446},
@@ -236,21 +241,32 @@ def run_tests(workspace: str, environment: dict, seconds: int) -> dict:
                                env=environment, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                close_fds=True)
-    output, truncated = bytearray(), False
-    while True:
-        block = process.stdout.read(8192)
-        if not block:
-            break
-        if len(output) < OUTPUT_LIMIT:
-            output.extend(block[:OUTPUT_LIMIT - len(output)])
-        else:
-            truncated = True
+    output, state = bytearray(), {"truncated": False}
+
+    def read():
+        try:
+            for block in iter(lambda: process.stdout.read(8192), b""):
+                room = OUTPUT_LIMIT - len(output)
+                if room > 0:
+                    output.extend(block[:room])
+                if len(block) > room:
+                    state["truncated"] = True
+        except (OSError, ValueError):
+            pass
+    # A daemon thread: a descendant still holding the pipe at the time limit
+    # must not keep this launcher (and so the service) alive.
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    timed_out = False
     try:
         status = process.wait(timeout=seconds)
     except subprocess.TimeoutExpired:
-        process.kill()
-        status = process.wait()
-    text = output.decode("utf-8", errors="replace")
+        # kill() is denied by the service's system-call filter; ending this
+        # launcher ends the service, and systemd stops what is left in it.
+        status, timed_out = None, True
+    reader.join(2.0)
+    truncated = state["truncated"]
+    text = bytes(output).decode("utf-8", errors="replace")
     tests_run = None
     for line in text.splitlines():
         if line.startswith("Ran ") and " test" in line:
@@ -259,11 +275,12 @@ def run_tests(workspace: str, environment: dict, seconds: int) -> dict:
             except (IndexError, ValueError):
                 pass
     return {"exit_status": status, "tests_run": tests_run, "output": text,
-            "output_truncated": truncated}
+            "output_truncated": truncated, "timed_out": timed_out}
 
 
 def main(argv: list[str]) -> int:
     report = {"command": [os.path.basename(sys.executable), *COMMAND], "ran": False}
+    manifest = None
     try:
         if len(argv) != 2:
             raise Refused("usage", "launcher <workspace> <manifest>")
@@ -294,7 +311,9 @@ def main(argv: list[str]) -> int:
     except Exception as exc:                                # noqa: BLE001
         report.update(refused="launcher", error=f"{type(exc).__name__}: {exc}")
         code = 3
-    sys.stdout.write("\nREFINIX-SANDBOX-REPORT " + json.dumps(report, sort_keys=True) + "\n")
+    code_word = str(manifest.get("report_code") or "") if isinstance(manifest, dict) else ""
+    sys.stdout.write(f"\nREFINIX-SANDBOX-REPORT {code_word} "
+                     + json.dumps(report, sort_keys=True) + "\n")
     sys.stdout.flush()
     return code
 

@@ -24,13 +24,17 @@ Checked (plan v4.3 B3 and B4):
                 half-configured
     rollback    the recorded previous package is reinstalled exactly
     real        (with --real) the built package's control fields, files,
-                polkit policy and that its root entry refuses without pkexec
+                polkit policy, that its root entry refuses without pkexec, and
+                that the installed app starts as an ordinary account on
+                scratch data only (scripts/qualify_package_launch.py, xvfb)
 
     sudo REFINIX_QUALIFY_DISPOSABLE=1 python3 scripts/qualify_deb.py \\
-        [--real out/refinix_0.1.0~1.1_amd64.deb] --report report.json
+        [--real out/refinix_0.1.0-beta.1_amd64.deb] --report report.json
 
-The report records every check with what was observed; exit status 0 only
-when all passed.
+With --real the report is a release-bytes record bound to that exact package
+(scripts/qualification_record.py): its name, size, SHA-256 and embedded
+build identity. Without --real it is a fixture report, which the release
+tooling never accepts for publication. Exit status 0 only when all passed.
 """
 
 from __future__ import annotations
@@ -193,14 +197,14 @@ class Feed:
         self.repository.advance(self.keys, self.dir, passphrases=PASSPHRASES)
 
 
-def qa_account() -> pwd.struct_passwd:
+def qa_account(name: str = QA_USER) -> pwd.struct_passwd:
     try:
-        return pwd.getpwnam(QA_USER)
+        return pwd.getpwnam(name)
     except KeyError:
-        result = run(["useradd", "--create-home", "--shell", "/bin/sh", QA_USER])
+        result = run(["useradd", "--create-home", "--shell", "/bin/sh", name])
         if result.returncode:
             raise SystemExit(f"could not create the test account: {result.stderr}")
-        return pwd.getpwnam(QA_USER)
+        return pwd.getpwnam(name)
 
 
 def stage_request(feed: Feed, account, installed: str, name: str) -> Path:
@@ -377,10 +381,98 @@ def qualify(report: Report, work: Path):
     report.record("unpacked package is configured by recovery",
                   configured.get("state") == "to", {"answer": configured, "dpkg": status()})
     run(["dpkg", "--purge", "refinix"])
+    qualify_attempts(report, work, feed, old, account)
+
+
+def kill_during_unpack(deb: Path) -> str:
+    """Start `dpkg -i deb` and kill it while it unpacks; dpkg's status after."""
+    process = subprocess.Popen(["dpkg", "-i", str(deb)], stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True)
+    for line in process.stdout:
+        if "Unpacking" in line or "Preparing to unpack" in line:
+            time.sleep(0.15)
+            os.kill(process.pid, signal.SIGKILL)
+            break
+    process.wait()
+    return status()
+
+
+def set_record(admission: dict, **fields) -> Path:
+    record_dir = STATE / "update" / admission["admission"]
+    record = json.loads((record_dir / "record.json").read_text())
+    record.update(fields)
+    (record_dir / "record.json").write_text(json.dumps(record))
+    return record_dir
+
+
+def qualify_attempts(report: Report, work: Path, feed: "Feed", old: Path, account):
+    """One current attempt for the whole installation (review F3/F4), real dpkg."""
+    debs = work / "debs-attempts"
+    debs.mkdir()
+    # A -> B -> C, then the old A -> B request changes nothing.
+    reset(old)
+    first = stage_request(feed, account, OLD, "request-a-b")
+    step(account, "--deb-admit", first)
+    installed_b = step(account, "--deb-install", first)
+    newer = make_deb(debs, NEWER, feed.root)
+    feed.publish(newer, NEWER)
+    second = stage_request(feed, account, NEW, "request-b-c")
+    step(account, "--deb-admit", second)
+    installed_c = step(account, "--deb-install", second)
+    before = status()
+    stale = {mode: step(account, mode, first)
+             for mode in ("--deb-rollback", "--deb-recover", "--deb-install")}
+    report.record("an old request after two updates changes nothing",
+                  installed_b.get("state") == "to" and installed_c.get("state") == "to"
+                  and all(a.get("code") == "superseded" for a in stale.values())
+                  and status() == before and before.endswith(release.parse(NEWER).debian()),
+                  {"answers": stale, "dpkg": status()})
+    current = step(account, "--deb-rollback", second)
+    report.record("the current attempt still rolls back with its exact copy",
+                  current.get("state") == "from"
+                  and status().endswith(release.parse(NEW).debian()),
+                  {"answer": current, "dpkg": status()})
+
+    # A rollback killed while unpacking finishes going back, never forward.
+    reset(old)
+    third = stage_request(feed, account, OLD, "request-rollback")
+    admitted = step(account, "--deb-admit", third)
+    step(account, "--deb-install", third)
+    record_dir = set_record(admitted, state="rolling_back", direction="rollback")
+    interrupted = kill_during_unpack(record_dir / "recovery.deb")
+    recovered = step(account, "--deb-recover", third)
+    from desktop import install_check
+    problem = install_check.completeness_problem(PREFIX, OLD)
+    report.record("a rollback killed while unpacking finishes going back",
+                  recovered.get("state") == "from" and problem is None
+                  and status().endswith(release.parse(OLD).debian()),
+                  {"interrupted": interrupted, "answer": recovered, "dpkg": status(),
+                   "tree": problem})
+
+    # An unfinished attempt blocks every other account's preparation.
+    reset(old)
+    other = qa_account(QA_USER + "2")
+    fourth = stage_request(feed, account, OLD, "request-unfinished")
+    admitted = step(account, "--deb-admit", fourth)
+    record_dir = set_record(admitted, state="installing", direction="install")
+    interrupted = kill_during_unpack(record_dir / "package.deb")
+    elsewhere = stage_request(feed, other, OLD, "request-other-account")
+    refused = step(other, "--deb-admit", elsewhere)
+    report.record("an unfinished attempt blocks another account's preparation",
+                  refused.get("code") == "busy_other_update" and status() == interrupted,
+                  {"answer": refused, "dpkg": status()})
+    recovered = step(account, "--deb-recover", fourth)
+    lifted = step(other, "--deb-admit", elsewhere)
+    report.record("its own account recovers it, and the block lifts",
+                  recovered.get("state") in ("to", "from")
+                  and lifted.get("code") != "busy_other_update",
+                  {"recovered": recovered, "other_account_then": lifted})
+    run(["dpkg", "--purge", "refinix"])
 
 
 def qualify_real(report: Report, deb: Path):
     from desktop import deb_root
+    from scripts import qualify_package_launch
     fields = run(["dpkg-deb", "-f", str(deb)]).stdout
     names = {line.split(":", 1)[0] for line in fields.splitlines()
              if line and not line.startswith(" ")}
@@ -405,12 +497,24 @@ def qualify_real(report: Report, deb: Path):
         answer = (refused.stdout.strip().splitlines() or ["{}"])[-1]
         report.record("root entry refuses without pkexec",
                       refused.returncode != 0 and "pkexec" in answer, answer)
+        account = qa_account()
+        scratch = Path(account.pw_dir) / "launch-scratch"
+        shutil.rmtree(scratch, ignore_errors=True)
+        prefix = ["runuser", "-u", QA_USER, "--", "env", f"REFINIX_DATA_ROOT={scratch}",
+                  f"HOME={account.pw_dir}", "xvfb-run", "-a", "dbus-run-session", "--"]
+        launched = qualify_package_launch.launch_check(
+            PREFIX / "Refinix", scratch, prefix=prefix,
+            owner=(account.pw_uid, account.pw_gid),
+            expect_version=identity.get("version"))
+        report.record(launched["check"], launched["passed"], launched["observed"])
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--real", type=Path, help="the built refinix .deb to inspect too")
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--commit-tested", default=os.environ.get("GITHUB_SHA"),
+                        help="the source commit this qualification ran from")
     args = parser.parse_args(argv)
     if os.environ.get("REFINIX_QUALIFY_DISPOSABLE") != "1" or os.geteuid() != 0:
         print("refused: run as root on a throwaway machine with "
@@ -431,10 +535,22 @@ def main(argv=None) -> int:
                           f"{type(exc).__name__}: {exc}")
         if args.real:
             qualify_real(report, args.real)
-    args.report.write_text(json.dumps({"host": host, "checks": report.checks,
-                                       "passed": report.ok}, indent=2) + "\n")
-    print(f"{'all passed' if report.ok else 'FAILED'} — {args.report}")
-    return 0 if report.ok else 1
+    from scripts import qualification_record
+    if args.real:
+        record = qualification_record.build(
+            lane="linux-x64", host=host,
+            packages=[qualification_record.package_entry(args.real)],
+            checks=report.checks, commit_tested=args.commit_tested)
+        ok = record["passed"]
+    else:
+        # Stand-in packages only: evidence about the update rules, never about
+        # a package that could be published.
+        record = {"kind": "fixture", "host": host, "checks": report.checks,
+                  "commit_tested": args.commit_tested, "passed": report.ok}
+        ok = report.ok
+    args.report.write_text(json.dumps(record, indent=2) + "\n")
+    print(f"{'all passed' if ok else 'FAILED'} — {args.report}")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

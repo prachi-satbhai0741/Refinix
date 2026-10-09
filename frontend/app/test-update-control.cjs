@@ -293,6 +293,19 @@ test('Settings keeps the offline actions and drops only the connected ones', () 
   assert.deepEqual(buttons(running, 'c-updates-actions'), ['Cancel download']);
 });
 
+test('a Beta install says how installing was checked, and never calls it accepted', () => {
+  const p = page({ online: true });
+  p.run(`renderUpdatesCard(${status({ version: '0.1.0-beta.1', channel: 'beta',
+    maturity: 'beta', install_capability: 'provisional' })})`);
+  const facts = p.text('c-updates-facts');
+  assert.match(facts, /0\.1\.0-beta\.1 \(Beta\)/);
+  assert.match(facts, /checked on hosted test machines; not yet confirmed on your kind of computer/);
+  assert.doesNotMatch(facts, /accepted|qualified/i);
+  const internal = page({ online: true });
+  internal.run(`renderUpdatesCard(${status({ install_capability: 'internal-test' })})`);
+  assert.doesNotMatch(internal.text('c-updates-facts'), /hosted test machines/);
+});
+
 test('internal builds check their update folder, from Settings even offline', () => {
   const p = page({ online: false });
   p.run(`renderUpdatesCard(${status({ source: 'folder', folder: '/Users/x/Refinix Updates' })})`);

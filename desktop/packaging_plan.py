@@ -87,7 +87,7 @@ EXCLUDED_MODULE_PREFIXES = ("test_", "setup_", "check_", "fake_")
 # Build tooling that sits beside the application modules but is not part of the
 # application. Listed by exact name: a prefix such as "build" would also drop
 # `backend/coordinator/build_info.py`, which the application needs.
-EXCLUDED_MODULE_NAMES = ("build.py",)
+EXCLUDED_MODULE_NAMES = ("build.py", "python_runtime.py")
 
 # Frontend files the coordinator serves but that exist for development: the
 # synthetic fixture page and the Node checks beside it.

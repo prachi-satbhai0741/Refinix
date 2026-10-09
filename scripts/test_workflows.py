@@ -45,7 +45,21 @@ class TestPins(unittest.TestCase):
         for path in files:
             for action in USES.findall(path.read_text(encoding="utf-8")):
                 with self.subTest(file=path.name, action=action):
+                    if action.startswith("./.github/actions/"):
+                        # This repository's own composite action, at the same commit.
+                        self.assertTrue((REPO / action[2:] / "action.yml").is_file())
+                        continue
                     self.assertRegex(action, r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
+
+    def test_no_job_level_env_uses_the_runner_context(self):
+        # GitHub rejects the whole file ("Unrecognized named-value: 'runner'"):
+        # the runner context exists only inside steps (observed on the
+        # 1b6936f push, 2026-10-08, for release.yml and package.yml).
+        for path in WORKFLOWS.glob("*.yml"):
+            for name, block in jobs(path.read_text(encoding="utf-8")).items():
+                env = re.search(r"^    env:\n((?:      .*\n)+)", block + "\n", re.M)
+                with self.subTest(file=path.name, job=name):
+                    self.assertNotIn("runner.", env.group(1) if env else "")
 
 
 class TestBetaPackages(unittest.TestCase):
@@ -88,10 +102,48 @@ class TestBetaPackages(unittest.TestCase):
         self.assertLess(package.index("requirements-release.lock"),
                         package.index("desktop.test_deb_root"))
 
+    def test_every_lane_is_qualified_on_its_exact_bytes(self):
+        package = jobs(self.text)["package"]
+        self.assertIn('{"lane": "macos-arm64", "runner": "macos-15"', self.text)
+        self.assertIn("scripts/qualify_windows.py --setup out/", package)
+        self.assertIn("scripts/qualify_macos.py --dmg out/", package)
+        self.assertIn("uses: ./.github/actions/refinix-python", package)
+        self.assertNotIn("setup-python", self.text)
+        floor = jobs(self.text)["macos-floor"]
+        self.assertIn("runs-on: ${{ inputs.macos_floor_runner }}", floor)
+        self.assertIn("--floor", floor)
+        self.assertIn("--macos-minimum", package)
+        # Public builds are never --scratch.
+        self.assertNotIn("--scratch", self.text)
+
     def test_signing_secrets_appear_only_in_the_signing_environment_job(self):
         package = jobs(self.text)["package"]
         self.assertIn("'beta-sign'", package)
         self.assertNotIn("secrets.", jobs(self.text)["check"])
+
+
+class TestQualificationAndPublicChecks(unittest.TestCase):
+    def test_native_qualification_runs_only_when_asked_and_only_private_builds(self):
+        text = (WORKFLOWS / "qualify.yml").read_text(encoding="utf-8")
+        triggers = text.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+        self.assertIn('      - "qualify/**"', triggers)
+        self.assertIn("workflow_dispatch:", triggers)
+        for other in ("pull_request", "schedule:", "branches:\n      - main"):
+            self.assertNotIn(other, triggers)
+        self.assertRegex(text, r"\npermissions:\n  contents: read\n")
+        self.assertNotIn("secrets.", text)
+        self.assertIn("desktop/build.py --channel beta --scratch", text)
+        self.assertIn("stage --fixture", text)
+        for script in ("qualify_update_journey.py", "qualify_sandbox.py", "qualify_deb.py",
+                       "qualify_windows.py", "qualify_macos.py"):
+            self.assertIn(script, text)
+
+    def test_public_verification_is_anonymous_and_read_only(self):
+        text = (WORKFLOWS / "verify-public.yml").read_text(encoding="utf-8")
+        self.assertRegex(text, r"\npermissions:\n  contents: read\n")
+        for word in ("secrets.", "GH_TOKEN", "github.token", "gh release"):
+            self.assertNotIn(word, text)
+        self.assertIn("scripts/verify_public.py", text)
 
 
 class TestPackageLocks(unittest.TestCase):
@@ -139,7 +191,12 @@ class TestFeedWorkflows(unittest.TestCase):
                 self.assertIn("actions/deploy-pages@", deploy)
                 for job in ("deploy", "live"):
                     self.assertNotIn("secrets.", parts[job], job)
-                self.assertIn("--trust-root", parts["live"])
+                live = parts["live"]
+                self.assertIn("--trust-root", live)
+                # Exactly the signed commit's feed, never merely a valid one.
+                self.assertIn("ref: ${{ needs.sign.outputs.commit }}", live)
+                self.assertIn("update_repository.py expected", live)
+                self.assertIn("--expect", live)
 
     def test_signing_never_forces_over_a_moved_branch(self):
         for name in ("advance-feed.yml", "refresh-feed.yml"):
@@ -153,6 +210,8 @@ class TestFeedWorkflows(unittest.TestCase):
         advance = self.read("advance-feed.yml")
         self.assertIn("environment: beta-publish", advance)
         self.assertIn("--packages-url", advance)
+        self.assertIn("--feed-config", advance)
+        self.assertIn("verify_public.py", advance)
         refresh = self.read("refresh-feed.yml")
         self.assertIn("environment: beta-feed-refresh", refresh)
         self.assertRegex(refresh, r"schedule:\n    - cron: ")

@@ -1,5 +1,8 @@
-# Windows x64, CPython 3.12 (python.org build via actions/setup-python or the
-# same installer on a native host). PyPI metadata and digests read 2026-10-04.
+# Windows x64. Release builds run CPython 3.13 from the python.org installer
+# (desktop/packaging-tools.json python_runtime_windows); a native development
+# host may use 3.12. pydantic-core and cffi list both the cp312 and the cp313
+# win_amd64 digests (cp313 read from PyPI metadata 2026-10-08). PyPI metadata
+# and digests read 2026-10-04.
 # Exact upstream artifacts, unmodified; hashes are checked before installation.
 # Shares backend/requirements-runtime.lock and backend/requirements-render.lock
 # with the other platforms so the three packages carry the same application.
@@ -10,7 +13,8 @@
 
 # Shared contract validation (same versions as the macOS lock).
 pydantic==2.13.5 --hash=sha256:346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73
-pydantic-core==2.46.5 --hash=sha256:5e81740c09e310f5aa5cbd3e434a01c154d4bef93241c7877b39f211d2b78ba8
+pydantic-core==2.46.5 --hash=sha256:5e81740c09e310f5aa5cbd3e434a01c154d4bef93241c7877b39f211d2b78ba8 \
+    --hash=sha256:15f4a94963c95accac15b7b657bb177d3ad82bb90b0d0526d9a9b85079925db5
 annotated-types==0.7.0 --hash=sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53
 typing-inspection==0.4.2 --hash=sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7
 typing-extensions==4.15.0 --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
@@ -21,7 +25,8 @@ typing-extensions==4.15.0 --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999c
 pywebview==6.2.1 --hash=sha256:9d07275f53894ab4d5e2e0e996227193e7187dec276d9b624dccbce029216b46
 pythonnet==3.2.0 --hash=sha256:c8c7946d291156ffc1d5f22c001a63c6776947ce3c64da800ccea8181ddb1abe
 clr-loader==0.3.1 --hash=sha256:cbad189de20d202a7d621956b0fc38049e13c9bf7ca2923441eff725cd121aa1
-cffi==2.1.1 --hash=sha256:f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a
+cffi==2.1.1 --hash=sha256:f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a \
+    --hash=sha256:1aa5645c30469b09530c4ebca77ebf8f17618293c58f8549cb1a543a50236e7d
 pycparser==3.0 --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
 bottle==0.13.4 --hash=sha256:045684fbd2764eac9cdeb824861d1551d113e8b683d8d26e296898d3dd99a12e
 proxy-tools==0.1.0 --hash=sha256:ccb3751f529c047e2d8a58440d86b205303cf0fe8146f784d1cbcd94f0a28010

@@ -13,6 +13,12 @@ more things for in-app updates:
 * before anything opens the workspace, a launch asks the update journal what
   it may do (`update_apply.on_launch`): continue, hand an unfinished update
   back to a helper, or explain why an update stopped safely.
+
+Anything else on the command line is refused before the workspace opens. The
+development entry's `--no-window`, `--port` and `--state` do not exist here, and
+silently ignoring them once opened a person's real data folder during a smoke
+check. To run a packaged build against other data, set the absolute folder in
+`REFINIX_DATA_ROOT` (backend/coordinator/paths.py) instead.
 """
 
 import sys
@@ -48,12 +54,31 @@ def _update_gate(instance, state_db):
 DEB_ROOT_MODES = ("--deb-admit", "--deb-install", "--deb-recover", "--deb-rollback")
 
 
+HELPER_MODES = ("--apply-update", "--resume")
+
+
+def unsupported_arguments(argv) -> list[str]:
+    """Arguments an ordinary launch does not understand.
+
+    Older macOS versions add `-psn_<n>_<n>` when Finder opens an app; that one
+    is the system's, not a request, and is ignored.
+    """
+    return [arg for arg in argv if not arg.startswith("-psn_")]
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] in DEB_ROOT_MODES:
         from desktop import deb_root
         return deb_root.main(sys.argv[1:])
-    if len(sys.argv) > 1 and sys.argv[1] in ("--apply-update", "--resume"):
+    if len(sys.argv) > 1 and sys.argv[1] in HELPER_MODES:
         return _helper(sys.argv[1:])
+    unknown = unsupported_arguments(sys.argv[1:])
+    if unknown:
+        # Refused before any import that resolves or opens the workspace.
+        sys.stderr.write(f"Refinix: unsupported option(s) {' '.join(unknown)}. The "
+                         "packaged app takes no options; to use another data folder, "
+                         "set REFINIX_DATA_ROOT to its absolute path.\n")
+        return 2
     from desktop import lifecycle, shell
     instance = lifecycle.SingleInstance.for_state(lifecycle.STATE_DB)
     existing = instance.acquire()

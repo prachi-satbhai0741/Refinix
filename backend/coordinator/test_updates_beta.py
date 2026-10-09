@@ -1,6 +1,6 @@
 """The public Beta feed: real publisher, real client, throwaway keys.
 
-Consistent snapshots, separate preview and accepted pointers, packages fetched
+Consistent snapshots, separate preview and Beta pointers, packages fetched
 as release assets through allow-listed redirects, recovery packages for the
 `.deb` route, offline bundles, freshness and key rotation. The "network" is a
 dictionary of the feed folder plus a release-asset host; nothing is fetched,
@@ -93,13 +93,13 @@ class Base(unittest.TestCase):
         name = release.asset_name(version, lane, fmt)
         path = self.assets / name
         path.write_bytes(content or f"{name} bytes".encode())
-        signing = repository.SIGNED_LANES.get(lane, "unsigned")
         package = {"path": str(path), "lane": lane, "version": version, "channel": "beta",
                    "maturity": label.maturity, "build_set": "bs", "min_os": "24.04",
                    "schema_version": 15, "engine_release": "b1",
-                   "public_build": build or self.build, "signing": signing,
-                   "install_capability": ("preview-test" if label.maturity == "preview"
-                                          else "unavailable"),
+                   "public_build": build or self.build, "signing": "unsigned",
+                   "install_capability": {"preview": "preview-test",
+                                          "beta": "provisional"}.get(label.maturity,
+                                                                     "unavailable"),
                    "trust_root": self.root_sha, "shared_snapshot_digest": SOURCE}
         package.update(overrides)
         return package
@@ -140,15 +140,31 @@ class TestPublisher(Base):
         offers = repository.verify(self.feed)["offers"]
         self.assertEqual(list(offers), ["linux-x64/latest-preview.json"])
 
-    def test_an_accepted_release_carries_every_lane(self):
+    def test_a_beta_release_carries_every_lane(self):
         with self.assertRaises(repository.PublishError):
             self.release("0.1.0-beta.1")
 
-    def test_unsigned_macos_or_windows_packages_are_never_published(self):
-        for lane, fmt in (("macos-arm64", "zip"), ("windows-x64", "exe")):
-            with self.subTest(lane=lane), self.assertRaises(repository.PublishError) as caught:
-                self.release("0.1.0-preview.1", lanes=((lane, fmt),), signing="unsigned")
-            self.assertIn("unavailable", str(caught.exception))
+    def test_unsigned_macos_and_windows_packages_are_staged_with_their_signing(self):
+        lanes = (("macos-arm64", "zip"), ("windows-x64", "exe"), ("linux-x64", "deb"))
+        self.release("0.1.0-beta.1", lanes=lanes)
+        targets = repository.Feed(self.feed).load("targets").signed.targets
+        signing = {name: (info.custom or {}).get("signing")
+                   for name, info in targets.items() if name.startswith("v")}
+        self.assertEqual(set(signing.values()), {"unsigned"}, signing)
+        offers = repository.verify(self.feed)["offers"]
+        self.assertEqual(sorted(offers), [f"{lane}/latest.json" for lane, _f in sorted(lanes)])
+
+    def test_a_signing_a_lane_cannot_carry_or_a_private_build_is_refused(self):
+        for lane, fmt, overrides in (("macos-arm64", "zip", {"signing": "authenticode"}),
+                                     ("windows-x64", "exe", {"signing": "developer-id"}),
+                                     ("linux-x64", "deb", {"signing": "developer-id"}),
+                                     ("linux-x64", "deb", {"publishable": False})):
+            with self.subTest(lane=lane, overrides=overrides), \
+                    self.assertRaises(repository.PublishError):
+                repository.stage(self.keys, self.feed, maturity="preview",
+                                 packages=[self.package("0.1.0-preview.1", lane, fmt,
+                                                        build=1, **overrides)],
+                                 passphrases=PASS)
 
     def test_a_dmg_is_never_an_update_payload(self):
         package = self.package("0.1.0-preview.1", "macos-arm64", "zip", build=1)
@@ -159,7 +175,7 @@ class TestPublisher(Base):
                              packages=[{**package, "path": str(dmg)}], passphrases=PASS)
 
     def test_labels_must_match_maturity_and_trust_this_feeds_root(self):
-        bad = [{"maturity": "accepted"}, {"trust_root": "0" * 64},
+        bad = [{"maturity": "beta"}, {"trust_root": "0" * 64},
                {"install_capability": "internal-test"}, {"channel": "internal"}]
         for overrides in bad:
             with self.subTest(overrides=overrides), \
@@ -195,6 +211,56 @@ class TestPublisher(Base):
         # Until advanced, clients still see preview.1 only.
         self.assertEqual(repository.verify(self.feed)["offers"]["linux-x64/latest-preview.json"]
                          ["version"], "0.1.0-preview.1")
+
+    def test_a_download_must_end_on_a_host_installed_clients_accept(self):
+        repository.stage(self.keys, self.feed, maturity="preview",
+                         packages=[self.package("0.1.0-preview.1", build=1)],
+                         passphrases=PASS)
+
+        def via(host):
+            def fetch(url, limit):
+                path = Path(self.dir.name) / "download"
+                shutil.copyfile(self.assets / Path(url).name, path)
+                return str(path), f"https://{host}/asset"
+            return fetch
+        hosts = ("release-assets.githubusercontent.com",)
+        with self.assertRaises(repository.PublishError) as caught:
+            repository.advance(self.keys, self.feed, packages_url=RELEASES,
+                               fetch=via("objects.example.net"), passphrases=PASS,
+                               package_hosts=hosts)
+        self.assertIn("objects.example.net", str(caught.exception))
+        self.assertFalse((self.feed / "metadata" / "timestamp.json").exists())
+        repository.advance(self.keys, self.feed, packages_url=RELEASES,
+                           fetch=via(hosts[0]), passphrases=PASS, package_hosts=hosts)
+
+    def test_the_live_check_passes_only_on_exactly_the_intended_feed(self):
+        self.release("0.1.0-preview.1")
+        previous = repository.expected(self.feed)
+        self.release("0.1.0-preview.2")
+        intended = repository.expected(self.feed)
+        # The exact deployment matches.
+        exact = repository.verify(self.feed, expect=intended)
+        self.assertTrue(exact["matches_expected"], exact["problems"])
+        self.assertEqual(exact["problems"], [])
+        # A CDN still serving the previous, validly signed feed does not.
+        stale = repository.verify(self.feed, expect=previous)
+        self.assertFalse(stale["matches_expected"])
+        self.assertTrue(any("versions" in p for p in stale["problems"]))
+        # Nor does a feed that signs the right versions but offers something else.
+        mixed = dict(intended, offers={**intended["offers"],
+                                       "linux-x64/latest-preview.json": {
+                                           "version": "0.1.0-preview.1", "payloads": {}}})
+        self.assertFalse(repository.verify(self.feed, expect=mixed)["matches_expected"])
+        # A daily refresh is a new deployment with its own expectation, and
+        # freshness is still judged on its own.
+        repository.refresh(self.keys, self.feed, passphrases=PASS)
+        self.assertFalse(repository.verify(self.feed, expect=intended)["matches_expected"])
+        refreshed = repository.expected(self.feed)
+        self.assertTrue(repository.verify(self.feed, expect=refreshed)["matches_expected"])
+        later = datetime.now(timezone.utc) + timedelta(days=6)
+        monitored = repository.verify(self.feed, expect=refreshed, monitor=True, now=later)
+        self.assertTrue(monitored["matches_expected"])
+        self.assertTrue(any("timestamp expires" in p for p in monitored["problems"]))
 
     def test_advancing_checks_the_released_assets_anonymously(self):
         repository.stage(self.keys, self.feed, maturity="preview",
@@ -243,7 +309,7 @@ class TestClient(Base):
         self.assertFalse(any(RELEASES in url for url in self.network.requests),
                          "checking fetches signed metadata only")
 
-    def test_a_preview_install_moves_on_to_an_accepted_build(self):
+    def test_a_preview_install_moves_on_to_a_beta_build(self):
         self.release("0.1.0-preview.1")
         lanes = (("linux-x64", "deb"), ("macos-arm64", "zip"), ("windows-x64", "exe"))
         self.release("0.1.0-beta.1", lanes=lanes)
@@ -253,7 +319,7 @@ class TestClient(Base):
         self.release("0.1.1-preview.1")
         self.assertEqual(self.service().check()["offer"]["version"], "0.1.1-preview.1")
 
-    def test_an_accepted_install_never_takes_a_preview(self):
+    def test_a_beta_install_never_takes_a_preview(self):
         lanes = (("linux-x64", "deb"), ("macos-arm64", "zip"), ("windows-x64", "exe"))
         self.release("0.1.0-beta.1", lanes=lanes)
         self.release("0.1.1-preview.1")
@@ -323,10 +389,10 @@ class TestClient(Base):
         with self.assertRaises(updates.UpdateError):
             self.service().check()                 # a fresh check refuses expired metadata
 
-    def test_a_staged_preview_is_refused_by_an_accepted_install(self):
+    def test_a_staged_preview_is_refused_by_a_beta_install(self):
         self.release("0.1.0-preview.2")
         self.staged(self.service())
-        # The same data folder opened by an accepted build finds the staged
+        # The same data folder opened by a Beta build finds the staged
         # preview and refuses to install it.
         accepted = self.service("0.0.9-beta.1")
         self.assertIsNotNone(accepted.staged_folder())

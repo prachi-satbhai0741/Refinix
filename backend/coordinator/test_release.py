@@ -19,7 +19,7 @@ class TestLabels(unittest.TestCase):
     def test_labels_name_their_channel_and_maturity(self):
         cases = {"0.1.0-internal.6": ("internal", None),
                  "0.1.0-preview.2": ("beta", "preview"),
-                 "0.1.0-beta.1": ("beta", "accepted"),
+                 "0.1.0-beta.1": ("beta", "beta"),
                  "0.1.0": ("beta", "final")}
         for text, (channel, maturity) in cases.items():
             with self.subTest(text=text):
@@ -36,12 +36,12 @@ class TestLabels(unittest.TestCase):
     def test_a_label_must_agree_with_its_channel_and_maturity(self):
         release.check_identity("0.1.0-preview.1", "beta", "preview")
         release.check_identity("0.1.0-internal.3", "internal", None)
-        for args in (("0.1.0-preview.1", "beta", "accepted"),
+        for args in (("0.1.0-preview.1", "beta", "beta"),
                      ("0.1.0-beta.1", "beta", "preview"),
                      ("0.1.0-internal.1", "beta", None),
                      ("0.1.0-preview.1", "internal", None),
                      ("0.1.0-internal.1", "internal", "preview"),
-                     ("0.1.0", "beta", "accepted")):
+                     ("0.1.0", "beta", "beta")):
             with self.subTest(args=args), self.assertRaises(release.LabelError):
                 release.check_identity(*args)
 
@@ -81,18 +81,18 @@ class TestOrder(unittest.TestCase):
 
 
 class TestWhoIsOffered(unittest.TestCase):
-    def test_preview_installs_take_previews_and_later_accepted_builds(self):
+    def test_preview_installs_take_previews_and_later_beta_builds(self):
         self.assertTrue(release.offered_to("preview", "preview"))
-        self.assertTrue(release.offered_to("preview", "accepted"))
+        self.assertTrue(release.offered_to("preview", "beta"))
         self.assertTrue(release.offered_to("preview", "final"))
         self.assertEqual(release.pointers_for("preview"),
                          ("latest.json", "latest-preview.json"))
 
-    def test_accepted_installs_never_take_a_preview(self):
-        for own in ("accepted", "final"):
+    def test_beta_installs_never_take_a_preview(self):
+        for own in ("beta", "final"):
             with self.subTest(own=own):
                 self.assertFalse(release.offered_to(own, "preview"))
-                self.assertTrue(release.offered_to(own, "accepted"))
+                self.assertTrue(release.offered_to(own, "beta"))
                 self.assertEqual(release.pointers_for(own), ("latest.json",))
 
     def test_internal_builds_only_take_internal_builds(self):
@@ -103,10 +103,46 @@ class TestWhoIsOffered(unittest.TestCase):
     def test_a_pointer_names_only_its_own_maturity(self):
         self.assertTrue(release.pointer_allows("latest-preview.json", "preview", "beta"))
         self.assertFalse(release.pointer_allows("latest.json", "preview", "beta"))
-        self.assertFalse(release.pointer_allows("latest-preview.json", "accepted", "beta"))
+        self.assertFalse(release.pointer_allows("latest-preview.json", "beta", "beta"))
         self.assertTrue(release.pointer_allows("latest.json", "final", "beta"))
         self.assertTrue(release.pointer_allows("latest.json", None, "internal"))
         self.assertFalse(release.pointer_allows("latest-preview.json", None, "internal"))
+
+
+
+class TestBetaIdentityAndNames(unittest.TestCase):
+    def test_a_beta_label_is_the_public_beta_not_an_accepted_release(self):
+        # The maturity of `-beta.N` names the release class only; "accepted"
+        # is not a maturity any more, so nothing can infer device acceptance
+        # from a version label.
+        self.assertEqual(release.parse("0.1.0-beta.1").maturity, "beta")
+        self.assertNotIn("accepted", release.MATURITIES)
+        with self.assertRaises(release.LabelError):
+            release.check_identity("0.1.0-beta.1", "beta", "accepted")
+
+    def test_preview_and_internal_identity_and_order_are_unchanged(self):
+        self.assertEqual(release.parse("0.1.0-preview.2").maturity, "preview")
+        self.assertEqual(release.parse("0.1.0-internal.6").maturity, None)
+        self.assertEqual(release.parse("0.1.0-internal.6").debian(), "0.1.0~internal.6")
+        self.assertLess(release.key("0.1.0-preview.9"), release.key("0.1.0-beta.1"))
+        self.assertLess(release.key("0.1.0-beta.9"), release.key("0.1.0"))
+
+    def test_public_file_names_are_plain_and_internal_names_are_unchanged(self):
+        self.assertEqual(release.asset_name("0.1.0-beta.1", "linux-x64", "deb"),
+                         "refinix_0.1.0-beta.1_amd64.deb")
+        self.assertEqual(release.asset_name("0.1.0-preview.3", "linux-x64", "deb"),
+                         "refinix_0.1.0-preview.3_amd64.deb")
+        self.assertEqual(release.asset_name("0.1.0-internal.6", "linux-x64", "deb"),
+                         "refinix_0.1.0~internal.6_amd64.deb")
+        for version in ("0.1.0-beta.1", "0.1.0"):
+            for lane, fmt in (("macos-arm64", "zip"), ("windows-x64", "exe"),
+                              ("linux-x64", "deb")):
+                name = release.asset_name(version, lane, fmt)
+                with self.subTest(name=name):
+                    self.assertRegex(name, r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+                    self.assertEqual(release.package_target(version, lane, fmt),
+                                     f"v{version}/{name}")
+            self.assertRegex(release.dmg_name(version), r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 if __name__ == "__main__":

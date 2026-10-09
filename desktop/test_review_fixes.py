@@ -59,11 +59,27 @@ class TestDesktopReviewFixes(unittest.TestCase):
         lock_class.for_state.return_value = instance
         with patch.object(lifecycle, "SingleInstance", lock_class), \
                 patch.object(shell, "run", run):
-            self.assertEqual(refinix.main(), 0)
+            with patch.object(sys, "argv", ["Refinix"]):
+                self.assertEqual(refinix.main(), 0)
             with patch.object(sys, "argv", ["desktop"]), self.assertRaises(SystemExit) as exit:
                 runpy.run_module("desktop", run_name="__main__")
             self.assertEqual(exit.exception.code, 0)
         self.assertEqual(records, [None, 8771, None, 8771])
+
+    def test_the_packaged_entry_refuses_options_before_opening_any_workspace(self):
+        # Silently ignoring development options once opened a person's real data
+        # during a smoke check; now they are refused before the lock or the
+        # workspace is touched. Finder's own -psn_ argument is not an option.
+        lock_class = Mock()
+        with patch.object(lifecycle, "SingleInstance", lock_class), \
+                patch.object(shell, "run") as started:
+            for argv in (["Refinix", "--no-window"], ["Refinix", "--port", "9000"],
+                         ["Refinix", "--state", "/tmp/x"]):
+                with self.subTest(argv=argv), patch.object(sys, "argv", argv):
+                    self.assertEqual(refinix.main(), 2)
+            lock_class.for_state.assert_not_called()
+            started.assert_not_called()
+        self.assertEqual(refinix.unsupported_arguments(["-psn_0_12345"]), [])
 
     def test_late_startup_is_disposed_instead_of_started_after_close(self):
         entered, release = threading.Event(), threading.Event()

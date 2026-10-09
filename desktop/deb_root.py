@@ -24,6 +24,15 @@ copies are authenticated. Install, recovery and rollback act only on root's own
 admission record and its copies, re-verified without a clock: an update
 interrupted today can still be recovered later.
 
+There is one Refinix installation, whichever account asks, so root keeps one
+*current attempt* for the whole computer. Only that attempt, asked for by the
+account that prepared it, may install, recover or roll back, and only while
+the installed Refinix is its from- or to-version. An unfinished attempt is
+never replaced: any new preparation is refused until it is finished or undone.
+An attempt that ended is concluded by the next preparation and can never act
+again. Every attempt records its direction (install or rollback) before any
+dpkg step, and recovery continues in that direction.
+
 Package work uses Debian's own tools under dpkg's front-end lock, held for the
 whole transaction (Ubuntu's resolver decides; nothing here resolves
 dependencies itself):
@@ -453,26 +462,34 @@ def tuf_admit(ctx: Context, copy: Path, request: dict, anchor: bytes) -> dict:
 def offline_check(ctx: Context, record: dict, folder: Path) -> None:
     """Re-authenticate an admission from root's copies, without the clock.
 
-    The anchor is the trust root installed at admission; newer roots come from
-    root's trust state first (trust changes this computer already knows
-    about), then from the admitted copy.
+    The anchor is the trust root installed at admission. From there the roots
+    must reach, version by version, the newest root root's own trust state
+    holds (`ctx.trust/root.json`): links come from root's kept history first
+    (trust changes this computer already knows about), then from the admitted
+    copy. A missing or damaged link refuses before any package change, so a
+    damaged history can never leave older, perhaps revoked, keys in charge.
     """
     anchor = (folder / "anchor.json").read_bytes()
     if hashlib.sha256(anchor).hexdigest() != record["anchor_sha256"]:
         raise RootError("evidence", "The recorded trust root changed.")
-    newer = []
-    version = tuf_offline.metadata(anchor, "root").signed.version + 1
-    while True:
-        candidates = [ctx.trust / "root_history" / f"{version}.root.json",
-                      folder / "metadata" / f"{version}.root.json"]
-        found = next((p for p in candidates if p.is_file()), None)
-        if found is None:
-            break
-        newer.append(found.read_bytes())
-        version += 1
+    try:
+        trusted = (ctx.trust / "root.json").read_bytes()
+    except OSError as exc:
+        raise RootError("evidence", "Refinix's record of the update keys this computer "
+                                    "trusts is missing, so the prepared update cannot "
+                                    "be checked again. Nothing was changed.") from exc
+
+    def kept(version: int) -> bytes | None:
+        for path in (ctx.trust / "root_history" / f"{version}.root.json",
+                     folder / "metadata" / f"{version}.root.json"):
+            if path.is_file():
+                return path.read_bytes()
+        return None
+
     versions = record["versions"]
     try:
-        root, _seen = tuf_offline.walk_roots(anchor, newer)
+        root, _seen = tuf_offline.walk_roots(anchor, [])
+        root, _added = tuf_offline.continue_to(root, trusted, kept)
         _t, _s, targets = tuf_offline.verify_roles(
             root, (folder / "metadata" / "timestamp.json").read_bytes(),
             (folder / "metadata" / f"{versions['snapshot']}.snapshot.json").read_bytes(),
@@ -493,8 +510,21 @@ def offline_check(ctx: Context, record: dict, folder: Path) -> None:
 
 
 # --------------------------------------------------------------------------
-# Records and the package lock
+# Records, the current attempt and the locks
 # --------------------------------------------------------------------------
+#
+# Ubuntu has one Refinix installation, whichever account asks. Root therefore
+# keeps one *current attempt* for the whole computer (`current.json`), and
+# only that attempt, asked for by the account that prepared it, may install,
+# recover or roll back. An unfinished attempt is never replaced: another
+# preparation, from any account, is refused until it is finished or undone.
+# An attempt that ended (installed or rolled back) is concluded by the next
+# preparation and can never act again, so an old request cannot revive it.
+
+UNFINISHED = ("installing", "failed", "recovering", "rolling_back", "blocked")
+ENDED = ("installed", "rolled_back")
+FINAL = ("withdrawn", "concluded")
+
 
 def _write_record(folder: Path, record: dict) -> dict:
     record = {**record, "updated_at": _stamp()}
@@ -507,12 +537,45 @@ def _write_record(folder: Path, record: dict) -> dict:
     return record
 
 
+def _read_record(folder: Path) -> dict | None:
+    try:
+        record = json.loads((folder / "record.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _current(ctx: Context) -> tuple[Path, dict] | None:
+    """The computer's current attempt: its folder and record, or None."""
+    try:
+        pointer = json.loads((ctx.state / "current.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    admission = pointer.get("admission") if isinstance(pointer, dict) else None
+    if not isinstance(admission, str) or not admission.isalnum():
+        return None
+    folder = ctx.updates / admission
+    record = _read_record(folder)
+    if record is None or record.get("admission") != admission:
+        return None
+    return folder, record
+
+
+def _set_current(ctx: Context, record: dict) -> None:
+    temporary = ctx.state / ".current.json.tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump({"admission": record["admission"], "uid": record["uid"],
+                   "set_at": _stamp()}, handle, sort_keys=True)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, ctx.state / "current.json")
+
+
 def find_record(ctx: Context, request: str, uid: int) -> tuple[Path, dict]:
     best = None
     for path in ctx.updates.glob("*/record.json"):
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        record = _read_record(path.parent)
+        if record is None:
             continue
         if record.get("request") == request and record.get("uid") == uid:
             if best is None or record.get("admitted_at", "") > best[1].get("admitted_at", ""):
@@ -521,6 +584,59 @@ def find_record(ctx: Context, request: str, uid: int) -> tuple[Path, dict]:
         raise RootError("not_admitted", "This update was not prepared; download and "
                                         "prepare it again.")
     return best
+
+
+def _bound(ctx: Context, request: str, uid: int) -> tuple[Path, dict]:
+    """The caller's attempt, only while it is this computer's current one."""
+    folder, record = find_record(ctx, request, uid)
+    current = _current(ctx)
+    if record.get("state") in FINAL or current is None \
+            or current[1]["admission"] != record["admission"]:
+        raise RootError("superseded", "This update is not the current one on this "
+                                      "computer any more, so it can no longer change "
+                                      "Refinix. Nothing was changed.")
+    return folder, record
+
+
+def _versions_allowed(ctx: Context, record: dict) -> tuple[str | None, str | None]:
+    """dpkg's status and version for refinix, refusing a version this attempt
+    does not know: only its from- or to-version may be on the system."""
+    status, version = dpkg_status(ctx)
+    allowed = {release.parse(record["from_version"]).debian(),
+               release.parse(record["to_version"]).debian()}
+    if status is None or version not in allowed:
+        raise RootError("superseded", f"Refinix {version or '(not installed)'} is on this "
+                                      "computer now, which this update did not install "
+                                      "or replace, so it changes nothing.")
+    return status, version
+
+
+class RootLock:
+    """Root's own lock: one Refinix root step at a time, before dpkg's lock."""
+
+    def __init__(self, ctx: Context):
+        self.ctx, self.fd = ctx, None
+
+    def __enter__(self):
+        self.ctx.state.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.fd = os.open(self.ctx.state / "root.lock",
+                          os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        deadline = time.monotonic() + self.ctx.lock_seconds
+        while True:
+            try:
+                fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return self
+            except OSError:
+                if time.monotonic() >= deadline:
+                    os.close(self.fd)
+                    raise RootError("busy", "Another Refinix update step is running; let "
+                                            "it finish, then try again. Nothing was "
+                                            "changed.")
+                time.sleep(0.5)
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.fd, fcntl.LOCK_UN)
+        os.close(self.fd)
 
 
 class FrontendLock:
@@ -591,203 +707,309 @@ def _healthy_at(ctx: Context, version: str) -> str | None:
     return install_check.completeness_problem(ctx.prefix, version)
 
 
+def _manual(ctx: Context, record: dict) -> str:
+    name = Path(record["recovery_target"]).name
+    return (f"Reinstall {ctx.packages / name} (SHA-256 {record['recovery_sha256']}) with "
+            "App Center, or the same version from the Refinix website.")
+
+
+def _admission_allowed(ctx: Context, uid: int) -> tuple[Path, dict, str] | None:
+    """Whether a new preparation may become current; what the old one becomes."""
+    current = _current(ctx)
+    if current is None:
+        return None
+    folder, record = current
+    state = record.get("state")
+    if state in FINAL:
+        return None
+    if state in UNFINISHED:
+        whose = "this account" if record.get("uid") == uid else "the account that started it"
+        raise RootError("busy_other_update",
+                        f"An earlier Refinix update ({record['from_version']} → "
+                        f"{record['to_version']}) is unfinished. Open Refinix in {whose} "
+                        "to finish or undo it first. " + _manual(ctx, record)
+                        + " Nothing was changed.")
+    # Not started yet (no package change), or ended: either way it can never
+    # act again once another preparation is current.
+    return folder, record, ("withdrawn" if state == "admitted" else "concluded")
+
+
+def _keep_packages(ctx: Context, keep_records: list[dict]) -> None:
+    """Public package bytes for manual recovery: readable by everyone. Kept for
+    the current attempt and the one before it, never for older ones."""
+    ctx.packages.mkdir(parents=True, exist_ok=True, mode=0o755)
+    os.chmod(ctx.packages, 0o755)
+    keep = set()
+    for record in keep_records:
+        folder = ctx.updates / record["admission"]
+        for source, target in ((folder / "package.deb", record["target"]),
+                               (folder / "recovery.deb", record["recovery_target"])):
+            name = Path(target).name
+            keep.add(name)
+            destination = ctx.packages / name
+            if not source.is_file():
+                continue
+            if not destination.is_file() or _sha256(destination) != _sha256(source):
+                temporary = ctx.packages / f".{name}.tmp"
+                shutil.copyfile(source, temporary)
+                os.chmod(temporary, 0o644)
+                os.replace(temporary, destination)
+    for path in ctx.packages.glob("*.deb"):
+        if path.name not in keep:
+            path.unlink(missing_ok=True)
+
+
+def _prune(ctx: Context, keep: set[Path]) -> None:
+    """Remove old, finished admissions and leftovers of interrupted ones.
+
+    Called with root's lock held, so a folder without a record is an
+    admission that was interrupted before it was recorded: nothing uses it.
+    A record that is not withdrawn or concluded is never removed.
+    """
+    finished = []
+    for folder in ctx.updates.iterdir():
+        if not folder.is_dir() or folder in keep:
+            continue
+        record = _read_record(folder)
+        if record is None:
+            shutil.rmtree(folder, ignore_errors=True)
+        elif record.get("state") in FINAL:
+            finished.append(folder)
+    finished.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in finished[KEEP_RECORDS:]:
+        shutil.rmtree(old, ignore_errors=True)
+
+
 # --------------------------------------------------------------------------
 # The four steps
 # --------------------------------------------------------------------------
 
 def admit(ctx: Context, request_path: str) -> dict:
     uid, home = _caller(ctx)
-    from_version, from_maturity = installed_version(ctx)
-    if from_maturity is None:
-        raise RootError("channel", "Internal builds are not updated this way.")
-    ctx.updates.mkdir(parents=True, exist_ok=True, mode=0o700)
-    admission = secrets.token_hex(8)
-    folder = ctx.updates / admission
-    folder.mkdir(mode=0o700)
-    try:
-        request = copy_request(ctx, request_path, uid, home, folder)
-        anchor = _installed_root(ctx)
-        (folder / "anchor.json").write_bytes(anchor)
-        checked = tuf_admit(ctx, folder, request, anchor)
-        pointer = checked["pointer"]
+    with RootLock(ctx):
+        # An unfinished attempt is reported as such before anything else.
+        replaced = _admission_allowed(ctx, uid)
+        from_version, from_maturity = installed_version(ctx)
+        if from_maturity is None:
+            raise RootError("channel", "Internal builds are not updated this way.")
+        ctx.updates.mkdir(parents=True, exist_ok=True, mode=0o700)
+        admission = secrets.token_hex(8)
+        folder = ctx.updates / admission
+        folder.mkdir(mode=0o700)
         try:
-            label = release.check_identity(pointer.get("version"), "beta",
-                                           pointer.get("maturity"))
-        except release.LabelError as exc:
-            raise RootError("evidence", f"The offer is mislabelled: {exc}") from exc
-        if pointer.get("lane") != LANE or not release.pointer_allows(
-                Path(request["pointer"]).name, label.maturity, "beta"):
-            raise RootError("evidence", "The offer is not for this kind of installation.")
-        package, recovery = checked["package"], checked["recovery"]
-        custom = package.custom or {}
-        if (custom.get("version"), custom.get("format"), custom.get("lane"),
-                custom.get("maturity")) != (str(label), "deb", LANE, label.maturity):
-            raise RootError("evidence", "The package's signed details do not match the offer.")
-        rcustom = recovery.custom or {}
-        if (rcustom.get("version"), rcustom.get("format"), rcustom.get("lane")) != (
-                from_version, "deb", LANE) or recovery.path != release.package_target(
-                from_version, LANE, "deb"):
-            raise RootError("evidence", "The recovery package is not the installed version's.")
-        for info, path in ((package, folder / "package.deb"),
-                           (recovery, folder / "recovery.deb")):
-            with open(path, "rb") as handle:
-                try:
-                    info.verify_length_and_hashes(handle)
-                except Exception as exc:                   # noqa: BLE001
-                    raise RootError("evidence", f"{path.name} does not match its signed "
-                                                "size and SHA-256.") from exc
-        if not release.offered_to(from_maturity, label.maturity):
-            raise RootError("channel", f"A {from_maturity} installation does not take "
-                                       f"{label.maturity} builds.")
-        if label.key <= release.key(from_version):
-            raise RootError("not_newer", f"{label} is not newer than {from_version}.")
-        check_package(ctx, folder / "package.deb", str(label))
-        check_package(ctx, folder / "recovery.deb", from_version)
-        record = _write_record(folder, {
-            "admission": admission, "state": "admitted", "uid": uid,
-            "request": request_path, "from_version": from_version,
-            "from_maturity": from_maturity, "to_version": str(label),
-            "to_maturity": label.maturity, "format": "deb",
-            "target": package.path, "recovery_target": recovery.path,
-            "package_sha256": package.hashes["sha256"], "package_length": package.length,
-            "recovery_sha256": recovery.hashes["sha256"],
-            "recovery_length": recovery.length,
-            "anchor_sha256": hashlib.sha256(anchor).hexdigest(),
-            "versions": checked["versions"],
-            "triggers": trigger_packages(ctx, folder / "package.deb"),
-            "admitted_at": _stamp()})
-        _keep_packages(ctx, folder, record)
-        _prune(ctx, keep=folder)
-        return {"admission": admission, "state": "admitted", "to_version": str(label),
-                "from_version": from_version}
-    except BaseException:
-        shutil.rmtree(folder, ignore_errors=True)
-        raise
+            record = _admit_into(ctx, folder, admission, request_path, uid, home,
+                                 from_version, from_maturity)
+        except BaseException:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        # The new attempt is complete on disk before it becomes current; the
+        # old one can never act again from this moment.
+        _set_current(ctx, record)
+        keep_records = [record]
+        if replaced is not None:
+            old_folder, old_record, old_state = replaced
+            old_record = _write_record(old_folder, {**old_record, "state": old_state,
+                                                    "replaced_by": admission})
+            if old_state == "concluded":
+                keep_records.append(old_record)
+        _keep_packages(ctx, keep_records)
+        _prune(ctx, keep={ctx.updates / r["admission"] for r in keep_records})
+        return {"admission": admission, "state": "admitted",
+                "to_version": record["to_version"], "from_version": from_version}
 
 
-def _keep_packages(ctx: Context, folder: Path, record: dict) -> None:
-    """Public package bytes for manual recovery: readable by everyone."""
-    ctx.packages.mkdir(parents=True, exist_ok=True, mode=0o755)
-    os.chmod(ctx.packages, 0o755)
-    keep = set()
-    for source, target in ((folder / "package.deb", record["target"]),
-                           (folder / "recovery.deb", record["recovery_target"])):
-        name = Path(target).name
-        keep.add(name)
-        destination = ctx.packages / name
-        if not destination.is_file() or _sha256(destination) != _sha256(source):
-            temporary = ctx.packages / f".{name}.tmp"
-            shutil.copyfile(source, temporary)
-            os.chmod(temporary, 0o644)
-            os.replace(temporary, destination)
-    for path in ctx.packages.glob("*.deb"):
-        if path.name not in keep:
-            path.unlink(missing_ok=True)
-
-
-def _prune(ctx: Context, keep: Path) -> None:
-    folders = sorted((p for p in ctx.updates.iterdir() if p.is_dir() and p != keep),
-                     key=lambda p: p.stat().st_mtime, reverse=True)
-    for old in folders[KEEP_RECORDS:]:
-        shutil.rmtree(old, ignore_errors=True)
+def _admit_into(ctx: Context, folder: Path, admission: str, request_path: str, uid: int,
+                home: Path, from_version: str, from_maturity: str) -> dict:
+    request = copy_request(ctx, request_path, uid, home, folder)
+    anchor = _installed_root(ctx)
+    (folder / "anchor.json").write_bytes(anchor)
+    checked = tuf_admit(ctx, folder, request, anchor)
+    pointer = checked["pointer"]
+    try:
+        label = release.check_identity(pointer.get("version"), "beta",
+                                       pointer.get("maturity"))
+    except release.LabelError as exc:
+        raise RootError("evidence", f"The offer is mislabelled: {exc}") from exc
+    if pointer.get("lane") != LANE or not release.pointer_allows(
+            Path(request["pointer"]).name, label.maturity, "beta"):
+        raise RootError("evidence", "The offer is not for this kind of installation.")
+    package, recovery = checked["package"], checked["recovery"]
+    custom = package.custom or {}
+    if (custom.get("version"), custom.get("format"), custom.get("lane"),
+            custom.get("maturity")) != (str(label), "deb", LANE, label.maturity):
+        raise RootError("evidence", "The package's signed details do not match the offer.")
+    rcustom = recovery.custom or {}
+    if (rcustom.get("version"), rcustom.get("format"), rcustom.get("lane")) != (
+            from_version, "deb", LANE) or recovery.path != release.package_target(
+            from_version, LANE, "deb"):
+        raise RootError("evidence", "The recovery package is not the installed version's.")
+    for info, path in ((package, folder / "package.deb"),
+                       (recovery, folder / "recovery.deb")):
+        with open(path, "rb") as handle:
+            try:
+                info.verify_length_and_hashes(handle)
+            except Exception as exc:                       # noqa: BLE001
+                raise RootError("evidence", f"{path.name} does not match its signed "
+                                            "size and SHA-256.") from exc
+    if not release.offered_to(from_maturity, label.maturity):
+        raise RootError("channel", f"A {from_maturity} installation does not take "
+                                   f"{label.maturity} builds.")
+    if label.key <= release.key(from_version):
+        raise RootError("not_newer", f"{label} is not newer than {from_version}.")
+    check_package(ctx, folder / "package.deb", str(label))
+    check_package(ctx, folder / "recovery.deb", from_version)
+    return _write_record(folder, {
+        "admission": admission, "state": "admitted", "direction": "install", "uid": uid,
+        "request": request_path, "from_version": from_version,
+        "from_maturity": from_maturity, "to_version": str(label),
+        "to_maturity": label.maturity, "format": "deb",
+        "target": package.path, "recovery_target": recovery.path,
+        "package_sha256": package.hashes["sha256"], "package_length": package.length,
+        "recovery_sha256": recovery.hashes["sha256"],
+        "recovery_length": recovery.length,
+        "anchor_sha256": hashlib.sha256(anchor).hexdigest(),
+        "versions": checked["versions"],
+        "triggers": trigger_packages(ctx, folder / "package.deb"),
+        "admitted_at": _stamp()})
 
 
 def install(ctx: Context, request_path: str) -> dict:
     uid, _home = _caller(ctx)
-    folder, record = find_record(ctx, request_path, uid)
-    if record["state"] != "admitted":
-        raise RootError("state", f"This update is {record['state']}; it is not installed "
-                                 "twice.")
-    offline_check(ctx, record, folder)
-    with FrontendLock(ctx):
-        installed, maturity = installed_version(ctx)
-        if (installed, maturity) != (record["from_version"], record["from_maturity"]):
-            raise RootError("changed", "The installed Refinix changed since this update was "
-                                       "prepared; prepare it again.")
-        audit = ctx.run(["dpkg", "--audit"], timeout=300)
-        if audit.returncode != 0 or (audit.stdout or "").strip():
-            raise RootError("unfinished", "Ubuntu's package system has unfinished work; "
-                                          "finish it in Software Updater first. Nothing "
-                                          "was changed.")
-        pending = {name: status for name, status in unfinished_packages(ctx).items()
-                   if name in record["triggers"]}
-        if pending:
-            raise RootError("unfinished", f"Packages Refinix's install would trigger have "
-                                          f"unfinished work ({sorted(pending)}); finish it "
-                                          "in Software Updater first.")
-        simulate(ctx, folder / "package.deb", record["to_version"])
-        record = _write_record(folder, {**record, "state": "installing",
-                                        "install_started_at": _stamp()})
-        ok = _dpkg_install(ctx, folder / "package.deb")
-        problem = None if ok else "dpkg could not install the package"
-        problem = problem or _healthy_at(ctx, record["to_version"])
-        state = "installed" if problem is None else "failed"
-        record = _write_record(folder, {**record, "state": state, "problem": problem})
+    with RootLock(ctx):
+        folder, record = _bound(ctx, request_path, uid)
+        if record["state"] != "admitted":
+            raise RootError("state", f"This update is {record['state']}; it is not "
+                                     "installed twice.")
+        offline_check(ctx, record, folder)
+        with FrontendLock(ctx):
+            installed, maturity = installed_version(ctx)
+            if (installed, maturity) != (record["from_version"], record["from_maturity"]):
+                raise RootError("changed", "The installed Refinix changed since this update "
+                                           "was prepared; prepare it again.")
+            audit = ctx.run(["dpkg", "--audit"], timeout=300)
+            if audit.returncode != 0 or (audit.stdout or "").strip():
+                raise RootError("unfinished", "Ubuntu's package system has unfinished work; "
+                                              "finish it in Software Updater first. Nothing "
+                                              "was changed.")
+            pending = {name: status for name, status in unfinished_packages(ctx).items()
+                       if name in record["triggers"]}
+            if pending:
+                raise RootError("unfinished", f"Packages Refinix's install would trigger "
+                                              f"have unfinished work ({sorted(pending)}); "
+                                              "finish it in Software Updater first.")
+            simulate(ctx, folder / "package.deb", record["to_version"])
+            record = _write_record(folder, {**record, "state": "installing",
+                                            "direction": "install",
+                                            "install_started_at": _stamp()})
+            ok = _dpkg_install(ctx, folder / "package.deb")
+            problem = None if ok else "dpkg could not install the package"
+            problem = problem or _healthy_at(ctx, record["to_version"])
+            state = "installed" if problem is None else "failed"
+            record = _write_record(folder, {**record, "state": state, "problem": problem})
     return {"admission": record["admission"], "state": "to" if state == "installed"
             else "incomplete", "problem": problem}
 
 
+def _settle_triggers(ctx: Context, record: dict) -> list[str]:
+    pending = [name for name in record["triggers"] if name in unfinished_packages(ctx)]
+    if pending:
+        ctx.run(["dpkg", "--triggers-only", *pending],
+                extra_env={"DPKG_FRONTEND_LOCKED": "1"})
+    return [name for name in record["triggers"] if name in unfinished_packages(ctx)]
+
+
+def _repair_towards(ctx: Context, folder: Path, record: dict, direction: str,
+                    status: str | None, dpkg_version: str | None) -> None:
+    """Finish an interrupted package change in the direction it was going:
+    the new package for an install, the recorded previous one for a rollback."""
+    wanted = record["to_version"] if direction == "install" else record["from_version"]
+    copy = folder / ("package.deb" if direction == "install" else "recovery.deb")
+    words = (status or "").split()
+    state_word = words[2] if len(words) == 3 else None
+    same = dpkg_version == release.parse(wanted).debian()
+    if state_word == "half-installed" or (len(words) == 3 and words[1] == "reinstreq") \
+            or (state_word in ("unpacked", "half-configured") and not same):
+        _dpkg_install(ctx, copy)
+    elif state_word in ("unpacked", "half-configured"):
+        ctx.run(["dpkg", "--configure", PACKAGE], extra_env={"DPKG_FRONTEND_LOCKED": "1"})
+    elif state_word == "installed" and not same:
+        # Settled on the other version: carry on the way this attempt was going.
+        _dpkg_install(ctx, copy)
+
+
 def recover(ctx: Context, request_path: str) -> dict:
-    """Finish what an interrupted install left; never touches anything unrelated."""
+    """Finish what an interrupted install or rollback left, in its own direction;
+    never touches anything unrelated, never a version this attempt did not know."""
     uid, _home = _caller(ctx)
-    folder, record = find_record(ctx, request_path, uid)
-    if record["state"] not in ("installing", "installed", "failed", "recovering",
-                               "rolling_back", "rolled_back"):
-        raise RootError("state", f"This update is {record['state']}; there is nothing to "
-                                 "recover.")
-    offline_check(ctx, record, folder)
-    with FrontendLock(ctx):
-        _only_ours_unfinished(ctx, record)
-        record = _write_record(folder, {**record, "state": "recovering"})
-        status, _version = dpkg_status(ctx)
-        words = (status or "").split()
-        state_word = words[2] if len(words) == 3 else None
-        if state_word == "half-installed" or (len(words) == 3 and words[1] == "reinstreq"):
-            _dpkg_install(ctx, folder / "package.deb")
-        elif state_word in ("unpacked", "half-configured"):
-            ctx.run(["dpkg", "--configure", PACKAGE],
-                    extra_env={"DPKG_FRONTEND_LOCKED": "1"})
-        pending = [name for name in record["triggers"]
-                   if name in unfinished_packages(ctx)]
-        if pending:
-            ctx.run(["dpkg", "--triggers-only", *pending],
-                    extra_env={"DPKG_FRONTEND_LOCKED": "1"})
-            still = [name for name in record["triggers"] if name in unfinished_packages(ctx)]
+    with RootLock(ctx):
+        folder, record = _bound(ctx, request_path, uid)
+        if record["state"] not in ("installing", "installed", "failed", "recovering",
+                                   "rolling_back", "rolled_back"):
+            raise RootError("state", f"This update is {record['state']}; there is nothing "
+                                     "to recover.")
+        offline_check(ctx, record, folder)
+        with FrontendLock(ctx):
+            _only_ours_unfinished(ctx, record)
+            status, dpkg_version = _versions_allowed(ctx, record)
+            # The direction is the attempt's own, recorded before any dpkg step.
+            direction = record.get("direction") or (
+                "rollback" if record["state"] in ("rolling_back", "rolled_back")
+                else "install")
+            # Already where this attempt was going: only unfinished triggers remain.
+            arrived = _healthy_at(ctx, record["to_version" if direction == "install"
+                                              else "from_version"]) is None
+            record = _write_record(folder, {**record, "direction": direction,
+                                            "state": "recovering" if direction == "install"
+                                            else "rolling_back"})
+            if not arrived:
+                _repair_towards(ctx, folder, record, direction, status, dpkg_version)
+            still = _settle_triggers(ctx, record)
             if still:
                 record = _write_record(folder, {**record, "state": "blocked",
                                                 "problem": f"triggers still pending: {still}"})
                 return {"state": "blocked", "problem": record["problem"]}
-        for wanted, label, state in ((record["to_version"], "to", "installed"),
-                                     (record["from_version"], "from", "rolled_back")):
-            if _healthy_at(ctx, wanted) is None:
-                _write_record(folder, {**record, "state": state, "problem": None})
-                return {"state": label}
-        problem = _healthy_at(ctx, record["to_version"])
-        _write_record(folder, {**record, "state": "failed", "problem": problem})
-        # The helper goes back to the recorded previous package next.
-        return {"state": "incomplete", "problem": problem}
+            if direction == "rollback":
+                problem = _healthy_at(ctx, record["from_version"])
+                _write_record(folder, {**record, "state": "rolled_back" if problem is None
+                                       else "blocked", "problem": problem})
+                if problem:
+                    return {"state": "blocked", "problem": problem,
+                            "recovery_package": str(ctx.packages
+                                                    / Path(record["recovery_target"]).name),
+                            "recovery_sha256": record["recovery_sha256"]}
+                return {"state": "from"}
+            for wanted, label, state in ((record["to_version"], "to", "installed"),
+                                         (record["from_version"], "from", "rolled_back")):
+                if _healthy_at(ctx, wanted) is None:
+                    _write_record(folder, {**record, "state": state, "problem": None})
+                    return {"state": label}
+            problem = _healthy_at(ctx, record["to_version"])
+            _write_record(folder, {**record, "state": "failed", "problem": problem})
+            # The helper goes back to the recorded previous package next.
+            return {"state": "incomplete", "problem": problem}
 
 
 def rollback(ctx: Context, request_path: str) -> dict:
     """Reinstall the exact previous package this admission recorded."""
     uid, _home = _caller(ctx)
-    folder, record = find_record(ctx, request_path, uid)
-    if record["state"] not in ("installing", "installed", "failed", "recovering",
-                               "rolling_back"):
-        raise RootError("state", f"This update is {record['state']}; there is nothing to "
-                                 "go back from.")
-    offline_check(ctx, record, folder)
-    with FrontendLock(ctx):
-        _only_ours_unfinished(ctx, record)
-        record = _write_record(folder, {**record, "state": "rolling_back"})
-        _dpkg_install(ctx, folder / "recovery.deb")
-        pending = [name for name in record["triggers"] if name in unfinished_packages(ctx)]
-        if pending:
-            ctx.run(["dpkg", "--triggers-only", *pending],
-                    extra_env={"DPKG_FRONTEND_LOCKED": "1"})
-        problem = _healthy_at(ctx, record["from_version"])
-        record = _write_record(folder, {**record, "state": "rolled_back" if problem is None
-                                        else "blocked", "problem": problem})
+    with RootLock(ctx):
+        folder, record = _bound(ctx, request_path, uid)
+        if record["state"] not in ("installing", "installed", "failed", "recovering",
+                                   "rolling_back"):
+            raise RootError("state", f"This update is {record['state']}; there is nothing "
+                                     "to go back from.")
+        offline_check(ctx, record, folder)
+        with FrontendLock(ctx):
+            _only_ours_unfinished(ctx, record)
+            _versions_allowed(ctx, record)
+            record = _write_record(folder, {**record, "state": "rolling_back",
+                                            "direction": "rollback"})
+            _dpkg_install(ctx, folder / "recovery.deb")
+            _settle_triggers(ctx, record)
+            problem = _healthy_at(ctx, record["from_version"])
+            record = _write_record(folder, {**record, "state": "rolled_back"
+                                            if problem is None else "blocked",
+                                            "problem": problem})
     if problem:
         return {"state": "blocked", "problem": problem,
                 "recovery_package": str(ctx.packages / Path(record["recovery_target"]).name),

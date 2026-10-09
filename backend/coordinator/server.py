@@ -15,6 +15,7 @@ import base64
 import binascii
 import http.client
 import json
+import os
 import queue
 import sys
 import threading
@@ -3997,6 +3998,10 @@ class Coordinator:
         return {
             "product": {"name": "Refinix", "surface": "local"},
             "build": build_info.describe(),
+            # Which data folder and process this is, so a packaged smoke check
+            # can prove it ran on scratch data (loopback only, like all status).
+            "process": {"pid": os.getpid(),
+                        "data_root": str(Path(self.state_path).resolve().parent)},
             "readiness": chat_ready,
             "engine": engine_state,
             "hardware": {"facts": self.hardware_facts, "tiers": list(self.tier_ids),

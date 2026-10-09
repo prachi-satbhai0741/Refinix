@@ -2160,3 +2160,7 @@ html:not(.js) .intro { display: none; }
      hiding it makes that explicit. */
   .grain { display: none }
 }
+.build .dl-req { margin: 6px 0 0; font-size: 13px; color: var(--ink-dim); }
+.build .dl-warn { margin: 8px 0 10px; padding: 10px 12px; font-size: 13px; line-height: 1.45;
+                  color: var(--ink); border: var(--hair) solid var(--edge);
+                  border-radius: var(--r-card); background: var(--glass); }

@@ -3,7 +3,10 @@
 #
 # With a release's release.json (written by scripts/release_assemble.py), the
 # download cards are rendered into index.html and release.json is copied beside
-# it; without one, the page says no tester preview is published yet.
+# it; without one, the page says no release is published yet. Each card shows,
+# before its download button, the platform's minimum OS, what the operating
+# system will say about the package (unsigned packages warn) and that testing
+# on people's own computers is pending until it is recorded.
 set -eu
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
     printf 'Usage: sh %s NEW_OUTPUT_DIRECTORY [RELEASE_JSON]\n' "$0" >&2
@@ -36,7 +39,8 @@ def download_cards(release: dict) -> str:
 
     A file is offered only from this release's own GitHub download folder, by a
     plain file name, with a full SHA-256: release.json is data, and a wrong or
-    hostile value stops the export instead of reaching the page."""
+    hostile value stops the export instead of reaching the page. Only first-
+    install files get a button (the macOS ZIP is the in-app update payload)."""
     version = release.get("version", "")
     if not re.fullmatch(r"\d+\.\d+\.\d+(-(preview|beta)\.\d+)?", version):
         raise SystemExit(f"release.json: not a release version: {version!r}")
@@ -63,31 +67,45 @@ def download_cards(release: dict) -> str:
           <p class="dl-status">Unavailable: {reason}</p>
         </article>''')
             continue
-        links = []
+        links, minimums = [], []
         for item in entry.get("files") or []:
             name, digest = item.get("name", ""), item.get("sha256", "")
-            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._~+-]*", name) \
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) \
                     or item.get("url") != folder + name:
                 raise SystemExit(f"release.json: {name!r} is not offered from this release")
             if not re.fullmatch(r"[0-9a-f]{64}", digest) or not isinstance(item.get("size"), int):
                 raise SystemExit(f"release.json: {name} has no valid SHA-256 and size")
+            if item.get("first_install") is False:
+                continue
+            if item.get("minimum_os"):
+                minimums.append(str(item["minimum_os"]))
             label = html.escape(str(item.get("label", name)))
             size = f"{item['size'] / 1_000_000:.0f} MB"
             links.append(f'''          <a class="btn btn-primary" href="{html.escape(folder + name)}">{label} · {size}</a>
           <p class="dl-sum">{html.escape(name)}<br>SHA-256 {digest}</p>''')
         if not links:
             raise SystemExit(f"release.json: {lane} is available with no files")
+        testing = ("pending" if entry.get("device_testing", release.get("device_testing"))
+                   != "observed" else "observed")
         status = ("Tester preview — device testing pending" if preview
-                  else "Beta release")
+                  else "Beta — testing on people's own computers "
+                  + ("pending" if testing == "pending" else "recorded"))
+        details = []
+        if minimums:
+            details.append(f'<p class="dl-req">Needs {html.escape(minimums[0])} · {arch}</p>')
+        if entry.get("os_warning"):
+            details.append(f'<p class="dl-warn">{html.escape(str(entry["os_warning"]))}</p>')
         cards.append(f'''        <article class="build" data-status="available">
           <h3>{title}</h3>
           <span class="req">{arch}</span>
           <p class="dl-status">{status}</p>
-''' + "\n".join(links) + "\n        </article>")
+''' + "".join(f"          {d}\n" for d in details)
+                     + "\n".join(links) + "\n        </article>")
     if not any('data-status="available"' in card for card in cards):
         raise SystemExit("release.json: nothing in this release is available")
     build = release.get("public_build")
-    meta = (f'      <p class="dl-meta">Refinix {html.escape(version)}'
+    name = str(release.get("name") or f"Refinix {version}")
+    meta = (f'      <p class="dl-meta">{html.escape(name)} · {html.escape(version)}'
             + (f" · build {int(build)}" if isinstance(build, int) else "")
             + f' · <a href="{html.escape(release["release_page"])}">release page</a>'
             + f' · <a href="{html.escape(release["checksums"])}">SHA256SUMS</a></p>')

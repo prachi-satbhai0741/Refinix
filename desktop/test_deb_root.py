@@ -27,7 +27,7 @@ from backend.coordinator.test_updates_beta import PASS, Base as FeedBase
 from desktop import deb_root, install_check
 from scripts import update_repository as repository
 
-OLD, NEW = "0.1.0-preview.1", "0.1.0-preview.2"
+OLD, NEW, NEWER = "0.1.0-preview.1", "0.1.0-preview.2", "0.1.0-preview.3"
 
 
 class FakeDpkg:
@@ -45,7 +45,9 @@ class FakeDpkg:
         self.calls = []
 
     def version_of(self, deb: Path) -> str:
-        return re.search(r"refinix_(\S+)_amd64\.deb", deb.read_text()).group(1)
+        """The Debian version a stand-in package carries (its name, from its bytes)."""
+        found = re.search(r"refinix_(\S+)_amd64\.deb", deb.read_text()).group(1)
+        return found if "~" in found else release.parse(found).debian()
 
     def label_of(self, debian: str) -> str:
         core, _, rest = debian.partition("~")
@@ -140,12 +142,12 @@ class Base(FeedBase):
         content = content or f"{release.asset_name(version, lane, fmt)}".encode()
         return super().package(version, lane, fmt, content=content, build=build, **overrides)
 
-    def request(self, name="request"):
+    def request(self, name="request", installed=OLD):
         # Accounts on Ubuntu write group-writable files by default (umask 002);
         # the request must still be private to its owner.
         previous = os.umask(0o002)
         self.addCleanup(os.umask, previous)
-        service = self.staged(self.service(OLD))
+        service = self.staged(self.service(installed))
         verified = service.admit_staged()
         folder = self.home / name
         evidence = Path(verified["package"]).parent / "evidence"
@@ -349,6 +351,231 @@ class TestRecovery(Base):
         other = self.home / "other"
         other.mkdir(mode=0o700)
         self.assertEqual(self.step("--deb-recover", other)[1]["code"], "not_admitted")
+
+
+def dpkg_installs(calls, name: str) -> list:
+    return [c for c in calls if c[:2] == ["dpkg", "-i"] and c[2].endswith(name)]
+
+
+class TestCurrentAttempt(Base):
+    """One current attempt for the whole installation; stale requests change nothing."""
+
+    def install(self, name, installed=OLD):
+        folder = self.request(name, installed=installed)
+        code, answer = self.step("--deb-admit", folder)
+        self.assertEqual(code, 0, answer)
+        code, answer = self.step("--deb-install", folder)
+        self.assertEqual((code, answer["state"]), (0, "to"), answer)
+        return folder
+
+    def test_an_old_request_after_two_updates_changes_nothing(self):
+        first = self.install("a-to-b")
+        self.release(NEWER)
+        self.install("b-to-c", installed=NEW)
+        self.assertEqual(install_check.installed_identity(self.prefix)["version"], NEWER)
+        self.dpkg.calls.clear()
+        for mode in ("--deb-rollback", "--deb-recover", "--deb-install"):
+            with self.subTest(mode=mode):
+                code, answer = self.step(mode, first)
+                self.assertEqual((code, answer["code"]), (3, "superseded"), answer)
+        self.assertEqual(dpkg_installs(self.dpkg.calls, ".deb"), [])
+        self.assertEqual(install_check.installed_identity(self.prefix)["version"], NEWER)
+        first_record = deb_root.find_record(self.ctx, str(first), os.getuid())[1]
+        self.assertEqual(first_record["state"], "concluded")
+
+    def test_the_current_attempt_still_rolls_back_with_its_exact_copy(self):
+        self.install("a-to-b")
+        self.release(NEWER)
+        second = self.install("b-to-c", installed=NEW)
+        code, answer = self.step("--deb-rollback", second)
+        self.assertEqual((code, answer["state"]), (0, "from"), answer)
+        self.assertEqual(install_check.installed_identity(self.prefix)["version"], NEW)
+        self.assertTrue(dpkg_installs(self.dpkg.calls, "recovery.deb"))
+
+    def test_an_old_request_never_configures_a_version_it_did_not_know(self):
+        first = self.install("a-to-b")
+        # An unrelated, newer Refinix left unpacked by something else.
+        self.dpkg.status["refinix"] = ["install ok unpacked",
+                                       release.parse(NEWER).debian()]
+        self.dpkg.calls.clear()
+        code, answer = self.step("--deb-recover", first)
+        self.assertEqual((code, answer["code"]), (3, "superseded"), answer)
+        self.assertFalse(any(c[:2] == ["dpkg", "--configure"] for c in self.dpkg.calls))
+        self.assertEqual(dpkg_installs(self.dpkg.calls, ".deb"), [])
+
+    def test_going_back_outside_refinix_never_revives_the_old_approval(self):
+        first = self.install("a-to-b")
+        # The person reinstalls the earlier version with App Center.
+        write_install(self.prefix, OLD, root=self.root)
+        self.dpkg.status["refinix"] = ["install ok installed", release.parse(OLD).debian()]
+        self.release(NEWER)
+        fresh = self.request("a-to-c", installed=OLD)
+        code, answer = self.step("--deb-admit", fresh)
+        self.assertEqual((code, answer["to_version"]), (0, NEWER), answer)
+        self.dpkg.calls.clear()
+        for mode in ("--deb-install", "--deb-recover", "--deb-rollback"):
+            with self.subTest(mode=mode):
+                self.assertEqual(self.step(mode, first)[1]["code"], "superseded")
+        self.assertEqual(dpkg_installs(self.dpkg.calls, ".deb"), [])
+        self.assertEqual(self.step("--deb-install", fresh)[1]["state"], "to")
+
+    def test_an_unfinished_attempt_blocks_every_other_preparation(self):
+        folder = self.request("a-to-b")
+        self.step("--deb-admit", folder)
+        self.dpkg.fail_install = True
+        self.assertEqual(self.step("--deb-install", folder)[1]["state"], "incomplete")
+        self.dpkg.fail_install = False
+        self.dpkg.calls.clear()
+        # Another account asks: refused before its request is even read.
+        other_home = Path(os.path.realpath(self.dir.name)) / "other-home"
+        other_home.mkdir()
+        self.ctx.environ = {"PKEXEC_UID": str(os.getuid() + 1)}
+        self.ctx.home_of = lambda uid: other_home
+        code, answer = self.run_step("--deb-admit", str(other_home / "request"))
+        self.assertEqual((code, answer["code"]), (3, "busy_other_update"), answer)
+        self.assertIn("the account that started it", answer["error"])
+        # Nor can it act on the first account's attempt.
+        self.assertEqual(self.step("--deb-rollback", folder)[1]["code"], "not_admitted")
+        self.assertEqual(dpkg_installs(self.dpkg.calls, ".deb"), [])
+        # The same account preparing again is refused too, and its recovery
+        # copies are still there for the unfinished attempt.
+        self.ctx.environ = {"PKEXEC_UID": str(os.getuid())}
+        self.ctx.home_of = lambda uid: self.home
+        again = self.request("again")
+        self.assertEqual(self.step("--deb-admit", again)[1]["code"], "busy_other_update")
+        kept = sorted(p.name for p in self.ctx.packages.iterdir())
+        self.assertEqual(kept, sorted(release.asset_name(v, "linux-x64", "deb")
+                                      for v in (OLD, NEW)))
+        # Its owner recovers it, and then a new preparation is possible.
+        self.assertEqual(self.step("--deb-recover", folder)[1]["state"], "to")
+
+    def test_an_interrupted_admission_is_never_used_and_is_cleared(self):
+        self.ctx.updates.mkdir(parents=True, mode=0o700)
+        leftover = self.ctx.updates / "00aa00aa00aa00aa"
+        leftover.mkdir(mode=0o700)
+        (leftover / "package.deb").write_bytes(b"half copied")
+        folder = self.request("a-to-b")
+        code, answer = self.step("--deb-admit", folder)
+        self.assertEqual(code, 0, answer)
+        self.assertFalse(leftover.exists())
+        current = json.loads((self.ctx.state / "current.json").read_text())
+        self.assertEqual(current["admission"], answer["admission"])
+
+    def test_root_steps_wait_for_each_other(self):
+        folder = self.request("a-to-b")
+        with deb_root.RootLock(self.ctx):
+            import sys
+            holder = subprocess.Popen(
+                [sys.executable, "-c", "import fcntl, os, sys, time; "
+                 "fd = os.open(sys.argv[1], os.O_RDWR); fcntl.flock(fd, fcntl.LOCK_EX); "
+                 "print('held', flush=True); time.sleep(60)",
+                 str(self.ctx.state / "root.lock")], stdout=subprocess.PIPE, text=True)
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        self.assertEqual(holder.stdout.readline().strip(), "held")
+        code, answer = self.step("--deb-admit", folder)
+        self.assertEqual((code, answer["code"]), (3, "busy"), answer)
+        self.assertFalse((self.ctx.state / "current.json").exists())
+
+
+class TestRollbackDirection(Base):
+    """An interrupted rollback is finished as a rollback, never towards the new version."""
+
+    def installed_then_rolling_back(self, status_word: str):
+        folder = self.request()
+        self.step("--deb-admit", folder)
+        self.assertEqual(self.step("--deb-install", folder)[1]["state"], "to")
+        record_folder, record = deb_root.find_record(self.ctx, str(folder), os.getuid())
+        deb_root._write_record(record_folder, {**record, "state": "rolling_back",
+                                               "direction": "rollback"})
+        # The rollback was stopped part way through putting OLD back.
+        if status_word == "unpacked":
+            write_install(self.prefix, OLD, root=self.root)
+            self.dpkg.status["refinix"] = ["install ok unpacked",
+                                           release.parse(OLD).debian()]
+        else:
+            self.dpkg.status["refinix"] = ["install reinstreq half-installed",
+                                           release.parse(OLD).debian()]
+        self.dpkg.calls.clear()
+        return folder
+
+    def test_a_rollback_killed_while_unpacking_finishes_going_back(self):
+        folder = self.installed_then_rolling_back("half-installed")
+        code, answer = self.step("--deb-recover", folder)
+        self.assertEqual((code, answer["state"]), (0, "from"), answer)
+        self.assertTrue(dpkg_installs(self.dpkg.calls, "recovery.deb"))
+        self.assertFalse(dpkg_installs(self.dpkg.calls, "package.deb"))
+        self.assertEqual(install_check.installed_identity(self.prefix)["version"], OLD)
+        record = deb_root.find_record(self.ctx, str(folder), os.getuid())[1]
+        self.assertEqual((record["state"], record["direction"]), ("rolled_back", "rollback"))
+
+    def test_a_rollback_stopped_before_configuring_is_configured(self):
+        folder = self.installed_then_rolling_back("unpacked")
+        code, answer = self.step("--deb-recover", folder)
+        self.assertEqual((code, answer["state"]), (0, "from"), answer)
+        self.assertIn(["dpkg", "--configure", "refinix"], self.dpkg.calls)
+        self.assertFalse(dpkg_installs(self.dpkg.calls, "package.deb"))
+
+    def test_a_legacy_record_without_a_direction_keeps_going_back(self):
+        folder = self.installed_then_rolling_back("half-installed")
+        record_folder, record = deb_root.find_record(self.ctx, str(folder), os.getuid())
+        record.pop("direction")
+        deb_root._write_record(record_folder, record)
+        self.assertEqual(self.step("--deb-recover", folder)[1]["state"], "from")
+        self.assertFalse(dpkg_installs(self.dpkg.calls, "package.deb"))
+
+
+class TestTrustContinuity(Base):
+    """Root's offline re-check reaches the newest trusted root or refuses."""
+
+    def admitted_then_rotated(self, replace=()):
+        folder = self.request()
+        self.assertEqual(self.step("--deb-admit", folder)[0], 0)
+        new_keys = Path(os.path.realpath(self.dir.name)) / "new-keys"
+        for _ in range(2):
+            repository.rotate_root(self.keys, self.feed, passphrases=PASS,
+                                   new_keys_dir=new_keys if replace else None,
+                                   replace=replace, new_passphrases=PASS,
+                                   check_location=False)
+            replace = ()
+        history = self.ctx.trust / "root_history"
+        history.mkdir(parents=True, exist_ok=True)
+        (history / "2.root.json").unlink(missing_ok=True)
+        (history / "3.root.json").write_bytes(
+            (self.feed / "metadata" / "3.root.json").read_bytes())
+        (self.ctx.trust / "root.json").unlink()
+        (self.ctx.trust / "root.json").write_bytes(
+            (self.feed / "metadata" / "3.root.json").read_bytes())
+        self.dpkg.calls.clear()
+        return folder
+
+    def test_a_missing_link_refuses_before_any_package_change(self):
+        folder = self.admitted_then_rotated()
+        code, answer = self.step("--deb-install", folder)
+        self.assertEqual((code, answer["code"]), (3, "evidence"), answer)
+        self.assertIn("root 2", answer["error"])
+        self.assertEqual(dpkg_installs(self.dpkg.calls, ".deb"), [])
+
+    def test_a_complete_chain_installs(self):
+        folder = self.admitted_then_rotated()
+        (self.ctx.trust / "root_history" / "2.root.json").write_bytes(
+            (self.feed / "metadata" / "2.root.json").read_bytes())
+        self.assertEqual(self.step("--deb-install", folder)[1]["state"], "to")
+
+    def test_signatures_of_a_revoked_key_fail(self):
+        folder = self.admitted_then_rotated(replace=("targets",))
+        (self.ctx.trust / "root_history" / "2.root.json").write_bytes(
+            (self.feed / "metadata" / "2.root.json").read_bytes())
+        code, answer = self.step("--deb-install", folder)
+        self.assertEqual((code, answer["code"]), (3, "evidence"), answer)
+        self.assertEqual(dpkg_installs(self.dpkg.calls, ".deb"), [])
+
+    def test_a_damaged_trust_record_refuses(self):
+        folder = self.request()
+        self.step("--deb-admit", folder)
+        (self.ctx.trust / "root.json").unlink()
+        code, answer = self.step("--deb-install", folder)
+        self.assertEqual((code, answer["code"]), (3, "evidence"), answer)
 
 
 if __name__ == "__main__":

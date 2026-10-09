@@ -69,15 +69,16 @@ SWAP_STATES = ("swapping", "swapped", "relaunching", "committing", "rolling_back
                # windows-setup
                "app_setting_aside", "app_set_aside", "installer_starting",
                "installer_running", "installer_exited", "install_verified",
-               # deb
-               "deb_installing")
+               # deb: installing, and undoing an install that did not finish
+               # (recorded before root is asked, so a crash resumes the undo)
+               "deb_installing", "deb_rolling_back")
 WINDOWS_UNDO = ("app_set_aside", "installer_starting", "installer_running",
                 "installer_exited")
 # Refusals from the root step that come before anything was changed.
 DEB_REFUSED = ("busy", "unfinished", "prerequisites", "plan", "changed", "not_authorised",
                "state", "evidence", "not_admitted", "expired", "not_healthy", "package",
                "channel", "not_newer", "bad_request", "not_root", "not_pkexec",
-               "not_installed", "usage")
+               "not_installed", "usage", "superseded", "busy_other_update")
 FINAL = ("committed", "cancelled", "discarded", "rolled_back", "blocked")
 MAX_RESUMES = 2
 OLD_OWNER_SECONDS = 60.0
@@ -86,7 +87,10 @@ COMMIT_SECONDS = 180.0
 TERM_SECONDS = 15.0
 POLL_SECONDS = 0.25
 # Variables a relaunch must carry so the app opens the same data and install root.
-CARRIED = ("REFINIX_DATA_ROOT", "REFINIX_TEST_INSTALL_ROOT")
+CARRIED = ("REFINIX_DATA_ROOT", "REFINIX_TEST_INSTALL_ROOT",
+           # Private qualification builds only (desktop/qualify_control.py);
+           # a publishable package ignores them.
+           "REFINIX_QUALIFY_TOKEN", "REFINIX_QUALIFY_FAIL_START")
 MANUAL = ("Nothing more was changed automatically. Your data and the previous app are "
           "kept in the 'updates' and 'recovery' folders inside Refinix's data folder "
           "({root}). Keep them, and ask for help before removing "
@@ -1171,7 +1175,13 @@ def _deb_resume(lock, database, journal: dict, rec, system: System) -> int:
 
 
 def _deb_back(lock, database, journal: dict, rec, system: System, reason: str) -> int:
-    """The new version never opened: reinstall the previous package, data unchanged."""
+    """The new version never opened: reinstall the previous package, data unchanged.
+
+    The direction is recorded before root is asked, so if this stops part way
+    the next launch carries on going back rather than repairing towards the
+    version that failed (root records the same direction for its own step)."""
+    journal = write_journal(lock, database, journal, state="deb_rolling_back",
+                            reason=reason)
     journal, problem = _restore_app(lock, database, journal, system)
     if problem:
         return _block(lock, database, journal, system, f"{reason}; and {problem}")
@@ -1180,6 +1190,9 @@ def _deb_back(lock, database, journal: dict, rec, system: System, reason: str) -
 
 def _drive_deb(lock, database, journal: dict, rec, data, system: System) -> int:
     state = journal["state"]
+    if state == "deb_rolling_back":
+        return _deb_back(lock, database, journal, rec, system,
+                         journal.get("reason") or "the update was being undone")
     if state in PRE_SWAP:
         if system.deb_problem(journal["from_version"]) is None:
             return _pre_swap(lock, database, journal, rec, data, system)

@@ -17,8 +17,15 @@ is never a fallback to running code directly on the computer.
                 Landlock and checks every control from the inside before the
                 tests run, and hashes the staged copies first.
 
-Every run is journalled; leftovers (a unit, a mount, a loop device, an image)
-are removed at the next start.
+Every run is journalled. A run's record is dropped only once its service is
+confirmed stopped and its storage confirmed detached; otherwise the record is
+kept with what failed, cleanup is retried at the next start and before the
+next run, and no new validation starts while a workspace is still mounted.
+
+Cancel and the deadline do not wait for the tests to print anything: output is
+read on its own thread while a short loop watches for Cancel and the deadline,
+then stops the whole service. A pass needs the launcher's closing report,
+marked with this run's own code, and the service to have ended normally.
 
 The profile is **provisional** until the device qualification on a real
 Ubuntu 24.04 desktop passes (plan v4.3 W2.3); results say so.
@@ -30,9 +37,11 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -70,6 +79,8 @@ PROPERTIES = [
 ] + [f"{key}={value}" for key, value in LIMITS.items()]
 UNIT_PREFIX = "refinix-sandbox-"
 REPORT_MARK = "REFINIX-SANDBOX-REPORT "
+POLL_SECONDS = 0.1
+STOP_SECONDS = 10.0
 
 
 class SandboxError(RuntimeError):
@@ -120,6 +131,31 @@ class Host:
     def monotonic(self):
         return time.monotonic()
 
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
+
+    def mounted(self, target: str) -> bool:
+        """Whether a mount point or device is still mounted (mountinfo)."""
+        try:
+            lines = Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return False
+        for line in lines:
+            fields = line.split()
+            source = fields[fields.index("-") + 2] if "-" in fields else ""
+            if len(fields) > 4 and (fields[4] == target or source == target):
+                return True
+        return False
+
+    def loop_backing(self, device: str) -> str | None:
+        """The file a loop device is attached to, or None when it is free."""
+        name = Path(device).name
+        try:
+            return Path(f"/sys/block/{name}/loop/backing_file").read_text(
+                encoding="utf-8").strip() or None
+        except OSError:
+            return None
+
 
 class LocalSandbox:
     def __init__(self, data_root: Path, *, host: Host | None = None, probe=None,
@@ -128,6 +164,10 @@ class LocalSandbox:
         self.host = host or Host()
         self._probe = probe or sandbox_probe.probe
         self.platform = platform or sys.platform
+        # The parent's own limit, beyond the service's RuntimeMaxSec.
+        self.deadline_seconds = DEADLINE_SECONDS + 60
+        self._active: set[str] = set()
+        self._guard = threading.Lock()
 
     # -- what can run here ---------------------------------------------------
     def status(self) -> dict:
@@ -143,6 +183,9 @@ class LocalSandbox:
                          "detail": "a fixed-size ext4 image (bytes and files capped) "
                                    "mounted through udisks or fuse2fs"})
         missing = [c["name"] for c in controls if not c["ok"]]
+        stuck = self.stuck_runs()
+        if stuck:
+            missing.append("cleanup of an earlier sandbox run (" + "; ".join(stuck) + ")")
         for tool in ("systemd-run", "mkfs.ext4"):
             if not self.host.which(tool):
                 missing.append(tool)
@@ -186,34 +229,81 @@ class LocalSandbox:
         self._save(journal)
 
     def cleanup_leftovers(self) -> list[str]:
-        """At startup: stop and remove whatever an earlier run left behind."""
+        """At startup and before each run: finish cleaning up earlier runs.
+
+        A run's record is removed only when its cleanup is confirmed;
+        otherwise it stays, with what failed, for the next attempt. Runs in
+        progress in this process are never touched.
+        """
         cleaned = []
+        with self._guard:
+            active = set(self._active)
         journal = self._journal()
         for run_id, run in list(journal["runs"].items()):
-            self._teardown(run)
-            cleaned.append(run_id)
-            del journal["runs"][run_id]
-        if cleaned:
-            self._save(journal)
+            if run_id in active:
+                continue
+            problems = self._teardown(run)
+            if problems:
+                run["cleanup_problems"] = problems
+                run["cleanup_attempts"] = int(run.get("cleanup_attempts") or 0) + 1
+                run["cleanup_failed_at"] = _stamp()
+            else:
+                cleaned.append(run_id)
+                del journal["runs"][run_id]
+        self._save(journal)
         return cleaned
 
-    def _teardown(self, run: dict) -> None:
+    def stuck_runs(self) -> list[str]:
+        """Earlier runs whose workspace could not be detached yet."""
+        with self._guard:
+            active = set(self._active)
+        return [f"{run_id}: {', '.join(run.get('cleanup_problems') or [])}"
+                for run_id, run in self._journal()["runs"].items()
+                if run_id not in active and run.get("cleanup_problems")]
+
+    def _teardown(self, run: dict) -> list[str]:
+        """Stop the service and detach the storage; what could not be done.
+
+        Each step is checked rather than assumed, and the backing image is
+        removed only once nothing uses it. Only this run's own unit, mount and
+        loop device (as journalled) are touched.
+        """
+        problems = []
         unit = run.get("unit")
         if unit and unit.startswith(UNIT_PREFIX):
             self.host.run(["systemctl", "--user", "stop", unit], timeout=60)
-            self.host.run(["systemctl", "--user", "reset-failed", unit], timeout=30)
+            shown = self.host.run(["systemctl", "--user", "show", "-p", "ActiveState",
+                                   "--value", unit], timeout=30)
+            state = (getattr(shown, "stdout", "") or "").strip()
+            if state in ("active", "activating", "deactivating", "reloading"):
+                problems.append(f"service {unit} is still {state}")
+            else:
+                self.host.run(["systemctl", "--user", "reset-failed", unit], timeout=30)
         mount, device = run.get("mount"), run.get("device")
-        if run.get("method") == "udisks":
-            if device:
+        image = str(Path(run["folder"]) / "workspace.img") if run.get("folder") else None
+        if run.get("method") == "udisks" and device:
+            if mount and self.host.mounted(mount) or self.host.mounted(device):
                 self.host.run(["udisksctl", "unmount", "--no-user-interaction", "-b", device],
                               timeout=60)
-                self.host.run(["udisksctl", "loop-delete", "--no-user-interaction", "-b",
-                               device], timeout=60)
+            if (mount and self.host.mounted(mount)) or self.host.mounted(device):
+                problems.append(f"{device} is still mounted")
+            else:
+                backing = self.host.loop_backing(device)
+                if backing and image and Path(backing) == Path(image):
+                    self.host.run(["udisksctl", "loop-delete", "--no-user-interaction",
+                                   "-b", device], timeout=60)
+                    backing = self.host.loop_backing(device)
+                    if backing and Path(backing) == Path(image):
+                        problems.append(f"{device} is still attached")
         elif run.get("method") == "fuse2fs" and mount:
-            self.host.run(["fusermount3", "-u", mount], timeout=60)
+            if self.host.mounted(mount):
+                self.host.run(["fusermount3", "-u", mount], timeout=60)
+            if self.host.mounted(mount):
+                problems.append(f"{mount} is still mounted")
         folder = run.get("folder")
-        if folder and Path(folder).parent == self.home / "runs":
+        if not problems and folder and Path(folder).parent == self.home / "runs":
             shutil.rmtree(folder, ignore_errors=True)
+        return problems
 
     # -- one validation ----------------------------------------------------------
     def _mount(self, run_id: str, folder: Path, method: str) -> tuple[Path, str | None]:
@@ -260,14 +350,18 @@ class LocalSandbox:
         controls, limits and the staged-input digest. Raises SandboxError when
         validation could not run at all; a run that ran and failed is a result.
         """
+        self.cleanup_leftovers()
         status = self.status()
         if not status["available"]:
             raise SandboxError("no_sandbox", status["detail"])
         method = status["storage"]
         run_id = uuid.uuid4().hex[:12]
+        nonce = secrets.token_hex(16)
         folder = self.home / "runs" / run_id
         folder.mkdir(parents=True, mode=0o700)
         unit = f"{UNIT_PREFIX}{run_id}"
+        with self._guard:
+            self._active.add(run_id)
         self._note(run_id, unit=unit, method=method, folder=str(folder), started_at=_stamp())
         try:
             mount, device = self._mount(run_id, folder, method)
@@ -284,14 +378,15 @@ class LocalSandbox:
             manifest = folder / "manifest.json"
             manifest.write_text(json.dumps({"files": staged, "seconds": DEADLINE_SECONDS,
                                             "cgroup_limits": CGROUP_LIMITS,
-                                            "outside_probe": "/etc/hostname"}),
+                                            "outside_probe": "/etc/hostname",
+                                            "report_code": nonce}),
                                 encoding="utf-8")
             argv = (["systemd-run", "--user", "--wait", "--collect", "--pipe", "--quiet",
                      f"--unit={unit}", f"--working-directory={mount}"]
                     + [f"--property={p}" for p in PROPERTIES]
                     + ["--", PYTHON, "-I", "-S", str(launcher_path()), str(mount),
                        str(manifest)])
-            report, output = self._run(argv, unit, cancel)
+            report, output = self._run(argv, unit, cancel, nonce)
             report.update(profile=PROFILE, profile_version=PROFILE_VERSION,
                           qualification=QUALIFICATION, storage=method, unit=unit,
                           limits_requested=LIMITS, expected_inputs_sha256=inputs_digest(staged))
@@ -302,40 +397,90 @@ class LocalSandbox:
             report["output"] = output
             return report
         finally:
+            with self._guard:
+                self._active.discard(run_id)
             run = self._journal()["runs"].get(run_id, {})
-            self._teardown(run)
+            problems = self._teardown(run)
             journal = self._journal()
-            journal["runs"].pop(run_id, None)
+            if problems:
+                # Kept, with what failed, so the next start or run retries it.
+                journal["runs"].setdefault(run_id, run).update(
+                    cleanup_problems=problems, cleanup_attempts=1,
+                    cleanup_failed_at=_stamp())
+            else:
+                journal["runs"].pop(run_id, None)
             self._save(journal)
 
-    def _run(self, argv, unit: str, cancel) -> tuple[dict, str]:
+    def _stop_unit(self, unit: str, process) -> None:
+        """Stop the whole service now, then make sure our client has ended."""
+        self.host.run(["systemctl", "--user", "kill", "--signal=SIGKILL", unit], timeout=30)
+        self.host.run(["systemctl", "--user", "stop", unit], timeout=30)
+        ends = self.host.monotonic() + STOP_SECONDS
+        while process.poll() is None and self.host.monotonic() < ends:
+            self.host.sleep(POLL_SECONDS)
+        if process.poll() is None:
+            process.kill()
+            try:
+                process.wait(timeout=STOP_SECONDS)
+            except subprocess.TimeoutExpired:
+                pass
+
+    def _run(self, argv, unit: str, cancel, nonce: str = "") -> tuple[dict, str]:
         """Run the unit; keep at most OUTPUT_LIMIT of output, and always the
-        launcher's closing report line."""
+        launcher's closing report line.
+
+        Output is read on its own thread, so a quiet test cannot hold up
+        Cancel or the deadline: those are checked every POLL_SECONDS whatever
+        the tests print, and stop the whole service.
+        """
         process = self.host.popen(argv)
-        collected, tail, flooded = bytearray(), b"", False
-        deadline = self.host.monotonic() + DEADLINE_SECONDS + 60
-        for block in iter(lambda: process.stdout.read(8192), b""):
-            room = OUTPUT_LIMIT - len(collected)
-            collected.extend(block[:max(room, 0)])
-            flooded = flooded or len(block) > room
-            tail = (tail + block)[-16384:]
-            if (cancel is not None and cancel.is_set()) or self.host.monotonic() > deadline:
-                self.host.run(["systemctl", "--user", "kill", "--signal=SIGKILL", unit])
+        state = {"collected": bytearray(), "tail": b"", "flooded": False}
+
+        def read():
+            try:
+                for block in iter(lambda: process.stdout.read(8192), b""):
+                    room = OUTPUT_LIMIT - len(state["collected"])
+                    state["collected"].extend(block[:max(room, 0)])
+                    state["flooded"] = state["flooded"] or len(block) > room
+                    state["tail"] = (state["tail"] + block)[-16384:]
+            except (OSError, ValueError):
+                pass
+        reader = threading.Thread(target=read, name="sandbox-output", daemon=True)
+        reader.start()
+        deadline = self.host.monotonic() + self.deadline_seconds
+        stopped = None
+        while process.poll() is None:
+            if cancel is not None and cancel.is_set():
+                stopped = "cancelled"
+            elif self.host.monotonic() > deadline:
+                stopped = "deadline"
+            if stopped:
+                self._stop_unit(unit, process)
                 break
-        process.wait()
-        text = collected.decode("utf-8", errors="replace")
-        ending = tail.decode("utf-8", errors="replace")
+            self.host.sleep(POLL_SECONDS)
+        if cancel is not None and cancel.is_set() and not stopped:
+            # Cancelled as it ended: a cancelled validation is never a pass.
+            stopped = "cancelled"
+        # Stopping the service ends everything holding its output; the wait
+        # after a stop is short so Cancel is never held up by a stuck pipe.
+        reader.join(2.0 if stopped else STOP_SECONDS)
+        text = bytes(state["collected"]).decode("utf-8", errors="replace")
+        ending = bytes(state["tail"]).decode("utf-8", errors="replace")
         report = {"ran": False, "refused": "launcher",
                   "error": "The sandbox ended without a report."}
-        if REPORT_MARK in ending:
-            line = ending[ending.rindex(REPORT_MARK) + len(REPORT_MARK):].splitlines()[0]
+        mark = f"{REPORT_MARK}{nonce} " if nonce else REPORT_MARK
+        if mark in ending:
+            line = ending[ending.rindex(mark) + len(mark):].splitlines()[0]
             try:
                 report = json.loads(line)
             except ValueError:
                 pass
-        if cancel is not None and cancel.is_set():
+        if stopped == "cancelled":
             report.update(ran=False, refused="cancelled", error="Validation was cancelled.")
-        if flooded:
+        elif stopped == "deadline":
+            report.update(ran=False, refused="deadline",
+                          error="Validation ran out of time and was stopped.")
+        if state["flooded"]:
             report["output_truncated"] = True
         report["service_exit"] = process.returncode
         if REPORT_MARK in text:
@@ -345,8 +490,10 @@ class LocalSandbox:
 
 def passed(report: dict) -> bool:
     """A pass is observed, never inferred: it ran confined, every check held,
-    the inputs matched and at least one test ran with exit status 0."""
+    the inputs matched, at least one test ran with exit status 0, the closing
+    report carried this run's code and the service itself ended normally."""
     return (report.get("ran") is True and not report.get("refused")
+            and report.get("service_exit") == 0
             and report.get("exit_status") == 0 and (report.get("tests_run") or 0) >= 1
             and report.get("inputs_sha256") == report.get("expected_inputs_sha256")
             and {"no sockets", "Landlock", "no signals"} <= set(report.get("controls") or []))

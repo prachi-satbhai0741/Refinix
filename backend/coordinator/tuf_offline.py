@@ -6,7 +6,8 @@ authenticate a kept download the same way:
 
 * root versions are walked one at a time from a trusted anchor: each must be
   exactly the next version and meet both the old and the new root's
-  thresholds;
+  thresholds, and the walk must reach the newest root this computer already
+  trusts (`continue_to`) — a missing link refuses;
 * timestamp, snapshot and targets must be signed by the newest root's keys;
 * the version links timestamp → snapshot → targets, and any recorded lengths
   and hashes, must hold.
@@ -58,6 +59,38 @@ def walk_roots(anchor: bytes, newer) -> tuple[object, list[str]]:
     for data in newer:
         root = next_root(root, data)
         seen.append(hashlib.sha256(data).hexdigest())
+    return root, seen
+
+
+def continue_to(root, trusted_bytes: bytes, next_bytes, *,
+                allow_newer: bool = False) -> tuple[object, list[str]]:
+    """Carry `root` on to the newest root this computer already trusts.
+
+    `next_bytes(version)` returns that root version's bytes, or None when it
+    is not kept. Every version between must be present and properly signed,
+    and the walk must end on exactly the trusted root's signed bytes: a
+    missing or damaged link refuses rather than leaving older keys (perhaps
+    since revoked) in charge. With `allow_newer`, a chain that is already past
+    the trusted root (a download newer than the local state) is accepted as is.
+    Returns the root reached and the SHA-256 of each root added on the way.
+    """
+    trusted = metadata(trusted_bytes, "root")
+    seen = []
+    if root.signed.version > trusted.signed.version and not allow_newer:
+        raise OfflineError("The kept update keys are newer than this computer's trusted "
+                           "keys; the trust state looks damaged.")
+    while root.signed.version < trusted.signed.version:
+        version = root.signed.version + 1
+        data = next_bytes(version)
+        if data is None:
+            raise OfflineError(f"Trusted root {version} is missing or unreadable, so the "
+                               "update keys cannot be followed to the newest ones.")
+        root = next_root(root, data)
+        seen.append(hashlib.sha256(data).hexdigest())
+    if root.signed.version == trusted.signed.version \
+            and root.signed_bytes != trusted.signed_bytes:
+        raise OfflineError("The kept roots end on different keys than this computer "
+                           "trusts.")
     return root, seen
 
 
