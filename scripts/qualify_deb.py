@@ -381,7 +381,7 @@ def qualify(report: Report, work: Path):
     report.record("unpacked package is configured by recovery",
                   configured.get("state") == "to", {"answer": configured, "dpkg": status()})
     run(["dpkg", "--purge", "refinix"])
-    qualify_attempts(report, work, feed, old, account)
+    qualify_attempts(report, work, feed, old, new, account)
 
 
 def kill_during_unpack(deb: Path) -> str:
@@ -405,7 +405,13 @@ def set_record(admission: dict, **fields) -> Path:
     return record_dir
 
 
-def qualify_attempts(report: Report, work: Path, feed: "Feed", old: Path, account):
+def unfinished(state: str) -> bool:
+    words = state.split("|")[0].split()
+    return bool(words) and (words[-1] != "installed" or "reinstreq" in words)
+
+
+def qualify_attempts(report: Report, work: Path, feed: "Feed", old: Path, new: Path,
+                     account):
     """One current attempt for the whole installation (review F3/F4), real dpkg."""
     debs = work / "debs-attempts"
     debs.mkdir()
@@ -414,7 +420,8 @@ def qualify_attempts(report: Report, work: Path, feed: "Feed", old: Path, accoun
     first = stage_request(feed, account, OLD, "request-a-b")
     step(account, "--deb-admit", first)
     installed_b = step(account, "--deb-install", first)
-    newer = make_deb(debs, NEWER, feed.root)
+    # Large, so a kill lands while dpkg is still unpacking it.
+    newer = make_deb(debs, NEWER, feed.root, big_mb=256)
     feed.publish(newer, NEWER)
     second = stage_request(feed, account, NEW, "request-b-c")
     step(account, "--deb-admit", second)
@@ -434,18 +441,19 @@ def qualify_attempts(report: Report, work: Path, feed: "Feed", old: Path, accoun
                   {"answer": current, "dpkg": status()})
 
     # A rollback killed while unpacking finishes going back, never forward.
-    reset(old)
-    third = stage_request(feed, account, OLD, "request-rollback")
+    # Starting from NEW (large), so the package being put back is large too.
+    reset(new)
+    third = stage_request(feed, account, NEW, "request-rollback")
     admitted = step(account, "--deb-admit", third)
     step(account, "--deb-install", third)
     record_dir = set_record(admitted, state="rolling_back", direction="rollback")
     interrupted = kill_during_unpack(record_dir / "recovery.deb")
     recovered = step(account, "--deb-recover", third)
     from desktop import install_check
-    problem = install_check.completeness_problem(PREFIX, OLD)
+    problem = install_check.completeness_problem(PREFIX, NEW)
     report.record("a rollback killed while unpacking finishes going back",
-                  recovered.get("state") == "from" and problem is None
-                  and status().endswith(release.parse(OLD).debian()),
+                  unfinished(interrupted) and recovered.get("state") == "from"
+                  and problem is None and status().endswith(release.parse(NEW).debian()),
                   {"interrupted": interrupted, "answer": recovered, "dpkg": status(),
                    "tree": problem})
 
@@ -459,7 +467,8 @@ def qualify_attempts(report: Report, work: Path, feed: "Feed", old: Path, accoun
     elsewhere = stage_request(feed, other, OLD, "request-other-account")
     refused = step(other, "--deb-admit", elsewhere)
     report.record("an unfinished attempt blocks another account's preparation",
-                  refused.get("code") == "busy_other_update" and status() == interrupted,
+                  unfinished(interrupted) and refused.get("code") == "busy_other_update"
+                  and status() == interrupted,
                   {"answer": refused, "dpkg": status()})
     recovered = step(account, "--deb-recover", fourth)
     lifted = step(other, "--deb-admit", elsewhere)
