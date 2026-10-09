@@ -17,51 +17,59 @@ Keep the phase identifiers for historical references. For the standalone Beta, e
 Phase 2 -> local Phase 4 acceptance -> Phase 5**. **Phase 3 and peer-specific Phase 4 work are deferred
 until after Beta 0.1.** The Beta includes qualified in-app updates on Windows, macOS and Linux.
 
-**Current active phase: Phase 5 — tester preview, device acceptance and publication.** The source
-work of Phases 1, 2, local Phase 4 and Phase 5 is implemented and offline-tested (8 October 2026
-batch, plan v4.3); device acceptance is open on every platform, so none of those phases is complete.
+**Current active phase: Phase 5 — Refinix Beta 0.1 publication, then device acceptance.** The source
+work of Phases 1, 2, local Phase 4 and Phase 5 is implemented and offline-tested; the review A1 repair
+batch (10 October 2026) and its native qualification on hosted runners are recorded in
+[evaluation.md](docs/evaluation.md#beta-01-segment-1), with exactly what passed and what did not. Device acceptance is open on every platform, so
+none of those phases is complete.
 
 **5 October 2026 direction:** the [full user statements](docs/beta-user-direction-2026-10-05.md) are
 preserved verbatim: broad upstream model choice, existing Ollama reuse, managed llama.cpp,
 lightweight recommendations and automatic local task-to-model routing, without team certification
 of every model/device/version, on the existing foundation, with distribution deferred.
 
-### Preview-first sequence (current)
+**10 October 2026 direction (user):** the public name is **Refinix Beta 0.1** (`0.1.0-beta.N`, a normal
+GitHub release, public build 8); macOS and Windows are published **unsigned** with each OS's warning;
+the website offers the macOS DMG, the Windows setup and the Ubuntu `.deb`; the release happens
+**before** the user's device walkthrough, and device acceptance stays a separate record.
 
-1. Implement and verify (done in source; offline suites and native Ubuntu package checks pass).
-2. Publish a **tester preview** (`0.1.0-preview.N`) through the website: Ubuntu `.deb`; macOS and
-   Windows only once signed, otherwise shown as unavailable. Anonymous website downloads are checked
-   against the published SHA-256 before testers are invited.
-3. The user's device walkthrough on the downloaded packages, alongside an independent deep review
-   of the repository.
-4. One ranked repair batch, published as new immutable versions.
-5. Beta acceptance on the evidence; only then an accepted `0.1.0-beta.N` and a **Download Refinix
-   Beta** link.
+### Launch sequence (current)
 
-### Completed in source (offline-tested; not device-accepted)
+1. Repairs and native qualification of one recorded commit on hosted runners (`qualify.yml`); any
+   later code change repeats the affected checks.
+2. Production Beta keys and root (offline, the user) → `desktop/updates/beta-root.json` committed.
+3. Member → dev → main, the user merging; `main`'s file tree equals the qualified tree.
+4. `release.yml` on that commit: all three lanes, each package qualified on its exact bytes, the
+   Mac bytes again on the oldest arm64 macOS runner; `release_assemble.py`; the CP-B manifest.
+5. CP-B (the user): publish the release, stage the feed offline, merge the website PR, advance the
+   feed (exact live check), `verify-public.yml` and anonymous downloads of the DMG, setup and `.deb`.
+6. Launch complete / device testing pending → the user's device walkthrough → one repair batch as new
+   immutable versions → device acceptance recorded per platform.
 
-- Public Beta update channel: signed TUF feed with tester-preview and accepted pointers, one version
-  ordering key, forward-only publisher, daily refresh, root rotation, offline bundles.
+### Completed in source (offline-tested; native runner results in evaluation.md; not device-accepted)
+
+- Public Beta update channel: signed TUF feed with preview and Beta pointers, one version ordering
+  key, forward-only publisher, exact live-feed check, daily refresh, root rotation, offline bundles.
 - In-app updates on all three platforms: macOS app swap; Windows per-user setup inside a
   kill-on-close job with registry restore and file-list completeness; Ubuntu `.deb` through a
-  password-protected root step with dpkg-state recovery (natively qualified in an Ubuntu 24.04
-  container).
-- Release tooling: Beta package workflow, release assembly, website feed workflows (templates for
-  the website repository), Developer ID/notarisation/DMG and Authenticode build paths.
-- Ubuntu Code sandbox (provisional until device qualification) wired into validation and Apply.
+  password-protected root step with one current attempt per installation and direction-aware
+  recovery; packaged N → N+1 update, rollback and interrupted-update journeys on hosted runners.
+- Release tooling: Beta package workflow for all three lanes with bound native qualification, release
+  assembly for the unsigned Beta, website feed workflows (templates for the website repository),
+  public verification workflow; Developer ID/notarisation and Authenticode paths kept for later.
+- Ubuntu Code sandbox (provisional until device qualification) wired into validation and Apply, with
+  prompt Cancel, recoverable cleanup and live-input re-checks before a sandbox-validated Apply.
 - Linux native messages, context indicator details, dead-code removal, launcher drift fix.
-- Website tester-preview download section rendered from the release record; scan reading
-  labelled Beta; release workflow lock and Ubuntu build repairs found by local package builds.
+- Website download cards rendered from the release record, with minimum OS, OS warning and
+  device-testing state; scan reading labelled Beta.
 
 ### Open acceptance items
 
-- Every device walkthrough (Windows, macOS, Ubuntu) on published packages.
-- Ubuntu sandbox feasibility and qualification on a real desktop (W2.1/W2.3).
-- Developer ID and Windows signing; until then macOS and Windows downloads are unavailable.
-- Native Windows job/installer crash checks on a real Windows machine or runner.
-- The website deployment, Beta keys and live feed (repository owners' steps).
-- The first public build number is 7 or higher: internal builds 1–6 already exist on the
-  release Mac, and macOS orders apps by build number.
+- Every device walkthrough (Windows 11, macOS, Ubuntu desktop) on published packages: SmartScreen /
+  Smart App Control, Gatekeeper's Open Anyway, the real polkit prompt, real workflows and updates.
+- Ubuntu sandbox qualification on a real desktop session (still provisional after the runner checks).
+- Production Beta keys, the website owner's settings and secrets, and the live feed.
+- Developer ID and Windows code signing (optional later; not a Beta prerequisite).
 
 Phase 1 is only the first part of the total Refinix Beta path. Completing Phase 1 does **not** mean
 Refinix is Beta-complete, release-ready or production-qualified. It establishes the portable
@@ -513,8 +521,8 @@ observed/enforced evidence.
 ## Phase 5 outcome
 
 Produce the first defensible standalone **Refinix Beta 0.1** on Windows, macOS and Linux, including
-qualified in-app updates and recovery — reached through the preview-first sequence above: a
-verified tester preview first, device testing on its downloads, one repair batch, then acceptance.
+in-app updates and recovery — reached through the launch sequence above: a natively qualified public
+Beta first, device testing on its downloads, one repair batch, then device acceptance.
 
 ## Phase 5 required outcomes
 

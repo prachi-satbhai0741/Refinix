@@ -247,7 +247,7 @@
       <a href="#proof">Evidence</a>
       <a href="#surfaces">Surfaces</a>
       <a href="#work">What it does</a>
-      <a class="nav-cta nav-keep" href="#get">Downloads</a>
+      <a class="nav-cta nav-keep" href="#get">Download Beta</a>
       <a href="docs.html">Docs</a>
       <a class="nav-keep" href="docs.html#about">About us</a>
     </div>
@@ -278,7 +278,7 @@
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
             </svg>
-            Get the tester preview
+            Download Refinix Beta 0.1
           </a>
           <a class="btn" href="#proof">See the evidence rule</a>
           <a class="btn" href="#surfaces">Explore the surfaces</a>
@@ -298,10 +298,10 @@
 <span class="cmt"># in-app updates also check signed update metadata</span></pre>
             </div>
             <div class="term-panel" id="t-offline" role="tabpanel" aria-labelledby="tb-offline" hidden>
-<pre><span class="cmt"># Ubuntu 24.04: open the .deb with App Center</span>
-<span class="cmt"># it installs what Refinix needs; no terminal setup</span>
-<span class="cmt"># macOS and Windows: unavailable until code signing</span>
-<span class="cmt"># then Settings → Models: download, import or reuse Ollama</span></pre>
+<pre><span class="cmt"># macOS: drag to Applications, then Open Anyway once</span>
+<span class="cmt"># Windows: setup for your account; SmartScreen may warn</span>
+<span class="cmt"># Ubuntu 24.04: open the .deb with App Center</span>
+<span class="cmt"># then setup: download a model, or reuse Ollama's</span></pre>
             </div>
           </div>
         </div>
@@ -655,19 +655,21 @@
         <svg class="lockup-mark" viewBox="0 0 120 120" aria-hidden="true"><use href="#rfx-mark"/></svg>
         <p class="wordmark">REFINIX</p>
       </div>
-      <h2 class="sec-h reveal d1" style="max-width:24ch">GET THE TESTER PREVIEW</h2>
+      <h2 class="sec-h reveal d1" style="max-width:24ch">DOWNLOAD REFINIX BETA 0.1</h2>
       <p class="sec-lede reveal d1">
-        A tester preview is built from a reviewed commit, checked, and published
-        so it can be tried on real devices. It is not an accepted Beta release:
-        each platform says what has and has not been tested.
+        Built from a reviewed commit and checked on hosted test machines for
+        macOS, Windows and Ubuntu. The macOS and Windows packages are not signed
+        by Apple or Microsoft, so your computer warns before the first open; each
+        card says what to expect. Testing on people's own computers is still
+        pending &mdash; please tell us what you see.
       </p>
       <!-- The download cards. scripts/build-site.sh replaces everything between
            these two markers with cards rendered from the release's release.json;
            without a release the line below stays, and nothing is offered. -->
       <!-- refinix-downloads -->
       <div class="builds reveal d2" id="downloads">
-        <p class="dl-none">No tester preview is published yet. Downloads appear here,
-          each with its SHA-256, once one is.</p>
+        <p class="dl-none">Refinix Beta 0.1 is not published yet. Downloads appear here,
+          each with its SHA-256, once it is.</p>
       </div>
       <!-- /refinix-downloads -->
       <div class="cta-row reveal d2">

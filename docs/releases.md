@@ -1,7 +1,8 @@
 # Releases, installation and application updates
 
-Status: standalone Beta scope revised 2026-10-03; distributed architecture retained for post-Beta work.
-Beta publication, platform qualification and updater acceptance remain unaccepted.
+Status: standalone Beta scope revised 2026-10-03; unsigned public Beta policy added 2026-10-10 on the
+user's direction (Refinix Beta 0.1 is published, unsigned on macOS and Windows, before the user's device
+walkthrough). Device acceptance and updater acceptance on people's computers remain unaccepted.
 [PROJECT.md](PROJECT.md) owns scope; [security.md](security.md)
 owns security boundaries. No build, signing, hosting or release action is authorised
 merely by this document.
@@ -50,14 +51,17 @@ is a prototype path, not evidence of signed public installers for all platforms.
 
 | Milestone | Required distribution scope |
 |---|---|
-| Tester preview `0.1.0-preview.N` | Verified, immutable packages published for device testing before acceptance: Ubuntu `.deb`, and macOS/Windows only once signed (otherwise shown as unavailable); labelled "pending device testing"; in-app updates offered between previews (install capability `preview-test`) |
-| Beta 0.1 (accepted) `0.1.0-beta.N` | Qualified standalone workflows on all three OS families, authenticated immutable packages, accepted in-app updates/offline import and tested manual recovery; no unfinished updater |
+| Tester preview `0.1.0-preview.N` | Kept for compatibility (ordering, identity, the `latest-preview.json` pointer and install capability `preview-test`); not used for Beta 0.1 |
+| **Refinix Beta 0.1** `0.1.0-beta.N` (maturity `beta`) | A normal GitHub release of immutable packages for all three OS families, built and natively qualified on hosted runners from one designated `main` commit ([Beta 0.1 publication](#beta-01-publication)); unsigned macOS (ad-hoc sealed) and Windows packages allowed, with each OS's warning shown before download; in-app updates with install capability `provisional`; **device testing pending** on every platform until it is observed and recorded |
+| Beta accepted (device evidence) | The same channel after the user's device walkthrough: a recorded device-acceptance record per platform ([Beta acceptance](#beta-acceptance-device-evidence)) lets a later build carry install capability `qualified`; fixes ship as new immutable versions |
 | Beta 0.2 / 0.3 | Deferred mesh and incremental product improvements; each changed/new profile repeats affected install/workflow/security/update checks |
 | Finals candidate | A rehearsed version with a frozen, evidence-backed claim set; broader capabilities only when accepted |
 | Production-qualified release | Full advertised OS/backend, upgrade/recovery, interoperability and managed-deployment matrices, as applicable |
 
-Use a clearly labelled **Beta channel** initially, with two maturities: tester previews and accepted
-builds. Add a stable channel only when its production gates pass; never label a preview stable.
+Use a clearly labelled **Beta channel** initially, with three maturities: tester previews, the public
+Beta and final. A maturity names the release class only; what was tested travels separately (each
+platform's device-testing state and each package's bound native qualification record), so no label can
+claim an acceptance that was not observed. Add a stable channel only when its production gates pass.
 Display versions such as Beta 0.1 consistently, with one authoritative package
 version and explicit pre-release status. The prototype's existing `0.1.0` value
 is not itself a published Beta. Current scope and sequencing are in
@@ -75,9 +79,10 @@ separate class beside the accepted Beta, never a substitute for it.
 - final source verified and the offline regression suites passing on the designated `main` commit;
 - native builds, and installation smoke checks where a native machine or runner is available;
 - identities, dependencies and final hashes verified (`scripts/release_assemble.py`);
-- each platform's required signing done — Developer ID and notarisation for macOS, Authenticode
-  for Windows. **A platform without it is shown as unavailable, never published unsigned.** Ubuntu
-  packages carry no platform signature (see [Linux authentication](#beta-channel));
+- each platform's signing recorded as it is: Developer ID and notarisation for macOS, or unsigned
+  with an ad-hoc seal that verifies strictly; Authenticode for Windows, or unsigned. Unsigned packages
+  are published with the operating system's warning shown before the download. Ubuntu packages carry
+  no platform signature (see [Linux authentication](#beta-channel));
 - install and update recovery reviewed; no known problem that risks data or breaks a security
   boundary;
 - "pending device testing" labels, limitations and recovery/removal instructions in place.
@@ -98,10 +103,43 @@ device-testing status and limitations before download. A blocked platform is sho
 **unavailable**, never hidden.
 
 <a id="beta-01-publication"></a>
-### Beta 0.1 publication acceptance
+### Beta 0.1 publication
 
-Enable Download Refinix Beta only after the standalone Phase 5 gates in `tasks.md` pass and the user
-accepts the evidence. This scope change grants no profile or updater acceptance. Before enabling the button:
+On the user's direction (2026-10-10), Refinix Beta 0.1 is published **before** the user's device
+walkthrough, and macOS and Windows packages are published **unsigned** when their checks pass. Public
+availability and device acceptance are separate completion records. Before the release is published
+and the website links are enabled, all of these hold, on one designated `main` commit:
+
+1. Offline regression suites pass on that commit, and the commit's native qualification
+   ([`qualify.yml`](../.github/workflows/qualify.yml): unit suites on each OS, release-bytes checks,
+   packaged update/rollback/interrupted-update journeys with synthetic saved work, the Ubuntu
+   sandbox) passed on the same file tree.
+2. [`release.yml`](../.github/workflows/release.yml) builds all three lanes from that commit with the
+   production Beta trust root, and qualifies every package on its exact bytes: the `.deb` with real
+   dpkg/APT and a scratch-data launch, the Windows setup inside the real install job with file list,
+   registration, scratch-data launch and uninstall, the Mac DMG and ZIP (strict ad-hoc seal, same app,
+   every binary's minimum macOS at or below the declared minimum, scratch-data launch) and the same
+   Mac bytes launched again on the oldest free arm64 macOS runner.
+3. [`release_assemble.py`](../scripts/release_assemble.py) refuses unless every published file is
+   named, byte for byte, by a passing native qualification record, identities agree, no file is a
+   private `--scratch` build and every file name is plain.
+4. Draft release → uploaded names and sizes checked → published as a **normal** GitHub release
+   (not a prerelease). Feed targets staged offline; [`advance-feed.yml`](../deploy/distribution/workflows/advance-feed.yml)
+   downloads each asset anonymously, checks its size, SHA-256 and final download host, signs, deploys
+   exactly the signed commit and passes only when the live feed and site are exactly that commit's.
+5. [`verify-public.yml`](../.github/workflows/verify-public.yml) downloads every file from the live
+   website without credentials, matches `SHA256SUMS`, and installs and starts the published bytes on
+   each OS's runner.
+
+Hosted runners are not people's computers: Beta 0.1's device testing stays **pending** on every
+platform, and its in-app installs are `provisional`, until the walkthrough below records otherwise.
+
+<a id="beta-acceptance-device-evidence"></a>
+### Beta acceptance (device evidence)
+
+Recorded after the user's device walkthrough, per platform; it grants `qualified` install capability to
+later builds of accepted source and changes the website's device-testing state. The checklist below
+remains the acceptance content:
 
 1. Select and publish an exact OS/edition/architecture/backend/capability matrix,
    minimum measured resources, model/download sizes, prerequisites and limitations.
@@ -111,8 +149,9 @@ accepts the evidence. This scope change grants no profile or updater acceptance.
    on other profiles. No required Beta workflow or installation depends on a peer or managed sandbox.
 2. Build an immutable package for each selected OS profile from the designated commit/version. Verify final
    shipped source/resources, dependency and model manifests, notices, integrity,
-   publisher authentication and platform signing/notarisation where required.
-   An ad-hoc prototype signature is insufficient public distribution evidence.
+   publisher authentication, and each platform's signing recorded as it is. For the Beta,
+   unsigned macOS and Windows packages are allowed (user direction, 2026-10-10); an ad-hoc seal
+   is integrity evidence, not Developer ID or notarisation.
 3. A nondeveloper completes website → download → install → hardware detection →
    model choice/download or supported offline import → self-test → real work.
    Exercise later Settings → Models management and all applicable local install/workflow/security
@@ -243,15 +282,14 @@ Implemented in source (8 October 2026); not yet exercised against live hosting.
 | Step | Where | What |
 |---|---|---|
 | Version | reviewed `main` commit | `0.1.0-preview.N` / `0.1.0-beta.N` / `0.1.0`, public build number N above every earlier build of that lane — internal builds included, since macOS orders apps by `CFBundleVersion` (internal builds 1–6 already exist, so the first public build is 7 or higher); [release identity](../backend/coordinator/release.py) gives one ordering key and its Debian (`X.Y.Z~R.S`), macOS (`CFBundleVersion` N) and Windows (`X.Y.Z.N`) forms |
-| Windows, Ubuntu | [`release.yml`](../.github/workflows/release.yml), manual, `contents: read`, hosted runners | refuses unless started from `main` at the designated commit; builds with the committed Beta trust root and feed (`desktop/updates/beta-*.json`); Authenticode signing only in the `beta-sign` environment; the Ubuntu job runs the native `.deb` qualification ([`qualify_deb.py`](../scripts/qualify_deb.py)); outputs workflow artifacts only |
-| macOS | the release Mac, `desktop/build.py --channel beta --signing release` | clean checkout of the designated commit; inside-out Developer ID signing with the hardened runtime ([entitlements](../desktop/macos/entitlements.plist)), engine binaries signed before their manifest is written, notarise and staple the app, re-zip it as the update payload, build the DMG from the same stapled app, then sign, notarise and staple the DMG |
-| Assemble | locally, [`release_assemble.py`](../scripts/release_assemble.py) | the run's commit/event/workflow/conclusion; every lane's identity agrees (shared snapshot digest ties the Mac lane to CI); bytes re-hashed; Mac Team ID, stapled ticket and Gatekeeper on a quarantined copy; the Ubuntu qualification report; unsigned macOS/Windows marked unavailable; writes `SHA256SUMS`, `release.json`, release notes and the exact owner commands; [`build-site.sh`](../scripts/build-site.sh) renders the website's download cards from `release.json`, offering a file only from that release's own download folder with its SHA-256 |
-| Release assets | GitHub release on the source repository | draft → verify → publish (prerelease for previews); immutable once published |
-| Feed | the website repository (`refinix.runs-on.dev/updates/beta/`), Pages deployed by GitHub Actions | targets signed offline on the release Mac (`update_repository.py stage`); then [`advance-feed.yml`](../deploy/distribution/workflows/advance-feed.yml), behind a required reviewer, downloads each new asset anonymously, checks size and SHA-256, signs snapshot and timestamp, commits, deploys exactly that commit and reads the live feed back |
+| macOS, Windows, Ubuntu | [`release.yml`](../.github/workflows/release.yml), manual, `contents: read`, hosted runners (macOS 15 arm64, Windows Server 2025, Ubuntu 24.04) | refuses unless started from `main` at the designated commit; every public build is a clean checkout of that commit (`--scratch` builds are never publishable); builds with the committed Beta trust root and feed (`desktop/updates/beta-*.json`) and the [pinned Python](../desktop/python_runtime.py) (python.org 3.13 installers, verified, on macOS and Windows; Ubuntu's python3.12); the macOS app is sealed ad hoc (or Developer ID signed and notarised when that is set up); Authenticode signing only in the `beta-sign` environment; every package qualified natively on its exact bytes ([`qualify_deb.py`](../scripts/qualify_deb.py), [`qualify_windows.py`](../scripts/qualify_windows.py), [`qualify_macos.py`](../scripts/qualify_macos.py), [record format](../scripts/qualification_record.py)); the Mac bytes run again on the oldest free arm64 macOS runner; outputs workflow artifacts only |
+| Assemble | locally, [`release_assemble.py`](../scripts/release_assemble.py) | the run's commit/event/workflow/conclusion; every lane's identity agrees and is publishable; bytes re-hashed; plain file names; each lane's signing one it allows (unsigned recorded, never hidden); for unsigned Mac files a strict ad-hoc seal check of the app in the ZIP and in the mounted DMG and `hdiutil verify`, for Developer ID the Team ID, stapled ticket and Gatekeeper on a quarantined copy; every published file bound to a passing native qualification record; writes `SHA256SUMS`, `release.json` (with each platform's signing, OS warning, minimum OS and device-testing state), release notes and the exact publication commands; [`build-site.sh`](../scripts/build-site.sh) renders the website's download cards from `release.json`, showing minimum OS, warning and device-testing state before each first-install download |
+| Release assets | GitHub release on the source repository | draft → verify uploaded names and sizes → publish (a normal release for the Beta; prerelease for previews); immutable once published |
+| Feed | the website repository (`refinix.runs-on.dev/updates/beta/`), Pages deployed by GitHub Actions | targets signed offline on the release Mac (`update_repository.py stage`, which refuses a package without its bound qualification record); then [`advance-feed.yml`](../deploy/distribution/workflows/advance-feed.yml), behind a required reviewer, downloads each new asset anonymously, checks size, SHA-256 and that the download ends on a host installed clients accept, signs snapshot and timestamp, commits, deploys exactly that commit and passes only when the live feed (`update_repository.py expected` → `verify --expect`) and the live site and downloads are exactly that commit's |
 
 **Feed rules.** Consistent snapshots; every file immutable except `timestamp.json`; versions only
-increase; a published package target is never changed or dropped; an accepted release carries every
-lane, a preview may carry only the ready ones. All feed writers and site deploys share one queue
+increase; a published package target is never changed or dropped; a Beta or final release carries
+every lane, a preview may carry only the ready ones. All feed writers and site deploys share one queue
 (`beta-feed`); a deploy never replaces a newer tree. Failure before the commit changes nothing;
 after it, redeploy the same commit or fix forward with higher versions — **never restore older
 metadata**. Withdrawing an offer is a new targets version whose pointer names the previous build.
@@ -367,7 +405,7 @@ self-modify arbitrary source files or execute scripts from a mutable branch.
 
 Adopted: TUF metadata through python-tuf 7.0.1's client (Apache-2.0 OR MIT; verification only in
 the app, pure-Python Ed25519), with consistent snapshots and two signed pointers per lane
-(`latest.json` accepted, `latest-preview.json` previews). Packages are release assets fetched
+(`latest.json` Beta and final, `latest-preview.json` previews). Packages are release assets fetched
 through the public TUF calls (`get_targetinfo`, the fetcher, `verify_length_and_hashes`); only those
 downloads may follow HTTPS redirects, at most three, and only to hosts listed in the package's feed
 configuration (`release-assets.githubusercontent.com`, observed by an anonymous request). Metadata

@@ -1,7 +1,7 @@
 # Website and Beta update feed — the distribution repository
 
 `refinix.runs-on.dev` is served by GitHub Pages from the website repository
-(`vedantsur09/refinix-site`). From the first tester preview on, that one repository serves the
+(`vedantsur09/refinix-site`). From Refinix Beta 0.1 on, that one repository serves the
 website **and** the Beta update feed (`/updates/beta/`), from one committed tree, so the site and
 the feed can never disagree. Release assets themselves are GitHub releases of the source
 repository (`prachi-satbhai0741/Refinix`).
@@ -12,8 +12,8 @@ website repository's owner copies them into that repository's `.github/workflows
 | Template | Runs | Does |
 |---|---|---|
 | [`deploy-site.yml`](workflows/deploy-site.yml) | a person's push to `main`, or by hand | deploys the head of `main` to Pages; skips if `main` moved (a newer run deploys) |
-| [`advance-feed.yml`](workflows/advance-feed.yml) | by hand, after a required reviewer approves | checks the staged targets, downloads each new release asset anonymously and checks it, signs snapshot + timestamp, commits, deploys exactly that commit, reads the live feed back |
-| [`refresh-feed.yml`](workflows/refresh-feed.yml) | daily and by hand | re-signs the timestamp (and a low snapshot), commits, deploys, reads back, opens an issue when something fails or expiry is near |
+| [`advance-feed.yml`](workflows/advance-feed.yml) | by hand, after a required reviewer approves | checks the staged targets, downloads each new release asset anonymously and checks its size, SHA-256 and final download host, signs snapshot + timestamp, commits, deploys exactly that commit, then passes only when the live feed, page, `release.json` and every download are exactly that commit's (`update_repository.py expected` → `verify --expect`, `scripts/verify_public.py`) |
+| [`refresh-feed.yml`](workflows/refresh-feed.yml) | daily and by hand | re-signs the timestamp (and a low snapshot), commits, deploys, passes only when the live feed is exactly the new commit's and fresh, opens an issue when something fails or expiry is near |
 
 All three share the `beta-feed` queue. See [`docs/releases.md`](../../docs/releases.md#beta-channel)
 for the rules (immutable files, forward-only versions, fix forward, key custody).

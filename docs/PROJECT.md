@@ -7,11 +7,11 @@
 | Product | Refinix |
 | Repository | `prachi-satbhai0741/Refinix` (public); website `refinix.runs-on.dev` |
 | Product target | Installable offline-first desktop AI workbench for Windows, macOS and Linux |
-| Current release direction | Refinix Beta 0.1: a tester preview (`0.1.0-preview.N`) published for device testing first, then accepted Beta builds (`0.1.0-beta.N`); further Beta and production work follow |
-| Install routes | Ubuntu 24.04 `.deb` (App Center); macOS DMG (first install) with ZIP update payloads; Windows 11 per-user setup. A platform without its required code signing (Developer ID, Authenticode) is shown as unavailable, never published unsigned — see [`releases.md`](releases.md) |
-| Preview vs accepted | A tester preview is verified and published so it can be tried on devices; it is not accepted. Accepted builds never receive previews; previews may move on to accepted builds (one ordering key, [`releases.md`](releases.md)) |
+| Current release direction | **Refinix Beta 0.1** (`0.1.0-beta.N`, a normal GitHub release), published before the user's device walkthrough on the user's direction of 2026-10-10; device testing stays pending until it is recorded; fixes ship as new immutable versions |
+| Install routes | Ubuntu 24.04 `.deb` (App Center); macOS DMG (first install) with ZIP update payloads; Windows 11 per-user setup. macOS and Windows packages are published unsigned (macOS sealed ad hoc), with each OS's warning shown before download; paid platform signing is not a Beta prerequisite — see [`releases.md`](releases.md) |
+| Maturity vs evidence | A version's maturity (preview, beta, final) names its release class only. Native qualification of each package's exact bytes, and device acceptance per platform, are recorded separately; no label claims an acceptance that was not observed ([`releases.md`](releases.md)) |
 | Beta 0.1 scope | Standalone Windows/macOS/Linux application, broad compatible local models, automatic task-to-model routing and user-initiated in-app updates; trusted-device mesh follows after Beta |
-| Status | Production direction recorded; implementation, verification and release acceptance remain separate |
+| Status | Beta 0.1 implemented; native qualification on hosted runners and publication follow the gates in [`releases.md`](releases.md#beta-01-publication); device acceptance pending |
 
 This file is the **single current product/architecture/workflow authority** for Refinix. It
 consolidates the active requirements that were previously spread across `docs/prd.md`,

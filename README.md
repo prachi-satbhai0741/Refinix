@@ -8,9 +8,43 @@
 
 Work with selected internal information using local models, controlled workflows, and reviewable outputs. Refinix keeps workspace state and action authority with the coordinator that owns the task.
 
-[How it works](#how-refinix-works) · [Architecture](#architecture) · [Security boundary](#security-and-trust-boundary) · [Quick start](#quick-start)
+[Download](#download-refinix-beta-01) · [Screenshots](#a-look-at-refinix) · [How it works](#how-refinix-works) · [Architecture](#architecture) · [Security boundary](#security-and-trust-boundary) · [Developer setup](#developer-setup-from-source)
 
 </div>
+
+## Download Refinix Beta 0.1
+
+Refinix Beta 0.1 is a desktop app for Apple-silicon Macs, Windows 11 (x64) and Ubuntu 24.04 (x86_64). Download it from the **[Refinix website](https://refinix.runs-on.dev/#get)**; every file is also on the [GitHub release page](https://github.com/prachi-satbhai0741/Refinix/releases) with its SHA-256 in `SHA256SUMS`.
+
+| Your computer | Download | First open |
+|---|---|---|
+| Mac with Apple silicon (M1 or later) | `Refinix-…-macos-arm64.dmg` — drag Refinix to Applications | The app is **not signed or notarised by Apple**, so macOS blocks the first open. Open **System Settings → Privacy & Security**, choose **Open Anyway** for Refinix, then confirm. |
+| Windows 11, x64 | `Refinix-…-windows-x64-setup.exe` — installs for your account only, no administrator password | The setup is **not code-signed**. Microsoft Defender SmartScreen may warn: choose **More info → Run anyway**. With **Smart App Control** turned on, Windows blocks unsigned programs and this setup cannot be installed; Refinix does not ask you to turn that protection off. |
+| Ubuntu 24.04, x86_64 | `refinix_…_amd64.deb` — open it with App Center | Ubuntu packages carry no platform signature; App Center asks for your password and installs the GTK/WebKitGTK parts Refinix needs. |
+
+The download card for each platform shows the minimum system measured for that build. Check a file before opening it with `shasum -a 256 <file>` (macOS), `Get-FileHash <file>` (Windows) or `sha256sum <file>` (Ubuntu), and compare it with `SHA256SUMS`.
+
+**What this Beta is.** It is built from a reviewed commit. Before publication each package was installed and started on GitHub-hosted test machines (Windows Server, Ubuntu 24.04 and macOS runners), and updating, undoing a failed update and recovering an interrupted one were exercised there with test builds of the same source. **Testing on people's own computers is still pending**; please report what you see. It is a student-maintained, open-source project, not a product approved by Apple or Microsoft.
+
+**First run.** A graphical setup checks the computer and recommends a local model. If you already use [Ollama](https://ollama.com), Refinix can use the models you have installed without downloading them again. Otherwise it downloads Refinix's managed model when you ask — the recommended 4B model with its vision file is about 3.4 GB — and runs it with a bundled llama.cpp engine on this computer. The team's measurements were made on 16 GB machines; the setup recommends what fits yours, and you can choose differently.
+
+**Updates and recovery.** Refinix checks for updates only when you ask. An update is verified against Refinix's signed update metadata before anything is installed, your conversations, documents and settings are kept, and the previous version is kept for going back if the new one does not start. On Ubuntu each install step asks for your administrator password.
+
+**Uninstalling.** Move Refinix to the Bin (macOS), use Settings → Apps (Windows) or App Center (Ubuntu). Your saved work is not deleted with the app; it stays in `~/Library/Application Support/Refinix` (macOS), `%LOCALAPPDATA%\Refinix` (Windows) or `~/.local/share/refinix` (Ubuntu) until you remove it.
+
+**Still experimental.** Reading scans and pictures (OCR) is labelled Beta and needs a local vision model. Running a Code change's tests in a sandbox is available only on Ubuntu, provisionally; elsewhere Code changes are applied with the label "not sandbox tested". Working across several computers is not part of this Beta.
+
+**Help and reports.** Open an issue at [github.com/prachi-satbhai0741/Refinix/issues](https://github.com/prachi-satbhai0741/Refinix/issues) with your operating system and version, the Refinix version (Settings → Updates) and the message you saw. Please do not attach private documents.
+
+## A look at Refinix
+
+Real screenshots of the Refinix interface from this source, answering with Ollama's `qwen3.5:4b-q4_K_M` on a 16 GB Apple-silicon Mac, with synthetic example content (an invented pump-monitor project and inspection report). The window frame is not shown.
+
+| Chat | Documents |
+|---|---|
+| ![Chat with a local model](docs/images/refinix-chat.png) | ![A document answer with source references](docs/images/refinix-documents.png) |
+| **Code** | **Settings and setup** |
+| ![A reviewable Code change](docs/images/refinix-code.png) | ![Model setup and updates in Settings](docs/images/refinix-settings.png) |
 
 ## Why Refinix
 
@@ -59,7 +93,7 @@ flowchart TD
 
 1. **Establish the task boundary.** The coordinator records the request and a job. A document request binds its selected sources; Code binds a connected repository and selected files. Instructions inside those files remain untrusted task data.
 2. **Prepare useful context.** Saved conversation history is selected within a context budget. Document extraction preserves source identity and page associations; keyword retrieval finds passages from the selected documents. A bounded prompt can omit context without deleting saved history.
-3. **Execute the eligible path.** Model steps use the configured workflow model, runtime settings, and capability/profile checks. Some operations, including keyword search and copying a completed answer into a document, need no new model generation. Automatic task-to-model routing is a target capability.
+3. **Execute the eligible path.** Model steps use the configured workflow model, runtime settings, and capability/profile checks. Some operations, including keyword search and copying a completed answer into a document, need no new model generation. Unless the person picked a model, the coordinator chooses one automatically from the task's needs and the compatible models installed on this computer, and records the choice and its reason.
 4. **Check and deliver.** Validators check the relevant structure, paths, hashes, references, or artifact format. File changes and artifact export follow their action policy. Attempts and events retain the result, failures, and available evidence.
 
 ## From an inspection report to an approval-note draft
@@ -135,7 +169,7 @@ flowchart TB
 
 The coordinator holds the canonical request, conversation, approvals, and final-write authority. Redis carries disposable coordination state in the managed-worker profile; it is not the workspace database. Worker results return to the coordinator for acceptance.
 
-The two runtime adapters serve different current installation paths. Source checkouts can use an existing local Ollama service. Managed-engine builds use pinned llama.cpp files, checked before launch, with a loopback listener and a per-launch API key. The broader product direction makes model origin choose between these paths without duplicating Ollama weights.
+The two runtime adapters serve both installation paths. Models already installed in a local Ollama are used through Ollama's own local API, without copying their weights. Models Refinix downloads run on its managed llama.cpp engine: pinned files, checked before launch, with a loopback listener and a per-launch API key. A model's origin decides which engine runs it.
 
 The current curated model artifacts are `qwen3.5:4b-q4_K_M` for Ollama and a pinned Unsloth Qwen3.5 4B Q4_K_M GGUF with a vision projector for the managed engine. Their source revisions, licences, hashes, and workflow evidence are recorded separately in the [model catalogue](docs/model-catalog.md). The catalogue does not imply that every capability is ready on every computer.
 
@@ -175,7 +209,7 @@ The boundary is defined by what each component can read, send, and write.
 | Model to files | Strict output parsing and selected-path/base-hash checks. The coordinator applies the access policy; model output cannot approve itself. |
 | Artifact to user | Generated files remain in local artifact storage until a recorded, single-use export approval bound to the digest allows a copy out. |
 | Coordinator to worker | The retained path uses pairing credentials, pinned TLS identity, bounded task packages, and receiver checks. Pairing does not merge workspaces or grant final-write authority. |
-| Code to execution environment | Retained Kubernetes validation jobs have restricted resources and network policy. Standalone desktop sandbox support still needs qualification per offered profile. |
+| Code to execution environment | On Ubuntu, a provisional sandbox runs the selected tests in a transient systemd user service with no network, Landlock-confined files and capped resources; a pass is bound to the exact inputs. macOS and Windows have no desktop sandbox in this Beta. Retained Kubernetes validation jobs have restricted resources and network policy. |
 | Setup to upstream sources | Model downloads and update checks are user initiated. Managed files have recorded provenance and integrity checks. Connected setup is distinct from ordinary task execution. |
 
 Canonical state lives in SQLite and adjacent local storage outside replaceable application files. The path resolver supports platform data roots, an explicit portable root, and legacy `.aegisforge` state without silently relocating it. Selected Code files remain in the connected repository; writes there use the Code policy and recovery records.
@@ -194,16 +228,16 @@ Evidence has a scope. A missing observation stays **unavailable**. A validation 
 
 ## Current Implementation
 
-The repository contains a working macOS-first prototype and portable foundation work. Its current paths include local Chat, request-bound document reading/search, document generation, Code proposals and Apply/Undo, durable state and recovery, model management, and Proof Cards.
+Refinix Beta 0.1 is a standalone desktop app for macOS, Windows and Ubuntu. Its current paths include local Chat, request-bound document reading/search, document generation, Code proposals and Apply/Undo, durable state and recovery, model management, signed in-app updates, and Proof Cards.
 
 | State | What the checkout contains |
 |---|---|
-| Implemented paths | Native shell and served UI; local runtime adapters; persisted conversations/jobs; FTS5 retrieval; DOCX artifacts; Code policy, proposals, backups, and approvals. Availability still depends on the installed runtime and capability/profile checks. |
-| Conditional or partial | Structured document workflows need an eligible profile. Scan/image reading needs a local vision model. PDF generation uses macOS frameworks. Package and update tooling exists, with acceptance still pending. |
-| Retained prototype infrastructure | Worker API/executor, pairing/revocation, Redis coordination, and Kubernetes validation. Broader desktop-peer placement is deferred from the first Beta. |
-| Target capabilities | Automatic local model assignment, broader compatible model discovery/admission, complete standalone packages across Windows/macOS/Linux, qualified local sandbox profiles, and governed organizational retrieval. |
+| Implemented paths | Native shell and served UI; Ollama reuse and the managed llama.cpp engine; automatic local model choice; compatible-model admission with conservative bounds; persisted conversations/jobs; FTS5 retrieval; DOCX artifacts; Code policy, proposals, backups, approvals and Undo; signed, user-initiated updates with recovery on all three platforms. Availability still depends on the installed models and this computer's capacity. |
+| Beta-labelled or provisional | Scan/image reading needs a local vision model and is labelled Beta. The Ubuntu Code sandbox is provisional; macOS and Windows have none. PDF generation uses macOS frameworks. Installing updates is checked on hosted test machines; testing on people's own computers is pending. |
+| Retained prototype infrastructure | Worker API/executor, pairing/revocation, Redis coordination, and Kubernetes validation. Working across several computers is deferred from the first Beta. |
+| Target capabilities | Device-accepted packages, qualified sandbox profiles beyond the provisional Ubuntu one, and governed organizational retrieval. |
 
-Installed weights can currently be refused when no checked execution profile exists for that runtime/hardware/workflow combination. The current product contract calls for replacing blanket measurement gates with actual compatibility, locality, capacity, and policy checks. That change is pending.
+A model the team never measured can still run on the computer that owns the workspace when its runtime says it can do the work; it gets conservative context and reply limits and is labelled as checked here rather than measured. Exact measured profiles are used when they exist.
 
 Synthetic fixtures and frontend test surfaces are available for verification. They are distinct from ordinary application inference and do not establish customer deployments or model accuracy.
 
@@ -246,9 +280,11 @@ The [project contract](docs/PROJECT.md), [model catalogue](docs/model-catalog.md
 
 These describe product workflows and intended organizational use, not reported customer installations.
 
-## Quick start
+## Developer setup (from source)
 
-Run commands from the repository root. This is a **developer source setup**. Use Python 3.12 for the current desktop packaging profiles; CI separately exercises Python 3.13. A native window also requires the platform's WebView dependencies. Inference needs compatible local weights and an eligible runtime/profile.
+To use Refinix, [download it](#download-refinix-beta-01) instead. This section is for working on the source.
+
+Run commands from the repository root. This is a **developer source setup**. Release packages build with Python 3.13 on macOS and Windows (python.org's installers) and Ubuntu's Python 3.12; source development works with either. A native window also requires the platform's WebView dependencies. Inference needs compatible local weights and an eligible runtime/profile.
 
 Create an environment:
 

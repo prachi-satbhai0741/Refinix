@@ -360,9 +360,20 @@ validation in Beta and say so.
   staged copies against the reviewed digests before running `python3 -I -m unittest`; output is
   capped.
 - **Binding:** a local result is bound to the proposal digest, the staged-input digest, the command
-  and the profile. Apply relies on a pass only when all four match. After a failed or mismatched
-  run, applying without the sandbox is a separate, explicit, audited choice; a failure is never
-  turned into a pass.
+  and the profile. Apply relies on a pass only when all four match **and**, immediately before the
+  write record is created, every selected file — the edited ones and the unedited tests and context
+  the sandbox ran — still has exactly the bytes that were validated; a changed, missing or replaced
+  input voids the pass (`validation_stale`). After a failed, mismatched or stale run, applying without
+  the sandbox is a separate, explicit, audited choice; a failure is never turned into a pass.
+- **Pass, Cancel and deadline:** a pass needs the launcher's closing report marked with the run's own
+  code (which the tests cannot read) and a normal service exit. Output is read on its own thread, so
+  Cancel and the deadline are checked every 0.1 s whether or not the tests print anything; both stop
+  the whole service. Inside the service `kill` is denied, so at its own limit the launcher reports and
+  exits and systemd ends what is left.
+- **Cleanup:** a run's journal record is dropped only once its service is confirmed stopped and its
+  storage confirmed unmounted and detached; otherwise the record is kept with what failed, retried at
+  the next start and before the next run, and no new validation starts while a workspace is still
+  mounted. Only the run's own unit, mount and loop device are touched.
 - **"No sockets"** is claimed only as a property of the complete policy plus the qualification
   tests, never of `RestrictAddressFamilies=none` alone.
 - **Status:** provisional. Landlock was observed enforced (ABI 8) in a Linux container; the systemd,
@@ -404,11 +415,21 @@ accepted in the reproducible demo path.
   contract. A commit on main or a successful CI run is not a published update.
 - Published artifacts are immutable, versioned, hashed and authenticated by a
   qualified signing/update mechanism. A checksum alone proves no publisher identity.
+  Refinix Beta 0.1's macOS and Windows packages carry no Apple or Microsoft publisher
+  signature (user direction, 2026-10-10): first downloads are authenticated by HTTPS from the
+  release page and the published SHA-256, the macOS app's ad-hoc seal is checked strictly as
+  integrity evidence (not Developer ID or notarisation), each OS's warning is shown before
+  download, and in-app updates are authenticated by the Beta TUF root embedded in the package.
 - Authenticate metadata and packages against the installed trust root; enforce
   platform/version compatibility and reject unauthorised downgrade/replay. Key
   rotation, compromised-key recovery and stale metadata need documented behaviour.
 - Qualify platform signing/notarisation and updater packaging on each supported
-  OS/edition. Ad-hoc/unsigned prototypes are labelled and are not release proof.
+  OS/edition before claiming them. Unsigned Beta packages are labelled unsigned everywhere they
+  appear (release.json, cards, notes, Settings) and are never presented as signed.
+- Every published package carries a native qualification record bound to its exact name,
+  size, SHA-256 and embedded identity; a private `--scratch` test build is never published.
+  Private test builds alone accept the token-gated qualification control
+  (`desktop/qualify_control.py`); a publishable package ignores it.
 - Signing credentials remain outside source control/build artifacts and are
   available only to authorised release jobs, never untrusted pull-request code.
 - Staging, interruption, low disk space, active jobs, migrations and recovery must

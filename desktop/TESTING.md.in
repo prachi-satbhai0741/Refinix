@@ -25,9 +25,11 @@ No source checkout, Python or compiler is needed.
 
 @PREREQUISITES@
 
-- Free disk space: about 4 GB for the main model, plus room for your work.
-- Models are not inside this package. Download one in Settings → Models, or import
-  the internal model bundle you were given.
+- Free disk space: about 3.4 GB for the recommended 4B model with its vision file, plus
+  room for your work. Models you already have in Ollama are used where they are, with
+  no second download.
+- Models are not inside this package. The first-run setup offers to download one,
+  reuse Ollama's, or import a model file.
 
 ## What to record
 
