@@ -91,7 +91,7 @@ jobs:
         if: matrix.lane == 'linux-x64'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xauth dbus dbus-x11 \
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus dbus-x11 \
             python3-venv
       - name: Download this platform's files from the live website, anonymously
         run: |
@@ -102,7 +102,7 @@ jobs:
         if: matrix.lane == 'linux-x64'
         run: |
           deb=$(ls public/refinix_*_amd64.deb)
-          sudo apt-get install -y "./$deb"
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "./$deb"
           python3 - <<'PY'
           import sys; sys.path.insert(0, ".")
           from pathlib import Path
