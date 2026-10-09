@@ -24,7 +24,8 @@ bounds APT index fetches and installation, with one authenticated official-mirro
 **Local offline evidence:** Python 3.14.6 on the development Mac, using an isolated temporary
 environment with repository hash-pinned test dependencies and the existing Pydantic environment;
 Node for the frontend. Coordinator: 1,656 tests, OK (16 skipped); desktop: 253 tests, OK (6 skipped);
-scripts: 75 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. The focused recovery/CI/public
+scripts: 75 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. Worker: 217 tests, OK;
+deployment fixtures: 140 tests, OK; C07 fixtures: 32 tests, OK. The focused recovery/CI/public
 regressions passed 73 tests. `actionlint` passed on all four changed workflows and
 `git diff --check` was clean. Initial broad runs were blocked by the tool sandbox's loopback
 restriction and a missing test dependency; the approved temporary environment resolved both.
@@ -35,6 +36,15 @@ tested `bbf54225d132b78276f3013f80a531dd00eafae3`, before these repairs. Windows
 tests (Linux-only import and process-count assumption); package/install journeys were skipped.
 Linux was cancelled after stalling on the Azure Ubuntu APT mirror, before any build. The Mac lane
 reported success under the older summary gate; this does not qualify the repaired tree.
+
+**First repair qualification:** [37988624319](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37988624319)
+tested `0aa4645c49cd6da025b05df83a362c49a4d0b3fe`. Linux APT setup passed in 18 seconds and both
+packages built; the next checks exposed inherited system AWS/OpenSSL packages conflicting with
+the pinned cryptography library. Windows native units passed, both installers built, and package
+install/file-list/registration/uninstall passed; the launch check timed out while the app served
+requests. The follow-up isolates Ubuntu's `gi`/`cairo` bindings and allows 10 seconds for a status
+response in both package and journey checks. Regressions cover toolkit isolation, missing bindings
+and delayed status responses without accepting a different data root. Native rerun is pending.
 
 **Remaining:** fresh hosted qualification of one repaired commit on Windows Server 2025, Ubuntu
 24.04 and macOS 15/14; production Beta keys/root, member → dev → main, release-byte qualification

@@ -87,7 +87,8 @@ def _find(root: Path) -> tuple[int | None, dict | None]:
     except (OSError, ValueError):
         pass
     for port in ports:
-        status = _status(port, timeout=1.5)
+        # Status includes bounded runtime probes; Windows can take several seconds.
+        status = _status(port, timeout=10)
         reported = ((status or {}).get("process") or {}).get("data_root")
         if reported and Path(reported).resolve() == root:
             return port, status

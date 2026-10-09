@@ -41,11 +41,21 @@ runs:
         VENV: ${{ inputs.venv }}
       run: |
         set -euo pipefail
+        "$REFINIX_PYTHON" -m venv "$VENV"
         if [ "$LANE" = "linux-x64" ]; then
-          # The GTK/WebKitGTK bindings come from Ubuntu's python3-gi package.
-          "$REFINIX_PYTHON" -m venv --system-site-packages "$VENV"
-        else
-          "$REFINIX_PYTHON" -m venv "$VENV"
+          # Share Ubuntu's GTK bindings only, not unrelated runner libraries.
+          "$VENV/bin/python" - <<'PY'
+        import sysconfig
+        from pathlib import Path
+        system = Path("/usr/lib/python3/dist-packages")
+        destination = Path(sysconfig.get_path("purelib"))
+        for name in ("gi", "cairo"):
+            source = system / name
+            if not source.is_dir():
+                raise SystemExit(f"Ubuntu binding missing: {source}")
+            (destination / name).symlink_to(source, target_is_directory=True)
+        PY
+          "$VENV/bin/python" -c 'import gi, cairo'
         fi
         if [ "$RUNNER_OS" = "Windows" ]; then
           echo "$VENV/Scripts" >> "$GITHUB_PATH"

@@ -150,7 +150,7 @@ def http(port: int, method: str, path: str, body: dict | None = None, timeout=10
 def find(data_root: Path) -> tuple[int | None, dict | None]:
     for port in PORTS:
         try:
-            status = http(port, "GET", "/v1/status", timeout=1.5)
+            status = http(port, "GET", "/v1/status", timeout=10)
         except (OSError, ValueError):
             continue
         if Path((status.get("process") or {}).get("data_root") or "").resolve() == data_root:

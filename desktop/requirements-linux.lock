@@ -1,8 +1,8 @@
 # Ubuntu 24.04 x86_64. The GTK/WebKitGTK bindings come from the distribution
 # (python3-gi, python3-gi-cairo, gir1.2-webkit2-4.1), installed with apt on the
-# build host and used through a virtual environment created by the system
-# CPython 3.12 with --system-site-packages, so the bundled bindings match the
-# GTK and WebKitGTK the application runs against. Their exact package versions
+# build host and linked individually into an isolated system-CPython 3.12
+# virtual environment, so unrelated system Python libraries cannot leak in.
+# The bindings match the GTK and WebKitGTK the application runs against. Exact package versions
 # are recorded in each build manifest. Everything else is hash-pinned here.
 # Digests read 2026-10-04.
 -r ../backend/requirements-runtime.lock

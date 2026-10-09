@@ -20,6 +20,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
 WORKFLOWS = REPO / ".github" / "workflows"
@@ -66,6 +67,32 @@ class TestPins(unittest.TestCase):
                 env = re.search(r"^    env:\n((?:      .*\n)+)", block + "\n", re.M)
                 with self.subTest(file=path.name, job=name):
                     self.assertNotIn("runner.", env.group(1) if env else "")
+
+    def test_ubuntu_exposes_only_its_toolkit_bindings(self):
+        action = (REPO / ".github/actions/refinix-python/action.yml").read_text()
+        self.assertNotIn("--system-site-packages", action)
+        code = textwrap.dedent(action.split("<<'PY'\n", 1)[1].split("\n        PY", 1)[0])
+        with tempfile.TemporaryDirectory() as folder:
+            system, destination = Path(folder) / "system", Path(folder) / "venv"
+            system.mkdir()
+            destination.mkdir()
+            for name in ("gi", "cairo", "boto3", "OpenSSL"):
+                (system / name).mkdir()
+            def paths(value):
+                return system if value == "/usr/lib/python3/dist-packages" else Path(value)
+            with patch("pathlib.Path", side_effect=paths), \
+                    patch("sysconfig.get_path", return_value=str(destination)):
+                exec(code, {})
+            self.assertEqual({p.name for p in destination.iterdir()}, {"gi", "cairo"})
+            for name in ("gi", "cairo"):
+                self.assertEqual((destination / name).resolve(), (system / name).resolve())
+            (system / "cairo").rmdir()
+            destination = Path(folder) / "missing-binding"
+            destination.mkdir()
+            with patch("pathlib.Path", side_effect=paths), \
+                    patch("sysconfig.get_path", return_value=str(destination)), \
+                    self.assertRaisesRegex(SystemExit, "Ubuntu binding missing"):
+                exec(code, {})
 
 
 class TestBetaPackages(unittest.TestCase):

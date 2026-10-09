@@ -4,14 +4,46 @@ import io
 import json
 import os
 import tempfile
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts import qualification_record, qualify_macos, qualify_windows, verify_public
+from scripts import (qualification_record, qualify_macos, qualify_package_launch,
+                     qualify_update_journey, qualify_windows, verify_public)
 
 
 class TestPublicVersion(unittest.TestCase):
+    def test_launch_and_journey_wait_for_a_slow_status_but_require_the_scratch_root(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            status = {"process": {"data_root": str(root)}, "build": {"version": "fixture"}}
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    time.sleep(2)
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(json.dumps(status).encode())
+                def log_message(self, *args):
+                    pass
+            server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_port
+                for module, find in ((qualify_package_launch, qualify_package_launch._find),
+                                     (qualify_update_journey, qualify_update_journey.find)):
+                    with self.subTest(module=module.__name__), \
+                            patch.object(module, "PORTS", (port,)):
+                        self.assertEqual(find(root), (port, status))
+                        self.assertEqual(find(root / "other"), (None, None))
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(5)
+
     def test_an_older_self_consistent_website_fails_the_requested_version(self):
         release = {"version": "0.1.0-beta.1", "checksums": "https://example.test/SHA256SUMS",
                    "lanes": {}}
