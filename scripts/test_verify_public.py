@@ -9,13 +9,41 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 from scripts import (qualification_record, qualify_macos, qualify_package_launch,
                      qualify_update_journey, qualify_windows, verify_public)
 
 
 class TestPublicVersion(unittest.TestCase):
+    def test_an_interrupted_setup_may_discard_the_update_only_with_the_old_tree_intact(self):
+        for version, problem, success in (("old", None, True), ("new", None, False),
+                                         ("old", "missing shipped file", False)):
+            with self.subTest(version=version, problem=problem), \
+                    tempfile.TemporaryDirectory() as folder:
+                base = Path(folder)
+                (base / "Refinix.exe").touch()
+                args = SimpleNamespace(lane="windows-x64", old_version="old", new_version="new")
+                app = Mock(data_root=base, env={})
+                process = Mock(info={"pid": 123, "cmdline": ["--apply-update"]})
+                report = qualify_update_journey.Report()
+                with patch.dict(qualify_update_journey.INSTALL, {args.lane: base}), \
+                        patch.object(qualify_update_journey, "start_update", return_value=(1, [])), \
+                        patch.object(qualify_update_journey, "journal", side_effect=[
+                            {"state": "installer_running"}, {"state": "discarded"},
+                            {"state": "discarded"}, {"state": "discarded"}]), \
+                        patch.object(qualify_update_journey, "installed_version", return_value=version), \
+                        patch.object(qualify_update_journey, "wait_for_app", return_value=(1, {})), \
+                        patch.object(qualify_update_journey, "saved", return_value=[]), \
+                        patch.object(qualify_update_journey, "stop_everything"), \
+                        patch.object(qualify_update_journey.time, "sleep"), \
+                        patch("psutil.process_iter", return_value=[process]), \
+                        patch("desktop.install_check.completeness_problem", return_value=problem), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    qualify_update_journey.journey_interrupt(report, app, args)
+                self.assertEqual(all(c["passed"] for c in report.checks), success)
+
     def test_launch_and_journey_wait_for_a_slow_status_but_require_the_scratch_root(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()

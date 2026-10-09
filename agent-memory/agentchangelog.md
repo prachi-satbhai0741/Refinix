@@ -3051,3 +3051,15 @@ work. No repository file change means no changelog entry.
 - changed: The shared Ubuntu build action exposes only system gi/cairo in an isolated virtual environment, preventing unrelated runner AWS/OpenSSL imports. Package-launch and update-journey status reads allow 10 seconds for bounded runtime probes. Regression checks preserve scratch-root identity and refuse missing toolkit bindings.
 - observed: Run 37988624319 at 0aa4645: Linux APT 18 seconds, builds passed, native signing-unit imports failed on inherited OpenSSL; Windows native units and both builds passed, package checks 5/6 (launch probe timed out while the app served requests). Local worker 217, deployment fixtures 140 and C07 fixtures 32 passed after completing the temporary test environment.
 - remaining: Hosted qualification of the follow-up commit and the agreed production-key/manual checkpoints.
+
+## AC-20261010-SEGMENT1-GTK-METADATA — Preserve GTK version metadata in the isolated build
+- date: 2026-10-10
+- changed: Link only PyGObject/pycairo egg-info alongside gi/cairo, preserving GTK isolation and the exact distribution version metadata required by PyInstaller's hook.
+- verified: Inspected the repository hash-pinned PyInstaller 6.22.3 Linux wheel without installing it; hook-gi reads importlib metadata for PyGObject. Workflow regression proves the selected metadata is discoverable and unrelated packages stay excluded; actionlint and whitespace checks passed.
+- observed: Run 37989900925 at 27915ee: Ubuntu GTK import passed but build hook failed without metadata; Windows package qualification plus update and rollback journeys passed after the timing fix. Fresh full native qualification remains required.
+
+## AC-20261010-SEGMENT1-INTERRUPTION-QUALIFIER — Recognise a safely discarded interrupted setup
+- date: 2026-10-10
+- changed: The interrupted-update qualifier recognises the existing cancelled/discarded terminal states only with the old installed version, matching shipped file manifest and unchanged saved work. Production recovery logic is unchanged.
+- verified: Focused workflow/public/journey regressions 24 passed, including rejection of a wrong version or incomplete restored tree. The isolated GTK metadata regression and four-workflow actionlint passed; fresh native qualification remains required.
+- observed: Run 37989900925 Mac package and all three journeys passed; Windows package, normal update and rollback passed before the interrupted-setup qualifier waited on an unrecognised recovery state.

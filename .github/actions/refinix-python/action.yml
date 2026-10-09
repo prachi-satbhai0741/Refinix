@@ -54,6 +54,13 @@ runs:
             if not source.is_dir():
                 raise SystemExit(f"Ubuntu binding missing: {source}")
             (destination / name).symlink_to(source, target_is_directory=True)
+        # PyInstaller's GTK hook reads the distribution's version metadata.
+        for pattern in ("PyGObject-*.egg-info", "pycairo-*.egg-info"):
+            entries = list(system.glob(pattern))
+            if len(entries) != 1:
+                raise SystemExit(f"Ubuntu binding metadata missing or ambiguous: {pattern}")
+            source = entries[0]
+            (destination / source.name).symlink_to(source, target_is_directory=source.is_dir())
         PY
           "$VENV/bin/python" -c 'import gi, cairo'
         fi

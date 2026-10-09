@@ -24,7 +24,7 @@ bounds APT index fetches and installation, with one authenticated official-mirro
 **Local offline evidence:** Python 3.14.6 on the development Mac, using an isolated temporary
 environment with repository hash-pinned test dependencies and the existing Pydantic environment;
 Node for the frontend. Coordinator: 1,656 tests, OK (16 skipped); desktop: 253 tests, OK (6 skipped);
-scripts: 75 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. Worker: 217 tests, OK;
+scripts: 78 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. Worker: 217 tests, OK;
 deployment fixtures: 140 tests, OK; C07 fixtures: 32 tests, OK. The focused recovery/CI/public
 regressions passed 73 tests. `actionlint` passed on all four changed workflows and
 `git diff --check` was clean. Initial broad runs were blocked by the tool sandbox's loopback
@@ -45,6 +45,17 @@ install/file-list/registration/uninstall passed; the launch check timed out whil
 requests. The follow-up isolates Ubuntu's `gi`/`cairo` bindings and allows 10 seconds for a status
 response in both package and journey checks. Regressions cover toolkit isolation, missing bindings
 and delayed status responses without accepting a different data root. Native rerun is pending.
+
+**Second repair qualification:** [37989900925](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37989900925)
+tested `27915ee2436edc6ada2fea9824e77d29f1c8c8db`. The isolated Ubuntu environment loaded GTK,
+but PyInstaller's GTK hook also requires the distribution's version metadata. The follow-up links
+only PyGObject/pycairo metadata, verified against the hash-pinned PyInstaller 6.22.3 wheel's hook
+and covered by the isolation regression. The Mac lane passed package and all three update journeys.
+Windows package qualification and the update/rollback journeys passed with the corrected timeout;
+the interrupted-setup qualifier was waiting only for commit/rollback, although the updater's
+existing recovery can restore the old installation and discard the incomplete attempt. The
+qualifier now accepts this final state only with the expected old version, complete file manifest
+and unchanged saved work; a regression rejects the wrong version or a damaged restored tree.
 
 **Remaining:** fresh hosted qualification of one repaired commit on Windows Server 2025, Ubuntu
 24.04 and macOS 15/14; production Beta keys/root, member → dev → main, release-byte qualification

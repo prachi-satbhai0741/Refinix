@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import json
+import importlib.metadata
 import os
 import subprocess
 import sys
@@ -78,12 +79,21 @@ class TestPins(unittest.TestCase):
             destination.mkdir()
             for name in ("gi", "cairo", "boto3", "OpenSSL"):
                 (system / name).mkdir()
+            metadata = ("PyGObject-3.48.2.egg-info", "pycairo-1.25.1.egg-info")
+            for name, version, folder_name in (("PyGObject", "3.48.2", metadata[0]),
+                                                ("pycairo", "1.25.1", metadata[1])):
+                (system / folder_name).mkdir()
+                (system / folder_name / "PKG-INFO").write_text(
+                    f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
             def paths(value):
                 return system if value == "/usr/lib/python3/dist-packages" else Path(value)
             with patch("pathlib.Path", side_effect=paths), \
                     patch("sysconfig.get_path", return_value=str(destination)):
                 exec(code, {})
-            self.assertEqual({p.name for p in destination.iterdir()}, {"gi", "cairo"})
+            self.assertEqual({p.name for p in destination.iterdir()}, {"gi", "cairo", *metadata})
+            distributions = {d.metadata["Name"]: d.version for d in
+                             importlib.metadata.Distribution.discover(path=[str(destination)])}
+            self.assertEqual(distributions, {"PyGObject": "3.48.2", "pycairo": "1.25.1"})
             for name in ("gi", "cairo"):
                 self.assertEqual((destination / name).resolve(), (system / name).resolve())
             (system / "cairo").rmdir()

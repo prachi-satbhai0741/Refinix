@@ -357,14 +357,21 @@ def journey_interrupt(report: Report, app: App, args) -> None:
     app.launch()       # the person opens Refinix again, the usual way
     deadline = time.monotonic() + 900
     while time.monotonic() < deadline and journal(app.data_root).get("state") not in (
-            "committed", "rolled_back", "blocked"):
+            "committed", "rolled_back", "cancelled", "discarded", "blocked"):
         time.sleep(2)
     final = journal(app.data_root).get("state")
-    expected = {"committed": args.new_version, "rolled_back": args.old_version}.get(final)
+    expected = {"committed": args.new_version, "rolled_back": args.old_version,
+                "cancelled": args.old_version, "discarded": args.old_version}.get(final)
     report.record("interrupt: the next launch finishes or undoes it, never a mixed install",
                   expected is not None and installed_version(args.lane) == expected,
                   {"state": final, "installed": installed_version(args.lane),
                    "reason": journal(app.data_root).get("reason")})
+    if expected is not None and args.lane in ("windows-x64", "linux-x64"):
+        from desktop import install_check, update_windows
+        extras = update_windows.INNO_EXTRAS if args.lane == "windows-x64" else frozenset()
+        problem = install_check.completeness_problem(INSTALL[args.lane], expected, extras)
+        report.record("interrupt: the restored or completed tree matches its file list",
+                      problem is None, problem)
     port, status = wait_for_app(app.data_root, 300, expected)
     report.record("interrupt: the saved work is unchanged",
                   status is not None and saved(port) == work, {"reopened": status is not None})
