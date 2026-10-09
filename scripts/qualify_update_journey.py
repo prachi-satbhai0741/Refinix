@@ -251,6 +251,8 @@ def start_update(report: Report, app: App, args, name: str) -> tuple[int | None,
     state = ((imported or {}).get("updates") or {}).get("download") or {}
     report.record(f"{name}: the signed bundle for N+1 is verified", state.get("state")
                   == "verified", imported)
+    if state.get("state") != "verified":
+        return None, work
     http(port, "POST", "/v1/updates/prepare")
     deadline, install = time.monotonic() + 600, {}
     while time.monotonic() < deadline:
@@ -260,6 +262,8 @@ def start_update(report: Report, app: App, args, name: str) -> tuple[int | None,
         time.sleep(1)
     report.record(f"{name}: prepared for Install and restart", install.get("state") == "ready",
                   {k: install.get(k) for k in ("state", "error", "method", "version")})
+    if install.get("state") != "ready":
+        return None, work
     return port, work
 
 
@@ -323,6 +327,8 @@ PAUSE_AT = {"macos-arm64": "swapped", "windows-x64": "installer_running",
 
 def journey_interrupt(report: Report, app: App, args) -> None:
     import psutil
+    from desktop import update_apply
+    system = update_apply.System()
     app.env["REFINIX_QUALIFY_PAUSE_AT"] = PAUSE_AT[args.lane]
     app.env["REFINIX_QUALIFY_PAUSE_SECONDS"] = "120"
     port, work = start_update(report, app, args, "interrupt")
@@ -334,20 +340,24 @@ def journey_interrupt(report: Report, app: App, args) -> None:
         seen = journal(app.data_root).get("state")
         if seen == PAUSE_AT[args.lane]:
             time.sleep(2)
-            for process in psutil.process_iter(["pid", "cmdline"]):
-                text = " ".join(process.info.get("cmdline") or [])
-                if "--apply-update" in text or "--resume" in text:
-                    try:
-                        process.kill()
-                        killed.append(process.info["pid"])
-                    except psutil.Error:
-                        pass
+            helper = journal(app.data_root).get("helper")
+            if system.same(helper):
+                try:
+                    process = psutil.Process(helper["pid"])
+                    process.kill()
+                    process.wait(timeout=10)
+                    killed.append(helper["pid"])
+                except psutil.Error:
+                    pass
             break
-        if seen in ("committed", "rolled_back", "blocked"):
+        if seen in ("committed", "rolled_back", "cancelled", "discarded", "blocked"):
             break
         time.sleep(0.2)
     report.record("interrupt: the helper was stopped while replacing the app", bool(killed),
-                  {"state_when_stopped": seen, "helpers": killed})
+                  {"state_when_stopped": seen, "helpers": killed,
+                   "recorded_helper": journal(app.data_root).get("helper")})
+    if not killed:
+        return
     time.sleep(3)
     stop_everything(args.lane)
     app.env.pop("REFINIX_QUALIFY_PAUSE_AT")
@@ -365,7 +375,9 @@ def journey_interrupt(report: Report, app: App, args) -> None:
     report.record("interrupt: the next launch finishes or undoes it, never a mixed install",
                   expected is not None and installed_version(args.lane) == expected,
                   {"state": final, "installed": installed_version(args.lane),
-                   "reason": journal(app.data_root).get("reason")})
+                   "reason": journal(app.data_root).get("reason"),
+                   "helper": journal(app.data_root).get("helper"),
+                   "resume_count": journal(app.data_root).get("resume_count")})
     if expected is not None and args.lane in ("windows-x64", "linux-x64"):
         from desktop import install_check, update_windows
         extras = update_windows.INNO_EXTRAS if args.lane == "windows-x64" else frozenset()
@@ -397,7 +409,9 @@ def main(argv=None) -> int:
               file=sys.stderr)
         return 2
     report = Report()
-    work = Path(tempfile.mkdtemp(prefix="refinix-journey-"))
+    # The real Ubuntu root step accepts requests only inside the caller's home.
+    work = Path(tempfile.mkdtemp(prefix="refinix-journey-",
+                                dir=Path.home() if args.lane == "linux-x64" else None))
     if args.lane == "linux-x64":
         allow_refinix_prompts_for_this_runner()
     for name in args.journey or list(JOURNEYS):
@@ -417,6 +431,13 @@ def main(argv=None) -> int:
             report.record(f"{name}: ran to the end", False, f"{type(exc).__name__}: {exc}")
         finally:
             stop_everything(args.lane)
+    # Retain only synthetic-run logs/status, never the data store or signed bundles.
+    for path in [work / "app.log", *work.glob("data-*/updates/install/*/helper.log"),
+                 *work.glob("data-*/updates/install/*/helper.json")]:
+        if path.is_file():
+            target = args.report.parent / "journey-debug" / path.relative_to(work)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, target)
     record = {"kind": "update-journey", "lane": args.lane, "old": args.old_version,
               "new": args.new_version, "commit_tested": os.environ.get("GITHUB_SHA"),
               "host": {"platform": platform.platform(), "python": platform.python_version(),

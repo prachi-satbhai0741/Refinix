@@ -24,7 +24,7 @@ bounds APT index fetches and installation, with one authenticated official-mirro
 **Local offline evidence:** Python 3.14.6 on the development Mac, using an isolated temporary
 environment with repository hash-pinned test dependencies and the existing Pydantic environment;
 Node for the frontend. Coordinator: 1,656 tests, OK (16 skipped); desktop: 253 tests, OK (6 skipped);
-scripts: 78 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. Worker: 217 tests, OK;
+scripts: 80 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. Worker: 217 tests, OK;
 deployment fixtures: 140 tests, OK; C07 fixtures: 32 tests, OK. The focused recovery/CI/public
 regressions passed 73 tests. `actionlint` passed on all four changed workflows and
 `git diff --check` was clean. Initial broad runs were blocked by the tool sandbox's loopback
@@ -61,6 +61,22 @@ and unchanged saved work; a regression rejects the wrong version or a damaged re
 24.04 and macOS 15/14; production Beta keys/root, member → dev → main, release-byte qualification
 and CP-B publication; then the user's device walkthroughs. No production keys, installed user app,
 real model runtime, published feed or device acceptance changed in this continuation.
+
+**Third repair qualification:**
+[37991781158](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37991781158) tests
+`b8fbc81eced2074aeb049726af3b000f0b97803c`. Ubuntu APT setup passed in 19 seconds; both packages
+now build and the package-byte qualifier passed. Windows builds and package qualification passed.
+The Mac lane passed package checks (6/6 before the separate floor check) and all 24 journey checks.
+While the other journeys ran, source inspection identified an invalid Ubuntu test location:
+the qualifier creates its data under system temporary storage, whereas the real privileged updater
+requires a request inside the caller's home. The fixture now uses the home folder; import/admission
+failures stop the journey promptly instead of waiting for an update that cannot start. The focused
+workflow/public/journey regressions passed 26 tests. Windows normal update and rollback passed,
+but interruption remained at `installer_running` after the qualifier's command-line-based kill
+(22/24 journey checks passed). The qualifier now targets the exact helper identity in the update
+journal and waits for its death. Native synthetic-run app/helper diagnostics are retained alongside
+the reports, excluding the data store. Windows/Ubuntu journeys and the floor runner remain
+unqualified until a repaired native run passes.
 
 <a id="tester-preview-batch-20261008"></a>
 ### Tester-preview batch — 2026-10-08

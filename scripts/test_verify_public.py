@@ -17,32 +17,107 @@ from scripts import (qualification_record, qualify_macos, qualify_package_launch
 
 
 class TestPublicVersion(unittest.TestCase):
+    def test_ubuntu_journeys_place_their_requests_inside_the_users_home(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder).resolve()
+            home, elsewhere = base / "home", base / "system-temp"
+            home.mkdir()
+            elsewhere.mkdir()
+            roots = []
+            mkdtemp = tempfile.mkdtemp
+            def make_work(**kwargs):
+                return mkdtemp(prefix=kwargs["prefix"], dir=kwargs.get("dir") or elsewhere)
+            def observe(report, app, args):
+                roots.append(app.data_root)
+                (app.data_root.parent / "app.log").write_text("synthetic startup diagnostic")
+                helper = app.data_root / "updates" / "install" / "fixture"
+                helper.mkdir(parents=True)
+                (helper / "helper.json").write_text('{"state":"error"}')
+                (app.data_root / "state.sqlite3").write_text("must not upload")
+                report.record("fixture journey", True, None)
+            with patch.dict(os.environ, REFINIX_QUALIFY_DISPOSABLE="1"), \
+                    patch.object(Path, "home", return_value=home), \
+                    patch.object(qualify_update_journey.tempfile, "mkdtemp", side_effect=make_work), \
+                    patch.object(qualify_update_journey, "allow_refinix_prompts_for_this_runner"), \
+                    patch.object(qualify_update_journey, "stop_everything"), \
+                    patch.object(qualify_update_journey, "install_old"), \
+                    patch.object(qualify_update_journey, "installed_version", return_value="old"), \
+                    patch.dict(qualify_update_journey.JOURNEYS, update=observe), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                result = qualify_update_journey.main([
+                    "--lane", "linux-x64", "--old", "old.deb", "--new-bundle", "bundle.zip",
+                    "--old-version", "old", "--new-version", "new", "--journey", "update",
+                    "--report", str(base / "report.json")])
+            self.assertEqual(result, 0)
+            self.assertEqual(len(roots), 1)
+            self.assertTrue(roots[0].is_relative_to(home))
+            self.assertFalse(any(elsewhere.iterdir()))
+            debug = base / "journey-debug"
+            self.assertEqual((debug / "app.log").read_text(), "synthetic startup diagnostic")
+            self.assertEqual({p.name for p in debug.rglob("*") if p.is_file()},
+                             {"app.log", "helper.json"})
+
+    def test_journeys_stop_when_bundle_import_or_preparation_fails(self):
+        for download, install in (("failed", "ready"), ("verified", "failed"),
+                                   ("verified", "ready")):
+            with self.subTest(download=download, install=install), \
+                    tempfile.TemporaryDirectory() as folder:
+                app = Mock(data_root=Path(folder))
+                app.ask.return_value = {"updates": {"download": {"state": download}}}
+                args = SimpleNamespace(old_version="old", new_bundle=Path("bundle.zip"))
+                report = qualify_update_journey.Report()
+                with patch.object(qualify_update_journey, "wait_for_app", return_value=(1, {})), \
+                        patch.object(qualify_update_journey, "seed", return_value=["saved"]), \
+                        patch.object(qualify_update_journey, "http", return_value={
+                            "install": {"state": install}}) as http, \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    port, work = qualify_update_journey.start_update(report, app, args, "update")
+                success = download == "verified" and install == "ready"
+                self.assertEqual(port, 1 if success else None)
+                self.assertEqual(work, ["saved"])
+                self.assertEqual(all(c["passed"] for c in report.checks), success)
+                if download == "failed":
+                    http.assert_not_called()
+
     def test_an_interrupted_setup_may_discard_the_update_only_with_the_old_tree_intact(self):
-        for version, problem, success in (("old", None, True), ("new", None, False),
-                                         ("old", "missing shipped file", False)):
-            with self.subTest(version=version, problem=problem), \
+        for version, problem, matches, success in (("old", None, True, True),
+                ("new", None, True, False), ("old", "missing shipped file", True, False),
+                ("old", None, False, False)):
+            with self.subTest(version=version, problem=problem, matches=matches), \
                     tempfile.TemporaryDirectory() as folder:
                 base = Path(folder)
                 (base / "Refinix.exe").touch()
                 args = SimpleNamespace(lane="windows-x64", old_version="old", new_version="new")
                 app = Mock(data_root=base, env={})
-                process = Mock(info={"pid": 123, "cmdline": ["--apply-update"]})
+                helper = {"pid": 123, "create_time": 42, "exe": "private helper"}
+                process = Mock()
                 report = qualify_update_journey.Report()
                 with patch.dict(qualify_update_journey.INSTALL, {args.lane: base}), \
                         patch.object(qualify_update_journey, "start_update", return_value=(1, [])), \
                         patch.object(qualify_update_journey, "journal", side_effect=[
-                            {"state": "installer_running"}, {"state": "discarded"},
-                            {"state": "discarded"}, {"state": "discarded"}]), \
+                            {"state": "installer_running", "helper": helper},
+                            {"state": "installer_running", "helper": helper},
+                            {"state": "installer_running", "helper": helper},
+                            {"state": "discarded"}, {"state": "discarded"},
+                            {"state": "discarded"}, {"state": "discarded"},
+                            {"state": "discarded"}]), \
                         patch.object(qualify_update_journey, "installed_version", return_value=version), \
                         patch.object(qualify_update_journey, "wait_for_app", return_value=(1, {})), \
                         patch.object(qualify_update_journey, "saved", return_value=[]), \
                         patch.object(qualify_update_journey, "stop_everything"), \
                         patch.object(qualify_update_journey.time, "sleep"), \
-                        patch("psutil.process_iter", return_value=[process]), \
+                        patch("desktop.update_apply.System.same", return_value=matches), \
+                        patch("psutil.Process", return_value=process) as process_for_pid, \
                         patch("desktop.install_check.completeness_problem", return_value=problem), \
                         contextlib.redirect_stdout(io.StringIO()):
                     qualify_update_journey.journey_interrupt(report, app, args)
                 self.assertEqual(all(c["passed"] for c in report.checks), success)
+                if matches:
+                    process_for_pid.assert_called_once_with(helper["pid"])
+                    process.kill.assert_called_once()
+                    process.wait.assert_called_once_with(timeout=10)
+                else:
+                    process_for_pid.assert_not_called()
 
     def test_launch_and_journey_wait_for_a_slow_status_but_require_the_scratch_root(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -3063,3 +3063,14 @@ work. No repository file change means no changelog entry.
 - changed: The interrupted-update qualifier recognises the existing cancelled/discarded terminal states only with the old installed version, matching shipped file manifest and unchanged saved work. Production recovery logic is unchanged.
 - verified: Focused workflow/public/journey regressions 24 passed, including rejection of a wrong version or incomplete restored tree. The isolated GTK metadata regression and four-workflow actionlint passed; fresh native qualification remains required.
 - observed: Run 37989900925 Mac package and all three journeys passed; Windows package, normal update and rollback passed before the interrupted-setup qualifier waited on an unrecognised recovery state.
+
+## AC-20261010-SEGMENT1-UBUNTU-SCRATCH-HOME — Respect the root updater's home boundary in CI
+- date: 2026-10-10
+- changed: Ubuntu journey fixtures live inside the runner user's home, as the real root updater requires. A failed bundle import or update preparation stops that journey promptly; interruption polling also recognises an already-ended attempt. Production filesystem restrictions are unchanged.
+- verified: Focused workflow/public/journey regressions 26 passed, including home placement despite a different system temporary folder and failed prerequisite refusal. Run 37991781158 at b8fbc81: Ubuntu setup 19 seconds, Ubuntu/Windows builds and package qualifiers passed, Mac package and 24 journey checks passed. Remaining native recovery and floor checks are pending.
+
+## AC-20261010-SEGMENT1-RECORDED-HELPER — Target the actual helper and retain diagnostic evidence
+- date: 2026-10-10
+- changed: Interruption qualification kills the helper identified by the update journal's PID, creation time and executable, then waits for death, instead of scanning command-line text. Native app/helper logs and helper status are retained inside report artifacts; user data and signed bundles are excluded.
+- observed: Run 37991781158 Windows package 6/6, normal update and rollback passed; interrupted recovery stayed at installer_running with N+1 installed (journey 22/24). This is not a passing recovery path. The follow-up qualifies an exact recorded-helper kill and preserves diagnostics for any remaining application defect.
+- verified: Focused qualification/workflow regressions 26 passed; native rerun is required.
