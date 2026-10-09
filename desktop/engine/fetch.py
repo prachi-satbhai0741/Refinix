@@ -55,13 +55,33 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _download(url: str, target: Path) -> None:
+RETRIES = 3
+RETRY_SECONDS = 15
+
+
+def _download(url: str, target: Path, *, retries: int = RETRIES, wait=None) -> None:
+    """Fetch over HTTPS. A server error or a dropped connection is retried a
+    few times (upstream release hosts answer 500s now and then); a 4xx is not.
+    Callers always check the pinned size and SHA-256 afterwards."""
+    import time
+    import urllib.error
     if not url.startswith("https://"):
         raise FetchError(f"refusing a non-HTTPS engine URL: {url}")
-    request = urllib.request.Request(url, headers={"User-Agent": "refinix-build"})
-    with urllib.request.urlopen(request, timeout=120) as response, \
-            open(target, "wb") as out:
-        shutil.copyfileobj(response, out, CHUNK)
+    wait = wait or time.sleep
+    for attempt in range(1, retries + 1):
+        request = urllib.request.Request(url, headers={"User-Agent": "refinix-build"})
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response, \
+                    open(target, "wb") as out:
+                shutil.copyfileobj(response, out, CHUNK)
+            return
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500 or attempt == retries:
+                raise
+        except (urllib.error.URLError, ConnectionError, TimeoutError):
+            if attempt == retries:
+                raise
+        wait(RETRY_SECONDS * attempt)
 
 
 def obtain_archive(lane: dict, cache: Path, *, offline: bool = False) -> Path:

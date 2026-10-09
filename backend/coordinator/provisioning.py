@@ -121,7 +121,8 @@ def _sha256_of(path: Path, digest=None, cancelled=None) -> "hashlib._Hash | None
 
 def _durable_replace(source: Path, target: Path) -> None:
     """Move a verified file into place so a crash leaves old or new, not half."""
-    with open(source, "rb") as handle:
+    # Read/write: Windows refuses os.fsync on a read-only handle.
+    with open(source, "r+b") as handle:
         os.fsync(handle.fileno())
     os.replace(source, target)
     if sys.platform != "win32":

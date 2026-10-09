@@ -312,18 +312,28 @@ def journey_rollback(report: Report, app: App, args) -> None:
                   {"reopened": status is not None})
 
 
+# Where each install method is stopped: macOS after the app was swapped and
+# before the new one opened; Windows while the setup runs inside its job (the
+# helper's death ends the job, and the setup with it); Ubuntu after root
+# installed the package and before the new version opened. Real dpkg kills in
+# the middle of unpacking are qualified separately (scripts/qualify_deb.py).
+PAUSE_AT = {"macos-arm64": "swapped", "windows-x64": "installer_running",
+            "linux-x64": "swapped"}
+
+
 def journey_interrupt(report: Report, app: App, args) -> None:
     import psutil
+    app.env["REFINIX_QUALIFY_PAUSE_AT"] = PAUSE_AT[args.lane]
+    app.env["REFINIX_QUALIFY_PAUSE_SECONDS"] = "120"
     port, work = start_update(report, app, args, "interrupt")
     if port is None:
         return
     app.ask("install", seconds=60)
-    replacing = {"swapping", "installer_starting", "installer_running", "deb_installing",
-                 "app_setting_aside", "app_set_aside", "swapped"}
     deadline, seen, killed = time.monotonic() + 600, None, []
     while time.monotonic() < deadline:
         seen = journal(app.data_root).get("state")
-        if seen in replacing:
+        if seen == PAUSE_AT[args.lane]:
+            time.sleep(2)
             for process in psutil.process_iter(["pid", "cmdline"]):
                 text = " ".join(process.info.get("cmdline") or [])
                 if "--apply-update" in text or "--resume" in text:
@@ -332,16 +342,19 @@ def journey_interrupt(report: Report, app: App, args) -> None:
                         killed.append(process.info["pid"])
                     except psutil.Error:
                         pass
-            if killed:
-                break
-        if seen in ("committed", "rolled_back"):
+            break
+        if seen in ("committed", "rolled_back", "blocked"):
             break
         time.sleep(0.2)
     report.record("interrupt: the helper was stopped while replacing the app", bool(killed),
                   {"state_when_stopped": seen, "helpers": killed})
     time.sleep(3)
     stop_everything(args.lane)
-    app.launch()       # the person opens Refinix again
+    app.env.pop("REFINIX_QUALIFY_PAUSE_AT")
+    program = INSTALL[args.lane] / PROGRAM[args.lane]
+    report.record("interrupt: the installed Refinix can still be opened",
+                  program.exists(), {"program": str(program)})
+    app.launch()       # the person opens Refinix again, the usual way
     deadline = time.monotonic() + 900
     while time.monotonic() < deadline and journal(app.data_root).get("state") not in (
             "committed", "rolled_back", "blocked"):
@@ -350,7 +363,8 @@ def journey_interrupt(report: Report, app: App, args) -> None:
     expected = {"committed": args.new_version, "rolled_back": args.old_version}.get(final)
     report.record("interrupt: the next launch finishes or undoes it, never a mixed install",
                   expected is not None and installed_version(args.lane) == expected,
-                  {"state": final, "installed": installed_version(args.lane)})
+                  {"state": final, "installed": installed_version(args.lane),
+                   "reason": journal(app.data_root).get("reason")})
     port, status = wait_for_app(app.data_root, 300, expected)
     report.record("interrupt: the saved work is unchanged",
                   status is not None and saved(port) == work, {"reopened": status is not None})

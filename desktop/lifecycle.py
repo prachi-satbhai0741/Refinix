@@ -655,6 +655,14 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
                     coordinator.ollama_control = supervisor
             except AttributeError:
                 pass                  # a stand-in coordinator without that slot
+            # Ollama alone (a source checkout): memory and disk are still read,
+            # so model fit and recommendations are not left unknown.
+            refresh = getattr(coordinator, "refresh_hardware", None)
+            if callable(refresh):
+                try:
+                    refresh()
+                except Exception:                          # noqa: BLE001
+                    pass              # facts stay unknown and Settings says so
             ready = _chat_readiness(coordinator) if coordinator is not None else None
             if ready is None:
                 model = model_status(engine)

@@ -109,11 +109,14 @@ jobs:
         env:
           REFINIX_NATIVE_WINDOWS: ${{ matrix.lane == 'windows-x64' && '1' || '' }}
         run: |
+          status=0
           python -m unittest desktop.test_build desktop.test_update_methods \
-            desktop.test_qualify_control desktop.test_review_fixes -v 2>&1 | tail -40
+            desktop.test_qualify_control desktop.test_review_fixes \
+            desktop.test_engine_fetch backend.coordinator.test_windows_durability || status=1
           if [ "${{ matrix.lane }}" = "windows-x64" ]; then
-            python -m unittest desktop.test_update_windows_native -v
+            python -m unittest desktop.test_update_windows_native -v || status=1
           fi
+          exit $status
 
       # Feed tooling in its own environment, so nothing of it can reach a package.
       - name: Throwaway update root and feed

@@ -90,7 +90,8 @@ POLL_SECONDS = 0.25
 CARRIED = ("REFINIX_DATA_ROOT", "REFINIX_TEST_INSTALL_ROOT",
            # Private qualification builds only (desktop/qualify_control.py);
            # a publishable package ignores them.
-           "REFINIX_QUALIFY_TOKEN", "REFINIX_QUALIFY_FAIL_START")
+           "REFINIX_QUALIFY_TOKEN", "REFINIX_QUALIFY_FAIL_START",
+           "REFINIX_QUALIFY_PAUSE_AT", "REFINIX_QUALIFY_PAUSE_SECONDS")
 MANUAL = ("Nothing more was changed automatically. Your data and the previous app are "
           "kept in the 'updates' and 'recovery' folders inside Refinix's data folder "
           "({root}). Keep them, and ask for help before removing "
@@ -172,7 +173,21 @@ def write_journal(owner, database, record: dict, **changes) -> dict:
     ownership.require(owner, ownership.canonical_database(database))
     record = {**record, **changes, "updated_at": _stamp()}
     _atomic_json(journal_file(database), record)
+    _qualification_pause(record.get("state"))
     return record
+
+
+def _qualification_pause(state) -> None:
+    """Private qualification builds only: hold at a named state, so a journey
+    can stop the helper exactly there (desktop/qualify_control.py). A
+    publishable package never pauses."""
+    wanted = os.environ.get("REFINIX_QUALIFY_PAUSE_AT")
+    if not wanted or wanted != state:
+        return
+    from backend.coordinator import build_info
+    from desktop import qualify_control
+    if qualify_control.enabled(build_info.embedded_identity()):
+        time.sleep(float(os.environ.get("REFINIX_QUALIFY_PAUSE_SECONDS") or 60))
 
 
 def _data_journal(database) -> dict | None:

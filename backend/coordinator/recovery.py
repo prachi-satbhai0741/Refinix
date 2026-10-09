@@ -92,7 +92,10 @@ def _copy_durably(source: Path, target: Path) -> None:
     """Copy through a temporary file beside `target`, then replace atomically."""
     temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
     shutil.copyfile(source, temporary)
-    with open(temporary, "rb") as handle:
+    # Windows refuses FlushFileBuffers (os.fsync) on a read-only handle, which
+    # failed every Windows update's data copy (native run, 2026-10-09). Opened
+    # read/write; no bytes are changed through this handle.
+    with open(temporary, "r+b") as handle:
         os.fsync(handle.fileno())
     os.replace(temporary, target)
     _fsync_dir(target.parent)

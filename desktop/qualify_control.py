@@ -18,7 +18,10 @@ workspace database, answered in `qualify-result.json`. Actions: `import`
 
 `REFINIX_QUALIFY_FAIL_START=<version>` makes that one version stop right after
 starting, before its window can confirm an update — the journeys' way to watch
-a new version fail and be rolled back. It obeys the same gate.
+a new version fail and be rolled back. `REFINIX_QUALIFY_PAUSE_AT=<journal
+state>` makes the update helper hold for a while right after recording that
+state (desktop/update_apply.py), so a journey can stop the helper exactly
+there. Both obey the same gate.
 """
 
 from __future__ import annotations
