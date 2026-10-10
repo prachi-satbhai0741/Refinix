@@ -120,6 +120,7 @@ def qualify(report: Report, home: Path) -> None:
     took = round(time.monotonic() - began, 1)
     report.record("a test that prints nothing is cancelled promptly, and nothing passes",
                   took < 3.0 + sandbox_local.STOP_SECONDS + 15
+                  and result.get("refused") == "cancelled"
                   and not sandbox_local.passed(result), {**summary(result), "seconds": took})
     sandbox.deadline_seconds = 8
     began = time.monotonic()
@@ -127,11 +128,13 @@ def qualify(report: Report, home: Path) -> None:
     took = round(time.monotonic() - began, 1)
     report.record("a test that prints nothing is stopped at the deadline",
                   took < 8 + sandbox_local.STOP_SECONDS + 15
+                  and result.get("refused") == "deadline"
                   and not sandbox_local.passed(result), {**summary(result), "seconds": took})
     sandbox.deadline_seconds = sandbox_local.DEADLINE_SECONDS + 60
     result = sandbox.validate(files(**{"test_flood.py": FLOOD}))
     report.record("a flood of output is capped",
-                  len(result.get("output") or "") <= sandbox_local.OUTPUT_LIMIT,
+                  sandbox_local.passed(result) and result.get("output_truncated") is True
+                  and len(result.get("output") or "") <= sandbox_local.OUTPUT_LIMIT,
                   summary(result))
     sandbox.cleanup_leftovers()
     left = leftovers(home)

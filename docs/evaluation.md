@@ -23,8 +23,8 @@ bounds APT index fetches and installation, with one authenticated official-mirro
 
 **Local offline evidence:** Python 3.14.6 on the development Mac, using an isolated temporary
 environment with repository hash-pinned test dependencies and the existing Pydantic environment;
-Node for the frontend. Coordinator: 1,656 tests, OK (16 skipped); desktop: 253 tests, OK (6 skipped);
-scripts: 80 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. Worker: 217 tests, OK;
+Node for the frontend. Coordinator: 1,659 tests, OK (16 skipped); desktop: 255 tests, OK (6 skipped);
+scripts: 82 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. Worker: 217 tests, OK;
 deployment fixtures: 140 tests, OK; C07 fixtures: 32 tests, OK. The focused recovery/CI/public
 regressions passed 73 tests. `actionlint` passed on all four changed workflows and
 `git diff --check` was clean. Initial broad runs were blocked by the tool sandbox's loopback
@@ -97,6 +97,25 @@ The final startup/FUSE group passed 37 tests, including interrupted-mount cleanu
 The final sandbox group passed 23 tests after adding mount-table escape decoding, so data folders
 containing spaces or backslashes remain detectable during cleanup.
 A full native rerun of these follow-ups is pending.
+
+**Startup/sandbox follow-up qualification:**
+[38053285944](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38053285944) tested
+`1bd7afe3d524e4772e9583999387a18d8490d03f`. Windows passed package checks 6/6 and update journeys
+25/25: after the exact helper was killed during setup, the next launch resumed a helper, restored
+N, discarded the incomplete attempt, matched the file manifest and reopened unchanged saved work.
+Mac package and journeys passed. Ubuntu package 29/29 and journeys 25/25 passed; FUSE mounted and
+cleaned up, but the transient service rejected an argument. The [systemd 255 CLI serializer](https://github.com/systemd/systemd/blob/v255/src/shared/bus-unit-util.c)
+and [manager setter](https://github.com/systemd/systemd/blob/v255/src/core/dbus-execute.c) show why:
+an empty command-line address-family allow-list denies every family, while literal `none` is sent
+as an invalid family name. The corrected command retains that denial. The launcher also needs
+the three Landlock setup calls, absent from [255's service group](https://github.com/systemd/systemd/blob/v255/src/shared/seccomp-util.c);
+only those confinement calls are added. Cancellation/deadline qualification now requires the
+matching refusal reason, and output qualification requires an actual passing run with observed
+truncation, so an early launcher failure cannot pass those checks. Native startup error dialogs
+on Mac/Linux are preserved, while partial Windows installations use the existing dependency-light
+helper message. Final local suites: coordinator 1,659, desktop 255, scripts 82; focused sandbox,
+startup and qualification checks 41, all OK (the broad suites retain 22 platform skips).
+All-OS qualification of the final service correction remains pending.
 
 <a id="tester-preview-batch-20261008"></a>
 ### Tester-preview batch — 2026-10-08

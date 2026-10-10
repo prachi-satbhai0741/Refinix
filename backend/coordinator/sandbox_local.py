@@ -69,8 +69,10 @@ DENIED_CALLS = ("socket socketpair kill tkill tgkill pidfd_open pidfd_send_signa
                 "setns mount umount2 pivot_root chroot open_tree move_mount fsopen fsmount "
                 "fsconfig fspick perf_event_open userfaultfd")
 PROPERTIES = [
-    "RestrictAddressFamilies=none",
-    "SystemCallFilter=@system-service",
+    # systemd-run 255 sends this as an empty allow-list; literal "none" is rejected.
+    "RestrictAddressFamilies=",
+    # These setup calls only add confinement and are absent from systemd 255's service group.
+    "SystemCallFilter=@system-service landlock_create_ruleset landlock_add_rule landlock_restrict_self",
     f"SystemCallFilter=~{DENIED_CALLS}",
     "SystemCallErrorNumber=EPERM",
     "SystemCallArchitectures=native",

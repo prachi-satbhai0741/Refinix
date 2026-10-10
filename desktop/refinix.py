@@ -108,8 +108,12 @@ def main() -> int:
         gate = _update_gate(instance, state_db)
         if not gate.proceed:
             if gate.message:
-                from desktop import update_apply
-                update_apply.System().tell("Refinix update", gate.message)
+                if sys.platform == "win32":
+                    from desktop import update_apply
+                    update_apply.System().tell("Refinix update", gate.message)
+                else:
+                    from desktop import shell
+                    shell._native_message("Refinix update", gate.message)
             return 0
         from desktop import lifecycle, shell
         return shell.run(owner=instance, update_gate=gate,

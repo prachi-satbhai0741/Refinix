@@ -160,12 +160,15 @@ class TestRunner(unittest.TestCase):
             self.assertTrue(sandbox_local.passed(report), report)
             run = next(c for c in host.commands if c[0] == "systemd-run")
             for wanted in ("--user", "--wait", "--collect",
-                           "--property=RestrictAddressFamilies=none",
+                           "--property=RestrictAddressFamilies=",
                            "--property=NoNewPrivileges=yes",
                            "--property=SystemCallErrorNumber=EPERM",
                            "--property=TasksMax=64", "--property=MemorySwapMax=0"):
                 self.assertIn(wanted, run)
             denied = next(p for p in run if p.startswith("--property=SystemCallFilter=~"))
+            allowed = next(p for p in run if p.startswith("--property=SystemCallFilter=@"))
+            for call in ("landlock_create_ruleset", "landlock_add_rule", "landlock_restrict_self"):
+                self.assertIn(f" {call} ", f" {allowed.split('=', 2)[2]} ")
             for call in ("socket", "kill", "ptrace", "io_uring_setup", "bpf", "keyctl",
                          "unshare", "mount"):
                 self.assertIn(f" {call} ", f" {denied.split('~', 1)[1]} ")

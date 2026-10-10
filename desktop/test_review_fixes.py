@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from backend.coordinator import ownership
-from desktop import lifecycle, refinix, shell
+from desktop import lifecycle, refinix, shell, update_apply
 
 
 class TestDesktopReviewFixes(unittest.TestCase):
@@ -62,6 +62,26 @@ lock.release()
                 cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
                 env=dict(os.environ, REFINIX_DATA_ROOT=folder), timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_blocked_update_reports_the_error_without_admitting_the_workspace(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.dict(os.environ, {"REFINIX_DATA_ROOT": folder}), \
+                patch.object(sys, "argv", ["Refinix"]), \
+                patch.object(shell, "run") as opened, \
+                patch.object(shell, "_native_message") as native, \
+                patch.object(update_apply.System, "tell") as helper_message:
+            state = Path(folder) / "coordinator.sqlite3"
+            update_apply._atomic_json(update_apply.journal_file(state), {
+                "update_id": "blocked", "state": "blocked", "reason": "damaged copy",
+                "from_version": "0.1.0-beta.901", "to_version": "0.1.0-beta.902",
+                "data_root": str(state.parent), "install_path": str(state.parent / "app"),
+                "incoming": str(state.parent / "setup.exe"),
+            })
+            self.assertEqual(refinix.main(), 0)
+            opened.assert_not_called()
+            self.assertFalse(state.exists())
+            message = helper_message if sys.platform == "win32" else native
+            self.assertIn("damaged copy", message.call_args.args[1])
 
     def test_windows_launches_lock_the_same_byte_and_can_read_metadata(self):
         offsets = []

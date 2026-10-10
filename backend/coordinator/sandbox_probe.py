@@ -25,7 +25,7 @@ import subprocess
 import sys
 
 REQUIRED_CGROUP_CONTROLLERS = ("memory", "pids", "cpu")
-MIN_SYSTEMD = 255                  # RestrictAddressFamilies=none, delegated limits
+MIN_SYSTEMD = 255                  # address-family allow-list, delegated limits
 MIN_LANDLOCK_ABI = 1
 
 NOT_OFFERED = {
