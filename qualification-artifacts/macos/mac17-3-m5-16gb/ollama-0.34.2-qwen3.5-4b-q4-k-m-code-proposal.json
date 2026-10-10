@@ -1,0 +1,100 @@
+{
+  "artifact_version": "1.0",
+  "generated_at": "2026-09-24T10:21:50Z",
+  "device": {
+    "os_family": "macos",
+    "os_release": "25.6.0",
+    "architecture": "arm64",
+    "target_profile_id": "mac17-3-m5-16gb"
+  },
+  "observed_model": {
+    "model_id": "qwen3.5:4b-q4_K_M",
+    "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+    "runtime": "ollama",
+    "runtime_version": "0.34.2"
+  },
+  "result": "passed",
+  "release_accepted": false,
+  "workflows": [
+    {
+      "profile": {
+        "profile_id": "5543ca0903ce733e36b9b88a964f80865d3ea1816ac3f1b269720742ca76f0f1",
+        "model": {
+          "model_id": "qwen3.5:4b-q4_K_M",
+          "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+          "runtime": "ollama",
+          "runtime_version": "0.34.2"
+        },
+        "target_profile_id": "mac17-3-m5-16gb",
+        "workflow_mode": "code.whole_file",
+        "qualified_context_tokens": 8192,
+        "default_output_tokens": 2048,
+        "max_output_tokens": 2048,
+        "reasoning_modes": [
+          "disabled",
+          "enabled"
+        ],
+        "default_reasoning": "disabled",
+        "decoder_modes": [
+          "json_schema"
+        ],
+        "qualified_memory_bytes": null,
+        "qualification_state": "candidate",
+        "eligible": false,
+        "evidence_kind": "unverified",
+        "evidence_ref": "qualification-run:pending-review"
+      },
+      "result": "passed",
+      "evidence": [
+        {
+          "reasoning": "disabled",
+          "decoder": "json_schema",
+          "requested_profile_id": "5543ca0903ce733e36b9b88a964f80865d3ea1816ac3f1b269720742ca76f0f1",
+          "actual_profile_id": "5543ca0903ce733e36b9b88a964f80865d3ea1816ac3f1b269720742ca76f0f1",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 471,
+          "output_tokens": 140,
+          "total_ms": 6233,
+          "output_sha256": "0055f162fa379c7116e33e6f829b0eb74b2d3dde1a1056de1077292f57615594",
+          "thinking_observed": false,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.disabled",
+            "structured.decoder",
+            "proposal.schema",
+            "proposal.small_edit",
+            "canonical.unchanged"
+          ]
+        },
+        {
+          "reasoning": "enabled",
+          "decoder": "json_schema",
+          "requested_profile_id": "5543ca0903ce733e36b9b88a964f80865d3ea1816ac3f1b269720742ca76f0f1",
+          "actual_profile_id": "5543ca0903ce733e36b9b88a964f80865d3ea1816ac3f1b269720742ca76f0f1",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 469,
+          "output_tokens": 251,
+          "total_ms": 6514,
+          "output_sha256": "f4181dccd237cc399d28937692c7a6b60a3f4a5d6d6ee371e0fc264fc81b4432",
+          "thinking_observed": true,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.separated",
+            "structured.decoder",
+            "proposal.schema",
+            "proposal.small_edit",
+            "canonical.unchanged"
+          ]
+        }
+      ]
+    }
+  ]
+}

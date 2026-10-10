@@ -289,6 +289,22 @@ class ContractChecks(unittest.TestCase):
         self.assertEqual(profiles.for_observation(
             target_profile_id=profiles.MAC_M5_16GB, models=[changed]), [])
 
+    def test_ollama_0342_admits_its_measured_mac_workflows(self):
+        model = v1.ModelRef(
+            model_id=profiles.MODEL_ID,
+            manifest_sha256=profiles.MODEL_DIGEST,
+            runtime=profiles.RUNTIME,
+            runtime_version="0.34.2")
+        admitted = profiles.for_observation(
+            target_profile_id=profiles.MAC_M5_16GB, models=[model])
+        self.assertEqual(
+            {profile.workflow_mode: profile.max_output_tokens
+             for profile in admitted},
+            {profiles.CHAT: 2048, profiles.CODE: 2048})
+        changed = model.model_copy(update={"runtime_version": "0.34.3"})
+        self.assertEqual(profiles.for_observation(
+            target_profile_id=profiles.MAC_M5_16GB, models=[changed]), [])
+
     def test_no_registered_mac_code_profile_exceeds_the_accepted_envelope(self):
         code_profiles = [
             profile for profile in profiles.PROFILES

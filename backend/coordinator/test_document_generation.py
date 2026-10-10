@@ -30,7 +30,9 @@ import json
 import unittest
 from unittest.mock import patch
 
-from backend.coordinator import context, db, docflow, docgen, runtime
+from backend.contracts import profiles
+from backend.coordinator import context, db, docflow, docgen, models, runtime
+from backend.coordinator.server import RequestError
 from backend.coordinator.test_execution4a import Harness
 
 VALID = {"title": "Machine learning", "sections": [
@@ -499,6 +501,12 @@ class OtherRoutesUnconstrained(Harness):
 
 
 class ConversionUnaffected(GenerationHarness):
+    RUNTIME_0342 = {
+        "reachable": True, "server_version": "0.34.2",
+        "models": [runtime.MODEL],
+        "digests": {runtime.MODEL:
+                    models.entry_for(runtime.MODEL).manifest_sha256}}
+
     def test_the_previous_answer_export_still_calls_no_model(self):
         self.completed_answer("The pump exceeded its vibration limit.")
         stream = scripted_stream(body())
@@ -511,6 +519,317 @@ class ConversionUnaffected(GenerationHarness):
         self.assertIn("The pump exceeded its vibration limit.", self.written())
         self.assertEqual(self.artifacts()[0]["workflow"],
                          docflow.WORKFLOW_CONVERSION)
+
+    def test_chat_only_profile_still_converts_a_previous_answer_without_a_model(self):
+        self.completed_answer("The pump exceeded its vibration limit.")
+        with patch.object(runtime, "probe", return_value=self.RUNTIME_0342):
+            job = self.send("write me a document on your output",
+                            skill_id=docflow.WRITE_SKILL,
+                            output_format=docflow.FORMAT_DOCX)
+            with patch.object(runtime, "stream_chat") as never:
+                self.c._run(job, self.chat, docflow.WRITE_SKILL)
+            never.assert_not_called()
+        self.assertEqual(self.job_state(job), "completed")
+        self.assertIn("The pump exceeded its vibration limit.", self.written())
+        self.assertEqual(self.artifacts()[0]["workflow"],
+                         docflow.WORKFLOW_CONVERSION)
+
+
+# ---------------------------------------------------------------------------
+# The limited Chat-backed route: Ollama 0.34.2 has an exact Chat profile for
+# the selected model and no structured Documents profile.
+# ---------------------------------------------------------------------------
+
+MARKDOWN = ("# Deep learning, summarised\n\n## Overview\n\nNeural networks "
+            "learn layered features from data.\n\n## Training\n\nGradients "
+            "update the weights.")
+
+
+class ChatBackedGeneration(GenerationHarness):
+    # A declared window too small for the structured Documents reply: new
+    # documents are written as plain Chat and converted here.
+    RUNTIME_0342 = {**ConversionUnaffected.RUNTIME_0342,
+                    "context_lengths": {runtime.MODEL: 2048}}
+    REQUEST = "create a document of deep learning summarised"
+
+    def setUp(self):
+        super().setUp()
+        probe = patch.object(runtime, "probe", return_value=self.RUNTIME_0342)
+        probe.start()
+        self.addCleanup(probe.stop)
+
+    def send_write(self, request=None, *, output_format=docflow.FORMAT_DOCX,
+                   doc_workflow=docflow.WORKFLOW_GENERAL):
+        with patch("backend.coordinator.server.threading.Thread.start"):
+            return self.c.submit(self.chat, request or self.REQUEST,
+                                 skill_id=docflow.WRITE_SKILL,
+                                 output_format=output_format,
+                                 doc_workflow=doc_workflow)
+
+    def run_write(self, stream, **kwargs):
+        job = self.send_write(**kwargs)
+        with patch.object(runtime, "stream_chat", stream):
+            self.c._run(job, self.chat, docflow.WRITE_SKILL)
+        return job
+
+    def attempt(self, job):
+        return self.c.conn.execute(
+            "SELECT a.* FROM jobs j JOIN attempts a"
+            " ON a.attempt_id = j.active_attempt_id WHERE j.job_id=?",
+            (job,)).fetchone()
+
+    def exact_chat_profile(self):
+        return next(p for p in profiles.PROFILES
+                    if p.workflow_mode == profiles.CHAT
+                    and p.model.runtime_version == "0.34.2"
+                    and p.target_profile_id == profiles.MAC_M5_16GB)
+
+    def test_a_fresh_prompt_is_one_chat_call_then_a_real_document(self):
+        stream = scripted_stream(MARKDOWN)
+        job = self.run_write(stream)
+        self.assertEqual(self.job_state(job), "completed")
+        self.assertEqual(stream.calls, 1, "exactly one model call, no repair")
+        self.assertEqual(stream.formats, [None], "text decoding, no JSON schema")
+        rows = self.artifacts()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["workflow"], docflow.WORKFLOW_CHAT_DOCUMENT)
+        root = db.artifacts_root(self.c.state_path)
+        self.assertTrue(docgen.validate(root / rows[0]["stored_name"])["readable"])
+        text = self.written()
+        for expected in ("Deep learning, summarised", "Overview",
+                         "Neural networks learn layered features from data.",
+                         "Gradients update the weights."):
+            self.assertIn(expected, text)
+
+    def test_the_attempt_records_the_exact_chat_profile_and_text_decoder(self):
+        job = self.run_write(scripted_stream(MARKDOWN))
+        attempt = self.attempt(job)
+        actual = json.loads(attempt["actual_profile_json"])
+        requested = json.loads(attempt["requested_inference_json"])
+        self.assertEqual(actual["profile_id"], self.exact_chat_profile().profile_id)
+        self.assertEqual(actual["workflow_mode"], profiles.CHAT)
+        self.assertEqual(requested["workflow_mode"], profiles.CHAT)
+        self.assertEqual(requested["decoder"], "text")
+        self.assertLessEqual(requested["output_allowance_tokens"],
+                             actual["max_output_tokens"])
+        self.assertIn("answers as plain Chat", attempt["route_reason"])
+        self.assertNotIn(profiles.DOCUMENTS, json.dumps(
+            [actual, requested, self.last_answer()]))
+
+    def test_no_previous_answer_is_needed(self):
+        self.assertIsNone(db.latest_completed_answer(self.c.conn, self.chat))
+        job = self.run_write(scripted_stream(MARKDOWN))
+        self.assertEqual(self.job_state(job), "completed")
+
+    def test_the_document_holds_only_the_requested_content(self):
+        self.run_write(scripted_stream(MARKDOWN))
+        text = self.written()
+        for leaked in (runtime.MODEL, "profile", "Chat", "Refinix",
+                       "model's draft", profiles.DOCUMENTS):
+            self.assertNotIn(leaked, text)
+
+    def test_the_request_asks_for_the_document_itself(self):
+        stream = scripted_stream(MARKDOWN)
+        self.run_write(stream)
+        systems = [m["content"] for m in stream.messages[0] if m["role"] == "system"]
+        # One leading system message carries every instruction (some chat
+        # templates refuse a second); the instruction keeps its system role.
+        self.assertEqual(len(systems), 1)
+        self.assertIn(docflow.CHAT_WRITE_INSTRUCTION, systems[0])
+        self.assertEqual(stream.messages[0][-1]["content"], self.REQUEST)
+
+    def test_a_document_from_an_attached_file_carries_no_reading_note(self):
+        from backend.coordinator.test_documents import make_docx
+        data = make_docx(self.home / "source.docx", ["PUMP RAN AT 7.9 MM/S"],
+                         pages_property=1).read_bytes()
+        record = self.attach("source.docx", data)
+        job = self.send_write("write a document summarising the attached report")
+        self.bind(job, record)
+        stream = scripted_stream(MARKDOWN)
+        with patch.object(runtime, "stream_chat", stream):
+            self.c._run(job, self.chat, docflow.WRITE_SKILL)
+        self.assertEqual(self.job_state(job), "completed")
+        self.assertEqual(stream.calls, 1)
+        self.assertIn("PUMP RAN AT 7.9 MM/S", json.dumps(stream.messages[0]))
+        self.assertIn("Read for this request", self.last_answer())
+        text = self.written()
+        self.assertNotIn("Read for this request", text)
+        self.assertNotIn("source.docx", text)
+        self.assertIn("Neural networks learn layered features from data.", text)
+
+    def test_pdf_output_uses_the_same_single_call(self):
+        from backend.coordinator import pdfgen
+        if not pdfgen.available():
+            self.skipTest("PDF writing is not available in this environment")
+        stream = scripted_stream(MARKDOWN)
+        job = self.run_write(stream, output_format=docflow.FORMAT_PDF)
+        self.assertEqual(self.job_state(job), "completed")
+        self.assertEqual(stream.calls, 1)
+        rows = self.artifacts()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["media_type"], "application/pdf")
+
+    def test_a_length_stop_writes_nothing(self):
+        job = self.run_write(scripted_stream(MARKDOWN, done_reasons=("length",)))
+        self.assertEqual(self.job_state(job), "failed")
+        self.assertEqual(self.artifacts(), [])
+        self.assertEqual(self.artifact_files(), [])
+
+    def test_a_runtime_failure_writes_nothing(self):
+        def broken(*_args, **_kwargs):
+            raise runtime.RuntimeUnavailable("the engine stopped answering")
+            yield  # pragma: no cover
+        job = self.run_write(broken)
+        self.assertEqual(self.job_state(job), "failed")
+        self.assertEqual(self.artifacts(), [])
+
+    def test_cancelling_during_the_reply_writes_nothing(self):
+        job = self.send_write()
+
+        def stream(messages, *, should_cancel=None, **_kwargs):
+            yield "delta", "# Deep learning"
+            self.c.request_cancel(job)
+            if should_cancel():
+                yield "cancelled", None
+                return
+            yield "done", {"done_reason": "stop"}
+
+        with patch.object(runtime, "stream_chat", stream):
+            self.c._run(job, self.chat, docflow.WRITE_SKILL)
+        self.assertEqual(self.job_state(job), "cancelled")
+        self.assertEqual(self.artifacts(), [])
+        self.assertEqual(self.artifact_files(), [])
+
+    def test_cancelling_after_the_file_is_written_removes_it(self):
+        job = self.send_write()
+        original = self.c._write_artifact
+
+        def then_cancel(*args, **kwargs):
+            artifact = original(*args, **kwargs)
+            self.c.request_cancel(job)
+            return artifact
+
+        with patch.object(runtime, "stream_chat", scripted_stream(MARKDOWN)), \
+                patch.object(self.c, "_write_artifact", then_cancel):
+            self.c._run(job, self.chat, docflow.WRITE_SKILL)
+        self.assertEqual(self.job_state(job), "cancelled")
+        self.assertEqual(self.artifacts(), [])
+        self.assertEqual(self.artifact_files(), [])
+
+    def test_the_approval_note_is_refused_on_the_chat_backed_route(self):
+        with self.assertRaises(RequestError) as refused:
+            self.send_write(doc_workflow=docflow.WORKFLOW_APPROVAL_NOTE)
+        self.assertIn("structured Documents profile", str(refused.exception))
+        self.assertNotIn("qualified", str(refused.exception))
+
+    def test_an_unavailable_word_writer_refuses_before_any_work(self):
+        with patch("backend.coordinator.server.docgen_available",
+                   return_value=False):
+            with self.assertRaises(RequestError) as refused:
+                self.send_write()
+        self.assertIn("Word documents cannot be written", str(refused.exception))
+
+    def test_an_unavailable_pdf_writer_refuses_before_any_work(self):
+        from backend.coordinator import pdfgen
+        with patch.object(pdfgen, "available", return_value=False), \
+                patch.object(pdfgen, "probe",
+                             return_value={"detail": "PDF writing is unavailable."}):
+            with self.assertRaises(RequestError):
+                self.send_write(output_format=docflow.FORMAT_PDF)
+
+    def test_a_disabled_model_is_not_silently_replaced(self):
+        db.set_model_enabled(self.c.conn, runtime.MODEL, False)
+        with self.assertRaises(RequestError) as refused:
+            self.send_write()
+        self.assertIn("switched off", str(refused.exception))
+
+
+class NoChatProfileBlocksGeneration(GenerationHarness):
+    """An Ollama below the 0.12.6 baseline is not used: no model can write a
+    new document, while converting a previous answer still needs none."""
+
+    UNMEASURED = {**ConversionUnaffected.RUNTIME_0342, "server_version": "0.11.0"}
+
+    def test_new_documents_are_refused_but_conversion_still_works(self):
+        self.completed_answer("The pump exceeded its vibration limit.")
+        with patch.object(runtime, "probe", return_value=self.UNMEASURED):
+            with self.assertRaises(RequestError) as refused:
+                self.send("Create a document explaining machine learning",
+                          skill_id=docflow.WRITE_SKILL,
+                          output_format=docflow.FORMAT_DOCX,
+                          doc_workflow=docflow.WORKFLOW_GENERAL)
+            self.assertIn("No installed local model", str(refused.exception))
+            job = self.send("save your previous answer as a docx",
+                            skill_id=docflow.WRITE_SKILL,
+                            output_format=docflow.FORMAT_DOCX)
+            with patch.object(runtime, "stream_chat") as never:
+                self.c._run(job, self.chat, docflow.WRITE_SKILL)
+            never.assert_not_called()
+        self.assertEqual(self.job_state(job), "completed")
+
+
+class StructuredRouteUnchanged(GenerationHarness):
+    """Ollama 0.32.14 has an exact structured profile, which still wins."""
+
+    def test_the_structured_profile_and_json_schema_are_still_used(self):
+        job, stream = self.generate(body())
+        self.assertEqual(stream.formats[0], docflow.GENERAL_DOCUMENT_FORMAT)
+        row = self.c.conn.execute(
+            "SELECT a.actual_profile_json FROM jobs j JOIN attempts a"
+            " ON a.attempt_id = j.active_attempt_id WHERE j.job_id=?",
+            (job,)).fetchone()
+        self.assertEqual(json.loads(row["actual_profile_json"])["workflow_mode"],
+                         profiles.DOCUMENTS)
+        self.assertEqual(self.artifacts()[0]["workflow"], docflow.WORKFLOW_GENERAL)
+
+
+class ReasoningQualifiedPerWorkflow(GenerationHarness):
+    """Reasoning is chosen per model; Documents may qualify only one mode.
+
+    The managed engine's Documents profile claims reasoning off, because with
+    it on the model spent its whole allowance thinking. A person who turned
+    reasoning on for Chat still gets a document, run in the qualified mode,
+    and the route says so.
+    """
+
+    def setUp(self):
+        super().setUp()
+        original = next(p for p in profiles.PROFILES
+                        if p.workflow_mode == profiles.DOCUMENTS
+                        and p.target_profile_id == profiles.MAC_M5_16GB
+                        and p.model.runtime_version == "0.32.14")
+        narrowed = profiles._profile(
+            runtime_version="0.32.14", target=profiles.MAC_M5_16GB,
+            workflow=profiles.DOCUMENTS, context=original.qualified_context_tokens,
+            default_output=original.default_output_tokens,
+            max_output=original.max_output_tokens, reasoning=("disabled",),
+            decoder=("json_schema",), evidence_ref="test")
+        registry = tuple(narrowed if p is original else p for p in profiles.PROFILES)
+        patcher = patch.object(profiles, "PROFILES", registry)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _attempt(self, job):
+        return self.c.conn.execute(
+            "SELECT a.reasoning_json, a.route_reason FROM jobs j JOIN attempts a"
+            " ON a.attempt_id = j.active_attempt_id WHERE j.job_id=?", (job,)).fetchone()
+
+    def test_reasoning_on_runs_documents_in_the_qualified_mode_and_says_so(self):
+        db.set_reasoning(self.c.conn, self.c.model_for("documents.generate"), True)
+        job, stream = self.generate(body())
+        self.assertEqual(self.job_state(job), "completed")
+        self.assertEqual(stream.thinking, [False])
+        row = self._attempt(job)
+        self.assertFalse(json.loads(row["reasoning_json"])["reasoning_enabled"])
+        self.assertIn("ran with reasoning off", row["route_reason"])
+        # The person's choice for the model is unchanged.
+        self.assertTrue(db.get_reasoning(self.c.conn,
+                                         self.c.model_for("documents.generate")))
+
+    def test_reasoning_off_needs_no_note(self):
+        job, stream = self.generate(body())
+        self.assertEqual(stream.thinking, [False])
+        self.assertNotIn("ran with reasoning", self._attempt(job)["route_reason"])
 
 
 if __name__ == "__main__":

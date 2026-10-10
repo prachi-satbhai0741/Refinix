@@ -35,19 +35,12 @@ or merge a PR, including their own. Member → `dev` PRs run no automated CI.
 Automated checks run on the `dev` → `main` release PR and again after its commit
 lands on `main`. No approval quota or owner sign-off is required.
 
-## Repository rename status
+## Repository name
 
-The requested GitHub name is `prachi-satbhai0741/refinix`. On 2026-09-13 the
-available authenticated account had write access but no administrator permission,
-so the remote rename remains pending. A repository administrator can open
-Settings → General → Repository name, enter `refinix`, and choose Rename.
-[GitHub requires administrator permission for this operation](https://docs.github.com/en/repositories/creating-and-managing-repositories/renaming-a-repository).
-
-After confirming the renamed repository still has id `1352342428`, update each
-existing clone's origin to `https://github.com/prachi-satbhai0741/refinix.git`.
-Existing local directory names can stay unchanged; renaming the GitHub repository
-does not require moving a working checkout or migrating `.aegisforge` user data.
-Update the clone URL below after the remote rename is verified.
+The GitHub repository is `prachi-satbhai0741/Refinix` (public). Clones made under the
+earlier name keep working through GitHub's redirect; update an old clone's origin with
+`git remote set-url origin https://github.com/prachi-satbhai0741/Refinix.git`. Local
+directory names can stay unchanged, and `.aegisforge` user data needs no migration.
 
 ## One-time setup
 
@@ -131,9 +124,14 @@ the commits and leave `dev` permanently diverged from `main`. PRs into `dev`
 may be squashed.
 
 Merging source into main does not publish or install an application update.
-The planned [application release contract](docs/releases.md) requires a designated
-version, qualified platform builds, signing and update metadata. The current CI
-checks source; these documents do not add or authorise publishing automation.
+A release follows [docs/releases.md](docs/releases.md#beta-channel): a designated
+version on a reviewed `main` commit; the manual **Beta packages** workflow
+(`.github/workflows/release.yml`, read-only, never publishes) for Windows and
+Ubuntu; the release Mac for the signed macOS build; local assembly and checks
+(`scripts/release_assemble.py`); then a draft GitHub release, verified and
+published by a maintainer, and the reviewed feed advance in the website
+repository. Every one of those GitHub writes is a person's explicit action —
+agents prepare the exact commands and never run them.
 
 ## Merging
 

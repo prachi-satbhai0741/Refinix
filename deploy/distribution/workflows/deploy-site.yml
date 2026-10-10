@@ -1,0 +1,62 @@
+name: Deploy site
+
+# The distribution repository (the website at refinix.runs-on.dev) serves the
+# website and the Beta update feed (updates/beta/) from one committed tree,
+# through GitHub Pages with the source set to "GitHub Actions". A person's push
+# to main deploys the head of main. Every deploy, from here or from the feed
+# workflows, shares the beta-feed queue, and a run deploys only if main has
+# not moved since it started (a newer run deploys the newer tree): an older
+# tree never replaces a newer one on the live site.
+#
+# Template kept in the Refinix source repository at
+# deploy/distribution/workflows/; copied into .github/workflows/ of the
+# distribution repository by its owner.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-feed
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Check out the head of main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Deploy only the newest tree
+        id: head
+        run: |
+          here=$(git rev-parse HEAD)
+          now=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1)
+          echo "deploying $here (main is $now)"
+          [ "$here" = "$now" ] || { echo "main moved; the newer run deploys"; echo "skip=1" >> "$GITHUB_OUTPUT"; }
+
+      - name: Package the site and feed
+        if: steps.head.outputs.skip != '1'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        if: steps.head.outputs.skip != '1'
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

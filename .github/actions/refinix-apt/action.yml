@@ -1,0 +1,13 @@
+name: Bounded Ubuntu package setup
+description: Install CI prerequisites with bounded waits and an official mirror fallback
+inputs:
+  packages:
+    description: Space-separated Ubuntu package names
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"

@@ -72,7 +72,7 @@ Worth being deliberate about this, because the two get mixed up easily:
 |---|---|---|
 | Repository | AegisForge | Git, internal only |
 | Product | **Refinix** | Nav, page titles, the application UI |
-| Team | **Rokunin Sync** | Credits, footer, the SIH deck |
+| Team | **Rokunin Sync** | Credits, footer, presentation decks |
 
 The supplied lockup spells **ROKUNIN SYNC**, so it is the *team* mark. It is
 placed in the footer credit and the closing signature, where team attribution

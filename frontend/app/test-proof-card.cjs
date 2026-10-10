@@ -279,3 +279,24 @@ test('the card renders exactly the attempts the coordinator returned', async () 
   assert.match(p.text('c-proof'), /paired worker/);
   assert.match(p.text('c-proof'), /python3 -m unittest → exit 0/);
 });
+
+// A local attempt Refinix's process observer watched: counts with the
+// observer's own coverage note, never an enforcement or zero-egress claim.
+test('an observed local attempt shows what was seen and what was not watched', () => {
+  const coverage = 'Observed Refinix\'s own processes only … this is observation, not enforcement.';
+  const observed = localAttempt({
+    proof: Object.assign({}, localAttempt().proof, { network: Object.assign(emptyNetwork(), {
+      observer: 'Refinix process observer', started_at: '2026-10-05T10:00:00Z',
+      ended_at: '2026-10-05T10:00:04Z', node_ids: ['mac'],
+      interfaces: ['coordinator process sockets'],
+      public_outbound_flows: 0, trusted_lan_connections: 0 }) }),
+    sources: Object.assign({}, localAttempt().sources, {
+      network: `Refinix process observer saw 0 public connections. ${coverage}` }),
+  });
+  const shown = render(card([observed], {
+    network: `Each attempt below lists what was observed while it ran. ${coverage}` }))
+    .text('c-proof');
+  assert.match(shown, /0 public, 0 local-network connection\(s\) observed/);
+  assert.match(shown, /observation, not enforcement/);
+  assert.doesNotMatch(shown, /enforced|no traffic left|zero egress/);
+});

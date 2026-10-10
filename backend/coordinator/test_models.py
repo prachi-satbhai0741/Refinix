@@ -66,7 +66,15 @@ class TestTheCatalogue(unittest.TestCase):
                 self.assertTrue(entry.licence)
                 self.assertEqual(len(entry.manifest_sha256 or ""), 64)
                 self.assertTrue(entry.evidence)
-                self.assertEqual(entry.evidence_state, models.VERIFIED)
+                # Inspected artifacts are VERIFIED; library entries are LISTED:
+                # pinned from the publisher's metadata, never measured here.
+                self.assertIn(entry.evidence_state, (models.VERIFIED, models.LISTED))
+                if entry.evidence_state == models.LISTED:
+                    self.assertTrue(entry.files and entry.revision and entry.repo)
+                    self.assertTrue(all(len(f.sha256) == 64 and f.size > 0
+                                        and f.url.startswith("https://huggingface.co/")
+                                        and entry.revision in f.url
+                                        for f in entry.files))
 
     def test_a_research_candidate_is_not_offered_as_a_supported_model(self):
         """`docs/model-catalog.md`: unqualified candidates are not download
@@ -219,8 +227,98 @@ class TestSelfTests(unittest.TestCase):
             generate=lambda *_a, **_k:
                 "The operation is unsafe because 2.4 is less than 3.1.")
         self.assertEqual(result["state"], models.FAILED)
-        self.assertIn("single line", result["detail"])
+        self.assertEqual(result["failure_kind"], models.EXTRA_TEXT)
+        self.assertIn("one-line form", result["detail"])
+        self.assertIn("formatting failure", result["detail"])
+        self.assertNotIn("reverses", result["detail"])
         self.assertNotIn("smaller number when", result["detail"])
+
+    def run_chat(self, reply):
+        return models.run_selftest(models.CHAT, CATALOGUED,
+                                   generate=lambda *_a, **_k: reply)
+
+    def test_line_boundaries_are_checked_before_whitespace_is_normalised(self):
+        """Found in review: joining every run of whitespace first let a reply
+        spread over several lines pass as the one line it was asked for."""
+        for reply in (f"unsafe;\nsmaller number: {models.CHAT_CHECK_SMALLER}",
+                      f"unsafe; smaller number:\r\n{models.CHAT_CHECK_SMALLER}",
+                      f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}\nExplanation."):
+            with self.subTest(reply=reply):
+                result = self.run_chat(reply)
+                self.assertEqual(result["state"], models.FAILED)
+                self.assertEqual(result["failure_kind"], models.MULTI_LINE)
+                self.assertNotIn("reverses", result["detail"])
+                self.assertIn("⏎", result["reply_excerpt"])
+
+    def test_surrounding_whitespace_and_one_trailing_newline_still_pass(self):
+        result = self.run_chat(f"  unsafe; smaller number: {models.CHAT_CHECK_SMALLER}\n")
+        self.assertEqual(result["state"], models.PASSED)
+        self.assertIsNone(result["failure_kind"])
+
+    def test_formatting_and_wrong_answers_are_different_failure_kinds(self):
+        cases = {
+            "": models.EMPTY,
+            "   ": models.EMPTY,
+            f"not unsafe; smaller number: {models.CHAT_CHECK_SMALLER}": models.EXTRA_TEXT,
+            f"not unsafe; {models.CHAT_CHECK_SMALLER}": models.EXTRA_TEXT,
+            f"safe; {models.CHAT_CHECK_SMALLER}": models.WRONG_VERDICT,
+            f"unsafe; {models.CHAT_CHECK_LARGER}": models.WRONG_NUMBER,
+            f"unsafe; {models.CHAT_CHECK_SMALLER} because it is lower": models.EXTRA_TEXT,
+            (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}, so actually "
+             "it is safe"): models.EXTRA_TEXT,
+            f"safe; smaller number: {models.CHAT_CHECK_SMALLER}": models.WRONG_VERDICT,
+            f"unsafe; smaller number: {models.CHAT_CHECK_LARGER}": models.WRONG_NUMBER,
+        }
+        for reply, kind in cases.items():
+            with self.subTest(reply=reply):
+                result = self.run_chat(reply)
+                self.assertEqual(result["state"], models.FAILED)
+                self.assertEqual(result["failure_kind"], kind)
+                said_reversed = "reverses" in result["detail"]
+                self.assertEqual(said_reversed, kind not in models.FORMAT_FAILURES)
+
+    def test_the_correct_answer_passes_with_or_without_the_label(self):
+        """User decision D1: the verdict and the number are the answer; the
+        label is formatting. Any model, not one model's habit."""
+        for reply in (f"unsafe; smaller number: {models.CHAT_CHECK_SMALLER}",
+                      f"unsafe; {models.CHAT_CHECK_SMALLER}",
+                      f"Unsafe ; {models.CHAT_CHECK_SMALLER}.",
+                      f"  unsafe;{models.CHAT_CHECK_SMALLER}  \n"):
+            with self.subTest(reply=reply):
+                self.assertEqual(self.run_chat(reply)["state"], models.PASSED)
+
+    def test_the_shorter_form_still_rejects_lines_prose_and_contradictions(self):
+        for reply in (f"unsafe;\n{models.CHAT_CHECK_SMALLER}",
+                      f"unsafe; {models.CHAT_CHECK_SMALLER}\nsafe; {models.CHAT_CHECK_LARGER}",
+                      f"unsafe; {models.CHAT_CHECK_SMALLER} — actually safe",
+                      f"The answer: unsafe; {models.CHAT_CHECK_SMALLER}"):
+            with self.subTest(reply=reply):
+                self.assertEqual(self.run_chat(reply)["state"], models.FAILED)
+
+    def test_an_answer_cut_off_by_the_limit_is_a_failure_with_evidence(self):
+        """D9: the model was still writing when the check's limit was reached."""
+        def cut_off(*_a, **_k):
+            raise models.IncompleteReply("It is my understanding that you are " * 20, 128)
+        result = models.run_selftest(models.CHAT, CATALOGUED, generate=cut_off)
+        self.assertEqual(result["state"], models.FAILED)
+        self.assertEqual(result["failure_kind"], models.INCOMPLETE)
+        self.assertIn("128-token output limit", result["detail"])
+        self.assertIn("not every use of the model", result["detail"])
+        self.assertTrue(result["reply_excerpt"].startswith("It is my understanding"))
+        self.assertLessEqual(len(result["reply_excerpt"]), models.EXCERPT_CHARS + 1)
+
+    def test_a_check_that_could_not_run_is_never_a_model_failure(self):
+        def crashed(*_a, **_k):
+            raise RuntimeError("the runtime stopped answering")
+        with self.assertRaises(models.SelfTestError):
+            models.run_selftest(models.CHAT, CATALOGUED, generate=crashed)
+
+    def test_the_excerpt_is_bounded_and_inert(self):
+        reply = "<script>alert(1)</script>\x07" + "x" * 1000
+        excerpt = models.reply_excerpt(reply)
+        self.assertLessEqual(len(excerpt), models.EXCERPT_CHARS + 1)
+        self.assertNotIn("\x07", excerpt)
+        self.assertTrue(excerpt.startswith("<script>"), "kept as text; the page renders it inert")
 
     def test_no_reply_is_checked_for_a_pump_or_any_other_subject(self):
         """The fix for the observed failure is a shared reliability boundary,
@@ -422,19 +520,35 @@ class TestInventory(CoordinatorBase):
             row = self.row("somebody/random:latest")
         self.assertEqual(row["state"], models.UNLISTED)
         self.assertEqual(row["provenance"]["evidence_state"], models.UNVERIFIED)
-        # Installed is not qualified: arbitrary bytes cannot inherit another
-        # model's profile merely because the runtime lists them.
-        self.assertEqual(row["eligible_scopes"], [])
+        # A model the team never measured may still run here under its own
+        # candidate profile; it never inherits another model's measured one,
+        # and its evidence says "compatible", not "measured".
+        self.assertEqual(row["eligible_scopes"], ["chat", "code", "documents.generate"])
+        for profile in row["execution_profiles"]["local"]:
+            self.assertEqual(profile["qualification_state"], "candidate")
+            self.assertFalse(profile["eligible"])
+            self.assertEqual(profile["model"]["model_id"], "somebody/random:latest")
+        self.assertEqual(row["evidence"]["chat"], "compatible")
 
-    def test_a_catalogue_digest_mismatch_is_visible_and_ineligible(self):
+    def test_an_ollama_copy_with_other_bytes_is_labelled_not_refused(self):
+        """Ollama's store is the person's: other bytes under a catalogued tag
+        are their own model, visibly differing from Refinix's recorded copy,
+        and never presented as that recorded copy or its measured profile."""
         with patch.object(runtime, "probe", return_value={
                 **self.HEALTH, "digests": {CATALOGUED: "f" * 64}}):
             row = self.row(CATALOGUED)
-        self.assertEqual(row["integrity"]["local"]["state"], models.MISMATCH)
-        self.assertEqual(row["eligible_scopes"], [])
-        self.assertIsNone(self.c.local_model_ref(
-            CATALOGUED, {**self.HEALTH,
-                         "digests": {CATALOGUED: "f" * 64}}))
+        self.assertEqual(row["integrity"]["local"]["state"], models.DIFFERS)
+        self.assertTrue(row["integrity"]["local"]["eligible"])
+        self.assertIn("chat", row["eligible_scopes"])
+        for profile in row["execution_profiles"]["local"]:
+            self.assertNotEqual(profile["evidence_kind"], "measured")
+        ref = self.c.local_model_ref(
+            CATALOGUED, {**self.HEALTH, "digests": {CATALOGUED: "f" * 64}})
+        self.assertEqual(ref["manifest_sha256"], "f" * 64)
+
+    def test_a_worker_digest_mismatch_stays_strict(self):
+        """The strict check still guards what a paired worker advertises."""
+        self.assertFalse(models.digest_eligible(CATALOGUED, "f" * 64))
 
     def test_a_worker_catalogue_mismatch_falls_back_to_verified_local_bytes(self):
         relationship = {"relationship_id": "rel", "state": "paired"}
@@ -470,6 +584,7 @@ class TestEnablement(CoordinatorBase):
         self.assertTrue(self.row(CATALOGUED)["enabled"])
 
     def test_switching_one_off_removes_it_from_new_work_only(self):
+        self.c.select_model("chat", CATALOGUED)
         before = len(self.c.jobs(limit=-1))
         self.c.set_model_enabled(CATALOGUED, False)
         row = self.row(CATALOGUED)
@@ -557,6 +672,7 @@ class TestSelfTestRoute(CoordinatorBase):
         self.assertFalse(row["selftests"][models.CHAT]["current"])
 
     def test_an_unreachable_engine_records_unavailable_not_failed(self):
+        db.set_model_selection(self.c.conn, models.CHAT, CATALOGUED)
         with patch.object(runtime, "probe",
                           return_value={"reachable": False, "models": [],
                                         "digests": {}, "server_version": None}):
@@ -565,6 +681,7 @@ class TestSelfTestRoute(CoordinatorBase):
         self.assertIn("did not answer", record["detail"])
 
     def test_a_model_that_is_not_installed_records_unavailable(self):
+        db.set_model_selection(self.c.conn, models.CHAT, CATALOGUED)
         with patch.object(runtime, "probe",
                           return_value={**self.HEALTH, "models": [],
                                         "digests": {}}):
@@ -583,6 +700,7 @@ class TestSelfTestRoute(CoordinatorBase):
         self.assertEqual(asked, [], "chat needs no modality answer")
 
     def test_the_page_check_does_ask_what_the_model_accepts(self):
+        db.set_model_selection(self.c.conn, models.DOCUMENTS_OCR, runtime.OCR_MODEL)
         asked = []
         with patch.object(runtime, "model_capabilities",
                           lambda m: asked.append(m) or ["completion"]), \
@@ -591,7 +709,7 @@ class TestSelfTestRoute(CoordinatorBase):
                     "digests": {CATALOGUED: CATALOG_DIGEST,
                                 runtime.OCR_MODEL: "b" * 64}}):
             record = self.c.run_model_selftest(models.DOCUMENTS_OCR)
-        self.assertEqual(asked, [runtime.OCR_MODEL])
+        self.assertEqual(asked, [runtime.model_key(runtime.OLLAMA, runtime.OCR_MODEL)])
         self.assertEqual(record["state"], models.FAILED)
 
     def test_quitting_stops_a_self_test_instead_of_waiting_it_out(self):
@@ -623,7 +741,7 @@ class TestSelfTestRoute(CoordinatorBase):
         with patch.object(self.c, "_selftest_generate", generate):
             self.c.run_model_selftest(models.CHAT)
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][0], CATALOGUED)
+        self.assertEqual(calls[0][0], runtime.model_key(runtime.OLLAMA, CATALOGUED))
 
 
 class TestSelfTestWorkflowSelection(CoordinatorBase):
@@ -638,6 +756,9 @@ class TestSelfTestWorkflowSelection(CoordinatorBase):
 
     def workflow_for(self, scope):
         """The workflow the coordinator resolves a profile for, per scope."""
+        db.set_model_selection(self.c.conn, models.DOCUMENTS_OCR, runtime.OCR_MODEL)
+        db.set_model_selection(self.c.conn, scope, CATALOGUED) \
+            if scope != models.DOCUMENTS_OCR else None
         seen = {}
 
         def local_profile(*, workflow, **kwargs):
@@ -658,7 +779,8 @@ class TestSelfTestWorkflowSelection(CoordinatorBase):
     def test_the_ocr_self_test_asks_for_the_ocr_workflow(self):
         seen = self.workflow_for(models.DOCUMENTS_OCR)
         self.assertEqual(seen["workflow"], inference_profiles.OCR)
-        self.assertEqual(seen["model_id"], runtime.OCR_MODEL)
+        self.assertEqual(seen["model_id"],
+                         runtime.model_key(runtime.OLLAMA, runtime.OCR_MODEL))
 
     def test_the_ocr_self_test_is_not_admitted_as_documents(self):
         seen = self.workflow_for(models.DOCUMENTS_OCR)
@@ -678,7 +800,9 @@ class TestSelfTestWorkflowSelection(CoordinatorBase):
                          set(self.c.SELFTEST_WORKFLOWS))
 
     def test_the_ocr_self_test_is_unavailable_while_nothing_qualifies_it(self):
-        """The live product state: no OCR profile is registered."""
+        """A model whose observation does not declare vision gets no page
+        profile, whatever a later capability answer says, and no page is sent."""
+        db.set_model_selection(self.c.conn, models.DOCUMENTS_OCR, runtime.OCR_MODEL)
         with patch.object(runtime, "model_capabilities",
                           return_value=["completion", "vision"]), \
                 patch.object(runtime, "probe", return_value={
@@ -688,7 +812,7 @@ class TestSelfTestWorkflowSelection(CoordinatorBase):
                 patch.object(runtime, "stream_chat") as never:
             record = self.c.run_model_selftest(models.DOCUMENTS_OCR)
         self.assertEqual(record["state"], "unavailable")
-        self.assertIn("qualified execution profile", record["detail"])
+        self.assertIn("cannot run this check", record["detail"])
         never.assert_not_called()
 
 

@@ -278,7 +278,7 @@
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
             </svg>
-            Download Beta
+            Download Refinix Beta 0.1
           </a>
           <a class="btn" href="#proof">See the evidence rule</a>
           <a class="btn" href="#surfaces">Explore the surfaces</a>
@@ -292,16 +292,16 @@
           </div>
           <div class="term-body">
             <div class="term-panel" id="t-verify" role="tabpanel" aria-labelledby="tb-verify">
-<pre><span class="cmt"># each Beta package will ship with a checksum</span>
-<span class="pr">$</span> # exact file names and commands arrive with the Beta
-<span class="cmt"># and a signed manifest you can check offline</span>
-<span class="pr">$</span> # launch target: 10 October 2026</pre>
+<pre><span class="cmt"># every download is published with its SHA-256</span>
+<span class="pr">$</span> sha256sum refinix_*_amd64.deb
+<span class="cmt"># compare it with SHA256SUMS on the release page;</span>
+<span class="cmt"># in-app updates also check signed update metadata</span></pre>
             </div>
             <div class="term-panel" id="t-offline" role="tabpanel" aria-labelledby="tb-offline" hidden>
-<pre><span class="cmt"># a graphical installer, no terminal setup</span>
-<span class="pr">$</span> # Windows, macOS and Linux, on qualified profiles
-<span class="cmt"># offline model import, then a self-test</span>
-<span class="pr">$</span> # full steps arrive with the Beta release notes</pre>
+<pre><span class="cmt"># macOS: drag to Applications, then Open Anyway once</span>
+<span class="cmt"># Windows: setup for your account; SmartScreen may warn</span>
+<span class="cmt"># Ubuntu 24.04: open the .deb with App Center</span>
+<span class="cmt"># then setup: download a model, or reuse Ollama's</span></pre>
             </div>
           </div>
         </div>
@@ -655,24 +655,27 @@
         <svg class="lockup-mark" viewBox="0 0 120 120" aria-hidden="true"><use href="#rfx-mark"/></svg>
         <p class="wordmark">REFINIX</p>
       </div>
-      <h2 class="sec-h reveal d1" style="max-width:24ch">BETA WILL BE LAUNCHED SOON</h2>
+      <h2 class="sec-h reveal d1" style="max-width:24ch">DOWNLOAD REFINIX BETA 0.1</h2>
       <p class="sec-lede reveal d1">
-        One private workspace for chat, documents and code, built to keep your
-        work under your control. Launch target: end of 10 October 2026, IST.
+        Built from a reviewed commit and checked on hosted test machines for
+        macOS, Windows and Ubuntu. The macOS and Windows packages are not signed
+        by Apple or Microsoft, so your computer warns before the first open; each
+        card says what to expect. Testing on people's own computers is still
+        pending &mdash; please tell us what you see.
       </p>
-      <!-- Filled by the countdown script; hidden without it, where the line
-           above still gives the deadline. role=timer is not a live region, so
-           the seconds are not announced as they tick. -->
-      <div class="countdown reveal d2" role="timer">
-        <div class="cd-unit"><span class="cd-num" data-cd="d">9</span><span class="cd-label">Days</span></div>
-        <div class="cd-unit"><span class="cd-num" data-cd="h">00</span><span class="cd-label">Hours</span></div>
-        <div class="cd-unit"><span class="cd-num" data-cd="m">00</span><span class="cd-label">Minutes</span></div>
-        <div class="cd-unit"><span class="cd-num" data-cd="s">00</span><span class="cd-label">Seconds</span></div>
+      <!-- The download cards. scripts/build-site.sh replaces everything between
+           these two markers with cards rendered from the release's release.json;
+           without a release the line below stays, and nothing is offered. -->
+      <!-- refinix-downloads -->
+      <div class="builds reveal d2" id="downloads">
+        <p class="dl-none">Refinix Beta 0.1 is not published yet. Downloads appear here,
+          each with its SHA-256, once it is.</p>
       </div>
+      <!-- /refinix-downloads -->
       <div class="cta-row reveal d2">
-        <a class="btn btn-primary" href="#get">Download Beta</a>
-        <span class="btn" aria-disabled="true">Security model (link unavailable)</span>
-        <span class="btn" aria-disabled="true">Source: private for now</span>
+        <a class="btn" href="docs.html#first-run">How to install</a>
+        <a class="btn" href="https://github.com/prachi-satbhai0741/Refinix/blob/main/docs/security.md">Security model</a>
+        <a class="btn" href="https://github.com/prachi-satbhai0741/Refinix">Source on GitHub</a>
       </div>
     </section>
   </div>
@@ -688,7 +691,7 @@
           <li><a href="#surfaces">Surfaces</a></li>
           <li><a href="#proof">Evidence rule</a></li>
           <li><a href="#work">Capabilities</a></li>
-          <li><a href="#get">Download Beta</a></li>
+          <li><a href="#get">Downloads</a></li>
         </ul>
       </div>
       <div>
@@ -704,9 +707,9 @@
         <h4>Project</h4>
         <ul>
           <li><a href="docs.html#about">About us</a></li>
-          <li><span class="foot-na">Source repository (private for now)</span></li>
-          <li><span class="foot-na">Licence: Apache-2.0</span></li>
-          <li><span class="foot-na">Report an issue (link unavailable)</span></li>
+          <li><a href="https://github.com/prachi-satbhai0741/Refinix">Source repository</a></li>
+          <li><a href="https://github.com/prachi-satbhai0741/Refinix/blob/main/LICENSE">Licence: Apache-2.0</a></li>
+          <li><a href="https://github.com/prachi-satbhai0741/Refinix/issues">Report an issue</a></li>
         </ul>
       </div>
       <div>
@@ -784,87 +787,6 @@
       }
     });
   });
-
-  /* ---- Beta launch countdown ----
-     A nine-day window, 00:00 IST on 2 October to 00:00 IST on 11 October 2026
-     (18:30 UTC the evening before each). Remaining time is recomputed from those
-     absolute instants on every tick, so a refresh, a throttled tab or the
-     visitor's timezone cannot shift it. Before the window opens it shows the
-     full nine days; at the end it stops at zero. Reaching zero is not a
-     release, so the launch message stays as written until the page is updated.
-     The four numbers live in their own block under the launch line.
-
-     Each digit sits in its own slot, and only a digit that changes rolls: the
-     old one drops away as the new one falls in from above. The rolling copies
-     are hidden from assistive tech, which reads one plain copy of the number;
-     role=timer is not a live region, so nothing is announced as it ticks.
-     Under reduced motion the digits are swapped in place. */
-  var launch = document.querySelector('#get .countdown');
-  if (launch) {
-    var LAUNCH_START = Date.UTC(2026, 9, 1, 18, 30, 0);
-    var LAUNCH_END = Date.UTC(2026, 9, 10, 18, 30, 0);
-    var cd = function (k) { return launch.querySelector('[data-cd="' + k + '"]'); };
-    var cdD = cd('d'), cdH = cd('h'), cdM = cd('m'), cdS = cd('s');
-    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-    var cdSlot = function (ch) {
-      var slot = document.createElement('span'), c = document.createElement('span');
-      slot.className = 'cd-d';
-      c.className = 'cd-c';
-      c.textContent = ch;
-      slot.appendChild(c);
-      return slot;
-    };
-    var cdRoll = function (slot, ch) {
-      var prev = slot.querySelector('.cd-c:not(.cd-out)');
-      [].forEach.call(slot.querySelectorAll('.cd-out'), function (o) { slot.removeChild(o); });
-      var next = document.createElement('span');
-      next.className = 'cd-c cd-in';
-      next.textContent = ch;
-      if (prev) prev.className = 'cd-c cd-out';
-      slot.appendChild(next);
-      setTimeout(function () {
-        if (prev && prev.parentNode === slot) slot.removeChild(prev);
-        next.className = 'cd-c';
-      }, 700);
-    };
-    var cdSet = function (el, text) {
-      text = String(text);
-      var old = el.getAttribute('data-v');
-      if (old === text) return;
-      el.setAttribute('data-v', text);
-      var digits = el.querySelector('.cd-digits');
-      if (!digits || old === null || old.length !== text.length || reduced) {
-        el.textContent = '';
-        var plain = document.createElement('span');
-        plain.className = 'cd-sr';
-        el.appendChild(plain);
-        digits = document.createElement('span');
-        digits.className = 'cd-digits';
-        digits.setAttribute('aria-hidden', 'true');
-        for (var i = 0; i < text.length; i++) digits.appendChild(cdSlot(text.charAt(i)));
-        el.appendChild(digits);
-      } else {
-        for (var j = 0; j < text.length; j++) {
-          if (old.charAt(j) !== text.charAt(j)) cdRoll(digits.children[j], text.charAt(j));
-        }
-      }
-      el.querySelector('.cd-sr').textContent = text;
-    };
-    var launchTimer = 0;
-    var launchTick = function () {
-      var from = Math.max(Date.now(), LAUNCH_START);
-      var left = Math.max(0, Math.floor((LAUNCH_END - from) / 1000));
-      var d = Math.floor(left / 86400), h = Math.floor(left % 86400 / 3600),
-          m = Math.floor(left % 3600 / 60), s = left % 60;
-      cdSet(cdD, d);
-      cdSet(cdH, pad(h));
-      cdSet(cdM, pad(m));
-      cdSet(cdS, pad(s));
-      if (!left && launchTimer) { clearInterval(launchTimer); launchTimer = 0; }
-      return left;
-    };
-    if (launchTick()) launchTimer = setInterval(launchTick, 1000);
-  }
 
   /* ---- anchor offset follows the real header height ----
      The nav wraps onto extra rows at tablet and phone widths, so a fixed

@@ -1,0 +1,71 @@
+name: Refinix build Python
+description: >
+  The interpreter a Refinix package is built with, verified and recorded:
+  python.org's pinned 3.13 installer on macOS and Windows (size, SHA-256 and the
+  publisher's signature checked, desktop/packaging-tools.json), Ubuntu's own
+  python3.12 on Ubuntu. Creates the build virtual environment from it, puts it
+  first on PATH and exports REFINIX_PYTHON_PROVENANCE for the build identity.
+  Run after checkout; on Ubuntu, after the apt build packages are installed.
+
+inputs:
+  lane:
+    description: macos-arm64, windows-x64 or linux-x64
+    required: true
+  venv:
+    description: where the build environment goes
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install or record the pinned interpreter
+      shell: bash
+      env:
+        LANE: ${{ inputs.lane }}
+      run: |
+        set -euo pipefail
+        bootstrap=python3
+        command -v python3 >/dev/null || bootstrap=python
+        if [ "$LANE" = "linux-x64" ]; then
+          "$bootstrap" desktop/python_runtime.py record --lane "$LANE" --python /usr/bin/python3 \
+            --out "$RUNNER_TEMP/python-provenance.json" --github-env "$GITHUB_ENV"
+        else
+          "$bootstrap" desktop/python_runtime.py install --lane "$LANE" \
+            --cache "$RUNNER_TEMP/refinix-python" --github-env "$GITHUB_ENV"
+        fi
+
+    - name: Create the build environment from it
+      shell: bash
+      env:
+        LANE: ${{ inputs.lane }}
+        VENV: ${{ inputs.venv }}
+      run: |
+        set -euo pipefail
+        "$REFINIX_PYTHON" -m venv "$VENV"
+        if [ "$LANE" = "linux-x64" ]; then
+          # Share Ubuntu's GTK bindings only, not unrelated runner libraries.
+          "$VENV/bin/python" - <<'PY'
+        import sysconfig
+        from pathlib import Path
+        system = Path("/usr/lib/python3/dist-packages")
+        destination = Path(sysconfig.get_path("purelib"))
+        for name in ("gi", "cairo"):
+            source = system / name
+            if not source.is_dir():
+                raise SystemExit(f"Ubuntu binding missing: {source}")
+            (destination / name).symlink_to(source, target_is_directory=True)
+        # PyInstaller's GTK hook reads the distribution's version metadata.
+        for pattern in ("PyGObject-*.egg-info", "pycairo-*.egg-info"):
+            entries = list(system.glob(pattern))
+            if len(entries) != 1:
+                raise SystemExit(f"Ubuntu binding metadata missing or ambiguous: {pattern}")
+            source = entries[0]
+            (destination / source.name).symlink_to(source, target_is_directory=source.is_dir())
+        PY
+          "$VENV/bin/python" -c 'import gi, cairo'
+        fi
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          echo "$VENV/Scripts" >> "$GITHUB_PATH"
+        else
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+        fi

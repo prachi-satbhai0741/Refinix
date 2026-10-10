@@ -834,3 +834,33 @@ test('removal requires the coordinator count before discarding Undo', () => {
   assert.match(source, /result\.undo_lost/);
   assert.match(source, /discard_undo: true/);
 });
+
+function cardButtons(p, extra) {
+  p.run(`codeState = { ...codeState, ...${JSON.stringify(extra)} };`);
+  return p.json(`(() => {
+    const card = proposalCard({ proposal_id: 'p1', digest: 'd', state: 'proposed',
+      summary: 's', edits: [{ path: 'a.py', diff: 'one line' }] });
+    const out = [];
+    const walk = (n) => { if (n.tag === 'button') out.push(n.textContent);
+                          (n.children || []).forEach(walk); };
+    walk(card); return out;
+  })()`);
+}
+
+test('a local proposal can be validated on this computer when its sandbox is in force', () => {
+  const p = localPage();
+  const labels = cardButtons(p, { local_sandbox: { available: true,
+    qualification: 'provisional', detail: 'provisional Ubuntu sandbox' } });
+  assert.deepEqual(labels, ['Accept and apply', 'Validate in sandbox (provisional)', 'Reject']);
+});
+
+test('after a local pass Apply names it; after a failure Apply is an explicit choice', () => {
+  const p = localPage();
+  const passedLabels = cardButtons(p, { validation: { observed: true, passed: true,
+    matches: true, tests_run: 2, patch_sha256: 'd', pod: { qualification: 'provisional' } } });
+  assert.deepEqual(passedLabels, ['Apply (sandbox passed)', 'Reject']);
+  const failedLabels = cardButtons(p, { validation: { observed: true, passed: false,
+    matches: false, tests_run: 1, patch_sha256: 'd', detail: 'exit status 1' } });
+  assert.deepEqual(failedLabels, ['Apply without the sandbox…', 'Reject']);
+  assert.ok(!failedLabels.includes('Accept and apply'));
+});

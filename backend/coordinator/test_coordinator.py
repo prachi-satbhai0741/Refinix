@@ -31,6 +31,12 @@ READY_RUNTIME = {"reachable": True, "server_version": "0.33.3",
                  "digests": {runtime.MODEL:
                              models.entry_for(runtime.MODEL).manifest_sha256},
                  "loaded": None, "endpoint": runtime.HOST, "error": None}
+# What `runtime.confirm_ollama` returns for a local model. Stream tests stub
+# the identity confirmation (it has its own tests) and patch `_request` with
+# the chat stream alone.
+LOCAL_FACTS = {"capabilities": ["completion", "thinking"], "locality": "local",
+               "context_length": 8192, "architecture": "qwen35", "details": {},
+               "requires": None}
 CHAT_PROFILE = next(
     profile for profile in profiles.PROFILES
     if profile.target_profile_id == profiles.MAC_M5_16GB
@@ -410,7 +416,8 @@ class TestCompletion(unittest.TestCase):
     def test_real_input_overflow_error_is_actionable(self):
         error = HTTPError(runtime.HOST, 400, 'Bad Request', {},
                           BytesIO(b'{"error":"exceed_context_size_error"}'))
-        with patch.object(runtime, '_request', side_effect=error):
+        with patch.object(runtime, '_request', side_effect=error), \
+                patch.object(runtime, 'confirm_ollama', return_value=LOCAL_FACTS):
             with self.assertRaisesRegex(runtime.RuntimeUnavailable, 'Shorten your message'):
                 profile = CHAT_PROFILE
                 inference = profiles.request(
@@ -432,6 +439,7 @@ class TestCompletion(unittest.TestCase):
                 final = {'message': {'content': 'saved partial answer'}, 'done': True,
                          'done_reason': 'length', 'prompt_eval_count': prompt, 'eval_count': output}
                 with patch.object(runtime, 'probe', return_value=READY_RUNTIME), \
+                        patch.object(runtime, 'confirm_ollama', return_value=LOCAL_FACTS), \
                         patch.object(runtime, '_request', return_value=BytesIO((json.dumps(final) + '\n').encode())):
                     c._run(job, chat)
                 detail = c.job_detail(job)
@@ -466,6 +474,7 @@ class TestCompletion(unittest.TestCase):
                     json.dumps({'done': True, 'done_reason': reason, 'eval_count': 700,
                                 'total_duration': 1000000}) + '\n').encode())
                 with patch.object(runtime, 'probe', return_value=READY_RUNTIME), \
+                        patch.object(runtime, 'confirm_ollama', return_value=LOCAL_FACTS), \
                         patch.object(runtime, '_request', return_value=stream) as request:
                     c._run(job, chat)
                 options = request.call_args.args[1]['options']
@@ -499,6 +508,7 @@ class TestCompletion(unittest.TestCase):
                         next_job = c.submit(chat, 'Continue from the last sentence.')
                     stream = BytesIO(b'{"message":{"content":"Continuation."},"done":true,"done_reason":"stop"}\n')
                     with patch.object(runtime, 'probe', return_value=READY_RUNTIME), \
+                            patch.object(runtime, 'confirm_ollama', return_value=LOCAL_FACTS), \
                             patch.object(runtime, '_request', return_value=stream) as request:
                         c._run(next_job, chat)
                     self.assertIn({'role': 'assistant', 'content': reply},

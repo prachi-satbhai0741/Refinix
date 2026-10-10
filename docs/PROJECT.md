@@ -5,11 +5,13 @@
 | Field | Value |
 |---|---|
 | Product | Refinix |
-| Repository | `refinix` direction; repository rename may lag the product name |
-| SIH problem | SIH26117 — Sovereign On-Premise Agentic AI Workbench using Open-Weight Multimodal LLMs for Confidential Industrial Work |
+| Repository | `prachi-satbhai0741/Refinix` (public); website `refinix.runs-on.dev` |
 | Product target | Installable offline-first desktop AI workbench for Windows, macOS and Linux |
-| Current release direction | Refinix Beta 0.1 / SIH Reviewer Preview, followed by additional Beta and finals/production work |
-| Status | Production direction recorded; implementation, verification and release acceptance remain separate |
+| Current release direction | **Refinix Beta 0.1** (`0.1.0-beta.N`, a normal GitHub release), published before the user's device walkthrough on the user's direction of 2026-10-10; device testing stays pending until it is recorded; fixes ship as new immutable versions |
+| Install routes | Ubuntu 24.04 `.deb` (App Center); macOS DMG (first install) with ZIP update payloads; Windows 11 per-user setup. macOS and Windows packages are published unsigned (macOS sealed ad hoc), with each OS's warning shown before download; paid platform signing is not a Beta prerequisite — see [`releases.md`](releases.md) |
+| Maturity vs evidence | A version's maturity (preview, beta, final) names its release class only. Native qualification of each package's exact bytes, and device acceptance per platform, are recorded separately; no label claims an acceptance that was not observed ([`releases.md`](releases.md)) |
+| Beta 0.1 scope | Standalone Windows/macOS/Linux application, broad compatible local models, automatic task-to-model routing and user-initiated in-app updates; trusted-device mesh follows after Beta |
+| Status | Beta 0.1 implemented; native qualification on hosted runners and publication follow the gates in [`releases.md`](releases.md#beta-01-publication); device acceptance pending |
 
 This file is the **single current product/architecture/workflow authority** for Refinix. It
 consolidates the active requirements that were previously spread across `docs/prd.md`,
@@ -32,6 +34,25 @@ permission before changing the product contract or other protected project docs.
 A requirement in this file is a target contract. It does not by itself prove source support, runtime
 quality, platform compatibility, security or release readiness.
 
+The user's [5 October 2026 direction and follow-up](beta-user-direction-2026-10-05.md) are preserved
+verbatim. This Beta reuses existing infrastructure; it is not a programme to certify every model
+or build another inference platform. The model, runtime, recommendation and routing
+rules below reflect that correction; older measured-only admission designs are not the current
+local requirement. Implementation and the owner's next execution plan remain pending.
+
+The current Beta scope is a deliberate release reduction: each advertised desktop profile must be
+useful on its own. Discovery, pairing, receiving/dispatching peer jobs, fleet scheduling and private
+server execution remain product direction, but are not Beta 0.1 dependencies or acceptance gates.
+The mesh requirements below apply when that later capability is implemented and exposed. Preserve
+existing distributed code, shared contracts and trust semantics; reuse the current prototype UI,
+coordinator, runtime, storage, workflows and packaging rather than starting over.
+
+Agents execute work by the major sections/outcomes in this contract and `tasks.md`. Complete the
+authorised section across its affected files and callers, with authorised verification, without
+further task tiers or delegation. Checklist steps are implementation aids, not separate assignments.
+Use existing code and evidence to avoid missing working capabilities; repository-affecting actions
+still follow `AGENTS.md` permissions.
+
 ---
 
 # 1. Product definition
@@ -40,6 +61,11 @@ Refinix is an installable, offline-first AI workspace for confidential knowledge
 should be able to download a platform package, complete graphical setup, choose compatible local
 models with hardware-aware guidance, and use Chat/Documents and Code through one lightweight desktop
 application.
+
+The customer experience is **open Refinix and use it** after graphical setup. Refinix owns the
+application dependencies and inference-engine lifecycle. Normal customers do not pin external runtime
+versions, edit qualification records or repeat engineering qualification after an unrelated updater
+runs. This is a usability requirement, not a promise of unlimited hardware compatibility or no bugs.
 
 The product should hide infrastructure complexity from ordinary users. Normal use must not require
 them to manually manage:
@@ -125,6 +151,12 @@ Each task exposes two independent choices:
 | Work surface | Chat/Documents or Code |
 | Execution target | Auto, this device, trusted devices, or a specific compatible paired device |
 
+For Beta 0.1, execution stays on **this device**. Automatic local model choice is required and uses
+installed compatible candidates, task needs and available capacity; team measurements are not a
+prerequisite. Hide or clearly mark future peer/server controls unavailable; no normal
+reviewer workflow may require pairing or a second computer. Do not expose an unfinished control as
+functional merely because its source or UI already exists.
+
 The user may also select compatible model preferences and a Balanced/Faster/Higher-quality
 preference where supported. Safety/data policy remains a hard constraint.
 
@@ -159,61 +191,68 @@ On first launch, Refinix should establish the installation. Refinix creates a un
 There is no permanent onboarding choice such as "Coordinator", "Worker", "Join workspace" or
 "Server". These are runtime responsibilities, not permanent installation identities.
 
-## 4.3 Model selection during setup
+<a id="43-model-selection-during-setup"></a>
+## 4.3 Model library and hardware recommendations
 
-For local inference, show a curated compatible set with **up to six initial recommendations**,
-followed by **Show more** and supported advanced/offline import paths.
+Show up to six initial recommendations, then **Show more**, upstream model discovery/downloads and
+compatible advanced/offline imports. Recommendations are not the full library or an allowlist.
+Qwen, Gemma, GLM, DeepSeek and GPT-OSS are examples, not exclusive choices. Reuse publisher/runtime
+metadata, model cards and published evaluations rather than measuring every model in Refinix.
 
-The picker should communicate, when known:
+When Ollama is present, list its existing local models through its official API and run them through
+Ollama without copying weights. Users may also browse/download Refinix-managed llama.cpp assets.
+Without Ollama, offer the managed path directly. Show source and runtime on each entry, including
+separate Ollama and managed copies of the same family. Select the backend internally from model
+origin; no mandatory technical runtime chooser, second runtime install or repeated weight download.
 
-- authoritative source and licence;
-- exact model/version/revision identifier;
-- quantisation/format;
-- download size and installed size;
-- expected RAM/VRAM/storage needs;
-- supported runtime and OS/backend profiles;
-- measured, estimated, documentation-only or unverified evidence state.
+Show, when known, publisher/source, licence, revision, format/quantization, size, runtime requirements,
+capabilities and evidence origin. Hugging Face hosting is not universal certification. Prefer official
+publisher artifacts; identify the publisher/converter when compatible quantized files come from a
+third party. Downloads use recorded upstream sources and appropriate integrity verification.
 
-Recommendations are guidance, not compulsory choices. Warn about marginal/slow configurations and
-block known-incompatible local execution while still allowing an eligible trusted/server target.
+<a id="431-reviewed-hardware-and-capability-presets"></a>
+### 4.3.1 Lightweight hardware recommendations
 
-A hardware scan must not present a made-up model "accuracy percentage". Any future 0-100 suitability
-score is a calibrated fit index, not probability of correctness.
+Reuse current OS/architecture, CPU, RAM/unified memory, GPU/backend, obtainable VRAM and free-disk
+facts with published requirements and lightweight estimates. Do not run startup benchmarks or build
+a custom optimizer. Device brands are labels, not eligibility keys. Missing sensor data is unknown.
+Published evidence and estimates must not be presented as Refinix measurements or model accuracy.
+
+Users may choose larger or different models and override recommendations. Fit warnings guide users;
+missing team measurements or an unmatched preset alone do not block downloads or local use. Explain
+actual unsupported formats/capabilities, insufficient disk or failed resource admission. Downloading
+a model does not imply it fits this computer or supports every workflow. Ordinary Beta remains local;
+do not invent a peer fallback to conceal a limitation.
+
+Recommended settings may include context/output budgets, quantization, backend/offload and
+concurrency. Reuse upstream allocation/scheduling features and existing helpers. Check changing
+capacity at use time; no need to own every laptop or load a 120B model on the available Mac to list
+it. Model evidence does not replace package, sandbox or release evidence.
 
 ## 4.4 Capabilities
 
-Chat is part of the baseline. The user may enable qualified capabilities such as:
+Compatible local models on either runtime may serve Chat, Documents and Code. Additional capabilities
+require their real dependencies and formats. One model may serve several workflows; do not require
+a second download just because an agent profile exists. Automatic assignment selects from installed
+compatible models, with optional manual preferences and a visible reason for the choice.
 
-- Documents;
-- Code;
-- semantic local knowledge;
-- later optional packs such as voice/language/media.
+## 4.5 Provisioning and local checks
 
-Enabling a capability creates a dependency plan. A user cannot skip a required dependency and still
-be shown Ready. Do not download a second model merely because another agent profile exists if an
-already installed model is proven suitable for both.
+Before a user-initiated download/import, show source, licence/revision, available integrity metadata,
+size/storage needs, progress/cancellation and relevant prerequisites. No silent downloads. Connected
+setup ends before normal offline inference; offline imports use the same source/integrity handling.
+Preserve existing models, partial-download recovery and user data.
 
-## 4.5 Review/install/self-test
+Establish runtime health/locality and use bounded capability checks or normal task execution to
+report what actually works. Local checks record only their observed result, not general quality.
+Do not require synthetic benchmarking, an exact team-measured profile or manual qualification before
+each ordinary model/version can be used. Preserve parsing, grounding, approvals, file scope, backups,
+resource bounds and safe tool execution. An unsupported capability fails with a specific explanation.
 
-Before a connected installation/download, show:
+Customers do not create runtime profiles or maintain exact measured versions. Runtime-start/update
+interactions must remain graphical and respect user authority; these requirements do not authorize
+silent host changes. Remote-only client setup remains a post-Beta path with its own evidence.
 
-- each runtime/model/dependency action;
-- total download/storage requirement;
-- source, licence, version/revision and checksum/integrity availability;
-- permissions and data locations;
-- which capabilities remain unavailable if setup fails.
-
-The user explicitly confirms connected provisioning. There are no silent downloads.
-
-Air-gapped setup may import a complete verified bundle from removable media or an approved internal
-host. Connected and offline provisioning produce the same trusted local manifest state.
-
-Setup completes only after enabled capabilities pass their appropriate smallest representative
-self-tests. Local runtime endpoints are verified loopback-only, installed manifests/hashes are
-recorded, and failures remain visibly unavailable/unverified.
-
-A remote-only client may skip local model installation if it can prove its authorised remote path;
-it must accurately disclose that local inference is unavailable without an eligible peer/server.
 
 ---
 
@@ -231,8 +270,8 @@ The same catalogue lifecycle should support onboarding and later management:
 - import approved offline bundles;
 - stage/cancel provisioning without corrupting active models;
 - verify exact files after download/import;
-- run capability-specific self-tests;
-- enable/disable model eligibility for profiles;
+- offer bounded capability checks and record normal task results without compulsory certification;
+- enable/disable model eligibility for new work;
 - safely remove models after showing affected capabilities/jobs/defaults;
 - preserve shared files used by another model entry;
 - recover cleanly from interrupted provisioning/removal;
@@ -240,11 +279,16 @@ The same catalogue lifecycle should support onboarding and later management:
 
 Installed runtime inventory does not automatically become a trusted supported catalogue entry.
 Arbitrary executable model code is not accepted merely because a runtime can see it.
+This separates source endorsement from local use; it is not a measured-model allowlist. Existing
+user-selected local models remain usable under actual compatibility, locality and task policy.
 
 Multiple agent profiles may reuse one compatible model while keeping different instructions, tools,
 policies and validators.
 
-The model catalogue is curated. A small qualified set is preferable to many unverified choices.
+The recommendation catalogue provides starting choices while model discovery and runtime inventory
+remain open to compatible alternatives. Source verification, installation, capability support,
+upstream evidence and Refinix measurements are separate facts. The team need not measure or manually
+approve every model before local selection.
 
 Detailed manifests, evidence states, candidate models and provisioning rules remain in
 [`model-catalog.md`](model-catalog.md).
@@ -254,6 +298,10 @@ Detailed manifests, evidence states, candidate models and provisioning rules rem
 # 6. Execution modes and responsibilities
 
 The same application supports three execution modes.
+
+These are the full product modes. Beta 0.1 qualifies **This device**; Trusted devices and Private
+server are post-Beta work. Existing remote-only/prototype paths remain retained development evidence,
+not substitutes for useful standalone operation on any advertised Beta desktop profile.
 
 | Mode | Behaviour |
 |---|---|
@@ -305,6 +353,36 @@ Settings -------------/            |
 A generic external agent framework is not a prerequisite. Keep the existing harness unless a
 specific missing capability and maintenance/security benefit justifies replacement.
 
+## 7.0 Orchestration choice and alternatives
+
+**Current decision: continue with the existing Refinix harness.** Its coordinator, workflow runner,
+state, tools and approval paths are the implementation baseline. Orchestration is a software role;
+basic routing does not require a separate orchestrator LLM. A model-assisted classifier/planner is
+conditional on a demonstrated need and must remain inside the enforced tool/approval boundaries.
+
+Automatic local task-to-model assignment is required for Beta. Use workflow, prompt, attachments,
+available capabilities, published evidence and current capacity to choose an appropriate installed
+model and its runtime. Users need not choose a model per prompt; manual preferences are optional.
+Persist the choice and concise reason. Do not claim perfect choices, invent quality scores or add a
+framework merely to enable routing. Never silently alter an in-flight attempt or its permissions.
+
+| Option | Role and evidence | Current decision |
+|---|---|---|
+| Existing Refinix harness | Reuse current coordinator/workflow/storage code; repair concrete gaps and qualify the integrated behaviour | Continue for the standalone Beta |
+| LangGraph | Framework offering stateful workflow persistence, resumable execution and human approval checkpoints; integration cost and benefit in Refinix are unmeasured | Keep as an evaluation option; not adopted or a Beta prerequisite |
+
+The LangGraph capability description comes from its
+[official overview](https://docs.langchain.com/oss/python/langgraph/overview), not a Refinix benchmark.
+Its workflow runtime is a different responsibility from the inference engine that loads model weights.
+Changing orchestration frameworks does not establish inference-version isolation or model compatibility.
+
+Reconsider LangGraph when a specific workflow gap is identified. Compare extending the existing path
+with a bounded framework integration for implementation effort, ongoing maintenance, dependency/
+licence inventory, offline execution, resource cost and persistence/recovery behaviour. Preserve
+coordinator-owned canonical state, exact-action approvals and duplicate-write prevention. No cloud
+tracing, telemetry or hosted service may become a hidden prerequisite. Competitor adoption alone does
+not prove better economics or UX. No replacement is authorised by recording this option.
+
 ## 7.1 Local service
 
 The local service is the durable boundary behind the desktop UI. It should:
@@ -313,7 +391,7 @@ The local service is the durable boundary behind the desktop UI. It should:
 - own workspace/job state;
 - expose a loopback-only UI API;
 - coordinate pairing and worker communication;
-- invoke qualified local runtimes;
+- invoke compatible local runtimes under bounded task/data/tool policy;
 - emit the event stream used by task surfaces and Control Center.
 
 The service should also remain usable without the desktop shell so the same execution service can
@@ -429,6 +507,9 @@ because their filenames resemble instruction files.
 
 # 9. Router, scheduler and trusted mesh execution
 
+The trusted-mesh and fleet scheduling requirements in this section are **post-Beta**. Beta model
+selection, capability checks and resource limits apply locally without discovering or reserving peers.
+
 Refinix selects a **model/device pair**, not only a model and not simply the machine with the
 strongest GPU.
 
@@ -442,7 +523,8 @@ strongest GPU.
    - relationship trust;
    - data/corpus policy;
    - protocol/runtime compatibility;
-   - installed qualified model/tool capability;
+   - installed compatible local model/tool capability; exact qualification where separately required
+     by later worker admission or an advertised measured capability;
    - target health;
    - context/memory fit.
 3. Rank eligible pairs using task-specific evidence and estimated completion cost such as:
@@ -460,6 +542,11 @@ Missing measurements remain estimates. A model already loaded on a device is a p
 reason to violate quality, policy or memory constraints.
 
 ## 9.2 Concurrency
+
+Local Beta supports multiple installed models and jobs. Concurrent inference is permitted where
+runtime features and current resources allow it; otherwise reuse queuing/loading/unloading. Do not
+impose a universal one-model rule or promise every model can remain resident simultaneously. Manage
+Refinix's reservations without stopping unrelated work in externally managed Ollama.
 
 Independent jobs may execute concurrently on different eligible devices. A second job must account
 for resources reserved by the first rather than repeatedly selecting one configured worker.
@@ -486,6 +573,9 @@ data and execution policy.
 ---
 
 # 10. Discovery, pairing and receiver controls
+
+This section governs the deferred post-Beta mesh. Beta does not require discovery, pairing or
+receiving remote work; retained prototype paths are not advertised as standalone Beta capabilities.
 
 Settings -> Connect presents reachable Refinix installations on the local network. A radar-style view
 may represent reachability but must never claim measured physical distance.
@@ -660,22 +750,43 @@ Do not run two writable canonical stores concurrently.
 
 # 13. Runtime and resource policy
 
-Ollama is the current adapter/runtime baseline. A pinned upstream `llama.cpp` / `llama-server` build
-is the preferred bundled-engine candidate for supported profiles, pending real parity and packaging
-qualification.
+<a id="131-ownership-packaging-and-qualification"></a>
+## 13.1 Runtime reuse, ownership and evidence
 
-No migration has occurred. Existing Ollama qualification remains the baseline evidence and is not
-llama.cpp evidence. Do not add llama.cpp as a second production runtime merely because it is the
-preferred candidate: first prove same-model Chat/Code/Documents parity, structured-output and
-reasoning behaviour, cancellation, context/resource limits, offline containment, clean-install
-packaging and recovery on supported profiles.
+Both existing local Ollama and Refinix-managed upstream llama.cpp are Beta product paths. Reuse the
+existing adapters and upstream features. Model origin selects the backend internally. Existing Ollama
+assets stay in its store and run through its official API without copying. Reading Ollama's internal
+files into llama.cpp or automatically converting/switching those files is not required for Beta.
 
-The goal of a bundled engine is to remove manual runtime setup, not to claim superior quality or
-speed without measurement.
+The managed path supplies a pinned, integrity-verified engine for people who need it. External updates
+or executable search paths must not replace its recorded bytes. That ownership boundary does not
+prohibit other compatible managed models or the separate Ollama path. Preserve both stores and work.
 
-Use one qualified default engine per supported profile. Do not force users to install two engines or
-migrate model stores before parity/recovery is proven. GGUF is a model format, not a guarantee that
-every architecture/quantisation/vision projector works with every runtime build.
+Local admission uses actual API/format/capability compatibility, health, resources and task/data/tool
+policy. Absence of an exact team-measured model/version/device profile is not a general refusal for
+either runtime. Reuse upstream evidence and lightweight metadata/installation checks; the team does
+not benchmark every model. Measurements remain honestly labelled evidence, never copied to different
+combinations or promoted into guarantees. Worker admission and sandbox controls retain their own
+contracts. Representative integrated workflow checks remain necessary for advertised app behavior.
+
+A newer Ollama version alone must not disable ordinary work. Refresh relevant version/model/settings
+metadata and recommend a normal upstream update when a required feature is missing. Maintain feature
+minima and known incompatibility/security exclusions rather than one exact measured-version allowlist.
+Recommend current supported upstream releases; an offline installation cannot continuously establish
+which release is latest. Do not silently update the host or require developer qualification records.
+Managed-engine upgrades retain the authenticated Refinix update/recovery boundary.
+
+Chat, Documents and Code may use compatible local models on either path. Preserve streaming,
+cancellation, bounded context, supported reasoning controls, structured parsing, grounding, approvals,
+backups and safe tools. Compatibility checks do not establish general answer quality, zero egress,
+package acceptance or performance on every computer.
+
+Establish model locality before sending work or checks: loopback Ollama can front cloud inference.
+Downloads are explicit connected setup from recorded upstream sources. GGUF or a Hugging Face listing
+alone does not establish compatibility with every architecture/quantization/projector. Report real
+limitations without turning missing measurements or hardware recommendations into a restriction.
+
+## 13.2 Resource and context policy
 
 The runtime owns KV-cache allocation and model-specific inference state. Refinix owns resource
 budgets, admission, lifecycle and evidence. Do not implement a custom cache allocator, custom
@@ -1096,6 +1207,11 @@ reject it, based on measured benefit versus packaging, provenance, dependency-li
 security containment and JSON-compatibility cost. Do not introduce an adapter abstraction until an
 integration is actually justified.
 
+Use its documented [target-hardware profiles and JSON planning](https://github.com/AlexsJones/llmfit/blob/main/docs/cli.md)
+as an option for preparing the reviewed presets without owning each target computer. Record the
+tool revision and distinguish estimates from embedded community measurements. Do not rebuild its
+fit estimator, expose its scores as model accuracy or add a runtime sidecar for Beta setup.
+
 Do **not** introduce React, Go, Rust, a generic plugin platform, external vector database, service
 mesh, second scheduler service or another agent framework merely to change the stack.
 
@@ -1113,18 +1229,26 @@ Refinix Beta 0.1 direction requires at least one **exact qualified desktop profi
 - Linux.
 
 This does not promise every OS release, edition, distribution, architecture, driver or hardware
-combination.
+combination. Desktop/package acceptance uses representative app/workflow evidence; it does not require
+testing every downloadable model on every computer or create a general model/device allowlist.
 
-Each selected desktop profile must be useful standalone for the supported local product surface.
-Capability support remains per profile: for example, a Windows inference peer may be supported while
-Code validation routes to a qualified sandbox peer. That limitation must be disclosed through the
-product; the user must not manually configure reviewer certificates/Kubernetes/queues to use the
-normal route.
+Each selected desktop profile must be useful standalone for supported local Chat/Documents/Code,
+model management, persistence and the offered update/recovery path. Reviewer installation and work
+must not depend on another machine, a private server, Kubernetes, Redis or peer certificates.
 
-Same-OS trusted-peer configurations should demonstrate there is no hidden Linux inference dependency.
+Code capabilities remain per profile. Preserve reviewable local proposals and the explicitly labelled
+local Apply/Undo mode; qualify sandbox execution on at least one eligible **local** profile. Do not
+advertise sandbox execution on other profiles until qualified, or route a required Beta workflow to
+a peer to conceal a missing local capability. No unrestricted host-execution fallback is permitted.
 
-The complete Beta additionally demonstrates trusted-device execution and a validated Code path on at
-least one eligible sandbox profile.
+Trusted-device discovery, pairing, remote execution, receiving work and fleet scheduling are deferred
+from Beta 0.1. Retain their source and architecture for post-Beta work. Later same-OS/cross-OS peer
+qualification must still demonstrate there is no hidden Linux inference dependency.
+
+Beta 0.1 also targets a qualified in-app update path on each advertised desktop profile. An existing
+update design, a source merge or UI controls do not establish that this path works. Missing updater
+acceptance remains a release blocker for this scope; using manual replacement as the sole release
+path instead requires an explicit user decision, not an agent silently dropping the updater.
 
 The product/website/presentation may discuss broader production architecture, but functional controls
 and claims must distinguish:
@@ -1168,8 +1292,15 @@ Signing credentials remain outside source/untrusted builds/logs.
 
 ## 26.1 Beta 0.1 update/replacement boundary
 
-Beta 0.1 may use a qualified **manual full-package replacement and recovery** path instead of a
-finished in-app updater.
+Beta 0.1 includes a qualified **Settings -> Updates** path for each advertised desktop profile.
+Reuse any suitable existing update/packaging code after tracing the actual implementation; its
+presence and past summaries are not current package acceptance. The application handles the approved
+download/install/restart steps, while connected checks and consequential installation remain explicit
+user actions. There are no silent startup, background or reconnection checks.
+
+Also qualify authenticated **manual full-package replacement and recovery** as the recovery path.
+Manual replacement alone does not satisfy the current in-app updater scope without a user-approved
+release-scope change.
 
 For each published Beta profile, rehearse replacement with two labelled builds:
 
@@ -1183,9 +1314,10 @@ For each published Beta profile, rehearse replacement with two labelled builds:
 
 If Beta ships a schema migration, its failure/recovery becomes mandatory acceptance.
 
-## 26.2 Later Settings -> Updates
+<a id="262-later-settings---updates"></a>
+## 26.2 Settings -> Updates
 
-After it is separately qualified, Settings provides an explicit:
+After qualification on the shipped profile, Settings provides an explicit:
 
 **Check for updates -> Download -> Install and restart**
 
@@ -1231,10 +1363,15 @@ project-management/task-assignment features are outside the core product scope.
 
 Implementation sequencing is owned by [`../tasks.md`](../tasks.md). At product level:
 
+Keep the existing phase identifiers for reference. The Beta execution order is **Phase 1 -> Phase 2
+-> local Phase 4 acceptance -> Phase 5**. Phase 3 and the peer-specific part of Phase 4 follow after
+Beta. These are major work sections; agents do not subdivide them into further assignment tiers.
+
 ## Phase 1 — Cross-platform foundation
 
 Remove/contain macOS-only assumptions and establish portable data/runtime/document/Code/credential/
-peer-agent/installer/sandbox foundations for selected Windows/macOS/Linux profiles.
+installer/sandbox foundations for selected Windows/macOS/Linux profiles. Peer-agent packaging is
+deferred; preserve its shared interfaces without making completion a standalone Beta prerequisite.
 
 **This is the current active phase and only the first part of the total Beta implementation.**
 
@@ -1245,22 +1382,25 @@ Persistent model lifecycle plus dependable local Chat/Documents/Code workflows o
 ## Phase 3 — Trusted-device mesh
 
 Graphical discovery/pairing, bounded peer execution, receiver controls and practical model/device
-routing across selected profiles.
+routing across selected profiles. **Deferred until after Beta 0.1.**
 
 ## Phase 4 — Safe execution, recovery and sovereignty proof
 
 Qualified sandbox, failures/reconciliation, approvals/status and real offline/Proof Card evidence.
+Qualify the exposed standalone paths before Beta; extend acceptance to peer paths after Phase 3.
 
 ## Phase 5 — Beta packaging and publication
 
-Authenticated packages for selected Windows/macOS/Linux profiles, clean-user journey, manual
-replacement/recovery and user-accepted evidence before Download Refinix Beta is published.
+Authenticated packages for selected Windows/macOS/Linux profiles, clean standalone user journey,
+qualified in-app updates, manual replacement/recovery and user-accepted evidence before Download
+Refinix Beta is published. Peer execution is not a publication gate.
 
 ## After Beta 0.1
 
-Later versions/finals expand scheduling fairness/performance, semantic retrieval and curated memory,
-additional models/profiles, in-app updates, managed deployments, broad qualification, complete
-update/recovery matrices, stronger trust/resource testing and optional capability/adaptation research.
+Later versions/finals complete the trusted-device mesh and expand scheduling fairness/performance,
+semantic retrieval and curated memory, additional models/profiles, updater improvements, managed
+deployments, broad qualification, complete update/recovery matrices, stronger trust/resource testing
+and optional capability/adaptation research.
 
 ---
 
@@ -1288,39 +1428,40 @@ Refinix does not require for the Beta/core direction:
 
 # 30. Functional requirement register
 
-Stable FR identifiers are retained so older evidence/history can still refer to them.
+Stable FR identifiers are retained so older evidence/history can still refer to them. Post-Beta mesh
+priorities defer release timing, not the corresponding trust, isolation or recovery requirements.
 
 | ID | Requirement | Product priority |
 |---|---|---|
-| FR-001 | Each installation owns a workspace; local operation works when dependencies are available, while remote-only clients need no local model | Core |
+| FR-001 | Each installation owns a workspace; Beta operates standalone with qualified local dependencies; later remote-only clients need no local model | Core local / post-Beta remote |
 | FR-002 | Graphical setup bundles/provisions dependencies and verifies enabled capabilities without terminal work | Core |
 | FR-003 | Existing Chat/Documents, Code and Settings use one harness and job system | Core |
-| FR-004 | Local and trusted-worker requests complete without cloud inference | Core |
-| FR-005 | Pairing is explicit, reversible and never merges canonical state | Core |
-| FR-006 | Automatic task/model/device selection uses capability, policy, load and evidence; choices are visible and overridable | Core |
-| FR-007 | Workers receive bounded context and use assigned workspaces | Core |
+| FR-004 | Local and trusted-worker requests complete without cloud inference | Core local / post-Beta mesh |
+| FR-005 | Pairing is explicit, reversible and never merges canonical state | Post-Beta mesh |
+| FR-006 | Automatic task/model/device selection uses capability, policy, load and evidence; choices are visible and overridable | Core local / post-Beta mesh |
+| FR-007 | Workers receive bounded context and use assigned workspaces | Post-Beta mesh |
 | FR-008 | Actions are automatic, approval-required or denied under explicit policy | Core |
 | FR-009 | Status exposes model, device, progress, validation and evidence honestly | Core |
 | FR-010 | Normal operation has no public-network dependency or silent external traffic | Core |
 | FR-011 | Documents support extraction/OCR, retrieval, citations and real file generation | Core |
 | FR-012 | Code supports reviewable proposals and qualified sandbox validation before approved canonical writes | Core |
-| FR-013 | Concurrent independent jobs are placed using current capacity across trusted devices | Core |
+| FR-013 | Concurrent independent jobs are placed using current capacity across trusted devices | Post-Beta mesh |
 | FR-014 | Interrupted attempts/retries cannot cause duplicate canonical writes | Core |
 | FR-015 | Persistent Settings -> Models supports curated catalogue lifecycle after onboarding, including explicit download, verified offline import and safe removal | Core |
 | FR-016 | Private server participates through the common worker/job interface | Managed |
 | FR-017 | Organisation compute and corpus permissions remain separate and enforced | Managed |
 | FR-018 | Canonical workspace transfer is a separate explicit migration feature | Later |
 | FR-019 | Additional language/voice packs preserve units, identifiers and uncertainty when enabled | Later |
-| FR-020 | Existing Kubernetes execution remains a supported backend profile; it is not required on every desktop | Core |
-| FR-021 | Redis remains ephemeral coordination in that backend; desktop peers need not install it | Core |
-| FR-022 | Supported Windows, macOS and Linux installations can request/receive work without a dedicated Linux member | Core |
+| FR-020 | Existing Kubernetes execution remains a supported backend profile; standalone Beta does not require it | Post-Beta managed |
+| FR-021 | Redis remains ephemeral coordination in that backend; desktops need not install it | Post-Beta managed |
+| FR-022 | Supported Windows, macOS and Linux installations can request/receive work without a dedicated Linux member | Post-Beta mesh |
 | FR-023 | Recommendations show at most six initial choices, Show more, evidence-labelled fit and compatibility warnings | Core |
-| FR-024 | Receiving devices expose active remote work and owner controls | Core |
+| FR-024 | Receiving devices expose active remote work and owner controls | Post-Beta mesh |
 | FR-025 | Local semantic retrieval uses qualified embeddings alongside exact-term retrieval with source/access boundaries | Post-Beta core improvement |
 | FR-026 | Published support claims name tested OS versions, architectures, runtimes and capabilities | Core |
 | FR-027 | Runtime memory budgets account for weights, cache/state, context and concurrent jobs; cache reuse respects compatibility/privacy | Core |
 | FR-028 | Editable instructions/curated memory use defined local data layout and safe legacy migration, distinct from chat history/model weights | Core direction |
-| FR-029 | Updates preserve data with authenticated packages/tested recovery; Beta may use manual replacement, followed by explicit in-app connected/offline updates | Core release direction |
+| FR-029 | Beta provides qualified user-initiated in-app connected/offline updates plus authenticated manual recovery; offered paths preserve data | Core Beta release |
 | FR-030 | Published versions come from platform build/sign/compatibility gates; an ordinary main change is not automatically a user update | Core |
 | FR-031 | Optional local model adaptation uses approved datasets, isolated versioned adapters and held-out evaluation; no silent per-conversation training | Later |
 
@@ -1334,23 +1475,24 @@ recommendation and obtain permission before changing those docs.
 
 | ID | Current boundary |
 |---|---|
-| OD-01 | Independently confirm official SIH wording/submission terms; confidential datasets are not assumed |
+| OD-01 | Confidential customer datasets are not assumed; any evaluation corpus needs its owner's authorisation |
 | OD-02 | Open-source core + specialised paid offering remain direction; repository licence is unchanged until separately authorised |
-| OD-03 | Ollama is current adapter; bundled upstream llama.cpp is preferred candidate pending parity/packaging qualification |
+| OD-03 | Existing local Ollama reuse and managed upstream llama.cpp are Beta product paths; model origin selects the backend, measured profiles are evidence rather than a local allowlist, and customers do not own qualification |
 | OD-04 | Keep current UI/desktop shell; qualify installer formats, native dependencies, signing and recovery per platform |
-| OD-05 | Retain Qwen3.5-4B baseline; qualify coding/OCR specialists and exact artifacts using representative workloads |
-| OD-06 | Preserve prototype trust semantics; qualify graphical OS-portable discovery/pairing/credential/revocation UX |
+| OD-05 | Retain Qwen3.5-4B baseline evidence; allow compatible coding/OCR and other alternatives using upstream metadata/evidence and honest task outcomes, without prior team certification of every model |
+| OD-06 | Preserve prototype trust semantics; qualify graphical OS-portable discovery/pairing/revocation after Beta; local protected credentials remain a Beta requirement |
 | OD-07 | Semantic retrieval is direction; qualify local embedding + embedded vector-search components before adoption |
 | OD-08 | Retain existing Kubernetes/Redis backend evidence/pins; documentation does not silently upgrade/remove infrastructure |
 | OD-09 | Qualify portable sandbox implementations/toolchains; no unsafe subprocess fallback |
 | OD-10 | Define calibrated recommendation-score normalisation/quality datasets/confidence before numeric scoring |
-| OD-11 | Qualify multi-worker admission/capacity/fairness/recovery using the shared job contract |
-| OD-12 | Define supported OS/architecture/backend matrix from clean-device evidence |
+| OD-11 | After Beta, qualify multi-worker admission/capacity/fairness/recovery using the retained shared job contract |
+| OD-12 | Define supported OS version ranges/architecture/backend presets from published research and representative qualification; retain clean-package evidence for release |
 | OD-13 | Qualify shared-corpus storage/identity/access/retention for managed deployments |
-| OD-14 | Qualify Beta installer/hosting/signing/manual replacement/recovery before publication; updater/full matrices follow later |
+| OD-14 | Qualify Beta installer/hosting/signing/in-app updates/manual recovery on every advertised profile before publication; broader upgrade and peer matrices follow later |
 | OD-15 | Qualify cache reuse/limits/optional engine optimisations per model/backend; no custom PagedAttention requirement |
 | OD-16 | Formalise Refinix data-root migration/instruction precedence; optional adapters require separate training/evaluation qualification |
 | OD-17 | Evaluate `llmfit` as planning-only hardware intelligence; Beta uses it at most internally, and later chooses shipped component, internal tool or rejection from measured integration cost/benefit |
+| OD-18 | Continue the existing orchestration harness. LangGraph is an unadopted option; reconsider only for a demonstrated workflow gap with measured integration/maintenance benefit and preserved offline/state/approval/security semantics |
 
 ---
 
@@ -1361,13 +1503,16 @@ A useful Beta reviewer should eventually be able to:
 - install a published Refinix package on the advertised selected profile;
 - choose/manage supported models graphically;
 - complete real local Chat/Documents/Code workflows;
-- connect a trusted execution target through product UX;
-- observe actual model/device routing and receiver controls;
+- observe the actual local model, progress and capability status without pairing another device;
 - obtain a grounded readable document artifact;
-- obtain a reviewable Code patch with real eligible sandbox validation;
+- obtain a reviewable Code patch, with real sandbox validation on an eligible local profile and
+  truthful validation limits on other profiles;
 - see failures/limitations truthfully;
 - inspect scoped offline/Proof Card evidence;
-- preserve data across the offered Beta replacement/recovery path.
+- update through the qualified in-app path and preserve data across update/replacement/recovery.
+
+Graphical pairing, remote execution, receiver controls and fleet routing are post-Beta success
+criteria. They do not block acceptance of the standalone Beta above.
 
 Availability of source code, a passing mock test or one successful model answer is not release
 acceptance.
@@ -1411,5 +1556,5 @@ being removed.
 
 ## Presentation/research
 
-SIH presentation/research material may explain the product but is non-normative. It must not override
-this contract or turn planned features into verified claims.
+Presentation and research material may explain the product but is non-normative. It must not
+override this contract or turn planned features into verified claims.

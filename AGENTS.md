@@ -8,6 +8,23 @@ Kubernetes/Redis, document, Code and proof/evidence work. Current product truth 
 consolidated in [`docs/PROJECT.md`](docs/PROJECT.md). Historical prototype documents
 remain useful evidence, but they are not competing product authorities.
 
+The first Beta targets standalone operation on Windows, macOS and Linux with a
+qualified, user-initiated in-app update path. Distributed execution is deferred
+until after Beta; preserve its existing code and trust boundaries for later reuse.
+
+The user's [5 October 2026 direction](docs/beta-user-direction-2026-10-05.md) is preserved verbatim.
+For this Beta, reuse existing upstream infrastructure and the current foundation.
+Existing local Ollama models and Refinix-managed llama.cpp are both product paths; model origin
+selects the runtime without a mandatory technical chooser or duplicate weights. Broad compatible
+model choice and automatic local task-to-model routing are required. Team-measured model/device/
+version profiles are evidence, not a general local admission allowlist.
+
+Use published model/runtime evidence and lightweight hardware facts for recommendations. Users may
+choose beyond recommendations; do not require ownership of every laptop or measurement of every
+model. Actual format/API/capability compatibility, offline locality, resources and tool/data safety
+still apply. Do not invent compatibility, fit or accuracy. Retain the existing orchestration harness;
+LangGraph remains an evaluation option, not an adopted dependency.
+
 ## 1. Authority and conflict handling
 
 When context conflicts, use this order:
@@ -275,6 +292,11 @@ For an authorised implementation request:
 8. Execute the largest **coherent safe scope** authorised by the user rather than fragmenting it
    into artificial microtasks.
 
+Use the major sections/outcomes in `docs/PROJECT.md` and the active phase in `tasks.md` as the
+work boundaries. Inspect existing source, affected callers and tests before adding or replacing
+behaviour. A return to prototype work means continuing from the existing repository, not rebuilding
+the application or discarding merged capabilities.
+
 Do not create a new per-session planning/handoff document unless the user explicitly asks for one.
 
 ## 6. Implementation behaviour
@@ -284,7 +306,22 @@ Do not create a new per-session planning/handoff document unless the user explic
 - Do not create a new task merely because implementation touches another file or subcomponent.
 - Under time pressure, reduce ceremony and increase coherent execution batch size; do not multiply
   tiny tasks.
+- Complete an authorised major section end to end, including its affected callers, necessary fixes
+  and authorised verification. Keep implementation steps as checklist items inside that section;
+  do not create further task tiers, per-file assignments or repeated planning/handoff cycles.
+- Do not delegate or spawn subagents for this work unless the user explicitly changes that rule.
+  An agent owning a section handles its implementation and integration directly. Routine technical
+  choices remain agent-owned; interrupt only for the genuine checkpoints in section 3.5.
 - Preserve the current UI/harness and working paths unless the product contract requires change.
+- Preserve managed-runtime ownership/integrity and support existing local Ollama reuse. Replace
+  blanket local qualification gates with honest compatibility/capacity admission; missing team
+  measurements are not themselves a refusal. Never spoof versions, fabricate measured profiles or
+  weaken worker, sandbox, approval or data-integrity checks. Local checks and upstream evidence
+  remain distinct from team measurements and package/security acceptance.
+- Keep the current orchestration harness for the present execution scope. Consider LangGraph only
+  for a demonstrated gap with evidence of lower implementation/maintenance cost and preserved
+  offline, state, approval and security behaviour; mentioning a competitor's framework is not
+  adoption evidence or permission for a rewrite.
 - Fix root causes after checking affected callers; avoid unrelated refactors and speculative
   abstractions.
 - Reuse suitable local/offline open-source libraries and existing code before writing commodity

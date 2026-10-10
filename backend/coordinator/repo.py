@@ -279,10 +279,6 @@ def normalise_relative(raw) -> str:
     return "/".join(parts)
 
 
-def is_excluded_directory(name: str) -> bool:
-    return name in EXCLUDED_DIRECTORIES or name.startswith(".") and name in EXCLUDED_DIRECTORIES
-
-
 # --------------------------------------------------------------------------
 # Descriptor-relative traversal
 # --------------------------------------------------------------------------

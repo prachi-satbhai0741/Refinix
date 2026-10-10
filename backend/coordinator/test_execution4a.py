@@ -292,7 +292,12 @@ class TestDirectImage(Harness):
         self.bind(job, record)
         reply = json.dumps({"title": "Scan report", "sections": [
             {"heading": "Reading", "paragraphs": ["The scan records 7.9 mm/s."]}]})
-        with patch.object(documents.ocr, "image_probe", return_value=VISION_READY), \
+        # Auto's page-reading choice: an installed model that reads images,
+        # chosen and admitted before the first page (its profile is looked up
+        # for that model when none is handed over).
+        with patch.object(self.c, "_page_reader",
+                          return_value=("ollama|test-vision", None)), \
+                patch.object(documents.ocr, "image_probe", return_value=VISION_READY), \
                 patch.object(documents.ocr, "extract_image", return_value=reading), \
                 patch.object(runtime, "stream_chat", fake_stream(reply)):
             self.c._run(job, self.chat, docflow.WRITE_SKILL)
@@ -493,15 +498,21 @@ class TestOrdinaryChatAttachments(Harness):
                     if "Ignore previous instructions" in (m["content"] or "")]
         self.assertTrue(injected and all(m["role"] == "user" for m in injected))
 
-    def test_a_file_that_cannot_be_read_is_named_with_its_reason(self):
+    def test_a_file_that_cannot_be_read_is_named_and_nothing_is_answered(self):
+        """Review finding: an unreadable attachment used to be answered around
+        with a note. Nothing is generated without the file now."""
         record = self.attach("broken.docx", b"not a zip at all")
         job = self.send("what does this say?")
         self.bind(job, record)
-        with patch.object(runtime, "stream_chat", fake_stream("I could not inspect it.")):
+        stream = fake_stream("I could not inspect it.")
+        with patch.object(runtime, "stream_chat", stream):
             self.c._run(job, self.chat, None)
-        answer = self.last_answer()
-        self.assertIn("broken.docx", answer)
-        self.assertIn("Nothing could be read", answer)
+        detail = self.c.job_detail(job)
+        self.assertEqual(detail["job"]["state"], "failed")
+        message = json.loads(detail["attempts"][-1]["error_json"])["message"]
+        self.assertIn("broken.docx", message)
+        self.assertIn("Nothing could be read", message)
+        self.assertIsNone(stream.messages, "the model was never asked")
 
 
 # --------------------------------------------------------------------------

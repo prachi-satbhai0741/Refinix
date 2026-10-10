@@ -64,6 +64,47 @@ def minimal_pdf(pages: int = 1, width: int = 612, height: int = 792,
     return out.encode("latin-1")
 
 
+
+def text_pdf(pages) -> bytes:
+    """A valid PDF whose pages carry a real text layer, or none.
+
+    Each item is the text for one page, drawn with the standard Helvetica font;
+    `None` gives a page with no text layer at all, which is what a scanned page
+    looks like to a text reader. Hand-built for the same reason as
+    `minimal_pdf`: the reader under test must not produce its own input.
+    """
+    count = len(pages)
+    objects = ["<< /Type /Catalog /Pages 2 0 R >>",
+               "<< /Type /Pages /Count {count} /Kids [{kids}] >>",
+               "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    kids = []
+    for text in pages:
+        page_number = len(objects) + 1
+        kids.append(f"{page_number} 0 R")
+        if text is None:
+            objects.append("<< /Type /Page /Parent 2 0 R "
+                           "/MediaBox [0 0 612 792] >>")
+            continue
+        escaped = (text.replace("\\", "\\\\").replace("(", "\\(")
+                   .replace(")", "\\)"))
+        stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET"
+        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                       f"/Resources << /Font << /F1 3 0 R >> >> "
+                       f"/Contents {page_number + 1} 0 R >>")
+        objects.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
+    objects[1] = objects[1].format(count=count, kids=" ".join(kids))
+    out, offsets = "%PDF-1.4\n", []
+    for index, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{index} 0 obj\n{body}\nendobj\n"
+    start = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n"
+    out += (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{start}\n%%EOF\n")
+    return out.encode("latin-1")
+
 def read_png(blob: bytes) -> dict:
     """Decode enough of a PNG to prove it is one, using only the stdlib.
 
@@ -355,6 +396,92 @@ class EncryptedDocuments(unittest.TestCase):
     def test_an_unreported_error_code_is_malformed_not_assumed_unlocked(self):
         self.assertEqual(self.render(None).code, "malformed")
 
+
+
+class TextLayer(unittest.TestCase):
+    """Reading a PDF's own text, which needs no model and draws no page."""
+
+    def setUp(self):
+        state = pdfrender._pdfium_probe()
+        if not state["available"]:
+            self.skipTest(state["detail"])
+
+    def test_each_page_keeps_its_number_and_its_own_text(self):
+        pages = pdfrender.text_pages(text_pdf(["Pump vibration 7.9 mm/s",
+                                               "Gauge reading illegible"]))
+        self.assertEqual([page.number for page in pages], [1, 2])
+        self.assertIn("Pump vibration 7.9 mm/s", pages[0].text)
+        self.assertIn("Gauge reading illegible", pages[1].text)
+        self.assertFalse(any(page.truncated for page in pages))
+
+    def test_a_page_without_a_text_layer_comes_back_empty(self):
+        pages = pdfrender.text_pages(text_pdf(["Readable", None]))
+        self.assertEqual(pages[1].text, "")
+        self.assertEqual(pages[1].chars, 0)
+
+    def test_no_page_is_rendered_to_read_its_text(self):
+        with patch.object(pdfrender, "_pdfium_page",
+                          side_effect=AssertionError("rendered")), \
+                patch.object(pdfrender, "encode_png",
+                             side_effect=AssertionError("encoded")):
+            pages = pdfrender.text_pages(text_pdf(["Only text"]))
+        self.assertIn("Only text", pages[0].text)
+
+    def test_the_page_limit_refuses_before_any_page_is_read(self):
+        with patch.object(pdfrender, "_pdfium_page_text",
+                          side_effect=AssertionError("read a page")):
+            with self.assertRaises(pdfrender.RenderError) as caught:
+                pdfrender.text_pages(minimal_pdf(pages=pdfrender.MAX_PAGES + 1))
+        self.assertEqual(caught.exception.code, "too_many_pages")
+
+    def test_a_page_over_the_ceiling_is_marked_partial_not_silently_cut(self):
+        with patch.object(pdfrender, "MAX_TEXT_CHARS_PER_PAGE", 10):
+            page, = pdfrender.text_pages(text_pdf(["abcdefghijklmnopqrstuvwxyz"]))
+        self.assertTrue(page.truncated)
+        self.assertGreater(page.chars, 10)
+        self.assertLessEqual(len(page.text), 10)
+
+    def test_truncated_and_garbage_input_is_malformed(self):
+        whole = text_pdf(["Readable"])
+        for data in (whole[: len(whole) // 3], b"%PDF-1.4 not really"):
+            with self.subTest(size=len(data)):
+                with self.assertRaises(pdfrender.RenderError) as caught:
+                    pdfrender.text_pages(data)
+                self.assertEqual(caught.exception.code, "malformed")
+
+    def test_oversized_input_is_refused_before_it_is_opened(self):
+        with patch.object(pdfrender, "_pdfium",
+                          side_effect=AssertionError("opened")):
+            with self.assertRaises(pdfrender.RenderError) as caught:
+                pdfrender.text_pages(b"%PDF-1.4\n" + b"0" * pdfrender.MAX_PDF_BYTES)
+        self.assertEqual(caught.exception.code, "too_large")
+
+    def test_cancellation_stops_between_pages(self):
+        with self.assertRaises(pdfrender.RenderError) as caught:
+            pdfrender.text_pages(text_pdf(["one", "two"]), should_cancel=lambda: True)
+        self.assertEqual(caught.exception.code, "cancelled")
+
+    def test_the_deadline_stops_between_pages(self):
+        ticks = iter([0.0, 10_000.0, 10_000.0, 10_000.0])
+        with patch.object(pdfrender.time, "monotonic", lambda: next(ticks)):
+            with self.assertRaises(pdfrender.RenderError) as caught:
+                pdfrender.text_pages(text_pdf(["one", "two"]))
+        self.assertEqual(caught.exception.code, "timeout")
+
+    def test_an_encrypted_pdf_is_refused_as_encrypted(self):
+        module, raw = EncryptedDocuments().fake_pdfium(4)
+        with patch.object(pdfrender, "_pdfium", return_value=(module, raw)):
+            with self.assertRaises(pdfrender.RenderError) as caught:
+                pdfrender.text_pages(minimal_pdf())
+        self.assertEqual(caught.exception.code, "encrypted")
+
+    def test_the_probe_names_what_is_missing(self):
+        absent = pdfrender.RenderError("no_renderer", "absent here")
+        with patch.object(pdfrender, "_pdfium", side_effect=absent):
+            state = pdfrender.text_probe()
+        self.assertFalse(state["available"])
+        self.assertIn("absent here", state["detail"])
+        self.assertTrue(pdfrender.text_probe()["available"])
 
 class BackendSelection(unittest.TestCase):
     def test_the_portable_backend_is_first_in_preference_order(self):
