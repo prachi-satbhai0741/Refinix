@@ -19,8 +19,10 @@ until after Beta 0.1.** The Beta includes qualified in-app updates on Windows, m
 
 **Current active phase: Phase 5 — Refinix Beta 0.1 publication, then device acceptance.** The source
 work of Phases 1, 2, local Phase 4 and Phase 5 is implemented and offline-tested. The review A1 repair
-batch (10 October 2026) is repaired and locally checked; fresh hosted qualification of the repaired
-commit is pending. [evaluation.md](docs/evaluation.md#beta-01-segment-1) records the observed results
+batch (10 October 2026) is repaired, locally checked and native-qualified at
+`d109b49f6c9bdc4b72bda9f347c6481442f96984` on Windows Server 2025, Ubuntu 24.04 and macOS 15/14.
+Segment 1's source/native work is complete through CP-A; production Beta keys/root are the next
+user checkpoint. [evaluation.md](docs/evaluation.md#beta-01-segment-1) records the observed results
 and remaining gates. Device acceptance is open on every platform, so none of those phases is complete.
 
 **5 October 2026 direction:** the [full user statements](docs/beta-user-direction-2026-10-05.md) are
@@ -36,7 +38,9 @@ the website offers the macOS DMG, the Windows setup and the Ubuntu `.deb`; the r
 ### Launch sequence (current)
 
 1. Repairs and native qualification of one recorded commit on hosted runners (`qualify.yml`); any
-   later code change repeats the affected checks.
+   later code change repeats the affected checks. Segment 1 passed run
+   [38055591709](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38055591709) at the commit
+   recorded above; the closing results-only update does not change application/workflow code.
 2. Production Beta keys and root (offline, the user) → `desktop/updates/beta-root.json` committed.
 3. Member → dev → main, the user merging; `main`'s file tree equals the qualified tree.
 4. `release.yml` on that commit: all three lanes, each package qualified on its exact bytes, the

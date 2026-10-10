@@ -31,6 +31,31 @@ regressions passed 73 tests. `actionlint` passed on all four changed workflows a
 restriction and a missing test dependency; the approved temporary environment resolved both.
 These are source/fixture checks, not native Windows/Linux or device acceptance.
 
+**Final hosted qualification: PASS.**
+[38055591709](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38055591709) completed
+successfully at source commit `d109b49f6c9bdc4b72bda9f347c6481442f96984`. Every primary report
+passed its current-commit/nonempty-check gate. The separate macOS floor job reused the Mac package
+bytes from this run, merged the floor result and repeated all three update journeys.
+
+| Hosted profile | Observed result |
+|---|---|
+| Windows Server 2025 x64 | Shared units 88, OK (5 skipped); Windows-native 5, OK; package 6/6; journeys 25/25 |
+| Ubuntu 24.04 x64 | Shared units 88, OK (2 skipped); Linux checks 84, OK (1 skipped); package 29/29; journeys 25/25; real sandbox 7/7 |
+| macOS 15 arm64 | Shared units 88, OK (2 skipped); package 6/6 before the floor result; journeys 24/24 |
+| macOS 14.8.9 arm64, build 23J631 | Oldest-supported launch passed; merged package record 7/7; journeys 24/24 |
+
+Interrupted recovery resumed the recorded helper on every platform. Windows restored N and
+discarded the incomplete setup; Ubuntu and both Mac runners completed N+1. The recovered version,
+saved work and applicable installed-file manifests passed. Ubuntu observed socket, outside-file,
+signal and io_uring denial, prompt cancellation (3.0 seconds), deadline (8.0 seconds), capped large
+output and empty service/mount/journal cleanup. APT setup completed in about 18 seconds.
+
+This completes Segment 1's source/native work through CP-A. The final results-only update changes
+`docs/evaluation.md`, `tasks.md` and the change ledger; it does not change the qualified application
+or workflows. Qualification remains bound to the source commit above. Production-root or other
+later implementation changes require the affected checks before merge/release. These disposable
+packages are not public release-byte or physical-device acceptance evidence.
+
 **Earlier hosted run:** [37981019381](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37981019381)
 tested `bbf54225d132b78276f3013f80a531dd00eafae3`, before these repairs. Windows failed native unit
 tests (Linux-only import and process-count assumption); package/install journeys were skipped.
@@ -44,7 +69,8 @@ the pinned cryptography library. Windows native units passed, both installers bu
 install/file-list/registration/uninstall passed; the launch check timed out while the app served
 requests. The follow-up isolates Ubuntu's `gi`/`cairo` bindings and allows 10 seconds for a status
 response in both package and journey checks. Regressions cover toolkit isolation, missing bindings
-and delayed status responses without accepting a different data root. Native rerun is pending.
+and delayed status responses without accepting a different data root. The follow-ups are included
+in the final qualification above.
 
 **Second repair qualification:** [37989900925](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37989900925)
 tested `27915ee2436edc6ada2fea9824e77d29f1c8c8db`. The isolated Ubuntu environment loaded GTK,
@@ -57,8 +83,7 @@ existing recovery can restore the old installation and discard the incomplete at
 qualifier now accepts this final state only with the expected old version, complete file manifest
 and unchanged saved work; a regression rejects the wrong version or a damaged restored tree.
 
-**Remaining:** fresh hosted qualification of one repaired commit on Windows Server 2025, Ubuntu
-24.04 and macOS 15/14; production Beta keys/root, member → dev → main, release-byte qualification
+**Remaining:** CP-A production Beta keys/root, member → dev → main, release-byte qualification
 and CP-B publication; then the user's device walkthroughs. No production keys, installed user app,
 real model runtime, published feed or device acceptance changed in this continuation.
 
@@ -75,8 +100,7 @@ workflow/public/journey regressions passed 26 tests. Windows normal update and r
 but interruption remained at `installer_running` after the qualifier's command-line-based kill
 (22/24 journey checks passed). The qualifier now targets the exact helper identity in the update
 journal and waits for its death. Native synthetic-run app/helper diagnostics are retained alongside
-the reports, excluding the data store. Windows/Ubuntu journeys and the floor runner remain
-unqualified until a repaired native run passes.
+the reports, excluding the data store. These findings required the subsequent repaired native runs.
 
 **Fourth repair qualification:**
 [37995379252](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37995379252) tested
@@ -96,7 +120,7 @@ coordinator 1,657 tests, OK (16 skipped); focused update/path/sandbox regression
 The final startup/FUSE group passed 37 tests, including interrupted-mount cleanup.
 The final sandbox group passed 23 tests after adding mount-table escape decoding, so data folders
 containing spaces or backslashes remain detectable during cleanup.
-A full native rerun of these follow-ups is pending.
+These follow-ups were exercised by the subsequent native runs.
 
 **Startup/sandbox follow-up qualification:**
 [38053285944](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38053285944) tested
@@ -115,7 +139,7 @@ truncation, so an early launcher failure cannot pass those checks. Native startu
 on Mac/Linux are preserved, while partial Windows installations use the existing dependency-light
 helper message. Final local suites: coordinator 1,659, desktop 255, scripts 82; focused sandbox,
 startup and qualification checks 41, all OK (the broad suites retain 22 platform skips).
-All-OS qualification of the final service correction remains pending.
+The next native run exposed the bounded-output defect below.
 
 **Bounded-output follow-up:**
 [38054409695](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38054409695) tested
@@ -128,7 +152,7 @@ output prefix. The launcher now retains a bounded summary tail and emits capped 
 the small closing record. The existing output limit and confinement checks are preserved.
 The 26 focused sandbox/qualification regressions passed, including a two-million-byte test and
 the actual launcher-to-parent report protocol. The final coordinator suite passed 1,660 tests
-(16 skipped). Native qualification of this repair remains pending.
+(16 skipped). All-OS native qualification of this repair passed in the final run above.
 
 <a id="tester-preview-batch-20261008"></a>
 ### Tester-preview batch — 2026-10-08
