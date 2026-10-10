@@ -94,6 +94,8 @@ imports, resumes the known-good helper and proves the database was not opened. B
 including the separate macOS floor check, passed. Local follow-up: desktop 254 tests, OK (6 skipped);
 coordinator 1,657 tests, OK (16 skipped); focused update/path/sandbox regressions 134 tests, OK.
 The final startup/FUSE group passed 37 tests, including interrupted-mount cleanup.
+The final sandbox group passed 23 tests after adding mount-table escape decoding, so data folders
+containing spaces or backslashes remain detectable during cleanup.
 A full native rerun of these follow-ups is pending.
 
 <a id="tester-preview-batch-20261008"></a>

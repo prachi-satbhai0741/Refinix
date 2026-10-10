@@ -143,7 +143,9 @@ class Host:
         for line in lines:
             fields = line.split()
             source = fields[fields.index("-") + 2] if "-" in fields else ""
-            if len(fields) > 4 and (fields[4] == target or source == target):
+            if len(fields) > 4 and any(
+                    re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), field) == target
+                    for field in (fields[4], source)):
                 return True
         return False
 

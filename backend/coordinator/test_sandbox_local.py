@@ -138,6 +138,15 @@ def available_probe(platform=None):
 
 
 class TestRunner(unittest.TestCase):
+    def test_mount_detection_decodes_mountinfo_paths_without_recursive_decoding(self):
+        line = r"36 30 0:56 / /home/user/My\040files/workspace rw - fuse.fuse2fs image\134040 rw"
+        with patch.object(sandbox_local.Path, "read_text", return_value=line):
+            host = sandbox_local.Host()
+            self.assertTrue(host.mounted("/home/user/My files/workspace"))
+            self.assertTrue(host.mounted(r"image\040"))
+            self.assertFalse(host.mounted("image "))
+            self.assertFalse(host.mounted("/home/user/another/workspace"))
+
     def sandbox(self, host, folder):
         return sandbox_local.LocalSandbox(folder, host=host, probe=available_probe,
                                           platform="linux")

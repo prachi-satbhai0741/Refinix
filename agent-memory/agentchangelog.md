@@ -3080,3 +3080,8 @@ work. No repository file change means no changelog entry.
 - observed: Run 37995379252 at 5a4a052: Ubuntu package 29/29 and update journeys 25/25; sandbox UDisks authorization failed in the headless session. Windows package 6/6 and journeys 22/24; exact helper death was confirmed, but the partial installation failed to import pydantic_core before recovery (resume_count stayed zero). Mac package/journeys and the oldest macOS runner passed.
 - changed: Packaged startup uses the existing workspace lock and recovery gate before application imports; device profile imports are deferred until needed. Linux prefers the existing FUSE backend, journals the mount before launching it, preserves image/resource/security limits and retains failed cleanup for retry.
 - verified: Fresh-process regression proves a missing application dependency cannot prevent recovery handoff or cause database admission. Desktop suite 254 tests OK (6 skipped); coordinator 1657 tests OK (16 skipped); focused update/path/sandbox checks 134 OK; final startup/FUSE group 37 OK, including interrupted-mount cleanup. Native follow-up remains pending.
+
+## AC-20261010-SEGMENT1-MOUNT-PATHS — Detect escaped paths during sandbox cleanup
+- date: 2026-10-10
+- changed: Decode mountinfo's octal escapes once when matching a mount point or source, preserving detection for data folders containing spaces or literal backslashes.
+- verified: Sandbox suite 23 tests OK, including escaped paths and rejection of recursive decoding; whitespace check clean. A native run at the final source commit remains required.
