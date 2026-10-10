@@ -301,11 +301,26 @@ metadata**. Withdrawing an offer is a new targets version whose pointer names th
 60 days or fewer and the root at 120 or fewer.
 
 **Starting the feed (once).** On the release Mac, the release manager creates the Beta keys and the feed's first root, with the keys in a folder outside every repository:
-`python scripts/update_repository.py init --channel beta --keys <offline keys folder> --repo <refinix-site checkout>/updates/beta`. That root (`updates/beta/metadata/1.root.json`) is committed twice: to the website repository, where the feed starts, and byte for byte as `desktop/updates/beta-root.json` in the source repository, where every Beta package embeds it as its update trust root (`release.yml` refuses to build without it). Passphrases come from `REFINIX_KEY_PASSPHRASE_<ROLE>` or a prompt, never from a file in a repository.
+`python scripts/update_repository.py init --channel beta --keys <release keys folder> --repo <refinix-site checkout>/updates/beta`. That root (`updates/beta/metadata/1.root.json`) is committed twice: to the website repository, where the feed starts, and byte for byte as `desktop/updates/beta-root.json` in the source repository, where every Beta package embeds it as its update trust root (`release.yml` refuses to build without it). Passphrases come from `REFINIX_KEY_PASSPHRASE_<ROLE>` or a prompt, never from a file in a repository.
 
-**Keys.** Root and targets keys stay offline (encrypted PEM, two copies). Snapshot and timestamp
-keys live only as secrets of the website repository's `beta-publish` and `beta-feed-refresh`
-environments. Someone holding only those online keys can never add a package; they could hide
+**Keys.** The offline default in [security.md](security.md#101-the-beta-update-channel-as-implemented)
+keeps root and targets keys in two encrypted offline copies. For Beta 0.1, the user approved a
+custody exception on 10 October 2026: retain encrypted PEM files in a local archive outside every
+repository and back them up in iCloud Drive; store the four role passphrases in Apple Passwords
+with iCloud Keychain. This is encrypted cloud-backed custody, not an offline backup. The files and
+passphrases use the same Apple account, creating a shared account-security and recovery dependency.
+Backup recovery has not yet been checked. Owner-only permissions and Finder hiding do not block
+an agent running as the same Mac user; agent access should be limited to the source repository,
+with passphrases kept out of agent chats, output, ordinary files and logs.
+
+Root and targets signing remains a manual release-manager operation; those private keys and
+passphrases never enter GitHub. Only snapshot and timestamp private keys and their passphrases may
+be supplied to GitHub, as secrets of the website repository's `beta-publish` and
+`beta-feed-refresh` environments, never repository-level secrets or committed files. Their
+encrypted local/cloud backups follow the approved custody above. Public root metadata and public
+key IDs are intended to be committed; they contain no private keys or passphrases.
+
+Someone holding only those online keys can never add a package; they could hide
 updates for up to the remaining targets lifetime (180 days) or push versions ahead. Recovery: a new
 root version, signed offline, replaces those keys; installed clients re-check cached metadata
 against the newest root and drop what the revoked keys signed.

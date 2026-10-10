@@ -2477,3 +2477,24 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - authorised: Source repairs and relevant offline checks; hash-pinned test dependencies in an isolated temporary environment; commits and pushes via aditya and the qualification branch; observed-result updates to docs/evaluation.md and tasks.md.
 - constraints: Existing Git identity, no agent watermark or co-author trailers; preserve existing work, user app/data and production keys. No dev/main merge or publication.
 - linked_changes: [AC-20261010-SEGMENT1-REPAIR](agentchangelog.md#ac-20261010-segment1-repair)
+
+<a id="up-20261010-beta-key-backup"></a>
+## UP-20261010-BETA-KEY-BACKUP — Complete the production-key backup checkpoint
+- date: 2026-10-10
+- request: Guide production-key generation and backup; the user selected encrypted PEM backups in iCloud Drive and passphrases in Apple Passwords, then confirmed completion.
+- constraints: Retain the local archive outside every repository; private keys and passphrases must not enter chat or agent output. The cloud-custody policy reconciliation, public-root Git writes, owner merges and publication remain explicit checkpoints.
+- linked_changes: [AC-20261010-BETA-PUBLIC-ROOT](agentchangelog.md#ac-20261010-beta-public-root)
+
+<a id="up-20261010-refinix-cleanup-key-protection"></a>
+## UP-20261010-REFINIX-CLEANUP-KEY-PROTECTION — Clean generated work and protect release keys
+- date: 2026-10-10
+- request: Clean only unnecessary Refinix work produced on the Mac; protect secrets on the device and GitHub before other agents are used. The user reports the local and iCloud backup names are now refinix beta-0.1.
+- constraints: Never remove unrelated files, user data or the only recoverable copy; never expose private-key contents or passphrases. Git writes, owner merges and publication are not authorised by this cleanup request.
+- linked_changes: [AC-20261010-REFINIX-CLEANUP-KEY-PROTECTION](agentchangelog.md#ac-20261010-refinix-cleanup-key-protection)
+
+<a id="up-20261010-beta-root-integration"></a>
+## UP-20261010-BETA-ROOT-INTEGRATION — Approve public-root integration and the member PR
+- date: 2026-10-10
+- authorised: Update docs/releases.md for encrypted iCloud PEM backup and Apple Passwords custody; commit the public root and evidence records, push through aditya without agent trailers, and open aditya-to-dev PR.
+- constraints: Preserve private keys/passphrases outside GitHub and agent output; owner merges and CP-B publication remain separate. The additional local temporary-key workflow repairs are outside this root/evidence commit.
+- linked_changes: [AC-20261010-BETA-ROOT-INTEGRATION](agentchangelog.md#ac-20261010-beta-root-integration)

@@ -83,9 +83,25 @@ existing recovery can restore the old installation and discard the incomplete at
 qualifier now accepts this final state only with the expected old version, complete file manifest
 and unchanged saved work; a regression rejects the wrong version or a damaged restored tree.
 
-**Remaining:** CP-A production Beta keys/root, member → dev → main, release-byte qualification
-and CP-B publication; then the user's device walkthroughs. No production keys, installed user app,
-real model runtime, published feed or device acceptance changed in this continuation.
+**CP-A production root preparation:** The user generated four encrypted production role keys and
+confirmed the iCloud backup. The selected custody is encrypted PEM backups in iCloud Drive with
+passphrases in Apple Passwords under the same Apple account, retaining the local archive outside
+the repository. Backup completion is user-reported; private-key recovery and cloud contents have
+not been independently checked. The user explicitly approved this encrypted cloud-custody
+exception; `docs/releases.md` now records it separately from the offline default in
+`docs/security.md`, including the shared Apple-account dependency.
+
+The agent copied only public `1.root.json` byte for byte into `desktop/updates/beta-root.json`.
+Current public-metadata checks observed a valid root self-signature, version 1, four distinct role
+keys with threshold 1, consistent snapshots and expiry `2027-10-10T14:39:33+00:00`. The SHA-256 is
+`178eebae99d1cf1d621fbacf34ed521b8ec98097f3c46c50634d6518fa567101`. The existing Beta build-input
+validator accepted this root and the committed HTTPS feed configuration. This preparation accessed
+no private-key contents or passphrases and built no packages; the earlier native run above still
+qualifies its recorded source tree and throwaway-root packages, not production-root release bytes.
+
+**Remaining:** Production-root package qualification, member → dev → main,
+website owner setup, release-byte qualification and CP-B publication; then the user's device
+walkthroughs. No installed user app, real model runtime, published feed or device acceptance changed.
 
 **Third repair qualification:**
 [37991781158](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37991781158) tests
