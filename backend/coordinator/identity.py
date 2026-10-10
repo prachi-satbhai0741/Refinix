@@ -161,5 +161,8 @@ def linked_models(runtime_state: dict | None) -> list[str] | None:
     """
     if not runtime_state or not runtime_state.get("reachable"):
         return None
-    return sorted({model for model in (runtime_state.get("models") or [])
-                   if model})
+    from backend.coordinator import runtime
+    # By the names a person sees, leaving out cloud models reached through
+    # Ollama: those are not running on this computer.
+    return sorted({item["model_id"] for item in runtime.entries(runtime_state).values()
+                   if item["locality"] != runtime.REMOTE})

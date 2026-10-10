@@ -19,7 +19,9 @@ Normal agent/developer context order:
    - [`releases.md`](releases.md)
 
 That three-file core (`AGENTS.md` + `PROJECT.md` + `tasks.md`) should answer most implementation
-questions.
+questions. For the current planning correction, first read the user's full statements in
+[beta-user-direction-2026-10-05.md](beta-user-direction-2026-10-05.md). They are preserved verbatim;
+the report includes the copyable planning handoff and independent-review rubric.
 
 Do not preload the entire documentation tree, archives or ledgers unless the current task genuinely
 needs them.
@@ -32,7 +34,7 @@ needs them.
 | [`security.md`](security.md) | Focused authority for security, privacy, trust, sandbox, supply chain and sovereignty evidence |
 | [`model-catalog.md`](model-catalog.md) | Focused authority for model manifests, provisioning, selection and qualification |
 | [`releases.md`](releases.md) | Focused authority for installers/packages, GitHub publication, application updates and recovery |
-| [`../tasks.md`](../tasks.md) | Active execution sequencing: Phase 1 through Phase 5, then later product work |
+| [`../tasks.md`](../tasks.md) | Standalone Beta sequence: Phase 1 -> Phase 2 -> local Phase 4 -> Phase 5; Phase 3 and peer acceptance after Beta |
 | [`../AGENTS.md`](../AGENTS.md) | Agent permissions, interaction model, Git rules and implementation behaviour |
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | Human branch/review contribution flow |
 
@@ -46,13 +48,24 @@ The active implementation plan is **Phase 1 — Cross-platform foundation**.
 Phase 1 addresses the existing macOS-first assumptions and establishes portable foundations for the
 selected Windows, macOS and Linux Beta profiles.
 
-It is **only the first phase of the total Beta implementation**. It is followed by:
+It is **only the first phase of the standalone Beta implementation**. The Beta path is:
 
 - Phase 2 — complete standalone Refinix;
-- Phase 3 — trusted-device mesh;
-- Phase 4 — safe execution, recovery and sovereignty proof;
-- Phase 5 — Beta packaging, acceptance and publication;
-- additional post-Beta/finals/product work afterward.
+- Phase 4 — local safe execution, recovery and sovereignty proof;
+- Phase 5 — three-OS Beta packaging, qualified in-app updates, acceptance and publication.
+
+Phase 3 — trusted-device mesh, including peer-agent packaging — and the peer-specific part of Phase 4
+are deferred until after Beta 0.1. Preserve their existing source and contracts for reuse. Phase
+identifiers remain unchanged so historical references still resolve.
+
+Agents work by these major sections/outcomes, reuse the existing repository and complete authorised
+work across affected files and callers. Checklist items do not become further task tiers or delegated
+assignments. Do not install a workflow framework or rebuild the application to adopt this approach.
+
+The [runtime contract](PROJECT.md#13-runtime-and-resource-policy) assigns engine versioning and
+qualification to development/release work, with automatic graphical installation checks for
+customers. The [orchestration decision](PROJECT.md#70-orchestration-choice-and-alternatives) keeps
+the current harness; LangGraph remains an unadopted option for a demonstrated need.
 
 See [`../tasks.md`](../tasks.md) for the exact outcomes.
 
@@ -129,8 +142,8 @@ When one of these snapshots disagrees with `PROJECT.md`, current product truth c
 
 ## Presentation and research material
 
-Presentation/research documents such as the SIH submission brief or workflow diagram may explain the
-idea, demo story and judge Q&A. They are non-normative.
+Presentation/research documents such as the workflow diagram may explain the idea and the demo
+story. They are non-normative.
 
 Presentation copy may describe the broader product vision, but claims about current functionality
 must preserve the distinction between:

@@ -1,0 +1,50 @@
+# @TITLE@ — @ARTIFACT@
+
+@STATUS@
+
+| Field | Value |
+|---|---|
+| Version | @VERSION@ (build set @BUILD_SET@) |
+| Package | @ARTIFACT@ |
+| SHA-256 | `@SHA256@` |
+| OS / architecture | @OS_LABEL@ |
+| Minimum OS (computed from the shipped files) | @MIN_OS@ |
+| Engine | @ENGINE@ |
+| Source snapshot | `@SOURCE_DIGEST@` |
+
+Record the SHA-256 above with every observation, so results attach to these exact bytes.
+Reuse this same package for installation, workflow, restart and failure checks.
+
+## Install
+
+@INSTALL_STEPS@
+
+No source checkout, Python or compiler is needed.
+
+## Before you start
+
+@PREREQUISITES@
+
+- Free disk space: about 3.4 GB for the recommended 4B model with its vision file, plus
+  room for your work. Models you already have in Ollama are used where they are, with
+  no second download.
+- Models are not inside this package. The first-run setup offers to download one,
+  reuse Ollama's, or import a model file.
+
+## What to record
+
+1. The SHA-256 above, your OS version and build, and your hardware.
+2. What you did, step by step, and what Refinix showed (screenshots help).
+3. Anything unexpected, and the file `logs/engine.log` from the data folder
+   (Settings → This computer → Open the data folder) if the engine misbehaved.
+
+## Remove
+
+@UNINSTALL_STEPS@
+
+Removing the application keeps your conversations, models and settings in the data
+folder; delete that folder yourself only if you want them gone.
+
+## Known limitations of this build
+
+@LIMITATIONS@

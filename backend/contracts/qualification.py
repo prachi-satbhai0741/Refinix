@@ -28,6 +28,7 @@ Verification = Literal[
     "answer.nonempty",
     "structured.decoder",
     "proposal.schema",
+    "proposal.small_edit",
     "canonical.unchanged",
     "representative.compile",
     "representative.behavior",

@@ -151,6 +151,13 @@ function status(over = {}) {
   }, over);
 }
 
+/* Every button in a card, wherever it sits: the checks live under Details. */
+function allButtons(node) {
+  const found = node.tag === 'button' ? [node] : [];
+  for (const child of node.children || []) found.push(...allButtons(child));
+  return found;
+}
+
 function render(over = {}) {
   const p = page();
   p.run(`renderModelsCard(${JSON.stringify(status(over))})`);
@@ -177,10 +184,11 @@ test('a worker-only model is never counted as installed on this computer', () =>
   assert.match(p.text('c-models-lead'), /1 are visible on a paired worker/);
 });
 
-test('a supported model that is absent offers the command and never a download', () => {
+test('an absent Ollama model is explained without a terminal command or download', () => {
   const p = render({ models: [ABSENT] });
   const row = p.rows()[0].textContent;
-  assert.match(row, /ollama pull qwen3\.5:4b-q4_K_M/);
+  assert.match(row, /Available through Ollama/);
+  assert.doesNotMatch(row, /ollama pull/, 'Refinix gives no terminal steps');
   assert.match(row, /not installed/);
   assert.match(p.text('c-models-lead'), /1 Refinix supports are not/);
   assert.equal(p.requests.length, 0, 'showing a model must not call anything');
@@ -329,18 +337,35 @@ test('the impact notice repeats that Refinix removes nothing itself', async () =
 
 test('a self-test is only offered for a workflow that has one', () => {
   const p = render({ selftest_scopes: ['documents.ocr'] });
-  const labels = p.rows()[0].children[2].children
-    .filter((child) => child.tag === 'button')
-    .map((b) => b.textContent);
-  assert.ok(!labels.some((l) => /Self-test chat/.test(l)),
+  const labels = allButtons(p.rows()[0]).map((b) => b.textContent);
+  assert.ok(!labels.some((l) => /Check Chat/.test(l)),
             'chat has no self-test in this build, so none is offered');
+  assert.ok(labels.length > 0, 'the card still has its other controls');
+});
+
+test('a row\'s self-test checks that row\'s own model, by its key', async () => {
+  const p = render({ models: [Object.assign({}, INSTALLED,
+                                            { key: 'ollama|qwen3.5:4b-q4_K_M' })] });
+  const button = allButtons(p.rows()[0]).find((b) => b.textContent === 'Check Chat');
+  button.onclick();
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(p.requests[0].body,
+                   { scope: 'chat', model: 'ollama|qwen3.5:4b-q4_K_M' });
+});
+
+test('every workflow the model can run offers its check, not only the selected one', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, { selected_for: [] })] });
+  const labels = allButtons(p.rows()[0]).map((b) => b.textContent);
+  for (const word of ['Chat', 'Code', 'Documents']) {
+    assert.ok(labels.includes(`Check ${word}`), word);
+  }
+  assert.ok(!labels.some((l) => /documents\.generate|Self-test/.test(l)),
+            'plain workflow names, never API scope names');
 });
 
 test('running a self-test asks the coordinator and nothing else', async () => {
   const p = render();
-  const button = p.rows()[0].children[2].children
-    .filter((child) => child.tag === 'button')
-    .find((b) => /Self-test chat/.test(b.textContent));
+  const button = allButtons(p.rows()[0]).find((b) => b.textContent === 'Check Chat');
   assert.ok(button);
   button.onclick();
   await new Promise((r) => setImmediate(r));
@@ -398,4 +423,264 @@ test('an absent model cannot be switched off, because there is nothing to switch
     .filter((child) => child.tag === 'button')
     .map((b) => b.textContent);
   assert.ok(!labels.some((l) => /Switch off/.test(l)));
+});
+
+// Refinix's own engine: a catalogued model can be downloaded or imported, only
+// when the person asks, and removed after the impact is shown.
+const MANAGED_ABSENT = Object.assign({}, ABSENT, {
+  id: 'qwen3.5-4b-q4_k_m',
+  setup: { kind: 'download', label: 'Download', model: 'qwen3.5-4b-q4_k_m',
+           download_bytes: 3413361504, detail: 'About 3.2 GB.' },
+});
+
+function buttons(p) {
+  return p.rows()[0].children[2].children.filter((child) => child.tag === 'button');
+}
+
+test('a managed model offers a download with its size, and nothing starts by itself', () => {
+  const p = render({ engine: { mode: 'managed' }, models: [MANAGED_ABSENT] });
+  const download = buttons(p).find((b) => /^Download/.test(b.textContent));
+  assert.ok(download, 'a download button is shown');
+  assert.match(download.textContent, /3\.2 GB/);
+  assert.equal(p.requests.length, 0, 'rendering must not request anything');
+});
+
+test('a download is confirmed with source, licence, revision and checksums first', async () => {
+  const p = render({ engine: { mode: 'managed' }, models: [MANAGED_ABSENT] });
+  let asked = '';
+  p.run('window').confirm = (text) => { asked = text; return false; };
+  const download = buttons(p).find((b) => /^Download/.test(b.textContent));
+  download.onclick();
+  await new Promise((r) => setImmediate(r));
+  assert.match(p.requests[0].path, /\/v1\/model\/plan\?model=qwen3\.5-4b-q4_k_m/);
+  p.requests[0].reply({
+    display_name: 'Qwen3.5 4B', source: 'huggingface.co/x at abc', licence: 'Apache-2.0',
+    revision: 'abc', download_bytes: 3413361504, already_staged_bytes: 0,
+    location: '/data/models/qwen3.5-4b-q4_k_m', enough_space: true, free_bytes: 9e10,
+    files: [{ name: 'w.gguf', size: 2740937888, sha256: 'f'.repeat(64) }],
+  });
+  await new Promise((r) => setImmediate(r));
+  assert.match(asked, /huggingface\.co\/x at abc/);
+  assert.match(asked, /Apache-2\.0/);
+  assert.match(asked, /f{64}/);
+  assert.equal(p.requests.length, 1, 'declining must not start a download');
+});
+
+test('a running download shows progress and can be cancelled', () => {
+  const p = render({
+    engine: { mode: 'managed' }, models: [MANAGED_ABSENT],
+    provisioning: { 'qwen3.5-4b-q4_k_m': {
+      kind: 'download', state: 'running', bytes_done: 1073741824,
+      bytes_total: 4294967296, file: 'w.gguf' } },
+  });
+  const row = p.rows()[0].textContent;
+  assert.match(row, /Downloading w\.gguf: 1\.0 of 4\.0 GB \(25%\)/);
+  assert.ok(!buttons(p).some((b) => /^Download/.test(b.textContent)),
+            'no second download is offered while one runs');
+});
+
+test('removal is offered for a managed model and only after its impact is shown', async () => {
+  const p = render({ engine: { mode: 'managed' },
+                     models: [Object.assign({}, INSTALLED, { id: 'qwen3.5-4b-q4_k_m' })] });
+  const remove = buttons(p).find((b) => /Remove/.test(b.textContent));
+  assert.ok(remove);
+  let asked = '';
+  p.run('window').confirm = (text) => { asked = text; return false; };
+  remove.onclick();
+  await new Promise((r) => setImmediate(r));
+  assert.match(p.requests[0].path, /\/v1\/model\/impact/);
+  p.requests[0].reply({ impact: { blocked_capabilities: ['chat'], detail: 'Chat stops.' } });
+  await new Promise((r) => setImmediate(r));
+  assert.match(asked, /This stops: chat/);
+  assert.match(asked, /chats, documents and history are kept/);
+  assert.equal(p.requests.length, 1, 'declining must not remove anything');
+});
+
+test('the developer engine never offers to remove a model itself', () => {
+  const p = render({ models: [INSTALLED] });
+  assert.ok(buttons(p).some((b) => /What removing this affects/.test(b.textContent)));
+  assert.ok(!buttons(p).some((b) => /^Remove/.test(b.textContent)));
+});
+
+// Settings -> Updates: nothing is checked on its own, only verified offers are
+// shown, and no Install control is drawn where installing does not work.
+function renderUpdates(updates) {
+  const p = page();
+  p.run(`renderUpdatesCard(${JSON.stringify({ updates })})`);
+  return p;
+}
+
+function updateButtons(p) {
+  return p.document.getElementById('c-updates-actions').children
+    .filter((child) => child.tag === 'button').map((b) => b.textContent);
+}
+
+test('a build that cannot check says why and offers no Check button', () => {
+  const p = renderUpdates({ version: '0.1.0', channel: 'development', can_check: false,
+    can_import: false, unavailable: 'This is a source checkout, not an installed package.' });
+  assert.match(p.text('c-updates-lead'), /source checkout/);
+  assert.deepEqual(updateButtons(p), []);
+  assert.equal(p.requests.length, 0, 'rendering must not check for updates');
+});
+
+test('a failed check is never shown as up to date', () => {
+  const p = renderUpdates({ version: '0.1.0-internal.1', channel: 'internal', can_check: true,
+    last_check: { at: '2026-10-05T10:00:00Z', result: 'failed',
+                  detail: 'The update information has expired, so it was not trusted.' } });
+  assert.match(p.text('c-updates-chip'), /check failed/);
+  assert.doesNotMatch(p.text('c-updates-chip'), /up to date/);
+  assert.match(p.text('c-updates-facts'), /expired/);
+});
+
+test('a verified offer can be downloaded, and Install appears only where installing works', () => {
+  const offered = renderUpdates({ version: '0.1.0-internal.1', channel: 'internal',
+    can_check: true, source: 'https',
+    offer: { version: '0.1.1-internal.1', size: 2147483648, notes: 'Fixes.' } });
+  assert.ok(updateButtons(offered).includes('Download 0.1.1-internal.1'));
+  // A build whose install capability does not allow installing explains why
+  // and draws no Install button.
+  const verified = renderUpdates({ version: '0.1.0-internal.1', channel: 'internal',
+    can_check: true, source: 'https', offer: { version: '0.1.1-internal.1', size: 1, notes: '' },
+    download: { state: 'verified', version: '0.1.1-internal.1' },
+    install_supported: false,
+    install_reason: 'Installing updates from inside Refinix is not available for this build.' });
+  assert.match(verified.text('c-updates-chip'), /package verified/);
+  assert.match(verified.text('c-updates-note'), /not available for this build/);
+  assert.ok(!updateButtons(verified).some((label) => /Install/.test(label)));
+});
+
+// Review finding: Browse Hugging Face gave every weight file the repository's
+// first projector. Pairing now follows the coordinator, and anything it does
+// not settle is the person's explicit choice.
+const HUB_LISTING = {
+  revision: 'a'.repeat(40), licence: 'apache-2.0', base_model: null, architecture: null,
+  projectors: [{ file: 'mmproj-F16.gguf', size: 1 }, { file: 'mmproj-BF16.gguf', size: 1 }],
+  choices: [
+    { file: 'text-only.gguf', parts: ['text-only.gguf'], size: 1,
+      pairing: 'none', projectors: [] },
+    { file: 'named.gguf', parts: ['named.gguf'], size: 1, pairing: 'named',
+      projectors: [{ file: 'mmproj-named-f16.gguf', size: 1 }] },
+    { file: 'unsure.gguf', parts: ['unsure.gguf'], size: 1, pairing: 'ambiguous',
+      projectors: [{ file: 'mmproj-F16.gguf', size: 1 }] },
+  ],
+};
+
+test('a projector is paired only when it belongs to that file alone', () => {
+  const p = page();
+  const plan = (choice) => p.run(`hubPairingPlan(${JSON.stringify(choice)})`);
+  const [text, named, unsure] = HUB_LISTING.choices;
+  assert.deepEqual({ ...plan(text) }, { mode: 'text', projector: null });
+  assert.deepEqual({ ...plan(named) }, { mode: 'paired', projector: 'mmproj-named-f16.gguf' });
+  assert.equal(plan(unsure).mode, 'choose');
+  assert.equal(plan({ ...named, pairing: 'repository', projectors: HUB_LISTING.projectors }).mode,
+               'choose', 'two precisions are a choice');
+});
+
+test('browse sends the paired projector, text only, or what the person chose', () => {
+  const p = page();
+  const row = p.document.getElementById('hub-row');
+  p.run(`renderHubFiles('Quant/Repo', ${JSON.stringify(HUB_LISTING)}, document.getElementById('hub-row'))`);
+  const picks = row.children.slice(1);
+  assert.deepEqual(picks.map((b) => b.textContent.split(' — ')[0].split(' · ').pop()), [
+    'text-only.gguf', 'named.gguf', 'text only', 'unsure.gguf']);
+  for (const pick of picks.slice(0, 3)) pick.onclick();
+  assert.deepEqual(p.requests.map((r) => [r.path, r.body.file, r.body.projector,
+                                          r.body.projector_confirmed]), [
+    ['/v1/hub/resolve', 'text-only.gguf', null, false],
+    ['/v1/hub/resolve', 'named.gguf', 'mmproj-named-f16.gguf', false],
+    ['/v1/hub/resolve', 'named.gguf', null, false],
+  ]);
+  // The ambiguous file asks first, and nothing is sent until a choice is made.
+  picks[3].onclick();
+  assert.equal(p.requests.length, 3);
+  assert.match(row.textContent, /nothing in this repository ties/);
+  const labels = row.children.map((child) => child.textContent);
+  assert.ok(labels.includes('Text only (no image input)'));
+  row.children.find((child) => /With mmproj-F16\.gguf/.test(child.textContent)).onclick();
+  assert.deepEqual([p.requests[3].body.file, p.requests[3].body.projector,
+                    p.requests[3].body.projector_confirmed],
+                   ['unsure.gguf', 'mmproj-F16.gguf', true]);
+});
+
+
+test('a failed check names its workflow, why, and whether it still applies', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'left out the label',
+                         current: false, superseded: false, matches_now: true,
+                         failure_kind: 'missing_label', reply_excerpt: 'unsafe; 2.4' } },
+  })] });
+  const row = p.rows()[0].textContent;
+  assert.match(row, /self-test failed — Chat/);
+  assert.match(row, /formatting: left out the requested label/);
+  assert.match(row, /matches this model and settings now/);
+  assert.match(row, /unsafe; 2\.4/);
+  assert.doesNotMatch(row, /backwards/, 'a formatting failure is not a wrong answer');
+});
+
+test('an older failure is labelled as history and does not raise the alert', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'x', current: false,
+                         superseded: false, matches_now: false } },
+  })] });
+  const head = p.rows()[0].children[0];
+  assert.match(p.rows()[0].textContent, /Chat \(older result\)/);
+  assert.match(p.rows()[0].textContent, /reason not recorded \(older check\)/);
+  assert.doesNotMatch(head.textContent, /check failed/);
+});
+
+test('a reply excerpt is inert text, never markup', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'x', current: false,
+                         matches_now: true, failure_kind: 'extra_text',
+                         reply_excerpt: '<img src=x onerror=alert(1)>' } },
+  })] });
+  const quotes = [];
+  const walk = (n) => { if (n.tag === 'q') quotes.push(n); (n.children || []).forEach(walk); };
+  walk(p.rows()[0]);
+  assert.equal(quotes.length, 1);
+  assert.equal(quotes[0].textContent, '<img src=x onerror=alert(1)>');
+  assert.equal(quotes[0].children.length, 0, 'set as text, not parsed');
+});
+
+test('a critical problem stays visible while Details is closed', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    integrity: { local: { state: 'mismatch' } } })] });
+  const head = p.rows()[0].children[0];
+  assert.match(head.textContent, /files changed since they were installed/);
+  assert.equal(p.rows()[0].children[1].tag, 'details', 'technical facts are collapsed');
+});
+
+test('the summary line says what the model is documented for, or that nobody did', () => {
+  const documented = render({ models: [Object.assign({}, INSTALLED, {
+    hints: ['general', 'vision'], evidence_level: 3, fit_label: 'Good fit (estimated)' })] });
+  assert.match(documented.rows()[0].children[0].textContent,
+               /Good for: general use, images \(publisher's card\) · Good fit/);
+  const unknown = render({ models: [Object.assign({}, INSTALLED, { hints: [] })] });
+  assert.match(unknown.rows()[0].children[0].textContent, /Strengths not documented/);
+  const limited = render({ models: [Object.assign({}, INSTALLED, {
+    hints: ['ocr'], limited_to: ['ocr'], evidence_level: 3 })] });
+  assert.match(limited.rows()[0].children[0].textContent, /Documented for page reading only/);
+});
+
+test('a task its current check shows unfinished says Auto does not use it there', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    hints: ['ocr'], evidence_level: 1, auto_excluded: { chat: 'did not finish' } })] });
+  assert.match(p.rows()[0].children[0].textContent,
+               /Auto does not use it for Chat: its check there did not finish/);
+  const tagged = render({ models: [Object.assign({}, INSTALLED, { hints: ['ocr'] })] });
+  assert.doesNotMatch(tagged.rows()[0].children[0].textContent, /Auto does not use it/,
+                      'tags alone never exclude a model');
+});
+
+test('a formatting-only check failure is a note, not a problem', () => {
+  const p = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'x', current: false,
+                         matches_now: true, failure_kind: 'missing_label' } } })] });
+  const alert = p.rows()[0].children[0].children[0].children.find((n) => /model-alert/.test(n.className));
+  assert.equal(alert.className, 'model-alert model-note');
+  const wrong = render({ models: [Object.assign({}, INSTALLED, {
+    selftests: { chat: { scope: 'chat', state: 'failed', detail: 'x', current: false,
+                         matches_now: true, failure_kind: 'wrong_verdict' } } })] });
+  const fault = wrong.rows()[0].children[0].children[0].children.find((n) => /model-alert/.test(n.className));
+  assert.equal(fault.className, 'model-alert');
 });

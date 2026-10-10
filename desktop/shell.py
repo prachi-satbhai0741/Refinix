@@ -15,6 +15,7 @@ so nothing about Chat, history, drafts or the event stream changes here.
 from __future__ import annotations
 
 import base64
+import os
 import json
 import sys
 import threading
@@ -39,6 +40,63 @@ DIALOG_FILE_TYPES = ("Documents and images (*.pdf;*.png;*.jpg;*.jpeg;*.tif;"
                      "*.xlsx;*.pptx)", "All files (*.*)")
 
 
+def _native_message(title: str, text: str, *, platform: str | None = None,
+                    gtk=None, which=None, run=None) -> str:
+    """A last-resort native message when no web window can be shown.
+
+    Linux tries GTK first, then zenity (which needs no Python bindings, so it
+    still works when GTK/WebKitGTK is what is missing), then standard error.
+    Returns how the message was shown.
+    """
+    import shutil                                       # noqa: PLC0415
+    import subprocess                                   # noqa: PLC0415
+    platform = sys.platform if platform is None else platform
+    run = run or subprocess.run
+    try:
+        if platform == "win32":
+            import ctypes                               # noqa: PLC0415
+            ctypes.windll.user32.MessageBoxW(None, text, title, 0x10)
+            return "messagebox"
+        if platform == "darwin":
+            script = ('display alert ' + json.dumps(title) + ' message '
+                      + json.dumps(text) + ' as critical')
+            run(["/usr/bin/osascript", "-e", script], timeout=120, check=False)
+            return "osascript"
+        if (gtk or _gtk_dialog)(title, text):
+            return "gtk"
+        zenity = (which or shutil.which)("zenity")
+        if zenity:
+            result = run([zenity, "--error", "--title", title, "--text", text,
+                          "--no-markup", "--width", "420"], timeout=600, check=False)
+            if getattr(result, "returncode", 1) in (0, 1):
+                return "zenity"
+    except Exception:                                  # noqa: BLE001
+        pass
+    print(f"{title}: {text}", file=sys.stderr)
+    return "stderr"
+
+
+def _gtk_dialog(title: str, text: str) -> bool:
+    """A GTK message dialog, when GTK itself is usable."""
+    try:
+        import gi                                      # noqa: PLC0415
+        gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk                  # noqa: PLC0415
+        if not Gtk.init_check()[0]:
+            return False
+        dialog = Gtk.MessageDialog(message_type=Gtk.MessageType.ERROR,
+                                   buttons=Gtk.ButtonsType.OK, text=title)
+        dialog.format_secondary_text(text)
+        dialog.set_title(title)
+        dialog.run()
+        dialog.destroy()
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+        return True
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
 class MissingToolkit(RuntimeError):
     """pywebview is not installed, so no native window can be opened."""
 
@@ -54,6 +112,95 @@ def _import_webview():
             "`python3 -m desktop --no-window` to start the local services only."
         ) from exc
     return webview
+
+
+# --------------------------------------------------------------------------
+# Window toolkit: pinned per OS, checked before use
+# --------------------------------------------------------------------------
+
+# The renderer each packaged build is qualified with. pywebview would otherwise
+# pick one itself and could fall back to a different, unqualified renderer.
+PINNED_GUI = {"darwin": "cocoa", "win32": "edgechromium", "linux": "gtk"}
+
+# Microsoft's documented WebView2 runtime registration (Evergreen client id).
+WEBVIEW2_CLIENT = r"{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+WEBVIEW2_KEYS = (
+    ("HKEY_LOCAL_MACHINE",
+     "SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\" + WEBVIEW2_CLIENT),
+    ("HKEY_LOCAL_MACHINE",
+     "SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\" + WEBVIEW2_CLIENT),
+    ("HKEY_CURRENT_USER",
+     "Software\\Microsoft\\EdgeUpdate\\Clients\\" + WEBVIEW2_CLIENT),
+)
+
+
+def _platform_key(platform: str) -> str:
+    return "linux" if platform.startswith("linux") else platform
+
+
+def webview2_version(registry=None) -> str | None:
+    """The installed WebView2 runtime version, or None when it is absent.
+
+    Follows Microsoft's distribution guidance: a `pv` value that is present and
+    not `0.0.0.0` under the runtime's client key means it is installed.
+    """
+    if registry is None:
+        try:
+            import winreg as registry                 # noqa: PLC0415
+        except ImportError:
+            return None
+    for hive_name, path in WEBVIEW2_KEYS:
+        try:
+            with registry.OpenKey(getattr(registry, hive_name), path) as key:
+                value, _kind = registry.QueryValueEx(key, "pv")
+        except OSError:
+            continue
+        if value and value != "0.0.0.0":
+            return str(value)
+    return None
+
+
+def toolkit_problem(platform: str | None = None, *, registry=None,
+                    gtk_probe=None) -> str | None:
+    """Why the pinned window toolkit cannot run here, or None when it can."""
+    platform = _platform_key(sys.platform if platform is None else platform)
+    if platform == "win32":
+        if webview2_version(registry) is None:
+            return ("Refinix needs the Microsoft Edge WebView2 Runtime to show its "
+                    "window, and it is not installed on this computer. It is part "
+                    "of Windows 11; on other systems install it from Microsoft, "
+                    "then open Refinix again.")
+        return None
+    if platform == "linux":
+        probe = gtk_probe or _gtk_webkit_available
+        if not probe():
+            return ("Refinix needs GTK and WebKitGTK 4.1 to show its window, and "
+                    "they are not available on this computer. On Ubuntu they are "
+                    "provided by the desktop packages libwebkit2gtk-4.1-0 and "
+                    "gir1.2-webkit2-4.1.")
+        return None
+    return None
+
+
+def _gtk_webkit_available() -> bool:
+    try:
+        import gi                                      # noqa: PLC0415
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("WebKit2", "4.1")
+        from gi.repository import Gtk, WebKit2          # noqa: F401,PLC0415
+    except Exception:                                  # noqa: BLE001
+        return False
+    return True
+
+
+def pinned_gui(requested: str | None, *, frozen: bool | None = None,
+               platform: str | None = None) -> str | None:
+    """The toolkit to start: an explicit request, else the pinned one when packaged."""
+    frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    if requested:
+        return requested
+    return PINNED_GUI.get(_platform_key(sys.platform if platform is None else platform)) \
+        if frozen else None
 
 
 # --------------------------------------------------------------------------
@@ -217,10 +364,47 @@ class Bridge:
             return {"cancelled": True}
         return self._app.connect_repository(str(chosen[0]))
 
+    def choose_model_files(self, model_id) -> dict:
+        """Import a catalogued model from files the person already has.
+
+        The page names which catalogue entry, never a path: the native picker
+        chooses the files, and the coordinator keeps only bytes that hash to
+        that entry's pinned files.
+        """
+        if not isinstance(model_id, str) or not 0 < len(model_id) <= 200:
+            return {"error": "Choose a model from the list.", "code": "unknown_model"}
+        window = self._app.window
+        if window is None:
+            return {"error": "Importing needs the Refinix application window.",
+                    "code": "no_window"}
+        webview = _import_webview()
+        chosen = window.create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=True,
+            file_types=("Model files (*.gguf)", "All files (*.*)"))
+        if not chosen:
+            return {"cancelled": True}
+        return self._app.import_model(model_id, [Path(p) for p in chosen])
+
+    def choose_update_bundle(self) -> dict:
+        """Import an offline update bundle chosen in the native picker."""
+        window = self._app.window
+        if window is None:
+            return {"error": "Importing an update needs the Refinix window.",
+                    "code": "no_window"}
+        webview = _import_webview()
+        chosen = window.create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=False,
+            file_types=("Refinix update bundle (*.zip)", "All files (*.*)"))
+        if not chosen:
+            return {"cancelled": True}
+        return self._app.import_update(Path(chosen[0]))
+
     def open_state_folder(self) -> dict:
         """Reveal the fixed application folder. No argument, no other path."""
         import subprocess
-        folder = lifecycle.STATE_DIR
+        # The workspace this window actually opened, including an explicit
+        # --state, not the platform's default root.
+        folder = Path(self._app.state_path).parent
         folder.mkdir(parents=True, exist_ok=True)
         opener = {"darwin": ["open"], "win32": ["explorer"]}.get(
             sys.platform, ["xdg-open"])
@@ -230,6 +414,30 @@ class Bridge:
         except OSError as exc:
             return {"opened": False, "error": str(exc), "path": str(folder)}
         return {"opened": True, "path": str(folder)}
+
+    # Links the page may ask the system browser to open. Fixed, so a page
+    # (or text a model wrote into it) cannot open an arbitrary address.
+    OPENABLE_URLS = frozenset({runtime.OLLAMA_DOWNLOAD_URL})
+
+    def open_url(self, url) -> dict:
+        """Open one fixed, known link in the system browser, on request."""
+        if url not in self.OPENABLE_URLS:
+            return {"opened": False, "error": "that link is not one Refinix opens"}
+        import webbrowser
+        try:
+            opened = webbrowser.open(url)
+        except Exception as exc:                            # noqa: BLE001
+            return {"opened": False, "error": str(exc)}
+        return {"opened": bool(opened)}
+
+    # -- updates
+    def install_update(self) -> dict:
+        """Install the prepared, verified update and restart. Takes no argument."""
+        return self._app.install_update()
+
+    def ui_ready(self) -> dict:
+        """The page has loaded; an update being verified may now be finished."""
+        return self._app.ui_ready()
 
     # -- window / services
     def shell_info(self) -> dict:
@@ -246,8 +454,14 @@ class Bridge:
 
 class DesktopApp:
     def __init__(self, *, state_path: Path = lifecycle.STATE_DB,
-                 port: int = lifecycle.DEFAULT_PORT, on_started=None):
+                 port: int = lifecycle.DEFAULT_PORT, on_started=None, owner=None,
+                 update_gate=None):
         self.state_path = state_path
+        # What the launch found about an update in progress or just finished
+        # (desktop/update_apply.on_launch); None when nothing was found.
+        self.update_gate = update_gate
+        # The workspace lock the entry point took for this database.
+        self.owner = owner
         self.preferred_port = port
         self.progress = lifecycle.Progress()
         self.window = None
@@ -255,6 +469,7 @@ class DesktopApp:
         self._closing = threading.Event()
         self._retry = threading.Event()
         self._lifecycle_lock = threading.Lock()
+        self._install_lock = threading.Lock()
         self.on_started = on_started
         self._startup_worker = None
 
@@ -271,7 +486,8 @@ class DesktopApp:
             try:
                 startup = lifecycle.run_startup(
                     self.progress, state_path=self.state_path,
-                    preferred_port=self.preferred_port, cancelled=self._closing)
+                    preferred_port=self.preferred_port, cancelled=self._closing,
+                    owner=self.owner)
             except lifecycle.StartupCancelled:
                 return
             except lifecycle.StartupError as exc:
@@ -291,6 +507,9 @@ class DesktopApp:
                     self.startup = startup
                     if startup.coordinator is not None:
                         startup.coordinator.desktop = self.shell_info()
+                        gate = self.update_gate
+                        if gate is not None and gate.notice:
+                            startup.coordinator.updates.notice = gate.notice
                         threading.Thread(target=self._serve, daemon=True,
                                          name="coordinator-http").start()
                     if self.on_started is not None:
@@ -301,11 +520,30 @@ class DesktopApp:
                     self.window.load_url(self.startup.url)
                 threading.Thread(target=self._focus_poll, daemon=True,
                                  name="focus-poll").start()
+                self._start_qualification_control()
                 return
             # Failed: wait for the person to press Try again.
             self._retry.wait()
             self._retry.clear()
             self.progress = lifecycle.Progress()
+
+    def _start_qualification_control(self):
+        """Private qualification builds only (desktop/qualify_control.py)."""
+        from backend.coordinator import build_info
+        from desktop import qualify_control
+        identity = build_info.embedded_identity()
+        if not qualify_control.enabled(identity):
+            return
+        if qualify_control.should_fail_start(identity):
+            # Stop before the window can confirm an update: the journey watches
+            # the helper put the previous version back.
+            os._exit(3)
+        folder = Path(self.state_path).resolve().parent
+        actions = {"import": lambda request: self.import_update(Path(request["path"])),
+                   "install": lambda request: self.install_update()}
+        threading.Thread(target=qualify_control.serve,
+                         args=(folder, actions, self._closing), daemon=True,
+                         name="qualify-control").start()
 
     def _serve(self):
         try:
@@ -386,6 +624,35 @@ class DesktopApp:
         except Exception as exc:                       # noqa: BLE001
             return {"error": str(exc), "code": getattr(exc, "code", "failed")}
 
+    def import_update(self, path: Path) -> dict:
+        """Verify a natively chosen update bundle in this process's coordinator."""
+        if self.startup is None or self.startup.coordinator is None:
+            return {"error": "Importing an update needs the Refinix that owns this "
+                             "workspace. Quit any other copy and try again.",
+                    "code": "reused_coordinator"}
+        from backend.coordinator import updates
+        try:
+            return {"updates": self.startup.coordinator.updates.import_bundle(path)}
+        except updates.UpdateError as exc:
+            return {"error": str(exc), "code": exc.code}
+
+    def import_model(self, model_id: str, paths: list[Path]) -> dict:
+        """Hand natively chosen model files to this process's coordinator."""
+        if self.startup is None:
+            return {"error": "Refinix is still starting.", "code": "starting"}
+        coordinator = self.startup.coordinator
+        if coordinator is None:
+            # As for folders: no HTTP route accepts a filesystem path.
+            return {"error": "This window is showing a Refinix coordinator that "
+                             "another process started. Quit that one and open "
+                             "Refinix again to import a model.",
+                    "code": "reused_coordinator"}
+        from backend.coordinator import provisioning
+        try:
+            return {"operation": coordinator.provisioner.start_import(model_id, paths)}
+        except provisioning.ProvisioningError as exc:
+            return {"error": str(exc), "code": exc.code}
+
     def _current_chat(self) -> str:
         """Ask the page which conversation the selection belongs to."""
         try:
@@ -426,8 +693,158 @@ class DesktopApp:
             "engine_started_by_refinix": bool(
                 s and s.engine_supervisor and s.engine_supervisor.owned),
             "state_folder": str(self.state_path.parent),
-            "model_configured": runtime.MODEL,
+            "engine": runtime.engine_label(),
+            "model_configured": (s.coordinator.model_for("chat")
+                                 if s and s.coordinator is not None else None),
         }
+
+    # -- updates ------------------------------------------------------------
+    def ui_ready(self) -> dict:
+        """Commit an update being verified, now that its window has loaded."""
+        gate = self.update_gate
+        s = self.startup
+        if gate is None or gate.supervised is None or s is None or s.coordinator is None:
+            return {"committed": False}
+        from desktop import update_apply
+        try:
+            journal = update_apply.commit_if_supervised(self.owner, self.state_path,
+                                                        gate.supervised)
+        except Exception as exc:                       # noqa: BLE001
+            return {"committed": False, "error": str(exc)}
+        gate.supervised = None
+        if journal:
+            s.coordinator.updates.notice = {"kind": "updated",
+                                            "from": journal["from_version"],
+                                            "to": journal["to_version"]}
+        return {"committed": bool(journal)}
+
+    def install_update(self) -> dict:
+        """One native install call, including its confirmation, at a time."""
+        if not self._install_lock.acquire(blocking=False):
+            return {"error": "An update is already being installed."}
+        try:
+            with self._lifecycle_lock:
+                if self._closing.is_set():
+                    return {"error": "Refinix is already closing."}
+            return self._install_update()
+        finally:
+            self._install_lock.release()
+
+    def _install_update(self) -> dict:
+        """Close, replace and reopen: drain, close the data, set it aside, hand off.
+
+        Until the database is closed nothing has changed, and any refusal
+        leaves Refinix running as it was.
+        """
+        from backend.coordinator import ownership, recovery, updates as updates_module
+        from desktop import update_apply
+        s = self.startup
+        c = s.coordinator if s else None
+        if c is None or self.owner is None:
+            return {"error": "Installing needs the Refinix that owns this workspace."}
+        u = c.updates
+        install = dict(u.install)
+        if install.get("state") != "ready":
+            return {"error": "The update is not ready to install yet."}
+        path, reason = u.install_location()
+        if reason:
+            return {"error": reason}
+        busy_models = c.provisioner.active()
+        if busy_models:
+            return {"error": "A model download or import is running "
+                             f"({', '.join(busy_models)}). Finish or cancel it in "
+                             "Settings → Models, then install."}
+        running = self.active_jobs()
+        if running and self.window is not None:
+            count = len(running)
+            if not self.window.create_confirmation_dialog(
+                    "Install the update now?",
+                    f"{count} {'reply is' if count == 1 else 'replies are'} still "
+                    f"running. Installing stops {'it' if count == 1 else 'them'} and "
+                    f"saves {'it' if count == 1 else 'them'} as stopped; Refinix then "
+                    "closes, updates and opens again."):
+                return {"cancelled": True}
+        with self._lifecycle_lock:
+            if self._closing.is_set():
+                return {"error": "Refinix is already closing."}
+        identity = u.identity or {}
+        database = ownership.canonical_database(self.state_path)
+        environment = {key: os.environ[key] for key in update_apply.CARRIED
+                       if os.environ.get(key)}
+        try:
+            extra = {key: install[key] for key in ("installer_sha256", "admission",
+                                                   "recovery_copy", "to_maturity",
+                                                   "trust_roots") if install.get(key)}
+            journal = update_apply.plan_attempt(
+                self.owner, database, update_id=install["update_id"],
+                from_version=u.version, to_version=install["version"],
+                install_path=path, incoming=Path(install["incoming"]),
+                lane=identity.get("lane"), channel=identity.get("channel"),
+                trust_root=identity.get("trust_root"), environment=environment,
+                method=install.get("method") or "mac-app",
+                extra={**extra, "from_maturity": u.maturity,
+                       "publisher": u.expected_publisher()})
+        except update_apply.InstallError as exc:
+            return {"error": str(exc)}
+        c.begin_install()
+        for job in running:
+            try:
+                c.request_cancel(job["job_id"])
+            except Exception:                          # noqa: BLE001
+                pass                                   # finished meanwhile
+        stuck = c.writers.wait_idle(30.0)
+        if stuck:
+            c.end_install()
+            update_apply.cancel_attempt(self.owner, database, journal,
+                                        f"{', '.join(stuck)} did not finish in time")
+            return {"error": "The update was not installed because "
+                             f"{', '.join(stuck)} did not finish in time. Nothing was "
+                             "changed; try again."}
+        # From here Refinix closes whatever happens; the helper reopens it.
+        with self._lifecycle_lock:
+            self._closing.set()
+            self._retry.set()
+        try:
+            shutdown_server(s.server, c)
+        except Exception:                              # noqa: BLE001
+            pass
+        stuck = c.close_for_install(5.0)
+        try:
+            s.engine_supervisor.stop()
+        except Exception:                              # noqa: BLE001
+            pass
+        mode = "--apply-update"
+        if stuck:
+            mode = "--resume"          # nothing was set aside: the helper cancels
+        else:
+            try:
+                recovery.Recovery(self.owner, database).set_aside(
+                    from_version=u.version, to_version=install["version"],
+                    update_id=install["update_id"], data_root=str(database.parent))
+                journal = update_apply.mark(self.owner, database, journal,
+                                            "snapshot_taken")
+            except (recovery.RecoveryError, OSError):
+                mode = "--resume"      # the helper finishes or discards the copy
+        try:
+            update_apply.hand_off(self.owner, database, journal,
+                                  bundle=updates_module.running_install(), mode=mode)
+        except Exception as exc:                       # noqa: BLE001
+            # The app files are untouched; the next launch resumes the attempt.
+            print(f"update helper did not start: {exc}", file=sys.stderr)
+        if self.window is not None:
+            threading.Timer(0.3, self.window.destroy).start()
+        return {"installing": True}
+
+    def terminate(self):
+        """SIGTERM, e.g. from the update helper: stop as Quit does, without asking."""
+        try:
+            self.shutdown()
+        finally:
+            if self.window is not None:
+                try:
+                    self.window.destroy()
+                except Exception:                      # noqa: BLE001
+                    pass
 
     # -- shutdown ---------------------------------------------------------
     def active_jobs(self) -> list[dict]:
@@ -544,9 +961,49 @@ class DesktopApp:
             s.engine_supervisor.stop()
 
 
+def _stop_on_sigterm(app: "DesktopApp") -> None:
+    """Turn SIGTERM into an orderly shutdown while the native run loop owns the thread.
+
+    Python runs signal handlers only on the main thread, which the window's run
+    loop holds; the wakeup pipe lets a helper thread react instead.
+    """
+    import os as _os
+    import signal as _signal
+    try:
+        read_end, write_end = _os.pipe()
+        _os.set_blocking(write_end, False)
+        _signal.set_wakeup_fd(write_end)
+        _signal.signal(_signal.SIGTERM, lambda *_args: None)
+    except (ValueError, OSError, AttributeError):
+        return
+
+    def watch():
+        while True:
+            try:
+                data = _os.read(read_end, 64)
+            except OSError:
+                return
+            if not data:
+                return
+            if _signal.SIGTERM in data:
+                app.terminate()
+                return
+
+    threading.Thread(target=watch, daemon=True, name="refinix-sigterm").start()
+
+
 def run(*, state_path: Path = lifecycle.STATE_DB, port: int = lifecycle.DEFAULT_PORT,
-        gui: str | None = None, debug: bool = False, on_started=None) -> int:
+        gui: str | None = None, debug: bool = False, on_started=None,
+        owner=None, update_gate=None) -> int:
     """Open the window and block until it closes."""
+    gui = pinned_gui(gui)
+    if getattr(sys, "frozen", False):
+        problem = toolkit_problem()
+        if problem is not None:
+            # Said before anything starts; never a silent fall-back renderer.
+            print(problem, file=sys.stderr)
+            _native_message("Refinix cannot open its window", problem)
+            return 2
     webview = _import_webview()
     try:
         webview.settings.update({"ALLOW_DOWNLOADS": True,
@@ -555,7 +1012,8 @@ def run(*, state_path: Path = lifecycle.STATE_DB, port: int = lifecycle.DEFAULT_
     except AttributeError:                             # pragma: no cover - old pywebview
         pass
 
-    app = DesktopApp(state_path=state_path, port=port, on_started=on_started)
+    app = DesktopApp(state_path=state_path, port=port, on_started=on_started,
+                     owner=owner, update_gate=update_gate)
     bridge = Bridge(app)
     window = webview.create_window(
         WINDOW_TITLE, html=startup_html(app.assets), js_api=bridge,
@@ -568,6 +1026,8 @@ def run(*, state_path: Path = lifecycle.STATE_DB, port: int = lifecycle.DEFAULT_
 
     def boot(_window):
         worker.start()
+
+    _stop_on_sigterm(app)
 
     try:
         # private_mode keeps the webview from writing cookies or local storage:

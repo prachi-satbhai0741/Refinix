@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  Refinix in-app updates for the Ubuntu .deb (desktop/deb_root.py). Each action
+  runs only /opt/refinix/Refinix with one fixed first argument, and asks for an
+  administrator password every time (auth_admin; nothing is remembered).
+  Choosing an action does not make its arguments trusted: the program checks
+  the request folder and authenticates everything it copies.
+-->
+<policyconfig>
+  <vendor>Refinix</vendor>
+  <vendor_url>https://refinix.runs-on.dev</vendor_url>
+  <icon_name>refinix</icon_name>
+
+  <action id="com.refinix.desktop.deb-admit">
+    <description>Prepare a Refinix update</description>
+    <message>Refinix needs an administrator password to check a downloaded update in protected storage.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/opt/refinix/Refinix</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">--deb-admit</annotate>
+  </action>
+
+  <action id="com.refinix.desktop.deb-install">
+    <description>Install a Refinix update</description>
+    <message>Refinix needs an administrator password to install its verified update.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/opt/refinix/Refinix</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">--deb-install</annotate>
+  </action>
+
+  <action id="com.refinix.desktop.deb-recover">
+    <description>Finish an interrupted Refinix update</description>
+    <message>Refinix needs an administrator password to finish or undo an update that was interrupted.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/opt/refinix/Refinix</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">--deb-recover</annotate>
+  </action>
+
+  <action id="com.refinix.desktop.deb-rollback">
+    <description>Go back to the previous Refinix version</description>
+    <message>Refinix needs an administrator password to reinstall the previous version it kept.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/opt/refinix/Refinix</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">--deb-rollback</annotate>
+  </action>
+</policyconfig>

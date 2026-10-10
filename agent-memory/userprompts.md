@@ -1894,6 +1894,68 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - follow_up_to: [UP-20260922-003](#up-20260922-003)
 - linked_changes: [AC-20260922-004](agentchangelog.md#ac-20260922-004)
 
+<a id="up-20260924-001"></a>
+## UP-20260924-001 — Qualify Ollama 0.34.2 for the current Mac
+- date: 2026-09-24
+- status: authorised live local qualification, exact profile registration, focused verification and macOS package rebuild; no Git/GitHub write
+- tags: inference-profile, macos, ollama-0.34.2, chat, live-qualification, package
+- paths: scripts/qualify_execution.py, scripts/test_qualify_execution.py, backend/contracts/profiles.py, backend/contracts/test_contracts.py, qualification-artifacts/, desktop/dist/Refinix.app, agent-memory/
+- summary: Qualify the installed Ollama 0.34.2 runtime so Refinix can use the already installed Qwen model without weakening exact runtime/device/workflow admission.
+- request: Qualify Ollama 0.34.2 after the official 0.33.3 macOS artifacts failed signature validation and the restored 0.34.2 runtime left the selected model unavailable for new work.
+- constraints: Admit only workflows that pass the real production path on the exact model digest and current Mac. Keep unmeasured or failed Code and Documents workflows unavailable, preserve unrelated dirty work, do not edit protected documentation, and perform no Git/GitHub writes.
+- follow_up_to: [UP-20260921-009](#up-20260921-009)
+- linked_changes: [AC-20260924-001](agentchangelog.md#ac-20260924-001)
+
+<a id="up-20260924-002"></a>
+## UP-20260924-002 — Correct false missing-model capability messages
+- date: 2026-09-24
+- status: authorised implementation, focused verification and macOS package rebuild; no Git/GitHub write
+- tags: capability-state, qualification, documents, code, ui-truthfulness, ollama-0.34.2
+- paths: backend/coordinator/server.py, backend/coordinator/test_desktop_surface.py, frontend/app/app.js, desktop/dist/Refinix.app, agent-memory/
+- summary: Replace the false claim that the installed Qwen model is missing when Documents or Code is blocked because its exact Ollama 0.34.2 workflow profile is unqualified.
+- request: Implement the recommended wording correction shown by the capability-menu screenshot without force-enabling unqualified workflows.
+- constraints: Preserve Chat availability, distinguish engine-down, model-missing, model-disabled and workflow-unqualified states, keep Documents and Code fail-closed, preserve unrelated dirty work, edit no protected documentation, and perform no Git/GitHub writes.
+- follow_up_to: [UP-20260924-001](#up-20260924-001)
+- linked_changes: [AC-20260924-002](agentchangelog.md#ac-20260924-002)
+
+<a id="up-20260924-003"></a>
+## UP-20260924-003 — Allow model-free previous-answer document conversion
+- date: 2026-09-24
+- status: authorised implementation, focused verification, macOS package rebuild and one live local conversion; no Git/GitHub write
+- tags: documents, conversion, capability-gate, ollama-0.34.2, model-free, package
+- paths: backend/coordinator/server.py, backend/coordinator/test_document_generation.py, backend/coordinator/test_desktop_surface.py, desktop/dist/Refinix.app, agent-memory/
+- summary: Let Write a document save a completed answer on Ollama 0.34.2 without pretending that new model-generated Documents work is qualified.
+- request: Repair the screenshot failure for "write me a document on your output" after Chat completed successfully and the broad Documents profile gate disabled Send.
+- constraints: Reuse the existing deterministic conversion path, call no model, keep new document generation, document reading and Code fail-closed, preserve unrelated dirty work, edit no protected documentation, and perform no Git/GitHub writes.
+- follow_up_to: [UP-20260924-002](#up-20260924-002)
+- linked_changes: [AC-20260924-003](agentchangelog.md#ac-20260924-003)
+
+<a id="up-20260924-004"></a>
+## UP-20260924-004 — Enable proposal-only experimental Code on Ollama 0.34.2
+- date: 2026-09-24
+- status: authorised implementation, live local qualification, focused verification and macOS package rebuild; no Git/GitHub write
+- tags: code, experimental-profile, small-edit, ollama-0.34.2, live-qualification, package
+- paths: backend/contracts/profiles.py, backend/contracts/qualification.py, backend/coordinator/server.py, scripts/qualify_execution.py, qualification-artifacts/, desktop/dist/Refinix.app, agent-memory/
+- summary: Enable Code only for small reviewable existing-file proposals on the exact current Mac profile, without claiming the previously failed complete-program workload or sandbox validation.
+- request: Add an explicitly proposal-only experimental Code profile for Ollama 0.34.2, run live qualification, expose its limited scope honestly in the UI, and rebuild the app.
+- constraints: Keep full-program generation and sandbox execution unqualified, preserve strict structured proposals and canonical-file protection, do not widen the 2,048-token allowance, preserve unrelated dirty work, edit no protected documentation, and perform no Git/GitHub writes.
+- follow_up_to: [UP-20260924-003](#up-20260924-003)
+- linked_changes: [AC-20260924-004](agentchangelog.md#ac-20260924-004)
+
+<a id="up-20260924-005"></a>
+## UP-20260924-005 — Repair Phase 1 document workflows on the Chat profile
+- date: 2026-09-24
+- status: authorised plan, implementation, offline verification, macOS package rebuild and live local Read/Write acceptance; requester verification pending; no Git/GitHub write
+- tags: documents, chat-backed, docx, pdf-text-layer, page-references, ollama-0.34.2, package
+- aliases: write a document, read a document, fresh prompt document, create a document of deep learning summarised, not available on this computer
+- paths: backend/coordinator/server.py, backend/coordinator/docflow.py, backend/coordinator/documents.py, backend/coordinator/pdfrender.py, frontend/app/app.js, backend/coordinator/test_*.py, frontend/app/test-composer.cjs, desktop/dist/Refinix.app, agent-memory/
+- summary: Make fresh-prompt document writing, DOCX reading and text-layer PDF reading work on Ollama 0.34.2 through the Documents-selected model's exact Chat profile, without claiming structured Documents or OCR qualification.
+- constraints: One bounded Chat call per request; reuse the ordinary Chat attachment path and existing deterministic converter; keep previous-answer conversion model-free; keep scan-only PDFs and pictures unavailable with a named reason; no PaddleOCR or Qwen-vision document reading; no implementation provenance inside generated documents; structured 0.32.14/0.33.3 behaviour unchanged; exact-filename page-reference checks via retrieval.resolve; no new dependency, profile, protected-doc edit or Git/GitHub write.
+- acceptance: Offline focused and broader tests pass; package builds, signs and matches source; live fresh write, conversion, DOCX, text-PDF and mixed-PDF reads complete and scan-only PDF is refused.
+- follow_up_to: [UP-20260924-003](#up-20260924-003)
+- supersedes: none
+- linked_changes: [AC-20260924-005](agentchangelog.md#ac-20260924-005)
+
 <a id="up-20261002-001"></a>
 ## UP-20261002-001 — Website: product video, pillar image, About us and Download Beta
 - date: 2026-10-02
@@ -1976,3 +2038,470 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - constraints: Every existing media file, design, text and countdown preserved; URL, CNAME, DNS and Pages settings untouched; publication via a clean-checkout dry-run procedure; HTTPS checked for validity not certificate identity; Git actions need separate explicit approval.
 - follow_up_to: [UP-20261002-006](#up-20261002-006)
 - linked_changes: [AC-20261002-007](agentchangelog.md#ac-20261002-007)
+
+<a id="up-20261002-008"></a>
+## UP-20261002-008 — Website-only source and publishing PRs
+- date: 2026-10-02
+- status: user approved focused checks, isolated website-only commits/branch pushes/PRs and publishing fork; no merge or direct protected-branch push
+- tags: website, publication, github-pages, pull-request
+- paths: frontend/design/, scripts/build-site.sh, scripts/test_build_site.py, agent-memory/
+- summary: User confirmed the accepted website works locally, requested deployment, then explicitly approved website-only Git/PR work and checks. User also asked what the reported launcher-test address mismatch means; inspect and explain, without changing application code.
+- constraints: Preserve accepted website, URL, unrelated dirty work, application code and protected docs; source PR into dev, publishing PR into the separate site repository; owner merge needed because the current account has read-only hosting-repository access.
+- follow_up_to: [UP-20261002-007](#up-20261002-007)
+- linked_changes: [AC-20261002-008](agentchangelog.md#ac-20261002-008)
+
+
+<a id="up-20261003-001"></a>
+## UP-20261003-001 — Standalone three-OS Beta and section-level execution
+- date: 2026-10-03
+- status: done
+- scope: docs, decision
+- tags: beta, standalone, cross-platform, updates, reuse, agent-execution
+- paths: AGENTS.md, docs/PROJECT.md, tasks.md, docs/releases.md, README.md, docs/README.md, docs/security.md
+- summary: User approved careful documentation changes for standalone Windows/macOS/Linux Beta with in-app updates, deferred distributed execution, reuse of existing repository code and execution by major sections without further task tiers or delegation.
+- constraints: No workflow-tool download/install; preserve distributed source, local security/approval/recovery requirements, historical evidence and unrelated dirty work. Documentation permission does not authorise application changes, test suites, builds, live checks or Git writes.
+- acceptance: Current authorities and entry points agree on Beta scope, deferred mesh gates, updater qualification and section-level execution.
+- follow_up_to: none
+- linked_changes: [AC-20261003-001](agentchangelog.md#ac-20261003-001)
+
+
+<a id="up-20261004-001"></a>
+## UP-20261004-001 — Runtime ownership UX and orchestration options
+- date: 2026-10-04
+- status: done
+- scope: docs, decision
+- tags: runtime, ollama, llama-cpp, qualification, onboarding, langgraph, reuse
+- paths: AGENTS.md, docs/PROJECT.md, tasks.md, docs/model-catalog.md, docs/releases.md, docs/evaluation.md, README.md, docs/README.md
+- summary: User approved careful documentation updates and another review to record that Refinix owns runtime compatibility/qualification, customers should open and use it without manual requalification after external updates, and the existing orchestration harness remains selected while LangGraph stays an option for evidenced need.
+- constraints: Preserve existing repository implementation, prior standalone three-OS Beta/mesh-deferral decisions, security/admission and data recovery. No application implementation, test suites, downloads/installs, runtime checks, framework adoption or Git writes authorised by this documentation request.
+- acceptance: Product/model/release/agent/phase guidance agrees on app-managed pinned engine ownership, automatic graphical installation checks, internal engineering qualification, truthful failure/recovery, and criteria for reconsidering LangGraph; source finding distinguished from an unobserved live diagnosis.
+- follow_up_to: [UP-20261003-001](#up-20261003-001)
+- linked_changes: [AC-20261004-001](agentchangelog.md#ac-20261004-001)
+
+
+<a id="up-20261004-002"></a>
+## UP-20261004-002 — Core Beta direction and reasoned execution handoff
+- date: 2026-10-04
+- status: handoff-prepared; coordination-pending
+- scope: planning, handoff, memory
+- tags: beta, code-quality, reuse, coherent-execution, review, runtime, memory
+- paths: docs/beta-execution-handoff.md, agent-memory/
+- summary: User requested a deep implementation-owner plan with independent agent review before a concrete change summary and sustained execution; prioritize optimizing existing code and product quality, remove evidenced unwanted code, update necessary docs, save this as the current core memory and pin it.
+- constraints: Four existing major Beta sections; no nested delegation or per-file task trees; preserve dirty work, useful capabilities and deferred distributed code. Planning must precede application execution; tests/live actions/Git/publication retain their separate permission boundaries.
+- acceptance: Source-grounded handoff explains reasons, alternatives, affected paths, coherent execution sections, meaningful acceptance and prerequisite/review gates; memory saved and current chat pinned; no unobserved delivery, agreement or implementation claims.
+- follow_up_to: [UP-20261004-001](#up-20261004-001)
+- linked_changes: [AC-20261004-002](agentchangelog.md#ac-20261004-002)
+
+
+<a id="up-20261004-003"></a>
+## UP-20261004-003 — Implementation-owner Beta plan for review
+- date: 2026-10-04
+- status: plan-recorded; review-pending
+- scope: planning, handoff
+- tags: beta, runtime, llama-cpp, model-lifecycle, sandbox, updater, review
+- paths: docs/beta-execution-handoff.md
+- summary: User asked the implementation owner to read the handoff and current authorities, independently inspect source, record a reasoned plan with corrections, affected paths, acceptance checks and prerequisites for review-agent evaluation, then later execute the approved plan in one sustained run without further delegation.
+- constraints: Planning only before review; follow the handoff's coordination and execution gates; ask when blocked; no subagents, tests, downloads, installs, live runtime calls or Git writes in this step.
+- acceptance: Plan in the handoff is source-grounded with checkable line references, a parity decision rule, section plans, cleanup evidence, validation families, one prerequisite batch with recommendations and a user-facing change summary.
+- follow_up_to: [UP-20261004-002](#up-20261004-002)
+- linked_changes: [AC-20261004-003](agentchangelog.md#ac-20261004-003)
+
+
+<a id="up-20261004-004"></a>
+## UP-20261004-004 — Research-backed presets and independent owner-plan review
+- date: 2026-10-04
+- status: docs-updated; owner-reconciliation-pending
+- scope: documentation, research, review, memory
+- tags: presets, hardware, research, reuse, beta, recovery, sandbox
+- paths: AGENTS.md, docs/PROJECT.md, tasks.md, docs/model-catalog.md, docs/releases.md, docs/evaluation.md, docs/beta-execution-handoff.md
+- summary: User requested category recommendations with precomputed hardware/runtime/context/KV/resource presets derived from existing research, hardware matching rather than startup calculations, reuse of existing tools, a memory update, necessary docs changes and an independent review/correction handoff asking the owner to review our doc changes.
+- constraints: Do not require ownership of target laptops for research; preserve existing source, dirty work, four major sections and the original owner proposal. No app implementation, tests, downloads/installs, live runtime checks, new delegation or Git writes in this step.
+- acceptance: Preset schema and evidence states agree across authorities; sources and reusable options identified; plan disagreements recorded with reasons and acceptance; actual delivery status reported honestly.
+- follow_up_to: [UP-20261004-003](#up-20261004-003)
+- linked_changes: [AC-20261004-004](agentchangelog.md#ac-20261004-004)
+
+
+<a id="up-20261004-004"></a>
+## UP-20261004-004 — Reconcile review findings and deepen the Beta plan
+- date: 2026-10-04
+- status: reconciliation-recorded; re-review-pending
+- scope: planning, handoff
+- tags: beta, presets, reuse, rollback, sandbox, observer, packaging
+- paths: docs/beta-execution-handoff.md
+- summary: User shared the review agent's NEEDS FIX result (preset matching, reuse, update recovery, sandbox enforcement, evidence claims) and asked the implementation owner to reason, improve the plan and analyse the repository more deeply.
+- constraints: Planning and source inspection only; preserve the original proposal and the review section; necessary doc corrections already authorized; no subagents, tests, downloads, installs, builds or Git writes.
+- acceptance: One appended reconciliation mapping R1-R5 into the same four sections with evidence, reuse decisions, recovery order, named sandbox enforcement, observer contract, revised prerequisites and change summary.
+- follow_up_to: [UP-20261004-003](#up-20261004-003)
+- linked_changes: [AC-20261004-004](agentchangelog.md#ac-20261004-004)
+
+
+<a id="up-20261004-005"></a>
+## UP-20261004-005 — Internal Windows/Ubuntu/macOS test packages and stronger cleanup rule
+- date: 2026-10-04
+- status: plan-updated; re-review-pending
+- scope: planning, handoff
+- tags: beta, packaging, build-matrix, test-artifacts, ci, cleanup
+- paths: docs/beta-execution-handoff.md
+- summary: User added a Beta requirement for complete internal test packages on Windows and Ubuntu alongside macOS, built natively from one source snapshot and version with pinned dependencies and the managed engine, labelled with SHA-256 manifests and short instructions, reused across tests and kept as N/N+1 builds for updater testing; plus a stronger reuse-first cleanup rule.
+- constraints: Same four sections; no subagents or task tiers; no Git/GitHub writes or CI trigger; plan PASS not declared and the long run not started; model weights stay explicit assets; internal unsigned packages separate from signing, publication and device acceptance.
+- acceptance: Reconciled plan, prerequisite batch and change summary updated; Codex doc changes re-checked; genuine build-environment prerequisite named.
+- follow_up_to: [UP-20261004-004](#up-20261004-004)
+- linked_changes: [AC-20261004-005](agentchangelog.md#ac-20261004-005)
+
+<a id="up-20261004-006"></a>
+## UP-20261004-006 — Approved corrected four-section Beta handoff and direct delivery
+- date: 2026-10-04
+- status: approved-direction; handoff-prepared; delivery-pending
+- scope: handoff, coordination
+- tags: beta, approval, reuse, schema-preflight, recovery, sandbox, packaging
+- paths: docs/beta-execution-handoff.md, agent-memory/
+- summary: After reviewing the owner's reply and receiving a plain-language explanation, the user approved the four-section approach and requested a corrected handoff delivered directly to the implementation owner.
+- constraints: Reuse the existing handoff/code and established offline tools; no subagents or further task tiers. Preserve dirty work. Handoff approval does not silently authorize tests, downloads/installs, live calls, build/host actions, Git/CI writes, other protected-doc edits or publication.
+- acceptance: The handoff includes actual-root ownership and coherent-copy schema admission, exclusive recovery, host IPC/io_uring denial, aggregate temporary-storage enforcement, final-artifact identities and reuse, four-section execution and one genuine prerequisite batch; direct delivery is reported only after visible confirmation.
+- follow_up_to: [UP-20261004-005](#up-20261004-005)
+- linked_changes: [AC-20261004-006](agentchangelog.md#ac-20261004-006)
+- delivery_result: DELIVERED directly to the existing owner conversation, visibly confirmed as Message 9; owner response started. Detailed acknowledgement and required action permissions remain pending.
+
+
+<a id="up-20261004-007"></a>
+## UP-20261004-007 — Execute the approved four-section Beta plan
+- date: 2026-10-04
+- status: in-progress (Section 1 largely done; run paused at usage limit)
+- scope: implementation, tests, local engine/model acquisition, packaging preparation, ledgers
+- tags: beta, managed-engine, ownership, admission, readiness, presets, packaging, parity
+- paths: backend/coordinator, backend/contracts, desktop, frontend/app, scripts, qualification-artifacts
+- summary: User confirmed /execute with permissions: source changes in the four sections, offline suites, one pinned llama.cpp macOS release plus the Qwen3.5-4B model and projector (~3.4 GB) with a private Ollama comparison, llmfit for estimates, hash-pinned psutil/tuf/securesystemslib/urllib3, preparing native CI builds (no Git/Actions writes), and one releases.md §2 addition.
+- constraints: No Git/GitHub/Actions writes, signing, publication, host/sandbox changes, privileged helpers or extra model downloads; generated-code execution stays unavailable where controls cannot be enforced.
+- follow_up_to: [UP-20261004-006](#up-20261004-006)
+- linked_changes: [AC-20261004-007](agentchangelog.md#ac-20261004-007)
+
+
+<a id="up-20261004-008"></a>
+## UP-20261004-008 — Preserve and review interrupted Beta Foundation work
+- date: 2026-10-04
+- status: done (review and checkpoint; implementation remains partial)
+- scope: review, preservation, memory
+- tags: beta, checkpoint, partial-execution, parity, source-review, low-context
+- paths: tmp/beta-foundation-checkpoint-20261004T153112Z, agent-memory/
+- summary: User requested a rigorous scan and preservation of the owner's interrupted work plus a memory checkpoint before starting a new chat; the user will resume execution after the owner's limit resets.
+- constraints: Preserve the mixed dirty tree and approved four sections; no source fixes, tests, live models, downloads/installs, protected-doc edits, Git/Actions writes or delegation in this review. Future handoffs are copyable unless Computer Use is necessary.
+- acceptance: Recoverable verified source/evidence snapshot, factual review and saved memory update; distinguish interrupted work and owner-reported checks from fresh review evidence.
+- follow_up_to: [UP-20261004-007](#up-20261004-007)
+- linked_changes: [AC-20261004-008](agentchangelog.md#ac-20261004-008)
+
+
+<a id="up-20261005-001"></a>
+## UP-20261005-001 — Resume the four-section Beta execution with seven review findings
+- date: 2026-10-05
+- status: in-progress
+- scope: implementation, offline tests, ledgers
+- tags: beta, resume, ownership, engine-cleanup, admission, build-identity, tiers, model-integrity, readiness
+- paths: backend/coordinator, backend/contracts, desktop, frontend/app, scripts, .github/workflows
+- summary: User re-issued /execute to continue the existing four-section plan from the interruption point and fold in seven validated findings: database aliases, engine survivor tracking, empty foreign SQLite, material build inputs/reuse and Windows installer isolation, Ubuntu distribution matching, installed-model byte identity, and startup readiness.
+- constraints: Existing conversation permissions only; no Git/GitHub/Actions writes, signing, publication, privileged helpers, host/sandbox changes, extra model downloads, or protected-doc edits beyond the previously named releases.md §2 addition; no subagents or new planning cycle.
+- follow_up_to: [UP-20261004-008](#up-20261004-008)
+- linked_changes: [AC-20261005-001](agentchangelog.md#ac-20261005-001), [AC-20261005-002](agentchangelog.md#ac-20261005-002), [AC-20261005-003](agentchangelog.md#ac-20261005-003), [AC-20261005-004](agentchangelog.md#ac-20261005-004), [AC-20261005-005](agentchangelog.md#ac-20261005-005), [AC-20261005-006](agentchangelog.md#ac-20261005-006)
+
+
+<a id="up-20261005-002"></a>
+## UP-20261005-002 — Save the partial Beta checkpoint and explain runtime strictness
+- date: 2026-10-05
+- status: checkpoint requested; implementation remains partial
+- scope: local Git commit, explanation
+- tags: beta, checkpoint, managed-engine, ollama, qualification
+- paths: backend, desktop, frontend/app, scripts, .github/workflows, docs, agent-memory
+- summary: User explicitly requested a local commit of the existing work and an explanation of why Refinix restricts runtime versions when other applications integrate Ollama directly.
+- constraints: Preserve unrelated website/media/temporary work; no push, release, new test runs, runtime changes or protected-document edits.
+- linked_changes: [AC-20261005-007](agentchangelog.md#ac-20261005-007)
+
+
+<a id="up-20261005-003"></a>
+## UP-20261005-003 — Record verbatim user direction and align the Beta documents
+- date: 2026-10-05
+- status: memory and documentation complete; owner planning/review pending; implementation not authorized
+- scope: memory, protected documentation, copyable planning handoff
+- tags: beta, hackathon, upstream-reuse, open-model-choice, recommendations, auto-routing, verbatim-user-direction
+- paths: docs/beta-user-direction-2026-10-05.md, AGENTS.md, docs/PROJECT.md, docs/model-catalog.md, docs/security.md, tasks.md
+- original_request: Full original statement and follow-up instruction are preserved verbatim in [the requested report](../docs/beta-user-direction-2026-10-05.md); do not substitute this ledger metadata for the user's words.
+- constraints: Save memory first, then align documents and provide a handoff for the user to send. Do not contact the implementation owner, implement, run tests/live models/downloads, or make Git/GitHub writes. The owner's next execution plan returns for independent review against the original requirements before implementation.
+- linked_changes: [AC-20261005-008](agentchangelog.md#ac-20261005-008)
+
+
+<a id="up-20261005-004"></a>
+## UP-20261005-004 — Manual branch checkpoint and final-cleanup handoff
+- date: 2026-10-05
+- status: handoff update complete; staging, commit and push remain user actions
+- scope: manual Git commands and copyable planning handoff
+- paths: docs/beta-user-direction-2026-10-05.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- original_request: "alright next i want to git add commit and push everything to my branch \nonce everything is added and pushed to aditya \nalso the push and commit will be done by me so give me commands and statements accodingly \nalso in the copyabale handover mention that to delete unwanted code and also delete document { beta-user-direction-2026-10-05.md } after complete plan is executed \n\n\nand after that i'll start a new chat"
+- constraints: Do not perform Git writes for the user. Plan cleanup only after complete approved execution and verification; preserve original requirements, useful code, deferred distributed paths and user data.
+- linked_changes: [AC-20261005-009](agentchangelog.md#ac-20261005-009)
+
+
+<a id="up-20261005-005"></a>
+## UP-20261005-005 — Preserve the teammate-owned final README
+- date: 2026-10-05
+- status: requested headline recorded
+- scope: headline in docs/beta-user-direction-2026-10-05.md
+- original_request: "Also, a point that we don't have to update README as the final README will be pushed by one of my teammates, and that will be the final README. The README which we are currently having is not well structured compared to what his README is. So I don't want to push the current README in main as main will con contain the best REDME or if I'll tell you when the REDME is pushed to main, I'll tell to you and then accordingly we will pull only readme from main and then push the entire beta itself to my branch dev and main."
+- constraints: Do not edit the repository-root README. Wait for the user's confirmation and Git authorization before bringing only the final README from main into aditya; preserve that README through normal aditya -> dev -> main integration.
+- linked_changes: [AC-20261005-010](agentchangelog.md#ac-20261005-010)
+
+
+<a id="up-20261006-001"></a>
+## UP-20261006-001 — Plan, review and execute the model/runtime/routing package (A–F)
+- date: 2026-10-06
+- status: implementation delivered; requester verification pending
+- scope: planning, review, implementation
+- tags: beta, ollama-reuse, managed-llama-cpp, auto-routing, capacity, local-admission, check-fingerprint, schema-14
+- paths: backend/contracts, backend/coordinator, desktop, frontend/app
+- original_request: Planning request relayed by the user ("Planning only. Do not implement, edit files, run checks/models/downloads, or make Git/GitHub changes yet. Read docs/beta-user-direction-2026-10-05.md first…"), then two relayed independent reviews (nine corrections, six amendments, all accepted), then the relayed authorization "Execute the amended model/runtime/routing plan, sections A–F, including all nine initial corrections and all six final amendments… This approval is for this work package; it is not Beta release acceptance." The user confirmed it in chat with "Yes, execute it (Recommended)".
+- constraints: Excluded: protected documentation and README edits, section G report retirement/deletion and destructive cleanup, Git/GitHub writes, installers, model downloads, remote-device actions, credential/network/security changes. Live checks loopback-only on the Mac with existing Ollama models and cached managed Qwen files, isolated temporary state, synthetic fixtures; read-only Hugging Face metadata. Keep Windows/Linux packages, updater/recovery, local sandbox and network-evidence gates outstanding.
+- linked_changes: [AC-20261006-001](agentchangelog.md#ac-20261006-001)
+
+
+<a id="up-20261006-002"></a>
+## UP-20261006-002 — Resume the A–F execution after the usage limit
+- date: 2026-10-06
+- status: done; requester verification pending
+- scope: implementation, verification
+- tags: beta, resume, capacity, residency, preview
+- paths: backend/coordinator/capacity.py, backend/coordinator/server.py, backend/coordinator/local_engine.py, backend/coordinator/db.py, frontend/app/app.js
+- original_request: "continue", with a relayed compaction checkpoint asking to "resolve the capacity concern, finish remaining verification, and report changes, observed checks, failures and limitations. Do not claim complete Beta/release acceptance."
+- constraints: Same scope and exclusions as UP-20261006-001; preserve the dirty tree and untracked files.
+- linked_changes: [AC-20261006-001](agentchangelog.md#ac-20261006-001)
+
+
+<a id="up-20261006-003"></a>
+## UP-20261006-003 — Repair the five review findings in the A–F package
+- date: 2026-10-06
+- status: done; requester verification pending
+- scope: implementation, verification
+- tags: beta, review-fix, ollama-start, search-ocr, ocr-admission, capacity-refresh, hub-projector
+- paths: desktop/lifecycle.py, backend/coordinator/{server,capacity,local_engine,runtime,docflow,documents,hub}.py, frontend/app/app.js
+- original_request: A relayed independent review (NEEDS FIX, five reproduced defects) and its security diff report with no findings; the user confirmed in chat "Yes, fix all five (Recommended)".
+- constraints: Same A–F scope and exclusions as UP-20261006-001; a focused regression for each finding.
+- linked_changes: [AC-20261006-002](agentchangelog.md#ac-20261006-002)
+
+
+<a id="up-20261006-004"></a>
+## UP-20261006-004 — Complete the OCR memory and projector-pairing repairs
+- date: 2026-10-06
+- status: done; requester verification pending
+- scope: implementation, verification
+- tags: beta, review-fix, ocr-admission, capacity, hub-projector, scanned-search
+- paths: backend/coordinator/{capacity,server,hub}.py, frontend/app/app.js
+- original_request: A relayed follow-up review (NEEDS FIX: later OCR pages falsely refused; prefix matching invents projector compatibility and no text-only on the automatic path; verify scanned Search finds a known phrase on the right file and page); the user confirmed in chat "Yes, fix both (Recommended)".
+- constraints: Same A–F scope and exclusions; regressions that fail on the previous code; live loopback scanned-Search phrase check.
+- linked_changes: [AC-20261006-003](agentchangelog.md#ac-20261006-003)
+
+
+<a id="up-20261006-005"></a>
+## UP-20261006-005 — Ignore generated desktop review builds
+- date: 2026-10-06
+- status: done
+- scope: implementation
+- tags: gitignore, desktop, build-artifacts
+- paths: .gitignore
+- original_request: "add that to gitignore", referring to the untracked desktop/out/ review build.
+- constraints: Keep local build files and existing staged work; no Git writes or test commands.
+- linked_changes: [AC-20261006-004](agentchangelog.md#ac-20261006-004)
+
+
+<a id="up-20261007-001"></a>
+## UP-20261007-001 — Execute the reviewed Beta plan (A–G) and walk through Refinix
+- date: 2026-10-07
+- status: done; requester verification pending
+- scope: implementation, verification, packaging, walkthrough
+- tags: beta, model-agnostic-routing, fallback, setup, ollama-reuse, settings, categories, selftest, dependabot, webview2, deb
+- paths: backend/coordinator/{router,models,admission,server,code_service,runtime,local_engine,hub,capacity,provisioning,readiness,db,ocr}.py and tests; frontend/app/{app.js,index.html,code.html,control.html,refinix.css} and tests; desktop/{build.py,packaging_plan.py,packaging-tools.json,windows/refinix.iss,test_build.py,test_dependency_pins.py}; .github/{dependabot.yml,workflows/ci.yml}
+- original_request: Reviewed handoff (revision 4 with revision 5 replacements plus cleanup) and the user's Beta requirement: download from the website on three OS with every dependency, hardware check, model suggestions by category with free choice, existing Ollama models usable, Auto picks the best available model and the second best when it is not available, and the user gets the answer; "after this execution you open and try every step on Refinix".
+- constraints: Granted P1–P6 and P8 plus scratch import; not P7. Full Beta 0.1 release gates apply (unsigned Preview not approved); 10 October is a target. Unsigned builds for local testing only; signing and notarisation required before Beta. Bundle the offline WebView2 installer; .deb primary, AppImage secondary. One owner; no subagents. No Git/GitHub writes, protected-doc or README edits.
+- linked_changes: [AC-20261007-001](agentchangelog.md#ac-20261007-001)
+
+
+<a id="up-20261007-002"></a>
+## UP-20261007-002 — Repair batch after the independent review (D1, D9 approved)
+- date: 2026-10-07
+- status: done; requester verification pending
+- scope: implementation, verification, packaging, walkthrough
+- tags: beta, review-fix, fallback-budget, picture-intent, d1, d9, page-reader, webview2-signature, setup-first-launch
+- paths: backend/coordinator/{router,models,admission,server,code_service,ocr,capacity,db}.py and tests; desktop/{build.py,test_build.py}; frontend/app/{app.js,refinix.css} and tests
+- original_request: "/execute the repair batch" — fixes for six review findings (Chat/Code fallback before the attempt, picture intent and unreadable sources, no tag-absence incompatibility, page-reader fallback and truthful runtime record, PowerShell path binding, Setup first launch), D1 (accept "unsafe; 2.4") and D9 (incomplete answers as task-specific, current-evidence exclusion), the approved live second-choice test with the cached managed model imported into scratch data, a new review build and the affected scratch walkthrough.
+- constraints: P1–P5 and D8 only; no downloads, Git/GitHub writes, protected docs, workflow dispatch or publication; full Beta 0.1 gates remain.
+- linked_changes: [AC-20261007-002](agentchangelog.md#ac-20261007-002)
+
+
+<a id="up-20261007-003"></a>
+## UP-20261007-003 — Resume interrupted repair verification on the existing application
+- date: 2026-10-07
+- status: done for the interrupted repair verification; release gates remain open
+- scope: affected offline regressions, packaged scratch walkthrough, normal quit/relaunch
+- tags: resume, existing-build, unreadable-attachments, lazy-ocr, system-message, document-generation, native-folder-picker, data-preservation
+- paths: existing backend/coordinator/{server,router,documents,docflow}.py and affected tests; desktop/out/local-review-20261007g; agent-memory/{userprompts,agentchangelog}.md
+- original_request: "yes continue / try maintaining claude's quality for this / proceed"
+- constraints: Resume the existing approved implementation from build 7g. Preserve the dirty tree and real data; rebuild only for an actual source fix. No subagents, downloads, Git/GitHub writes, protected-document changes or publication. Full Beta gates remain.
+- linked_changes: [AC-20261007-003](agentchangelog.md#ac-20261007-003)
+
+
+<a id="up-20261007-004"></a>
+## UP-20261007-004 — Handoff for a graphical in-app updater and one primary application
+- date: 2026-10-07
+- status: handoff prepared; implementation owner's plan pending independent review
+- scope: planning handoff only
+- tags: in-app-update, primary-installation, duplicate-apps, spotlight, plan-first, full-beta-gates
+- paths: agent-memory/handoffs/2026-10-07-refinix-in-app-update-and-consolidation.md; agent-memory/{userprompts,agentchangelog}.md
+- original_request: The user requests a visible graphical update control that closes, updates and reopens the primary Refinix app without terminal commands; removal of unnecessary app copies; subsequent package qualification and unwanted-code cleanup. The complete latest wording is preserved in the linked handoff. The user will paste it to the implementation owner for a plan, then continue independent review in the next chat.
+- constraints: Extend existing updater/recovery code, preserve the dirty tree and real data, retain full Beta gates. No implementation, app deletion/installation, tests, model calls, downloads, protected-document changes or Git/GitHub writes in this planning turn.
+- linked_changes: [AC-20261007-004](agentchangelog.md#ac-20261007-004)
+
+
+<a id="up-20261007-005"></a>
+## UP-20261007-005 — Approve updater boundaries and add the public website update requirement
+- date: 2026-10-07
+- status: handoff updated; application execution pending
+- scope: v3 plan review and existing handoff update only
+- tags: in-app-update, v3-review, public-release, website-installs, online-visibility, owned-processes, retain-build-records
+- paths: agent-memory/handoffs/2026-10-07-refinix-in-app-update-and-consolidation.md; agent-memory/{userprompts,agentchangelog}.md
+- original_request: "Alright then, approved" confirms retaining every ZIP/build record and stopping only verified owned processes. The user requests updates for the entire website-installed Refinix application after future fixes reach main, online-only visibility of the connected update option, and the latest raw wording in the updated handoff. Complete wording is preserved in the handoff.
+- constraints: Update the handoff, preserve full package/signing/OS acceptance and offline operation, distinguish a main commit from a published signed update. No application execution, protected-document edits, tests, installation, cleanup, Git/GitHub writes or publication in this turn.
+- linked_changes: [AC-20261007-005](agentchangelog.md#ac-20261007-005)
+
+
+<a id="up-20261007-006"></a>
+## UP-20261007-006 — Review v5 and reconcile the existing updater handoff
+- date: 2026-10-07
+- status: reviewed and handed off; application execution pending
+- scope: independent v5 review and existing handoff update only
+- tags: in-app-update, v5-review, offline-install, signed-evidence, online-header, internal-folder, network-observation
+- paths: agent-memory/handoffs/2026-10-07-refinix-in-app-update-and-consolidation.md; agent-memory/{userprompts,agentchangelog}.md
+- original_request: The user supplied the implementation owner's v5 amendments as the request. The attachment removes the proposed 30-day cutoff and offline header exceptions, resolves the internal-source visibility mismatch, qualifies network observation, and asks the reviewer to update the existing handoff. Application execution remains a later explicit user instruction.
+- constraints: Preserve previous raw user wording, retention/process approvals, dirty handoff/ledger edits and all source/data/packages. Keep public OS/signing/feed acceptance separate. No tests, builds, launches, installs, cleanup, host/network changes, protected-document edits, Git/GitHub writes or publication in this turn.
+- linked_changes: [AC-20261007-006](agentchangelog.md#ac-20261007-006)
+
+
+<a id="up-20261007-007"></a>
+## UP-20261007-007 — Execute the reviewed in-app updater plan
+- date: 2026-10-07
+- status: implemented and internally proven on this Mac; paused at checkpoint (a) for the user's click and Wi-Fi observation
+- scope: implementation of the consolidated updater plan (v3 + v4 + v5 + review-5/6 corrections) through internal-proof checkpoint (a)
+- tags: in-app-update, execution, signed-evidence, update-id-reconciliation, header-control, internal-proof
+- paths: backend/coordinator/{updates,recovery,server,provisioning,hub,code_service,engine}.py; desktop/{build,setup_py2app,lifecycle,shell,refinix,update_apply}.py; desktop/updates/; scripts/update_repository.py; frontend/app/*; tests; agent-memory/{userprompts,agentchangelog}.md
+- original_request: "take this in consideration and execute", supplied with the final review: W3 offline chain and process-check wording approved; W7 must resume a matching current-attempt data journal regardless of a missing install marker, cancel only when N is intact with no current-attempt journal, block (never cancel) after a swap with missing/mismatched evidence, and retain the previous committed journal beside its snapshot; cover crashes during copying, between snapshot and marker, and mismatched evidence after swapping.
+- constraints: Settled approvals and exclusions stand (no Git/GitHub writes, protected docs, production keys/signing/hosting/publication, Windows/Linux devices, downloads, real-store migration, data/model/ZIP/Keychain deletion). Stop at checkpoint (a) with the Wi-Fi observation; later checkpoints (b) bootstrap, (c) first click-update, (d) cleanup remain user-gated.
+- linked_changes: [AC-20261007-007](agentchangelog.md#ac-20261007-007)
+
+
+<a id="up-20261007-008"></a>
+## UP-20261007-008 — Continue after the internal updater checkpoints and stop saved-peer polling
+- date: 2026-10-07
+- status: source fix and internal.5 package ready; user update/normal Quit and cleanup confirmation pending
+- scope: resume the existing updater continuation after reported checkpoints (a), (b), (c); repair unintended worker connections in standalone Beta, prepare the affected internal package and preserve checkpoint (d)
+- tags: standalone-beta, deferred-mesh, worker-polling, internal-update, continuation
+- paths: backend/coordinator/{server,test_dispatch,test_remote_code}.py; frontend/app/{app.js,test-control-centre.cjs}; desktop/out/updater-n5 (ignored build output); agent-memory/{userprompts,agentchangelog}.md
+- original_request: "let's continue , claude's limit is reached", with the prior agent's checkpoint results and remaining cleanup/worker-polling work.
+- constraints: Preserve the implementation owner's dirty work, real store, previous update recovery, original ZIP sets/build records and saved pairing. No Git/GitHub writes, protected-document edits, public release/feed/signing, downloads or remote-device checks. Cleanup stays at the existing explicit final checkpoint after primary-app verification and normal Quit.
+- linked_changes: [AC-20261007-008](agentchangelog.md#ac-20261007-008)
+
+
+<a id="up-20261007-009"></a>
+## UP-20261007-009 — Confirm normal Quit and approve the three-copy cleanup
+- date: 2026-10-07
+- status: completed
+- scope: checkpoint (d), limited to the three previously identified unpacked review folders and their app registrations
+- tags: app-consolidation, native-trash, spotlight, normal-quit
+- paths: desktop/out/{local-review-20261006,local-review-20261007e,local-review-20261007g}/unpacked; agent-memory/{userprompts,agentchangelog}.md
+- original_request: "quit done, approve cleanup"
+- constraints: Move the approved unpacked folders recoverably to the Bin, unregister those apps, preserve every ZIP/build record and the primary application/data/recovery copies. No Git/GitHub writes or broader repository/app cleanup.
+- linked_changes: [AC-20261007-009](agentchangelog.md#ac-20261007-009)
+
+
+<a id="up-20261008-001"></a>
+## UP-20261008-001 — Recheck and fix the three updater review findings
+- date: 2026-10-08
+- status: done
+- scope: implementation, review
+- tags: updater, recovery, journal, retention, root-rotation, offline-tests
+- aliases: /execute, check once again before executing, final review fixes
+- paths: desktop/update_apply.py, desktop/test_update_apply.py, desktop/test_install_flow.py, backend/coordinator/updates.py, backend/coordinator/test_update_install.py
+- summary: The user authorised execution of the three updater fixes after rechecking the findings against current source.
+- constraints: Preserve the existing dirty tree, installed app, real data, retained ZIP/build records and public release boundaries; no Git/GitHub writes or protected-document edits.
+- acceptance: Confirm each finding, repair the shared paths, run relevant offline regressions and distinguish source checks from installed-package acceptance.
+- follow_up_to: UP-20261007-009
+- supersedes: none
+- linked_changes: [AC-20261008-001](agentchangelog.md#ac-20261008-001)
+
+## UP-20261008-002 — Prevent duplicate update actions and prepare the next package
+- date: 2026-10-08
+- status: done
+- scope: implementation, review, packaging
+- tags: updater, rapid-clicks, idempotency, internal-package, offline-tests
+- aliases: execute this carefully, check it, update the package, impatient repeated clicks
+- paths: frontend/app/app.js, frontend/app/test-update-control.cjs, backend/coordinator/updates.py, backend/coordinator/test_updates.py, backend/coordinator/test_update_install.py, desktop/shell.py, desktop/test_install_flow.py, desktop/out/updater-n6
+- summary: After asking whether repeated button clicks could download an update twice, the user authorised careful execution and a new package, and will update the installed app personally.
+- constraints: Preserve the installed app, real data, original ZIP sets/build records, existing signing keys and public release boundaries; no Git/GitHub writes or protected-document edits.
+- acceptance: Guard repeated check/download/import/prepare/install actions, verify focused and full offline regressions, build and authenticate internal.6, then place its signed bundle in the existing update folder for the user's native install.
+- follow_up_to: UP-20261008-001
+- supersedes: none
+- linked_changes: [AC-20261008-002](agentchangelog.md#ac-20261008-002)
+
+<a id="up-20261008-003"></a>
+## UP-20261008-003 — Execute plan v4.3: the whole remaining standalone Beta batch
+- date: 2026-10-08
+- status: in progress
+- scope: implementation, packaging, release infrastructure, cleanup, documentation, GitHub presentation, publication (gated)
+- tags: beta, plan-v4.3, updater, deb, windows-installer, tuf, sandbox, cleanup, sih-removal, tester-preview
+- aliases: /execute plan v4.3, complete the whole agreed batch, tester preview before device walkthrough
+- paths: backend/coordinator, desktop, scripts, frontend, deploy/distribution, .github/workflows, docs, README.md, tasks.md
+- summary: After the planning loop with the reviewing agent passed plan v4.3, the user authorised the listed execution permissions (including computer-use) and accepted the recommendations. Checkpoint answers: repository owners run their own admin steps (website repo and source-repo settings); neither Apple Developer ID nor Windows signing is ready, so unsigned platforms are shown unavailable; no Windows PC or clean Ubuntu desktop exists yet, so device checks stay visibly pending and installers are built in available authorised build environments; archived SIH material goes to ~/Documents/Refinix-private-archive.
+- constraints: No planning rewrite. Git commits and member→dev→main merges need CP-A approval; publication needs CP-B approval. Never weaken update-trust, sandbox, approval or data boundaries; preserve internal.6 artifacts, user data and deferred mesh/worker code.
+- acceptance: Implementation, optimisation, justified cleanup, verification, documentation and GitHub updates (including SIH removal from current public presentation); then the website DMG/EXE/DEB tester preview (unsigned platforms unavailable) before the user's device walkthrough, Codex's deep review, one repair batch and Beta acceptance.
+- follow_up_to: UP-20261008-002
+- supersedes: none
+- linked_changes: [AC-20261008-003](agentchangelog.md#ac-20261008-003), [AC-20261008-004](agentchangelog.md#ac-20261008-004)
+
+
+<a id="up-20261008-readme-sync"></a>
+## UP-20261008-README-SYNC — Import the final main README and revise the release direction
+- date: 2026-10-08
+- agent: agent
+- request: The user has no budget for paid Apple/Windows platform signing, wants public Refinix Beta naming rather than tester-preview branding, and wants remaining packaging/publication continued with device checks afterward. The user confirmed the final teammate README reached main, requested importing only that file, and requested current docs/GitHub presentation with real application images.
+- authorised_and_performed_here: Import only README.md from main, with recovery of the previous local README and no branch merge.
+- scope_boundary: The implementation owner retains the remaining release tooling, documentation, screenshot and publication work. Unsigned-platform publication is the user's new direction; it does not establish device acceptance or waive package integrity, signed update metadata, data recovery or honest compatibility claims.
+- linked_changes: [AC-20261008-README-SYNC](agentchangelog.md#ac-20261008-readme-sync)
+
+<a id="up-20261010-segment1-repair"></a>
+## UP-20261010-SEGMENT1-REPAIR — Continue Beta Segment 1 and repair native CI
+- date: 2026-10-10
+- request: Review the BETA 6 continuation, diagnose the stalled Linux and failed Windows CI, repair those failures and the review findings, then finish Segment 1 before manual checks.
+- authorised: Source repairs and relevant offline checks; hash-pinned test dependencies in an isolated temporary environment; commits and pushes via aditya and the qualification branch; observed-result updates to docs/evaluation.md and tasks.md.
+- constraints: Existing Git identity, no agent watermark or co-author trailers; preserve existing work, user app/data and production keys. No dev/main merge or publication.
+- linked_changes: [AC-20261010-SEGMENT1-REPAIR](agentchangelog.md#ac-20261010-segment1-repair)
+
+<a id="up-20261010-beta-key-backup"></a>
+## UP-20261010-BETA-KEY-BACKUP — Complete the production-key backup checkpoint
+- date: 2026-10-10
+- request: Guide production-key generation and backup; the user selected encrypted PEM backups in iCloud Drive and passphrases in Apple Passwords, then confirmed completion.
+- constraints: Retain the local archive outside every repository; private keys and passphrases must not enter chat or agent output. The cloud-custody policy reconciliation, public-root Git writes, owner merges and publication remain explicit checkpoints.
+- linked_changes: [AC-20261010-BETA-PUBLIC-ROOT](agentchangelog.md#ac-20261010-beta-public-root)
+
+<a id="up-20261010-refinix-cleanup-key-protection"></a>
+## UP-20261010-REFINIX-CLEANUP-KEY-PROTECTION — Clean generated work and protect release keys
+- date: 2026-10-10
+- request: Clean only unnecessary Refinix work produced on the Mac; protect secrets on the device and GitHub before other agents are used. The user reports the local and iCloud backup names are now refinix beta-0.1.
+- constraints: Never remove unrelated files, user data or the only recoverable copy; never expose private-key contents or passphrases. Git writes, owner merges and publication are not authorised by this cleanup request.
+- linked_changes: [AC-20261010-REFINIX-CLEANUP-KEY-PROTECTION](agentchangelog.md#ac-20261010-refinix-cleanup-key-protection)
+
+<a id="up-20261010-beta-root-integration"></a>
+## UP-20261010-BETA-ROOT-INTEGRATION — Approve public-root integration and the member PR
+- date: 2026-10-10
+- authorised: Update docs/releases.md for encrypted iCloud PEM backup and Apple Passwords custody; commit the public root and evidence records, push through aditya without agent trailers, and open aditya-to-dev PR.
+- constraints: Preserve private keys/passphrases outside GitHub and agent output; owner merges and CP-B publication remain separate. The additional local temporary-key workflow repairs are outside this root/evidence commit.
+- linked_changes: [AC-20261010-BETA-ROOT-INTEGRATION](agentchangelog.md#ac-20261010-beta-root-integration)
+
+<a id="up-20261010-main-ci-repair"></a>
+## UP-20261010-MAIN-CI-REPAIR — Address the release PR's failed Main CI
+- date: 2026-10-10
+- request: The user reported failed CI after member-to-dev integration and creation of the dev-to-main release PR.
+- scope: Continue the authorised CI repair and offline-check work; use aditya for the repair commit and member PR, with no agent trailers. Preserve the separate temporary-key workflow changes outside this CI repair commit; owner merges and publication remain checkpoints.
+- linked_changes: [AC-20261010-MAIN-CI-REPAIR](agentchangelog.md#ac-20261010-main-ci-repair)

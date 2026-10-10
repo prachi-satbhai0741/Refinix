@@ -3,15 +3,18 @@
 ## Status and authority
 
 This document owns security implementation boundaries under
-[prd.md](prd.md). Planned controls are not verified controls. A static review
+[PROJECT.md](PROJECT.md). Planned controls are not verified controls. A static review
 cannot prove isolation, secure storage, zero egress, or resistance to attack.
 
-The [release bands](prd.md#release-bands) narrow the profiles offered in Beta;
+The [standalone Beta scope](PROJECT.md#25-platform-support-and-beta-scope) narrows the profiles offered in Beta;
 they do not relax authentication, model provenance, approval, sandbox, data-loss
-or offline-runtime boundaries. A capability is advertised only on its qualified
-execution profile. Beta manual package replacement follows
-[release acceptance](releases.md#beta-01-publication); unused future updater
-mechanisms need not ship, but every offered installation/recovery path is checked.
+or offline-runtime boundaries. Local model admission follows the open-model compatibility policy
+in PROJECT.md; lack of team measurement alone is not a refusal. Advertised measurements, tool
+containment and package/security claims still require their own evidence. Beta in-app updates and manual recovery follow
+[release acceptance](releases.md#beta-01-publication). Qualify every offered installation/update/
+recovery path. Peer discovery, pairing, remote execution and admission are post-Beta capabilities;
+their controls remain required when exposed. Deferring mesh work does not weaken local isolation,
+protected credential storage, approval, data preservation or offline evidence requirements.
 
 ## 1. Security objectives
 
@@ -74,6 +77,24 @@ Normal work:
 The strongest demonstration uses operating-system or network enforcement plus
 independent observation. Application logs alone cannot prove that traffic was
 blocked.
+
+### Existing local Ollama reuse
+
+Connect only to the supported numeric loopback endpoint; bypass proxies and reject inference redirects.
+Before sending work or a check, establish that the selected model is local using the supported API's
+model metadata. Cloud/remote-backed models are excluded from offline work; model-name suffixes alone
+are insufficient. Unknown locality must be explained before confidential input is sent.
+
+Use required API/feature compatibility and known security/incompatibility exclusions rather than an
+exact team-measured version allowlist. A newer version alone is not evidence of failure. An endpoint
+answering on loopback is not independent proof of publisher identity, zero egress or safe host setup.
+Do not silently change the user's service, cloud settings, model store, credentials or updater.
+
+Ollama reuse is read-and-run in Beta: list metadata and issue bounded inference; do not copy, pull,
+remove or modify its models. Handle startup graphically under user authority. Manage Refinix's own
+jobs and resources without terminating an externally owned service or interrupting unrelated clients.
+No arbitrary executable model code, permissions expansion or unrestricted host-tool fallback is added.
+Source, licence, identity, observed compatibility and published/team evidence remain separately labelled.
 
 ### Kubernetes worker exposure
 
@@ -314,6 +335,52 @@ Finished validation Jobs use a cleanup TTL. Inputs mount read-only, output uses
 one disposable volume, and the coordinator accepts only validated artifacts
 whose hashes match the active attempt.
 
+### 8.1 Standalone Code validation on Ubuntu (provisional)
+
+Profile `ubuntu-systemd-landlock` ([`sandbox_local.py`](../backend/coordinator/sandbox_local.py),
+[`sandbox_launcher.py`](../backend/coordinator/sandbox_launcher.py)). Generated code runs only when
+every control below is in force; otherwise nothing runs and the missing controls are named. There is
+no fallback to running code directly on the computer. macOS and Windows do not offer sandbox
+validation in Beta and say so.
+
+- **Service:** a transient systemd user service — `RestrictAddressFamilies=none`, a system-call
+  filter from `@system-service` that also denies sockets, signals (`kill`, `tkill`, `tgkill`,
+  `pidfd_*`), tracing (`ptrace`, `process_vm_*`), io_uring, BPF, keyrings, namespace creation and
+  mounts (failing with `EPERM`), `NoNewPrivileges`, `RestrictNamespaces`, and memory (no swap),
+  process, CPU, run-time, file-size, descriptor and core-dump limits.
+- **Storage:** a fixed-size ext4 image (256 MB, 4096 inodes) mounted `nosuid,nodev` through udisks
+  without user interaction, or `fuse2fs` where udisks would ask; the filesystem itself caps bytes
+  and files.
+- **Launcher (Ubuntu's `/usr/bin/python3`, standard library only):** closes every inherited
+  descriptor except stdin/stdout/stderr, replaces the environment (no D-Bus, display, XDG or
+  credential variables; `HOME` is the workspace), applies Landlock (read-only interpreter, standard
+  library and shared libraries; read-write workspace only; abstract-socket and signal scoping on
+  ABI 6+), then checks from the inside that a socket cannot be created, an outside path cannot be
+  read, signals and io_uring are refused and the cgroup limits are the requested ones. It hashes the
+  staged copies against the reviewed digests before running `python3 -I -m unittest`; output is
+  capped.
+- **Binding:** a local result is bound to the proposal digest, the staged-input digest, the command
+  and the profile. Apply relies on a pass only when all four match **and**, immediately before the
+  write record is created, every selected file — the edited ones and the unedited tests and context
+  the sandbox ran — still has exactly the bytes that were validated; a changed, missing or replaced
+  input voids the pass (`validation_stale`). After a failed, mismatched or stale run, applying without
+  the sandbox is a separate, explicit, audited choice; a failure is never turned into a pass.
+- **Pass, Cancel and deadline:** a pass needs the launcher's closing report marked with the run's own
+  code (which the tests cannot read) and a normal service exit. Output is read on its own thread, so
+  Cancel and the deadline are checked every 0.1 s whether or not the tests print anything; both stop
+  the whole service. Inside the service `kill` is denied, so at its own limit the launcher reports and
+  exits and systemd ends what is left.
+- **Cleanup:** a run's journal record is dropped only once its service is confirmed stopped and its
+  storage confirmed unmounted and detached; otherwise the record is kept with what failed, retried at
+  the next start and before the next run, and no new validation starts while a workspace is still
+  mounted. Only the run's own unit, mount and loop device are touched.
+- **"No sockets"** is claimed only as a property of the complete policy plus the qualification
+  tests, never of `RestrictAddressFamilies=none` alone.
+- **Status:** provisional. Landlock was observed enforced (ABI 8) in a Linux container; the systemd,
+  storage and limit controls await the Ubuntu 24.04 desktop feasibility check and qualification
+  (connections, host files and escapes, signals and tracing, process/memory/disk/file/time/output
+  limits, cleanup after cancel and failures).
+
 ## 9. Models and dependencies
 
 The curated catalogue accepts only components with:
@@ -322,15 +389,18 @@ The curated catalogue accepts only components with:
 - a compatible licence for code, weights, tokenizer, and runtime;
 - a pinned version or commit;
 - expected files and hashes;
-- supported runtime and hardware evidence;
+- actual format/runtime compatibility information and labelled published, observed or estimated hardware evidence;
 - recorded local modifications;
 - no required cloud dependency or silent network behaviour.
 
-Public availability does not prove permission, safety, compatibility, or
-reproducibility. Arbitrary remote model code is excluded from the MVP.
+Public availability does not prove permission, safety, compatibility, or reproducibility. Prefer
+identifiable publishers and recorded upstream assets; reuse available model cards, hashes and source
+metadata. Broad model discovery does not require manual team measurement of every candidate.
+Third-party conversions and missing evidence are disclosed. Runtime-owned user assets remain distinct
+from models endorsed or redistributed by Refinix. Arbitrary remote model code is excluded from the MVP.
 
 Prefer suitable local/open-source components over reimplementing standard
-functionality, but reject competing SIH submissions, unlicensed snippets,
+functionality, but reject code copied from other teams' competition entries, unlicensed snippets,
 incompatible copyleft obligations, unreviewed installers, and components that
 silently contact external services.
 
@@ -345,11 +415,21 @@ accepted in the reproducible demo path.
   contract. A commit on main or a successful CI run is not a published update.
 - Published artifacts are immutable, versioned, hashed and authenticated by a
   qualified signing/update mechanism. A checksum alone proves no publisher identity.
+  Refinix Beta 0.1's macOS and Windows packages carry no Apple or Microsoft publisher
+  signature (user direction, 2026-10-10): first downloads are authenticated by HTTPS from the
+  release page and the published SHA-256, the macOS app's ad-hoc seal is checked strictly as
+  integrity evidence (not Developer ID or notarisation), each OS's warning is shown before
+  download, and in-app updates are authenticated by the Beta TUF root embedded in the package.
 - Authenticate metadata and packages against the installed trust root; enforce
   platform/version compatibility and reject unauthorised downgrade/replay. Key
   rotation, compromised-key recovery and stale metadata need documented behaviour.
 - Qualify platform signing/notarisation and updater packaging on each supported
-  OS/edition. Ad-hoc/unsigned prototypes are labelled and are not release proof.
+  OS/edition before claiming them. Unsigned Beta packages are labelled unsigned everywhere they
+  appear (release.json, cards, notes, Settings) and are never presented as signed.
+- Every published package carries a native qualification record bound to its exact name,
+  size, SHA-256 and embedded identity; a private `--scratch` test build is never published.
+  Private test builds alone accept the token-gated qualification control
+  (`desktop/qualify_control.py`); a publishable package ignores it.
 - Signing credentials remain outside source control/build artifacts and are
   available only to authorised release jobs, never untrusted pull-request code.
 - Staging, interruption, low disk space, active jobs, migrations and recovery must
@@ -362,6 +442,39 @@ accepted in the reproducible demo path.
 - Release binaries and model weights are not committed to this repository.
   The public site contains no secrets, private data, chats or telemetry; offline
   runtime never depends on that site remaining available.
+
+### 10.1 The Beta update channel as implemented
+
+- **Trust root.** Each Beta package embeds the channel's TUF root and feed configuration. An
+  incoming package may ship the same root or a **newer root authenticated from it** (in the kept
+  evidence or the client's validated root history); older or unconnected roots are refused, and the
+  shipped root file must hash to the identity's record. The publisher refuses a package whose root
+  is not already in the feed.
+- **Redirects.** Metadata and pointers never follow a redirect. Package downloads may follow at
+  most three HTTPS redirects, only to hosts listed in the embedded feed configuration; the bytes are
+  authenticated by their signed length and SHA-256 either way.
+- **Freshness and replay.** A check or import judges expiry and rollback with the full client. An
+  already-verified download installs, resumes and recovers later without a clock, from its kept
+  evidence. On Ubuntu the privileged admission repeats the full check, including expiry, on
+  root-owned copies against root's own trust state; later privileged steps re-verify those copies
+  offline.
+- **Online-key compromise.** The snapshot/timestamp keys alone cannot authorise a package. Their
+  holder could hide updates for up to the remaining targets lifetime (180 days) or push versions
+  ahead until recovery: a new root version, signed offline, replaces those keys, and clients drop
+  cached metadata the revoked keys signed (tested).
+- **Privileged step (Ubuntu).** Only `/opt/refinix/Refinix` with one fixed first argument, through
+  polkit `auth_admin` every time; dispatched before anything else loads; never starts the UI, the
+  coordinator or a runtime and never touches user data. The request folder must be the caller's own,
+  in their home, writable by nobody else, reached without following links; only fixed names are read,
+  sizes are bounded, and nothing the caller supplied is trusted after it is copied. Only the
+  `refinix` package changes: Debian's own tools plan and install it under dpkg's front-end lock.
+- **Windows installer containment.** The setup is created inside a job object only the helper holds,
+  killing every process in it when the helper ends, with no breakaway; if the job cannot be made,
+  nothing is installed.
+- **Maturity.** Accepted installations never take a preview, from any source; the label's tag, the
+  build identity, the signed pointer and the package target must all agree.
+- **Custody.** Root and targets keys offline; online keys only in the website repository's
+  environments; Windows signing secrets only in the source repository's `beta-sign` environment.
 
 ## 11. Repository content
 

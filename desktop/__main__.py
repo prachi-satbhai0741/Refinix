@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 
+from backend.coordinator import ownership
 from desktop import lifecycle
 
 parser = argparse.ArgumentParser(prog="python3 -m desktop", description="Open Refinix.")
@@ -56,18 +57,38 @@ def _second_launch(existing: dict) -> int:
 
 
 def main() -> int:
-    instance = lifecycle.SingleInstance()
+    # The lock guards the database this run will open, so an explicit --state
+    # is owned by its own lock rather than the default root's.
+    args.state = ownership.canonical_database(args.state)
+    instance = lifecycle.SingleInstance.for_state(args.state)
     existing = instance.acquire()
     if existing is not None:
         return _second_launch(existing)
 
     try:
+        # An unfinished in-app update is handed back to its helper before
+        # anything opens the workspace (desktop/update_apply.py). A headless
+        # start never commits an update.
+        from backend.coordinator import build_info
+        from desktop import update_apply
+        try:
+            gate = update_apply.on_launch(instance, args.state,
+                                          build_info.describe()["version"])
+        except Exception as exc:                           # noqa: BLE001
+            print(f"Refinix could not check an unfinished update, so the workspace "
+                  f"was not opened: {exc}", file=sys.stderr)
+            return 1
+        if not gate.proceed:
+            print(gate.message or "An update is being finished; open Refinix again "
+                                  "in a moment.", file=sys.stderr)
+            return 0
         if not args.no_window:
             from desktop import shell
             try:
                 instance.record(port=None, mode="starting")
                 return shell.run(state_path=args.state, port=args.port,
-                                 gui=args.gui, debug=args.debug,
+                                 gui=args.gui, debug=args.debug, owner=instance,
+                                 update_gate=gate,
                                  on_started=lambda startup: instance.record(
                                      port=startup.port, mode="window"))
             except shell.MissingToolkit as exc:
@@ -78,7 +99,8 @@ def main() -> int:
         progress = lifecycle.Progress()
         try:
             startup = lifecycle.run_startup(progress, state_path=args.state,
-                                            preferred_port=args.port)
+                                            preferred_port=args.port,
+                                            owner=instance)
         except lifecycle.StartupError as exc:
             print(f"Refinix could not start: {exc}\n  {exc.detail}", file=sys.stderr)
             return 1

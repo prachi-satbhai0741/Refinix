@@ -31,6 +31,10 @@ has a wall-clock deadline re-checked between pages. A malformed, encrypted or
 unrenderable document raises `RenderError`; it never returns a blank page that a
 later stage would read as "the scan said nothing".
 
+**A text layer is read, not rendered.** `text_pages` reads the words a PDF
+already carries through the same PDFium boundary and the same bounds, without
+drawing a page. Only a page with no text layer needs pixels at all.
+
 Standard library, plus `pypdfium2` (BSD-3-Clause / Apache-2.0, bundling PDFium)
 where installed, plus the already-present PyObjC Quartz framework on macOS.
 """
@@ -45,12 +49,20 @@ from dataclasses import dataclass
 # Bounds. Visible in the refusals, so a stop explains itself.
 MAX_PDF_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 40
-# The longest edge of the rendered page, in pixels. 1600 keeps a 200 dpi A4
-# scan legible while staying far below the pixel ceiling below.
-TARGET_LONG_EDGE = 1600
+# The longest edge of the rendered page, in pixels. 2200 reads small print on
+# an A4 or Letter scan (about 265 dpi) that 1600 blurred: in an earlier run on
+# the C07 fixture a 1600-pixel render read NG-2026-0417 as MG-…, while 2200
+# read every identifier. That is history, not a measurement of accuracy. A page
+# whose shape would exceed the pixel ceiling below at this size is drawn
+# smaller to fit it rather than refused.
+TARGET_LONG_EDGE = 2200
 MAX_PIXELS_PER_PAGE = 4_000_000          # ~2000x2000
 MAX_IMAGE_BYTES = 8 * 1024 * 1024        # encoded PNG per page
 MAX_RENDER_SECONDS = 120.0
+# The most text read from one page's text layer. The same ceiling
+# `documents.MAX_PAGE_CHARS` applies to every other format; it is repeated here
+# because `documents` imports this module, not the other way round.
+MAX_TEXT_CHARS_PER_PAGE = 40_000
 
 # One deterministic pixel format for every page and every backend, so the model
 # never sees a format that varies by page or by operating system.
@@ -88,6 +100,16 @@ class RenderedPage:
     renderer: str = ""
 
 
+@dataclass(frozen=True)
+class PageText:
+    """The text layer of one page, exactly as far as it was read."""
+
+    number: int                # 1-based, as a reader would count
+    text: str
+    chars: int                 # characters PDFium reports on the page
+    truncated: bool            # True when only the first MAX_TEXT_CHARS_PER_PAGE were read
+
+
 # --------------------------------------------------------------------------
 # Shared bounds and PNG encoding
 # --------------------------------------------------------------------------
@@ -110,6 +132,11 @@ def _target_size(width: float, height: float) -> tuple[int, int, float]:
     if width <= 0 or height <= 0:
         raise RenderError("malformed", "A page in that PDF has no usable size.")
     scale = TARGET_LONG_EDGE / max(width, height)
+    # Fit to the pixel ceiling: a square or unusually wide page is drawn at the
+    # largest size the ceiling allows instead of being refused.
+    ceiling = (MAX_PIXELS_PER_PAGE / (width * height)) ** 0.5
+    if scale > ceiling:
+        scale = ceiling * 0.999
     pixels_w = max(1, int(round(width * scale)))
     pixels_h = max(1, int(round(height * scale)))
     if pixels_w * pixels_h > MAX_PIXELS_PER_PAGE:
@@ -555,3 +582,79 @@ def render_pages(data: bytes, *, max_pages: int = MAX_PAGES,
     return chosen["render"](data, max_pages=max_pages,
                             should_cancel=should_cancel,
                             deadline_seconds=deadline_seconds)
+
+
+# --------------------------------------------------------------------------
+# Reading the text layer
+# --------------------------------------------------------------------------
+#
+# A PDF written by a program already carries its words. Reading them is
+# deterministic and needs no model, so a text-bearing PDF does not wait on an
+# OCR qualification it never needed. Only PDFium offers this: Quartz has no
+# text API, so a computer with only the Quartz fallback reports it unavailable
+# rather than guessing. Nothing is rendered here.
+
+def text_probe() -> dict:
+    """Whether this computer can read a PDF's text layer right now."""
+    state = _pdfium_probe()
+    if not state["available"]:
+        return {"available": False, "module": None,
+                "detail": ("Refinix cannot read PDF text on this computer. "
+                           + state["detail"])}
+    return {"available": True, "module": PDFIUM,
+            "detail": ("Text-layer PDFs are read on this computer with the "
+                       "bundled PDFium engine. Scanned pages have no text "
+                       "layer and are not read this way.")}
+
+
+def text_pages(data: bytes, *, max_pages: int = MAX_PAGES, should_cancel=None,
+               deadline_seconds: float = MAX_RENDER_SECONDS) -> list[PageText]:
+    """Every page's text layer, in document order, without rendering a page.
+
+    The same bounds as rendering: input bytes, the page limit checked before
+    any page is read, a wall-clock deadline and cancellation between pages. A
+    page holding more than `MAX_TEXT_CHARS_PER_PAGE` characters is read up to
+    that ceiling and marked `truncated`, so the caller can say so; it is never
+    cut silently. A page with no text layer comes back empty, never invented.
+    """
+    data = _check_input(data)
+    pypdfium2, raw = _pdfium()
+    document = _pdfium_document(pypdfium2, raw, data)
+    try:
+        limit = _page_limit(len(document), max_pages)
+        expires = time.monotonic() + max(1.0, float(deadline_seconds))
+        pages = []
+        for number in range(1, limit + 1):
+            if should_cancel is not None and should_cancel():
+                raise RenderError("cancelled", "Reading was stopped.")
+            if time.monotonic() > expires:
+                raise RenderError(
+                    "timeout", "Reading that PDF took longer than Refinix allows.")
+            pages.append(_pdfium_page_text(document, number))
+        return pages
+    finally:
+        document.close()
+
+
+def _pdfium_page_text(document, number: int) -> PageText:
+    try:
+        page = document[number - 1]
+    except Exception as exc:                                 # noqa: BLE001
+        raise RenderError("malformed", f"Page {number} could not be read.") from exc
+    textpage = None
+    try:
+        textpage = page.get_textpage()
+        chars = int(textpage.count_chars())
+        read = min(chars, MAX_TEXT_CHARS_PER_PAGE)
+        text = textpage.get_text_range(0, read) if read > 0 else ""
+    except RenderError:
+        raise
+    except Exception as exc:                                 # noqa: BLE001
+        raise RenderError(
+            "malformed", f"The text on page {number} could not be read.") from exc
+    finally:
+        if textpage is not None:
+            textpage.close()
+        page.close()
+    return PageText(number=number, text=text, chars=chars,
+                    truncated=chars > MAX_TEXT_CHARS_PER_PAGE)

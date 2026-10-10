@@ -2399,6 +2399,68 @@ work. No repository file change means no changelog entry.
 - verification: Contracts and qualification runner 25 passed. The complete coordinator suite passed 1,119 tests with 29 expected skips. The complete worker suite, including available HTTP tests, passed 217 with 18 expected Windows/POSIX skips. Documents/approval checks passed 324 with 10 skips; focused worker refusal/revalidation checks passed 33; desktop packaging/review/lifecycle passed 85. Python compilation and diff integrity passed. The strict qualification runner exited 1 at the representative-Code sandbox gate and confirmed no artifact was written. Canonical disposable Code source stayed unchanged in focused apply/undo checks; generated DOCX self-test and live disabled-reasoning document reopening passed.
 - remaining: Full Windows qualification is BLOCKED, not qualified: no connected qualified no-network Code sandbox validator, no successful all-six-case artifact and no production Windows profile. No trusted second endpoint was available for a real encrypted paired route. Windows Credential Manager local-machine persistence was unavailable in the observed logon session. Windows packaging/installer/signing/update/recovery and release acceptance were not exercised. Linux remains required and unqualified. Historical evidence and the Ollama baseline are unchanged; artifact admission remains manual and no Git/GitHub write was performed.
 
+<a id="ac-20260924-001"></a>
+## AC-20260924-001 — Ollama 0.34.2 is qualified for Mac Chat only
+- prompt_id: [UP-20260924-001](userprompts.md#up-20260924-001)
+- date: 2026-09-24
+- status: Chat qualified, source-registered, packaged and live-observed; Code, Documents and release acceptance remain unavailable
+- tags: inference-profile, macos, ollama-0.34.2, chat, qualification-artifact, fail-closed, package
+- paths: scripts/qualify_execution.py, scripts/test_qualify_execution.py, backend/contracts/profiles.py, backend/contracts/test_contracts.py, qualification-artifacts/macos/mac17-3-m5-16gb/ollama-0.34.2-qwen3.5-4b-q4-k-m-chat.json, desktop/dist/Refinix.app, agent-memory/
+- summary: Registered one exact Ollama 0.34.2 Mac profile after the real Chat workflow passed with both reasoning modes; no other workflow was promoted.
+- changes: The qualification runner can now select an explicit workflow subset, preserving its all-workflow default and the Code sandbox gate. Added immutable candidate evidence for the exact Qwen digest and a production Chat profile at 8,192 context and 2,048 default/maximum output tokens. Added regressions proving 0.34.2 admits only Chat and 0.34.3 admits nothing. Rebuilt the macOS app from source. No protected document, dependency, model weight or Git/GitHub state was changed.
+- qualification: Chat passed twice through the real coordinator path against Ollama 0.34.2 and the recorded Qwen digest. Reasoning disabled completed with `done_reason=stop`, 18 output tokens and 518 ms; reasoning enabled completed with `done_reason=stop`, a separate thinking channel, 625 output tokens and 16,683 ms. Documents failed closed at the existing 3,072-token production allowance with `done_reason=length`; a 4,096-token diagnostic was not registrable because the production path still requested 3,072, so no Documents profile was added. Code was not run or registered because no qualified no-network representative validator is connected.
+- verification: The artifact independently revalidated and matched the live-generated file byte for byte. The qualifier/contracts group passed 19 tests; coordinator model and desktop packaging checks passed 108 tests; `git diff --check` passed. The rebuilt app passed strict deep code-signature verification, bundle-content validation and packaged/source profile parity. Live packaged status observed Ollama 0.34.2 reachable, the exact model digest verified, `model_available: true`, one local Chat profile, and Chat `state: available`.
+- remaining: Code and Documents stay fail-closed on 0.34.2, and the artifact remains evidence rather than release acceptance. The rebuilt app is running from `desktop/dist/Refinix.app`; the replaced package is recoverable during this session from `/private/tmp/refinix-0342-build.cf6fYL/Refinix.previous.app`. Windows, Linux, paired-worker and public-release gates were not exercised.
+
+<a id="ac-20260924-002"></a>
+## AC-20260924-002 — Capability menu distinguishes installed from qualified
+- prompt_id: [UP-20260924-002](userprompts.md#up-20260924-002)
+- date: 2026-09-24
+- status: implemented, regression-tested, packaged and live-observed
+- tags: capability-state, qualification, documents, code, ui-truthfulness, ollama-0.34.2
+- paths: backend/coordinator/server.py, backend/coordinator/test_desktop_surface.py, frontend/app/app.js, desktop/dist/Refinix.app, agent-memory/
+- summary: The capability menu now reports the actual missing Documents or Code execution profile instead of falsely saying the installed model is absent.
+- changes: Added one shared capability blocker that preserves distinct messages for an unreachable engine, a locally absent model, a model switched off for new work and an installed model lacking an exact workflow profile. Documents and Code reuse it. The reasoning popover now says a model is unavailable for the selected workflow rather than assuming it is not installed. No capability was enabled and no qualification boundary changed.
+- verification: The focused desktop-surface suite passed 36 tests, including the new exact Ollama 0.34.2 regression; JavaScript syntax and `git diff --check` passed. The rebuilt app passed strict deep code-signature verification, bundle-content validation and packaged/source parity. Live packaged status reported Refinix-owned Ollama 0.34.2, Chat available, Search available, and exact qualified-profile blockers for Documents and Code. The rebuilt menu was also observed to render those exact messages.
+- remaining: Documents and Code remain unavailable on Ollama 0.34.2 until their separate qualification blockers are resolved. The replaced package is recoverable during this session from `/private/tmp/refinix-capability-copy.Nf0Wxz/Refinix.previous.app`. No protected document, dependency, model, credential or Git/GitHub state changed.
+
+<a id="ac-20260924-003"></a>
+## AC-20260924-003 — Previous-answer export bypasses Documents inference qualification
+- prompt_id: [UP-20260924-003](userprompts.md#up-20260924-003)
+- date: 2026-09-24
+- status: implemented, regression-tested, packaged and live-observed
+- tags: documents, conversion, capability-gate, ollama-0.34.2, model-free, package
+- paths: backend/coordinator/server.py, backend/coordinator/test_document_generation.py, backend/coordinator/test_desktop_surface.py, desktop/dist/Refinix.app, agent-memory/
+- summary: Write a document is now available in an explicit conversion-only mode when DOCX output works but the selected model has no qualified Documents execution profile.
+- changes: Request-specific admission recognises a no-attachment request to save the previous completed answer, skips model selection and runtime probing for that deterministic route, and reuses the existing `convert_previous_answer` workflow. The capability response exposes the limited mode and its honest summary; a non-conversion request still receives the exact missing Documents-profile refusal before a job is created. Read and Code remain blocked. No frontend branching or new document workflow was added.
+- verification: The three focused coordinator modules passed 98 tests after the two existing temporary-loopback cancellation checks were rerun outside sandbox policy. The exact screenshot phrase completed with `runtime.stream_chat` asserted unused, and new generation remained refused. The rebuilt app passed strict deep code-signature verification and source/package parity. Live status on Ollama 0.34.2 reported Write available with `conversion_only: true`; the UI enabled Send, and one live request completed as `convert_previous_answer` with `model_json: null`, producing a reopened 5,718-byte DOCX containing the prior answer.
+- remaining: New model-written Documents, document reading and Code remain unavailable until separately qualified for Ollama 0.34.2. The replaced package is recoverable during this session from `/private/tmp/refinix-conversion-gate.trvN69/Refinix.previous.app`. No protected document, dependency, model, credential or Git/GitHub state changed.
+
+<a id="ac-20260924-004"></a>
+## AC-20260924-004 — Proposal-only experimental Code qualified on Ollama 0.34.2
+- prompt_id: [UP-20260924-004](userprompts.md#up-20260924-004)
+- date: 2026-09-24
+- status: implemented, live-qualified, regression-tested, packaged and live-observed; full-program and sandbox validation remain unqualified
+- tags: code, experimental-profile, small-edit, ollama-0.34.2, qualification-artifact, package
+- paths: backend/contracts/profiles.py, backend/contracts/qualification.py, backend/contracts/test_contracts.py, backend/coordinator/server.py, backend/coordinator/test_desktop_surface.py, scripts/qualify_execution.py, scripts/test_qualify_execution.py, qualification-artifacts/macos/mac17-3-m5-16gb/ollama-0.34.2-qwen3.5-4b-q4-k-m-code-proposal.json, desktop/dist/Refinix.app, agent-memory/
+- summary: The exact current Mac, Qwen digest and Ollama 0.34.2 profile now admits Code as an experimental small-edit proposal surface only.
+- changes: Added `proposal.small_edit` qualification evidence, a `--proposal-only-code` runner mode that refuses output-limit widening, and exact profile `5543ca0903ce733e36b9b88a964f80865d3ea1816ac3f1b269720742ca76f0f1` at 8,192 context and 2,048 default/maximum output with JSON-schema decoding and both reasoning modes. Capability output labels Code experimental and states that complete-program and sandbox validation are not qualified. Rebuilt and launched the macOS app; no protected document, dependency, model weight or Git/GitHub state changed.
+- qualification: The real Code proposal route passed in both modes against Ollama 0.34.2 and the exact Qwen digest. Reasoning disabled completed with `done_reason=stop`, 140 output tokens and 6,233 ms; reasoning enabled completed with `done_reason=stop`, 251 output tokens and 6,514 ms. Both produced valid structured small edits and left the canonical source unchanged.
+- verification: Qualifier and contract checks passed 14 tests; focused profile, capability and Code checks passed 33 tests; the broader Code/security/profile group passed all 162 tests after its two loopback-only cancellation tests were rerun outside sandbox policy. The rebuilt app passed strict deep code-signature verification and source/package parity. Live status reported Ollama 0.34.2, the exact eligible Code profile, `experimental: true`, and the intended limitation; the Code UI rendered and reported `Ready on this computer.`
+- remaining: The 4B model's representative complete-program workload remains a confirmed quality failure, and no sandbox execution profile is claimed. New model-written Documents and document reading also remain unqualified. The replaced package is recoverable during this session from `/private/tmp/refinix-code-proposal.SVOwxR/Refinix.previous.app`. No release, Windows, Linux or worker acceptance was performed.
+
+<a id="ac-20260924-005"></a>
+## AC-20260924-005 — Chat-backed Read/Write documents and PDF text layer on Ollama 0.34.2
+- prompt_id: [UP-20260924-005](userprompts.md#up-20260924-005)
+- date: 2026-09-24
+- status: implemented, regression-tested, packaged and live-observed; requester verification pending
+- tags: documents, chat-backed, docx, pdf-text-layer, page-references, ollama-0.34.2, package
+- paths: backend/coordinator/server.py, backend/coordinator/docflow.py, backend/coordinator/documents.py, backend/coordinator/pdfrender.py, frontend/app/app.js, backend/coordinator/test_document_generation.py, backend/coordinator/test_desktop_surface.py, backend/coordinator/test_documents.py, backend/coordinator/test_ocr.py, backend/coordinator/test_pdfrender.py, frontend/app/test-composer.cjs, desktop/dist/Refinix.app, agent-memory/
+- summary: When the Documents-selected model has no structured Documents profile but an exact Chat profile, Read and Write run as one bounded Chat call over validated extracted text, and PDFs are read from their PDFium text layer first.
+- changes: Added `_document_execution` (structured / chat_backed / blocked) shared by capabilities, submit and run; Chat-backed skills reuse `_chat_attachments` with native vision off, refuse without usable files, and add a short output instruction; fresh documents are converted by the existing `conversion_blocks` writer with workflow `chat_generated_document` and no provenance in the file; Read answers keep the model text and append a footer that checks `[file p.N]` references (plus the two observed Qwen variants) by exact filename through `retrieval.resolve`, reporting unmatched ones as "Could not be matched to a supplied file and page"; `pdfrender.text_pages` reads text without rendering under existing bounds and marks pages over 40,000 characters as partly read; scan-only PDFs are refused as scans; capability rows add `model_scope: "chat"` and show the Documents model's Chat self-test; the approval note is refused on this route; the model pill checks `model_scope`.
+- verification: Focused document modules passed 400 tests (4 pre-existing OCR-profile skips) and `test-composer.cjs` 65; broader coordinator 1171 and contracts 20 passed, desktop 85 and all frontend 188 passed; worker `test_worker_app` needs absent `fastapi` and two launcher tests need a specific hotspot IP (environment, unrelated). Rebuilt app passed py2app content verification, strict deep codesign and source parity for the four backend files and `app.js`. Live on Ollama 0.34.2 with the exact Qwen digest: "create a document of deep learning summarised" completed in one Chat-profile attempt (text decoder, stop, 641 tokens) producing a readable 16-paragraph DOCX with no model/profile text; previous-answer conversion used no model; the approval note returned 409; DOCX, text-PDF and mixed-PDF reads completed with matched page references after the reference fix; the mixed PDF named its unread page; scan-only PDF was refused before any model call; Stop during Write left no artifact.
+- remaining: Scanned PDFs and pictures remain unavailable; a matched reference proves only that the page was supplied (live answers sometimes cite the wrong page of a supplied file); output is capped at 2048 tokens; document quality is unmeasured; the scan refusal is truncated at 256 characters; requester verification, protected-doc follow-up (deferred D4) and Git handoff remain. Backups: /private/tmp/refinix-phase1-docs.vTH9yn/ and /private/tmp/refinix-phase1-refs.DW5sN7/.
+
 <a id="ac-20261002-001"></a>
 ## AC-20261002-001 — Website product video, pillar, About us and Download Beta
 - prompt_id: [UP-20261002-001](userprompts.md#up-20261002-001)
@@ -2483,3 +2545,593 @@ work. No repository file change means no changelog entry.
 - verification: Parity (pane hidden): hero WebM 720x1280, 31.5 s vs master 720x1280, 31.466 s; evidence WebM 720x720, 16.666 s vs mp4 16.667 s; poster 720x1280 JPEG; screenshots matched at hero 0 s and 6.0 s and evidence 0 s (seeking and later playback were blocked by the hidden pane). Real page: intro currentSrc hero-loop.webm, no hero-loop.mp4 or intro.webm request, poster fetched by the preload link at 15 ms (200), intro box 506x900 (720x1280 ratio, no shift), evidence currentSrc evidence-loop.webm, only the lockup 404s; entry lands at the top; countdown ticks; intro rendered at 1440 dark and 390 light. Simulated: copy without the WebM files and poster -> both clips play their mp4s. Fresh export /private/tmp/refinix-site-publish-20261002-media: 13 assets, 42,699,423 B, all bytes equal source, 12 Docs links to index.html, 78 references resolve (only the 3 lockup placeholders unresolved). node --check of inline scripts, git diff --check and the 4 exporter tests passed.
 - verification (pane visible): approach clip (intro video.mp4) and evidence clip (evidence-loop.webm) each paused on Pause, stayed paused when scrolled away and back, played on Play, paused off screen while playing and resumed on return. Frame parity by mean absolute pixel difference (90x160 hero, 120x120 evidence; unrelated hero frames 29.18 as control): hero 0.5/5/10/20/30 s 4.74-5.95, 15 s and 25 s 4.27 and 2.54 at a one-frame (0.033 s) offset; evidence 0.5-16 s 1.36-2.83; poster closest to master 13.5 s at 2.79.
 - remaining: Real Safari/WebM behaviour, real Reduce motion and the publish itself pending. Publishing replaces public hero-loop.mp4 (15,489,302 B) and evidence-loop.mp4 (4,100,132 B) with the source fallbacks. Git actions and publication need separate approval and push access to refinix-site.
+
+<a id="ac-20261002-008"></a>
+## AC-20261002-008 — Website PRs prepared from isolated committed source
+- prompt_id: [UP-20261002-008](userprompts.md#up-20261002-008)
+- date: 2026-10-02
+- status: source and publishing PRs open and mergeable; not merged or deployed
+- tags: website, publication, github-pages, pull-request
+- paths: frontend/design/, scripts/build-site.sh, scripts/test_build_site.py, agent-memory/
+- summary: Created an isolated source checkout from remote dev 1e79d877, copied only the 13 website/exporter files and appended the existing website ledger entries to dev's ledgers. Committed 1f383fedcc89cd8e02b8faeb845e5509578c113a on codex/website-publication; source PR https://github.com/prachi-satbhai0741/Refinix/pull/65 targets dev and excludes unrelated aditya application commits. Original source checkout/branch and website bytes preserved.
+- changes: Created public publishing fork adityatadge31/refinix-site. Exported from committed source into /private/tmp/refinix-site-publish-committed-20261002; copied bundle into clean publishing checkout without deleting files or changing README/.gitattributes/.nojekyll. Publishing commit 7a2b244cb1b79b4bfb4716acd4a625ff30440397 changes 12 website files; PR https://github.com/vedantsur09/refinix-site/pull/1 targets main. Both PRs attached to this task.
+- verification: Four focused exporter tests passed in the original and isolated source checkouts. Inline script syntax, unique page ids, links/fragment targets, CNAME and source/bundle media/CSS parity passed. Every committed publishing file matches the generated bundle; no file deletions. git diff --check passed. Both PRs observed open and mergeable; this is not a claim of full CI passing. Hosting remains main/root at refinix.runs-on.dev, current upstream main 072bb25. No DNS/Pages settings changed.
+- remaining: Publishing owner must merge PR 1 because current account has pull-only access; source PR merge separately pending. No protected branches pushed, PRs merged or deployment claimed. Post-deployment verification awaits owner merge. Launcher inspection confirmed scripts/refinix uses 10.177.11.113/.160 while aditya tests mock 10.219.115.x; these are two-device demo-network assumptions, unrelated to website publication or user identity. Launcher/test files were not changed or executed.
+
+
+<a id="ac-20261003-001"></a>
+## AC-20261003-001 — Standalone Beta contract and coherent section execution
+- date: 2026-10-03
+- agent: agent
+- status: docs-only
+- prompt_id: [UP-20261003-001](userprompts.md#up-20261003-001)
+- tags: beta, standalone, cross-platform, updates, reuse, agent-execution
+- paths: AGENTS.md, docs/PROJECT.md, tasks.md, docs/releases.md, README.md, docs/README.md, docs/security.md, agent-memory/
+- summary: Aligned seven current instruction/product/release/entry-point documents with standalone three-OS Beta, qualified user-initiated in-app updates and post-Beta mesh execution.
+- changes: Retained phase IDs with Beta order 1 -> 2 -> local 4 -> 5; deferred mesh and peer packaging/acceptance; preserved distributed contracts, local sandbox/approval/data/recovery/offline requirements; required existing-code inspection/reuse and direct major-section completion without further task tiers or delegation; removed active PRD/P-task references from release/readme guidance; preserved renamed-heading anchors; appended ledgers without rewriting existing entries.
+- verification: Reviewed scoped diffs and stale-gate searches; read-only inspection found all 17 added/changed local Markdown links resolve, no conflict markers/duplicate explicit anchors/unmatched fences in seven changed docs, and 31 FR plus 17 OD identifiers remain unique. No application tests, builds, model/device/updater checks or Git writes performed.
+- remaining: No implementation/device/package/updater/release acceptance established by these documentation edits. Active Phase 1 remains unchanged; every advertised Beta profile still needs actual qualification before publication.
+
+
+<a id="ac-20261004-001"></a>
+## AC-20261004-001 — App-managed runtime contract and retained harness decision
+- date: 2026-10-04
+- agent: agent
+- status: docs-only
+- prompt_id: [UP-20261004-001](userprompts.md#up-20261004-001)
+- tags: runtime, qualification, onboarding, updates, langgraph, evidence
+- paths: AGENTS.md, docs/PROJECT.md, tasks.md, docs/model-catalog.md, docs/releases.md, docs/evaluation.md, README.md, docs/README.md, agent-memory/
+- summary: Updated eight documents to make runtime versioning/qualification release-owned, require a pinned app-managed engine isolated from external Ollama changes, and keep the existing harness with LangGraph unadopted pending a demonstrated gap and comparative evidence.
+- changes: Recorded automatic local installation checks distinct from engineering qualification; preserved strict admission/provenance/context/security controls; added managed-engine update/mismatch/recovery acceptance cases; clarified current Ollama source versus preferred unqualified bundled llama.cpp; added OD-18 and sourced orchestration options from official LangGraph documentation; corrected active lifecycle P-task references; appended source-supported runtime-error finding without rewriting historical evaluation body or claiming live diagnosis.
+- verification: Reviewed per-turn diffs against saved dirty-file baselines. Static documentation inspection resolved all 17 added/changed local links, found no conflict markers/duplicate explicit anchors/unmatched fences across eight documents, preserved all 31 FR and prior 17 OD IDs while adding OD-18, and confirmed historical evaluation body plus eight source/security/website files unchanged. Scoped git diff --check passed before ledger append. No application tests, live runtime/model/device calls, downloads, installers, migrations or Git writes ran.
+- remaining: Current runtime-version admission/UI behaviour is not repaired by these docs. App-managed packaging, engine parity, graphical recovery, each OS profile and updater transition remain unimplemented/unverified release work. Continue the existing Phase 1 without a harness rewrite or further task tiers.
+
+
+<a id="ac-20261004-002"></a>
+## AC-20261004-002 — Source-grounded standalone Beta execution handoff
+- date: 2026-10-04
+- agent: agent
+- status: planning-only; implementation-owner coordination pending
+- prompt_id: [UP-20261004-002](userprompts.md#up-20261004-002)
+- tags: beta, planning, code-quality, runtime, review, memory
+- paths: docs/beta-execution-handoff.md, agent-memory/
+- summary: Created the requested execution handoff with source/caller map, retained decisions and trade-offs, four coherent sections, cleanup/performance discipline, exact acceptance cases and an explicit pending independent-review record.
+- changes: Saved the user's core direction as an authorized Codex memory extension note and pinned the current chat. Handoff distinguishes current external Ollama and narrow measured device admission from planned managed-engine/support work, and avoids claiming build automation is an accepted in-app updater. Existing core docs/source/website work was preserved.
+- verification: Read current authority/source, queried the existing Graphify graph without installing/rebuilding, checked all 35 handoff links, inspected document structure and observed git diff --check pass. Hash comparison confirmed 452 baseline source/document files unchanged and both ledger prefixes intact before append. Memory save and sidebar pin returned success. No application tests, builds, runtime calls, installations, downloads, migrations, subagents or Git writes ran.
+- remaining: Computer Use refused access to the running implementation-owner app; no prompt delivered, independent plan received, joint PASS or application implementation established. The handoff contains a ready-to-send prompt and the coordination checkpoint.
+
+
+<a id="ac-20261004-003"></a>
+## AC-20261004-003 — Implementation-owner plan recorded in the Beta handoff
+- date: 2026-10-04
+- agent: agent
+- status: planning-only; review-agent evaluation pending
+- prompt_id: [UP-20261004-003](userprompts.md#up-20261004-003)
+- tags: beta, planning, runtime, schema-safety, updater, sandbox
+- paths: docs/beta-execution-handoff.md, agent-memory/
+- summary: Added the implementation owner's independent assessment and plan to the handoff, updated its state, coordination status and review record, and appended a ready-to-send review-agent prompt. Preparing draft left unchanged for comparison.
+- changes: Sixteen source-cited findings, including a newer-schema overwrite in db.connect, adoption of any listener on the Ollama port, customer-facing terminal commands, prose-only readiness, a fixed-window context indicator and a live-check module shipped in packages. Proposed an engine-agnostic managed boundary with a llama-server adapter decided by a Mac parity rule, device classes, provisioning/onboarding, local Auto, instructions/memory, a Seatbelt-first local sandbox, TUF-based updates, per-OS packaging candidates, cleanup candidates, validation families, a permission/decision batch and a user-facing change summary.
+- verification: Read-only source and authority inspection at HEAD 8c6d7a9. Cited line ranges re-checked against source; all 81 handoff links and anchors resolve and code fences balance (local Python check). No application edits, tests, builds, runtime calls, downloads, installs, subagents or Git writes.
+- remaining: Review-agent evaluation, reconciliation and the user's answers to the prerequisite batch are pending. No implementation, device, package, updater or release evidence exists for anything in the plan.
+
+
+<a id="ac-20261004-004"></a>
+## AC-20261004-004 — Reviewed preset contract and NEEDS FIX plan handoff
+- date: 2026-10-04
+- agent: agent
+- status: docs-only; owner-reconciliation-pending
+- prompt_id: [UP-20261004-004](userprompts.md#up-20261004-004)
+- tags: presets, primary-research, reuse, runtime, recovery, sandbox, review
+- paths: AGENTS.md, docs/PROJECT.md, tasks.md, docs/model-catalog.md, docs/releases.md, docs/evaluation.md, docs/beta-execution-handoff.md, agent-memory/
+- summary: Saved the explicitly requested core direction in a Codex memory extension note; aligned seven documents on research-backed hardware/category presets and recorded an independent NEEDS FIX review while preserving the owner proposal.
+- changes: Added preset schema, brand-versus-hardware matching, supported OS ranges versus observed builds, current-capacity guards and external/Refinix/estimated evidence distinctions. Added primary published model/artifact observations and reuse options, including already-considered llmfit target-profile/JSON planning, upstream runtime controls, Hub acquisition, platform metrics and update tools. Five consolidated findings require preset/reuse reconciliation, usable compatible-data rollback, actual sandbox resource enforcement and accurate observer/native-prerequisite claims. Ready-to-send owner prompt explicitly requires review of the changed docs.
+- verification: Static documentation inspection resolved all 17 new local links, found balanced fences/no duplicate explicit anchors or conflict markers, preserved all 31 FR and 18 OD IDs, the original owner proposal and historical evaluation body, and confirmed 168 source-file hashes unchanged. Scoped git diff --check passed. Source/public primary-record reads only; no application tests, benchmarks, downloads, installs, model/runtime calls or Git writes. Computer Use again refused access to the owner app; no follow-up message delivered.
+- remaining: Owner must inspect the current doc diff and reconcile the five findings in the same four sections. Joint PASS, app implementation, finalized all-OS minimums/presets and package/security/updater acceptance remain unestablished. Direct coordination remains unavailable; user delivery of the prepared prompt is the simple checkpoint.
+
+
+<a id="ac-20261004-004"></a>
+## AC-20261004-004 — Owner reconciliation of R1-R5 recorded in the Beta handoff
+- date: 2026-10-04
+- agent: agent
+- status: planning-only; review-agent re-review pending
+- prompt_id: [UP-20261004-004](userprompts.md#up-20261004-004)
+- tags: beta, presets, reuse, rollback, sandbox, observer, packaging
+- paths: docs/beta-execution-handoff.md, agent-memory/
+- summary: Appended an owner reconciliation accepting R1-R5, with new findings K17-K23, reuse decisions, a journalled binary-and-data recovery design, per-OS sandbox enforcement, a sampled-observer contract, package preflights, revised prerequisites and a reconciled change summary. Updated the handoff state, coordination note, review record and review-agent prompt. Earlier sections unchanged.
+- changes: Key findings: the built macOS bundle embeds Homebrew Python with minos 26.0 while Info.plist claims 12.0 and pypdfium2 needs 13.0; deferred pairing controls remain visible; the window backend is auto-selected; db.connect writes into any SQLite file; llama-server --fit adjusts unset settings and /v1/models needs no API key; macOS leaves RLIMIT_AS/DATA unenforced, so the Seatbelt-first sandbox is withdrawn in favour of an Ubuntu systemd-user-service plus Landlock profile, with Windows Job/AppContainer second.
+- verification: Read-only source, git diff, otool and sysconfig inspection at HEAD 8c6d7a9; public primary records for llama-server, llmfit, huggingface_hub, python-tuf, securesystemslib, systemd v255, apple/container and macOS rlimits. All 125 handoff links/anchors resolve and code fences balance. No application edits, tests, builds, downloads, installs, runtime calls, subagents or Git writes.
+- remaining: Review-agent re-review, joint PASS and the user's answers to the revised prerequisites are pending. No implementation, device, package, sandbox, updater or release evidence exists.
+
+
+<a id="ac-20261004-005"></a>
+## AC-20261004-005 — Internal test-package build matrix and cleanup evidence added to the handoff
+- date: 2026-10-04
+- agent: agent
+- status: planning-only; review-agent re-review pending
+- prompt_id: [UP-20261004-005](userprompts.md#up-20261004-005)
+- tags: beta, packaging, build-matrix, test-artifacts, cleanup
+- paths: docs/beta-execution-handoff.md, agent-memory/
+- summary: Added O.11 (internal macOS/Windows/Ubuntu test packages from one snapshot through one build driver and one dispatched CI matrix, with manifests, checksums, TESTING.md, verified-input caching, rebuild-only-on-change and N/N+1/engine-change build sets on a separate internal trust root) and O.12 (strengthened cleanup rule with scan evidence). Updated O.1, O.8, O.9 (build-environment blocker as item 6), O.10, the cleanup section pointer, review record and re-review prompt.
+- changes: Confirmed by read-only reference scan and grep: db.clear_attachments, db.sources_for_message, db.ArtifactRejected, repo.is_excluded_directory and runtime.installed_models have no references; /v1/status computes the document capability summary, OCR profile and FTS check twice. Authority files unchanged since the prior review (mtimes); proposed one releases.md addition for the internal channel, pending permission.
+- verification: All 132 handoff links/anchors resolve and fences balance; cited repo.py and server.py lines re-read. No application edits, tests, builds, downloads, installs, CI runs, subagents or Git writes.
+- remaining: Windows/Ubuntu packages depend on a native build environment (user-dispatched Actions matrix or team/volunteer hosts). Re-review, plan PASS and permissions are pending; no package, device or release evidence exists.
+
+<a id="ac-20261004-006"></a>
+## AC-20261004-006 — Approved corrected execution handoff delivered
+- date: 2026-10-04
+- agent: agent
+- status: handoff-delivered; required-action-permissions-pending
+- prompt_id: [UP-20261004-006](userprompts.md#up-20261004-006)
+- tags: beta, approval, handoff, source-reuse, recovery, sandbox, build-identity
+- paths: docs/beta-execution-handoff.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Added the user-approved execution addendum to the existing handoff, preserved earlier proposals, corrected active state/review/coordination and owner prompt, and delivered it directly to the existing implementation-owner conversation.
+- changes: Same four sections; actual-root lifetime locking and coherent-copy SQLite identity/schema preflight; exclusive writer shutdown and journalled data recovery; io_uring/host IPC denial and hard aggregate byte/inode bounds; separate embedded identity/final artifact records with verified reuse. Retained all-OS native packages, existing harness, research-backed presets and reuse-first cleanup. Required permissions are one genuine batch rather than a new planning loop; other protected docs and Git/CI remain separate.
+- verification: Static handoff inspection resolved 117 local links, found unique explicit anchors, balanced fences and one approved-addendum anchor; scoped diff whitespace inspection passed. Computer Use visibly confirmed the sent handoff as Message 9 in the existing owner chat and showed the owner responding. No application edits by this agent, tests, builds, installs/downloads, live runtime calls, Git/Actions writes or release actions.
+- remaining: Detailed owner acknowledgement and missing O.9 action permissions/human facts. No sandbox, runtime, package, updater or release acceptance is implied; native build environments and representative observations are still necessary.
+
+
+<a id="ac-20261004-007"></a>
+## AC-20261004-007 — Section 1 foundation: ownership, admission, managed engine, readiness, presets, build path
+- date: 2026-10-04
+- agent: agent
+- status: partial; Sections 2–4 not started; paused at usage limit
+- prompt_id: [UP-20261004-007](userprompts.md#up-20261004-007)
+- paths: backend/coordinator/{ownership,build_info,engine,local_engine,runtime_llamacpp,readiness,fake_llama_server,db,server,runtime,device,models,repo}.py, backend/contracts/profiles.py, backend/requirements-runtime.lock, desktop/{lifecycle,shell,__main__,refinix,packaging_plan,setup_py2app,build}.py, desktop/engine/{engine-pins.json,fetch.py}, desktop/{refinix.spec,packaging-tools.json,TESTING.md.in,requirements-*-{windows,linux}.lock}, desktop/windows/refinix.iss, desktop/linux/*, frontend/app/{app.js,control.html,test-control-centre.cjs}, scripts/{qualify_execution,engine_parity}.py, new tests.
+- changes: Workspace lock follows the actual database for every entry point; schema admission inspects a private copy and refuses newer/foreign/corrupt/ambiguous stores byte-for-byte unchanged (old connect shown to downgrade 13→12); schema 13 adds model_installs. Managed llama.cpp b11390 engine: pinned fetch with SHA-256, per-launch verification, loopback port, API-key ownership proof, fit off, minimal environment, orphan reaping, GPU/CPU lane choice; adapter keeps the stream contract. Typed readiness replaces the generic ready line. Hardware tiers/presets in profiles.py (no unqualified preset). Mesh controls hidden in Beta; window toolkit pinned with WebView2/WebKitGTK preflight. Removed dead db/repo/runtime functions and duplicate status work. Build driver, locks, spec, Inno and Linux templates prepared; CI workflow not yet written.
+- verification: Observed this session: contracts 20 OK; coordinator 1252 OK (4 skipped) before later engine-lane tests; engine tests 36 OK; readiness 12 OK; ownership/admission 24 OK; desktop 91 OK; build-driver tests 17 OK; Node 192/192. Pre-existing: worker suite needs fastapi; scripts launcher test has 2 IP-drift failures. Live (Mac, loopback): engine and model hashes matched pins; Ollama blob refused by upstream engine; managed qualification passed Chat and Code, Documents with reasoning on hit the 3072-token limit in one of two runs; smoke parity: page reading misread identifiers (MG- for NG-2026-0417); overflow refused; Stop worked; loopback-only; peak RSS ~5.0 GB; 24.7 tok/s warm.
+- remaining: Full parity run with Ollama same-bytes baseline still running in background; Sections 2–4, package workflow, releases.md §2 edit, preset registration from evidence, OCR scope decision, Windows/Ubuntu builds via user-run CI.
+
+
+<a id="ac-20261004-008"></a>
+## AC-20261004-008 — Interrupted Foundation checkpoint preserved and independently reviewed
+- date: 2026-10-04
+- agent: agent
+- status: review/checkpoint complete; implementation partial
+- prompt_id: [UP-20261004-008](userprompts.md#up-20261004-008)
+- tags: beta, checkpoint, static-review, parity, integrity, memory
+- paths: tmp/beta-foundation-checkpoint-20261004T153112Z, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Preserved 64 mixed dirty-tree source/docs/evidence files in a verified archive with a tracked patch, hashes, integrity receipt and review; wrote the user-requested external memory update note for the next chat.
+- changes: Review records five static findings: database-alias ownership gap, engine exit/record handling, empty foreign SQLite admission, incomplete build/reuse inputs, and Ubuntu distro matching; Windows installer verification needs disposable-host isolation. Recorded the overbroad older Mac sandbox claim as unproven while retaining the approved deferral. Application source and protected docs unchanged.
+- verification: All archived file hashes matched source at capture; 30 Python files parsed without imports/execution; two model files and all 60 local engine manifest entries rehashed successfully. Completed parity JSON read: Code 3/3 both modes; approval note 3/3 off and 0/3 on; general document 3/3 off and 2/3 on; strict Chat 0/3 off and 3/3 on; page reading 0/3. release_accepted=false. Owner counts in AC-007 were not rerun. No application tests, live calls, downloads, installs, builds, host changes or Git writes.
+- remaining: Owner resumes the existing plan, addresses review findings and parity failures, then completes Sections 2–4 and native package/device/update gates. PRESETS remains empty; package.yml absent; no final Beta/release acceptance. Recovery archive excludes weights/binaries/private app data and unrelated untracked media/tmp.
+
+
+<a id="ac-20261005-001"></a>
+## AC-20261005-001 — Foundation review findings fixed: aliases, survivors, admission, build identity, tiers, model bytes, startup readiness
+- date: 2026-10-05
+- agent: agent
+- status: source and offline checks done; requester verification pending
+- prompt_id: [UP-20261005-001](userprompts.md#up-20261005-001)
+- paths: backend/coordinator/{ownership,db,server,engine,local_engine,runtime_llamacpp,readiness,device}.py, backend/contracts/profiles.py, desktop/{lifecycle,__main__,build}.py, frontend/app/app.js, scripts/engine_parity.py, .github/workflows/ci.yml, tests in backend/coordinator/test_{ownership_admission,engine,readiness}.py and desktop/test_{lifecycle,build}.py
+- changes: Store paths are canonicalised (realpath) before locking, admission, connect, the coordinator and startup; hard-linked databases are refused (`alias`). Engine stop/reap forget a process only after confirmed exit; survivors, unreadable identity and missing start time raise `engine_stop_blocked`, keep the record and block a replacement launch; typed readiness code added. Admission refuses an empty SQLite file with nonzero user_version and turns unreadable meta into `metadata`. Build input identity adds interpreter executable/library hashes and origin, host/SDK, Inno Setup binaries digest and the requested trust root; reuse needs a complete, valid, freshly hashed artifact set; the Windows installer identity check runs only with `--disposable-host` and refuses a host with Refinix registered. Linux tiers require distribution `ubuntu` and VERSION_ID 24.04. Install records carry per-file size/SHA-256; status reads compare filesystem identity without hashing, loads re-hash once per launch and refuse/unload changed bytes; status/startup share `Coordinator.chat_readiness`. Adapter closes its loopback socket. CI installs the runtime lock.
+- verification: Observed this session in desktop/.venv: coordinator 1308 OK (4 skipped); contracts 20 OK; desktop 125 OK; deploy/k3s 140 OK; fixtures/c07 32 OK; Node 192/192. New alias tests fail under the previous spelling-based rule (2 failures) and pass now. Pre-existing, out of Beta scope: worker suite needs fastapi; scripts launcher 2 IP-drift failures (deferred mesh launcher).
+- remaining: Ubuntu 26.04 and other distributions need their own evidence before matching; Windows change-time residual noted in FileChecks; package/device/update gates untouched.
+
+
+<a id="ac-20261005-002"></a>
+## AC-20261005-002 — Section 1 evidence: fixture debugging, managed qualification, Mac preset/profiles, releases §2, package workflow
+- date: 2026-10-05
+- agent: agent
+- status: source, offline checks and loopback evidence done; requester verification pending
+- prompt_id: [UP-20261005-001](userprompts.md#up-20261005-001)
+- paths: backend/contracts/profiles.py, backend/coordinator/server.py, scripts/qualify_execution.py, scripts/test_qualify_execution.py, backend/coordinator/test_{engine,document_generation}.py, frontend/app/test-control-centre.cjs, desktop/packaging_plan.py, docs/releases.md (§2 "Internal test artifacts", authorised scope), .github/workflows/package.yml, qualification-artifacts/macos/macos-applesilicon-metal-16g/qualification-managed-b11390-metal-2026-10-05.json
+- changes: Strict Chat fixture with reasoning off: the model replies "unsafe; 2.4" (correct verdict and number, label omitted) 3/3, so it fails the exact shape; checker unchanged, decision left to the user. Page reading: at the 1600 px render the model reads NG-2026-0417 as MG-… deterministically (greedy 3/3) and SOP-MECH-014 varies with sampling; at a 2200 px render all identifiers were read in 5/5 runs (greedy 2, catalogue sampling 3). OCR stays unqualified. Qualification script can claim reasoning modes per workflow. Managed qualification passed Chat (both), Code small-edit proposal (both) and Documents (reasoning off). Registered the macos-applesilicon-metal-16g preset (8192 ctx, 1 slot, all layers, f16 cache, measured peak RSS 4.29 GiB, floors 5 GiB/1 GiB) and three managed profiles bound to that artifact. Documents with reasoning on now runs in the qualified mode with a disclosed route note; the person's model setting is unchanged. Added the authorised releases.md §2 internal-artifact text. Wrote the manually dispatched package workflow (three native lanes, read-only, no secrets, verified-input caches, disposable-host installer check); not triggered.
+- verification: Loopback live runs on this Mac (model and engine hashes re-verified at load). Offline: coordinator 1317 OK (4 skipped); contracts 20 OK; desktop 125 OK; fixtures/c07 32 OK; scripts 38 with the 2 pre-existing launcher failures; Node 194/194; workflow YAML parsed and lane chooser executed locally; build.py --plan ran without building.
+- remaining: Profiles/preset cover one representative device; other M-series Macs, Windows and Ubuntu tiers have no presets. Package workflow needs a user dispatch; Windows runner Inno Setup presence unconfirmed. Sections 2–4 continue.
+
+
+<a id="ac-20261005-003"></a>
+## AC-20261005-003 — Section 2: graphical model download/import/removal and load-time resource admission
+- date: 2026-10-05
+- agent: agent
+- status: source and offline checks done; preview observed; requester verification pending
+- prompt_id: [UP-20261005-001](userprompts.md#up-20261005-001)
+- paths: backend/coordinator/{provisioning,test_provisioning,server,models,local_engine,engine}.py, backend/contracts/profiles.py, desktop/shell.py, frontend/app/{app.js,test-models-card.cjs}, backend/coordinator/test_engine.py
+- changes: New `provisioning.Provisioner` (urllib3, already pinned): user-confirmed download of the catalogue's pinned HTTPS files with streaming SHA-256, resumable staging that is re-hashed before resume, HTTPS-only redirects, disk-space admission, cancel; exact-match import (bytes decide the role; copies, never moves); removal that waits for running work, unloads the engine, deletes the record then the folder. No automatic sweep or retry. TLS verifies certificates and falls back to the OS root file when a packaged Python has none. Endpoints: GET /v1/model/plan, POST /v1/model/download, /v1/model/provisioning/cancel, /v1/model/remove; native import via the shell bridge only (no HTTP path input). Settings → Models shows Download (size), Import files… (desktop window only), progress with Cancel, and Remove… after the impact is shown. Preset admission floors (2 GiB available memory, 1 GiB disk) are checked when a model is about to load; the memory floor is an estimate (mapped model pages excluded), not a measured minimum.
+- verification: Offline: provisioning 21 OK; engine 76 OK; coordinator full suite OK (4 skipped); desktop OK; Node 199/199; scripts unchanged (2 pre-existing launcher failures). Browser preview of a headless coordinator on a scratch workspace: managed engine verified, tier macos-applesilicon-metal-16g matched, readiness `setup_incomplete`, Settings → Models shows "Download (3.2 GB)", /v1/model/plan returned source/licence/revision/sizes/SHA-256/location/free space, no console errors. No download was started.
+- remaining: A real download/import through the packaged app is a device check. Page-reading render change (2200 px) deferred to an OCR qualification decision. Onboarding capability choices and Auto routing not started.
+
+
+<a id="ac-20261005-004"></a>
+## AC-20261005-004 — Section 3: process network observer on Proof Cards; read-only sandbox control check
+- date: 2026-10-05
+- agent: agent
+- status: source and offline checks done; requester verification pending
+- prompt_id: [UP-20261005-001](userprompts.md#up-20261005-001)
+- paths: backend/coordinator/{observer,sandbox_probe,proof,db,server,code_service}.py, backend/coordinator/test_{observer,sandbox_probe}.py, frontend/app/{app.js,test-proof-card.cjs}
+- changes: `observer.Window` records, for each local job (and each Code model call), what Refinix's own processes connected to: a Python audit hook for every coordinator connect/sendto/name lookup, and psutil samples of the engine's sockets every 0.25 s. Stored per attempt in a new nullable `attempts.network_json` column (additive; schema version unchanged, older builds ignore it). Proof Cards show observed public/local-network counts with the observer's coverage note; policy stays `unavailable` (nothing enforces), observer errors withhold counts, remote attempts never borrow this computer's observation. `sandbox_probe.probe` reports, read-only, the Ubuntu profile's controls (user manager, systemd ≥255, seccomp, Landlock ABI, delegated memory/pids/cpu) and always lists the missing aggregate temporary-storage limit; validation is never offered in this build. Shown on Settings → This computer.
+- verification: Offline: observer 13 OK; sandbox probe 5 OK; coordinator suite OK; desktop OK; Node 200/200.
+- remaining: Ubuntu sandbox runner and its hard storage limit need an Ubuntu environment and evaluation of a no-host-change mechanism (udisks loop image is the open candidate; user-namespace tmpfs is blocked by Ubuntu 24.04's default AppArmor userns restriction unless a host profile is added — outside current approval). Observer is observation only; no enforcement claim.
+
+
+<a id="ac-20261005-005"></a>
+## AC-20261005-005 — Section 4 (part): TUF update check/download/offline import, release metadata tool, embedded trust files
+- date: 2026-10-05
+- agent: agent
+- status: source and offline checks done; requester verification pending
+- prompt_id: [UP-20261005-001](userprompts.md#up-20261005-001)
+- paths: backend/coordinator/{updates,test_updates,server}.py, scripts/update_repository.py, desktop/{build,shell,setup_py2app}.py, desktop/refinix.spec, desktop/test_build.py, frontend/app/{app.js,control.html,test-models-card.cjs}, .github/workflows/package.yml
+- changes: `updates.UpdateService` uses python-tuf with the packaged trust root as bootstrap; checks only on request; offers only a signed `<channel>/<lane>/latest.json` whose version is newer, data format not older, numeric minimum OS met, and whose package target's signed custom fields agree; downloads to staging with TUF length/SHA-256 checks, progress and cancel; offline bundles go through the same client and trust state. HTTPS only, no redirects, OS-root TLS fallback. Settings → Updates (version, last check, offer, notes, download, Import update… in the window); no Install control is drawn because in-app install/recovery is not built — the verified package's folder is shown. `scripts/update_repository.py` (init keys outside the repo, publish packages from build manifests with per-lane latest.json, bundle) signs with securesystemslib's bundled pure-Python Ed25519 — internal test keys only. build.py `--trust-root`/`--update-feed` validate and embed `refinix-update-root.json`/`refinix-update-feed.json`, record their SHA-256 and the data-format version in the identity and input digest, and refuse a package missing them; the workflow passes them when `desktop/updates/internal-{root,feed}.json` exist.
+- verification: Offline against a real throwaway signed repository: updates 20 OK, with refusals observed for the intended reasons (wrong signer "signed by 0/1 keys", replayed older timestamp "must be >= 2", plain HTTP, expiry, hash mismatch). Coordinator 1367 OK (4 skipped); desktop 128 OK; contracts OK; fixtures/c07 OK; Node 203/203; scripts 2 pre-existing launcher failures.
+- remaining: No internal trust root exists yet (a key ceremony for the user; not created by the agent). In-app install, data set-aside/restore and per-OS switch/recovery helper; N/N+1 and engine-change package sets via the user's CI dispatch; device/update acceptance.
+
+
+<a id="ac-20261005-006"></a>
+## AC-20261005-006 — Section 4 (part): journalled data set-aside, restore and resume for update recovery
+- date: 2026-10-05
+- agent: agent
+- status: source and offline checks done; requester verification pending
+- prompt_id: [UP-20261005-001](userprompts.md#up-20261005-001)
+- paths: backend/coordinator/{recovery,test_recovery,db}.py, desktop/{lifecycle,build}.py
+- changes: `recovery.Recovery` (workspace lock required at every journal write): set_aside copies the database and WAL (never SHM) with sizes/SHA-256 through temp+fsync+atomic replace; commit; restore moves the attempted version's main/WAL/SHM/journal into recovery/attempted/<version>-<time>/ (nothing deleted), refuses if any unexpected database file remains, and puts verified kept files back atomically; resume finishes an interrupted set-aside or restore by location and hash; any unsafe condition records `recovery_blocked` and changes nothing further. Admission is version-aware: the version being verified may open during an update, a blocked recovery is refused with its own code and reason. Desktop startup finishes an interrupted step before admission, rolls the previous version back to its data during an unfinished update, and commits after the new version starts. Packages' TESTING notes state the update limits.
+- verification: Offline with real SQLite stores and a real lock: recovery 12 OK (interrupted set-aside and restore resumed; changed kept copy and late -journal both block with canonical files byte-identical; old/new/other version admission; desktop startup finishing a restore). Full suites: coordinator 1379 OK (4 skipped); desktop 128 OK; deploy/k3s 140 OK; fixtures/c07 32 OK; contracts OK; Node 203/203; scripts 2 pre-existing launcher failures.
+- remaining: Nothing yet calls set_aside: the per-OS install/switch helper (previous app as helper, process exit verification, binary swap and rollback) needs packaged N/N+1 builds on each OS. No device, package or update acceptance is claimed.
+
+
+<a id="ac-20261005-007"></a>
+## AC-20261005-007 — Prepare a local partial Beta checkpoint
+- date: 2026-10-05
+- agent: agent
+- status: checkpoint prepared; implementation and release acceptance remain partial
+- prompt_id: [UP-20261005-002](userprompts.md#up-20261005-002)
+- paths: backend, desktop, frontend/app, scripts, .github/workflows, docs, AGENTS.md, README.md, tasks.md, agent-memory
+- changes: Recorded the user's local-commit authorization and selected the existing standalone Beta source, build configuration, scope documents and synthetic qualification evidence for preservation. Kept separate website changes, media assets and temporary work outside the checkpoint. No application logic or protected documentation was edited in this checkpoint step.
+- verification: Current branch/status and selected paths inspected; git diff --check passed. Previously recorded implementation checks remain attributed to their original entries; no test suites, models, packages or CI were run for this checkpoint.
+- remaining: Known execution gaps and package/device/update/release acceptance remain open. Local checkpoint authorization does not authorize a push or publication.
+
+
+<a id="ac-20261005-008"></a>
+## AC-20261005-008 — Save verbatim user direction and align the Beta requirements
+- date: 2026-10-05
+- agent: agent
+- status: memory, documentation and copyable planning handoff complete; owner plan/review pending
+- prompt_id: [UP-20261005-003](userprompts.md#up-20261005-003)
+- paths: docs/beta-user-direction-2026-10-05.md, AGENTS.md, README.md, docs/{PROJECT,README,model-catalog,security,releases,beta-execution-handoff}.md, tasks.md
+- changes: Saved the original statement and follow-up verbatim in the requested Codex memory update note first, then in the repository report. Aligned active documentation with upstream/runtime reuse, broad compatible model choice, recommendations instead of model/device/version allowlists, automatic local routing and capacity-aware multiple-model/job support. Preserved tool/data/offline boundaries and distribution deferral; marked the old execution handoff's conflicting proposals historical. Added a planning-only handoff for the user to send and a review rubric grounded in the full statements.
+- verification: Read current source and documentation; verified the report's two statement blocks match the saved memory, report file-link targets exist, and tracked documentation diff whitespace checks pass. No application tests, live models, downloads, CI or Git writes were run. No message was sent to the implementation owner.
+- remaining: Implementation is unchanged. The owner must inspect the updated documents/source and return an execution plan through the user for independent critique; device/package/update/release claims still require observed evidence.
+
+
+<a id="ac-20261005-009"></a>
+## AC-20261005-009 — Add post-execution cleanup to the planning handoff
+- date: 2026-10-05
+- agent: agent
+- status: handoff complete; user-run Git checkpoint pending
+- prompt_id: [UP-20261005-004](userprompts.md#up-20261005-004)
+- paths: docs/beta-user-direction-2026-10-05.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- changes: Added a final cleanup stage for proven unused/replaced code after approved implementation and authorised verification. Recorded the user's request to delete the temporary direction report only after preserving both verbatim statements in repository memory and repairing active links. No code or report was deleted.
+- verification: Inspected current branch/status, changed paths and untracked checkpoint/media inventory. Current branch is aditya, one commit ahead of the local origin/aditya tracking reference. No tests, live models, downloads or Git writes were run.
+- remaining: The user stages, reviews, commits and pushes the current changes. The implementation owner returns a plan for independent review before execution; eventual cleanup remains conditional on complete execution and verification.
+
+
+<a id="ac-20261005-010"></a>
+## AC-20261005-010 — Add the README ownership headline
+- date: 2026-10-05
+- agent: agent
+- status: headline added
+- prompt_id: [UP-20261005-005](userprompts.md#up-20261005-005)
+- paths: docs/beta-user-direction-2026-10-05.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- changes: Added a prominent README ownership note at the top of the direction report. Root README work belongs to the teammate; later file-only synchronization from main waits for user confirmation and authorization, followed by normal member -> dev -> main integration preserving the final README.
+- verification: Read current report, branch/status and relevant agent rules. No root README edit, tests, live calls or Git writes were performed.
+- remaining: User confirmation that the final README has reached main and separate authorization for subsequent Git work.
+
+
+<a id="ac-20261006-001"></a>
+## AC-20261006-001 — Both local runtimes, Auto routing, capacity and local admission (A–F)
+- date: 2026-10-06
+- agent: agent
+- status: implemented and checked by the agent; requester verification pending; not Beta acceptance
+- prompt_id: [UP-20261006-001](userprompts.md#up-20261006-001), [UP-20261006-002](userprompts.md#up-20261006-002)
+- paths: backend/contracts/profiles.py; backend/coordinator/{admission,capacity,router,hub,fake_ollama,test_model_runtime}.py (new); backend/coordinator/{runtime,runtime_llamacpp,models,engine,local_engine,provisioning,db,server,readiness,ocr,pdfrender,documents,docflow,identity,code_service}.py and their tests; desktop/{lifecycle,shell}.py; frontend/app/{app.js,control.html,refinix.css} and tests
+- changes: Existing Ollama and the Refinix-managed llama.cpp engine run side by side; the model's origin selects the runtime ("ollama|name", "llama.cpp|id"), with no copied weights. Local candidate profiles replace the team-measurement gate on this computer only (locality, digest, declared capabilities and bounds), while worker/node/dispatch checks stay strict. Auto routing per request with a stored reason; pins are refused, never swapped. Capacity ledger (unified/discrete/CPU; resident weights once, per-job working state, bounded cancellable wait); a resident model reserves no new working state only for the window it was loaded with. Single managed-engine lease queue (b11390 router mode rejected: unauthenticated child listeners). Library of eight pinned Hugging Face entries, explicit Hub browse/resolve, imports without download. Schema 14 adds nullable model_selftests.check_fingerprint. Resume fixes: window-aware residency; install reads serialized on the shared connection (preview found InterfaceError under concurrent status/capabilities); Settings shows model names, runtimes and current Auto picks instead of internal keys.
+- verification: Offline: coordinator 1459 OK (4 skipped); contracts 20 OK; desktop 128 OK; frontend 208 pass; scripts 38 with the 2 known hotspot-address launcher failures; worker 169 with the 1 known missing-fastapi import error (not installed). Loopback live on the Mac: Auto and pinned chats on both runtimes, vision routing for page reading, scan+SOP to DOCX with citations, a reviewable Code proposal with no disk change, concurrent Ollama and managed streams, a fingerprinted OCR self-test, and Ollama 0.35.1 /api/ps reporting the num_ctx sent (same window: no reload; new window: reload). Preview UI: Settings and one Auto chat with its route reason. Ollama and the managed engine started by these checks were stopped.
+- remaining: Requester UI walkthrough. Chat self-test strict-format decision; a second managed model not tested live (no download authorized); protected docs (model-catalog, evaluation and others) still describe the earlier state; section G cleanup awaits named permission. Windows/Linux packages, updater/recovery, local sandbox and network-evidence gates remain outstanding.
+
+
+<a id="ac-20261006-002"></a>
+## AC-20261006-002 — Repair five review findings (Ollama start, Search scans, OCR admission, stale waits, Hub projectors)
+- date: 2026-10-06
+- agent: agent
+- status: implemented and checked by the agent; requester verification pending
+- prompt_id: [UP-20261006-003](userprompts.md#up-20261006-003)
+- paths: desktop/lifecycle.py, desktop/test_lifecycle.py, backend/coordinator/{server,capacity,local_engine,runtime,docflow,documents,hub,test_model_runtime,test_documents}.py, frontend/app/{app.js,test-models-card.cjs}
+- changes: (1) The Ollama supervisor beside the managed engine probes Ollama alone. (2) Search observes the runtimes when it has files, so a scan reaches the page-reading model Auto picks. (3) Page reads go through a job-scoped admitted call; a job's uses of one model share a ledger group and do not add up, and a job's end releases its whole group. (4) A memory wait re-reads residency and the loaded window each retry (Ollama /api/ps, engine state). (5) Hub listings pair projectors per model (named, repository, ambiguous, none); resolve refuses a projector not published for that file and a projector offered as weights; the UI auto-pairs only one unambiguous projector and otherwise asks, text only included.
+- verification: Each new regression failed against the old behaviour and passes now. Offline: coordinator 1468 OK (4 skipped); contracts 20 OK; desktop 129 OK; frontend 210 pass; scripts 38 with the 2 known launcher failures; worker 169 with the 1 known missing-fastapi error. Loopback live: Settings "Start Ollama" beside the managed engine started ollama serve as the coordinator's child and shutdown stopped it; Search over the 3-page scan read every page through the managed Qwen vision model with one admitted reservation per page and none left afterwards.
+- remaining: Requester walkthrough; items listed in AC-20261006-001 remain.
+
+
+<a id="ac-20261006-003"></a>
+## AC-20261006-003 — Stop double-counting loaded memory; pair projectors only on exact names
+- date: 2026-10-06
+- agent: agent
+- status: implemented and checked by the agent; requester verification pending
+- prompt_id: [UP-20261006-004](userprompts.md#up-20261006-004)
+- paths: backend/coordinator/{capacity,server,hub,test_model_runtime}.py, frontend/app/{app.js,test-models-card.cjs}
+- changes: A request needing no new memory is always admitted. Reservations record their window; a fresh reading that shows the model loaded at that window releases the reservation's working state as well as its weights. Each page read takes a fresh residency reading. Hub pairing: only an exact model-name match (named) or an unnamed projector in a single-model repository pairs automatically; related or prefix names and unnamed projectors beside several models are ambiguous, and resolve refuses them without projector_confirmed, which only the explicit choice screen sends. Paired files also offer text only.
+- verification: New regressions fail against the reverted logic and pass now. Offline: coordinator 1473 OK (4 skipped); contracts 20 OK; desktop 129 OK; frontend 210 pass; scripts 38 with the 2 known launcher failures; worker 169 with the 1 known missing-fastapi error. Loopback live: scanned Search "transfer pump" returned inspection-report-scan.pdf page 1 and "discharge pressure" page 2; scan+SOP to Word completed with 3 checked citations, later pages admitted on a fresh reading (resident, window 8192) with the answer reservation released to 0/0; no reservations left; engine stopped.
+- remaining: Requester walkthrough; Chat self-test strictness; platform/package, updater/recovery, sandbox and network-evidence gates.
+
+
+<a id="ac-20261006-004"></a>
+## AC-20261006-004 — Ignore generated desktop review builds
+- date: 2026-10-06
+- agent: agent
+- status: implemented and ignore behavior observed
+- prompt_id: [UP-20261006-005](userprompts.md#up-20261006-005)
+- paths: .gitignore, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- changes: Added the repository-root-anchored /desktop/out/ ignore rule; retained all local build files and existing staged work.
+- verification: git check-ignore -v matched the output directory, review ZIP and bundled executable to .gitignore:51. git status no longer reported desktop/out/ as untracked; the changed-file whitespace check passed. No tests, staging, commit or push performed.
+- remaining: User stages the ignore rule and ledger appends with the existing checkpoint.
+
+
+<a id="ac-20261007-001"></a>
+## AC-20261007-001 — Model-agnostic routing with fallback, setup and Settings overview, categories, Dependabot, WebView2 bundling
+- date: 2026-10-07
+- agent: agent
+- status: implemented and checked by the agent; requester verification pending
+- prompt_id: [UP-20261007-001](userprompts.md#up-20261007-001)
+- paths: see UP-20261007-001
+- changes: Router ranks any compatible model from recorded evidence (publisher card 3, repository tags 2, runtime GGUF tags 1; never names) into an ordered list; documented limitations or a confirmed runtime incompatibility (picture-in tags while the runtime refuses pictures) remove a model from Auto only; pins keep hard checks and get a warning. Run and Code walk the list through memory admission before an attempt exists; precheck, preview, readiness and run share one task builder; picture questions are classified (transcription/text/visual, ambiguous = visual) and visual questions never take the OCR text route. Browse no longer assumes "general"; version-1 records drop guessed tags. Self-test: line breaks rejected before whitespace normalisation, formatting vs wrong-answer kinds, selftest-v3, schema 15 adds failure_kind and reply_excerpt, matches_now computed on read. Setup: footer button and Settings badge, overview card, hardware from startup, Ollama found/start panel, choices saved in meta, categories with queued downloads and shared disk check (recommend() removed). Settings: technical cards in a Details group, model cards with summary, alert and collapsible details. Windows setup installs a pinned, Microsoft-signed offline WebView2 runtime only when missing; .deb is the main Linux package. dependabot.yml (pip + Actions to dev), lock pin-consistency CI step, ci.yml checks Dependabot PRs into dev. Removed: LocalEngine.facts, engine hints map, router aliases, code_service router import, recommendation UI.
+- verification: Offline final: coordinator 1513 OK (4 skipped); contracts 20 OK; desktop 137 OK (1 skipped); frontend 225 pass; scripts 38 with the 2 known launcher failures; worker suite not run (fastapi missing). Pin check proven to fail on a simulated declaration-only bump. Live, loopback, scratch REFINIX_DATA_ROOT, packaged builds local-review-20261007/b/c: first-run setup, Start Ollama (Refinix-owned, stopped at quit), Use existing models, relaunch kept the explanation hidden, Auto "hi" answered by qwen3.5 Ollama, pinned PaddleOCR ran with a recorded warning, Qwen off gave no_suitable_model instead of PaddleOCR, Word document written, scanned report read (NG-2026-0417, P-204) and searched (page 1). Chat self-test reply captured: qwen3.5 Ollama "unsafe; 2.4" (missing_label). Code proposal live through the source coordinator (f-string diff, nothing written). Real data store unchanged.
+- remaining: D1 (accept the unlabelled self-test answer) awaits the user. Folder connection for Code in the packaged window needs the native picker (computer use unavailable). Windows/Linux packages and device checks, public host, signing/notarisation, updater and other Beta 0.1 gates; Dependabot activation after reaching main.
+
+
+<a id="ac-20261007-002"></a>
+## AC-20261007-002 — Repair the review findings: fallback budgets, picture intent, D1/D9, page-reader fallback, signature binding, Setup
+- date: 2026-10-07
+- agent: agent
+- status: implemented and checked by the agent; requester verification pending
+- prompt_id: [UP-20261007-002](userprompts.md#up-20261007-002)
+- paths: see UP-20261007-002
+- changes: Chat checks each candidate's window and reply allowance (and again after a default-window fallback) before an attempt; Code moves to the next model when the whole-file budget does not fit; pins never fall back. Picture intent: only clear text requests take the read-then-answer route; visual, verification, mixed or unclear requests need vision; a source-dependent request with nothing readable is refused. Removed the tag-absence "image input only" exclusion; D9 adds failure kind "incomplete" (runtime-reported output-limit stop only) that excludes a model from Auto for that task while the result matches; D1 accepts the unlabelled verdict and number; check definition selftest-v4. Page reader chosen from its own ordered list and admitted before the first page, fixed for the job; stored method names the reader and its runtime; extraction record takes model/runtime from the reader's profile. WebView2 signature check passes the path through REFINIX_SIGNATURE_PATH. Setup opens once on first launch (setup.first_opened); the footer link always shows, only the badge is conditional. Removed: image_input_only, the "incompatible" field, Coordinator.enabled_model_for; stray blank line.
+- verification: Offline final: coordinator 1526 OK (4 skipped); contracts 20 OK; desktop 139 OK (1 skipped); frontend 226 pass; scripts 38 with the 2 known launcher failures; worker suite not run (fastapi missing). Live (loopback, scratch REFINIX_DATA_ROOT, builds local-review-20261007d then e): cached managed Qwen imported (3,413,361,504 bytes, manifest c0d7259f…); Ollama stopped → Chat answered by qwen3.5-4b-q4_k_m (llama.cpp); Ollama Qwen off → managed answered; managed off (it was Auto's first choice) → Ollama qwen3.5:4b-q4_K_M answered as second choice; page reading on the managed reader stored "qwen3.5-4b-q4_k_m on Refinix engine"; Chat check v4: Ollama Qwen passed; PaddleOCR failed on formatting (multi_line) this run, so not excluded. First launch opened Setup once (source preview) and the packaged window recorded setup.first_opened. Refinix-started Ollama and the engine stopped at quit; real data unchanged.
+- remaining: Native Code folder picker (user, scratch data); genuine Windows signature/installer run; Windows/Linux packages and devices; signing/notarisation, updater, migration/replacement recovery and other Beta 0.1 gates; Dependabot activation after reaching main.
+
+
+<a id="ac-20261007-003"></a>
+## AC-20261007-003 — Complete the interrupted final repair verification using build 7g
+- date: 2026-10-07
+- agent: agent
+- status: affected repair verification passed on this Mac; not Beta release acceptance
+- prompt_id: [UP-20261007-003](userprompts.md#up-20261007-003)
+- changed: These two ledgers only. Application source was preserved. The prior agent's latest source already refuses requests with no readable attachments, classifies text-only picture requests using whole-request matches, resolves/caches the page reader only when OCR is needed, and combines coordinator-authored system instructions into one leading Chat system message. No rebuild or application-copy cleanup was performed.
+- build: local-review-20261007g, version 0.1.0 internal, macos-arm64. ZIP SHA-256 3e095616d4a30cdc27402416d388c5cd3fe3f4419bc630ee3b842b377b76acc8, 36,029,987 bytes. The 77-file shared application snapshot matches current source: 751f07172b79adc3b8ac990e55821f5580c026d051ad8015951b151ca084e95f.
+- verified: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest backend.coordinator.test_model_runtime backend.coordinator.test_document_generation backend.coordinator.test_documents -q` ran 316 tests, OK with 1 skipped. The initial restricted run had 5 fake-loopback socket permission errors; the same authorized tests passed with sandbox permission lifted. The prior agent's reported 1533-test coordinator pass and other suites were not rerun or represented as fresh observations.
+- live: Native packaged UI, existing scratch data, Ollama stopped. Inspected the persisted completed notes.txt answer (P-204, 7.9 mm/s versus 7.1 mm/s). Submitted a new Word-writing request on managed Qwen/llama.cpp: completed in 2062 ms, 60 output tokens, normal stop; the saved DOCX contains the supplied title and all three requested steps, passes ZIP CRC inspection, and matches its recorded SHA-256 802a7663d975db57cecd492f657a66a1cd7f02dd15658e86b615f6a662b93ac7. A new malformed-PDF summarisation request refused before any output, with the corrected error wording. Setup remained available while Ready and its explanation reopened. The native Code folder picker connected a disposable folder; a managed-model proposal produced only the requested subtraction-to-addition diff. The proposal was rejected; the fixture stayed unchanged.
+- lifecycle/data: Open-file inspection confirmed the scratch database. Normal Quit stopped the application and owned llama-server; no Refinix/Ollama/llama-server processes remained. Relaunched the same 7g executable with the explicit scratch REFINIX_DATA_ROOT, without building another app. Chat history, the generated document, connected project and rejected proposal persisted; Setup did not force first-launch onboarding again. Final normal Quit exited successfully and left no matching processes. Real coordinator.sqlite3, -wal and -shm byte hashes remained identical across this continuation. The real store's pre-existing schema is 15; no migration or real-data launch was performed.
+- remaining: A cosmetic lifecycle row for document artifact completion displays `attempt start -> undefined` although the saved job/attempt state is completed; not fixed in this verification scope. Genuine Windows signature/installer execution, Windows/Linux package/device qualification, signing/notarisation, updater trust/acceptance and replacement/migration recovery remain release gates. Dependabot activation still requires reaching the default branch through the authorized Git flow. No publication or Git writes occurred.
+
+
+<a id="ac-20261007-004"></a>
+## AC-20261007-004 — Prepare the requested updater and app-consolidation handoff
+- date: 2026-10-07
+- agent: agent
+- status: handoff complete; plan and execution pending
+- prompt_id: [UP-20261007-004](userprompts.md#up-20261007-004)
+- changed: Created agent-memory/handoffs/2026-10-07-refinix-in-app-update-and-consolidation.md with the user's latest words, verified continuation checkpoint, existing update/recovery paths, graphical bootstrap/update requirements, safe duplicate cleanup, full release gates and the next review checkpoint. Appended these two ledgers only.
+- inspected: Current status and focused updater, recovery, native shell, frontend and release/security authorities. Existing update service verifies/stages/imports packages but explicitly lacks in-app installation/relaunch; the current package lacks a configured trust root/feed. The three unpacked review bundles remain present.
+- limitations: No application implementation, build, launch, deletion, tests, live model calls, downloads, data migration, protected-document edits, Git/GitHub writes or publication occurred. Earlier test/runtime observations are attributed to AC-20261007-003, not rerun here. The implementation owner must return a plan for independent review before execution.
+
+
+<a id="ac-20261007-005"></a>
+## AC-20261007-005 — Reconcile v3 and update the updater handoff for public installations
+- date: 2026-10-07
+- agent: agent
+- status: handoff updated; v3 design PASS with required additions, implementation pending
+- prompt_id: [UP-20261007-005](userprompts.md#up-20261007-005)
+- changed: Updated the existing updater handoff in place with the latest verbatim user message, confirmed retention/owned-process boundaries, clean a260d99 baseline, full website-installed application update requirement, main-to-qualified-package/feed release chain, online-only connected header visibility and retained Settings offline import. Added v3 review disposition, archive/recovery clarifications and public OS/package acceptance criteria. Appended the normal ledgers; older ledger entries were preserved.
+- inspected: Entire v3 plan, current status/source, release/security authorities and the internal-only package workflow. The prior five findings are addressed in the proposed design; public package/signing/feed publication is still missing, and passive online hints do not prove Internet/feed reachability.
+- verified: Readback confirmed the latest message is present verbatim, the original verbatim request is unchanged, both approvals and the public/connectivity requirements are present, and previous ledger content is unchanged. `git diff --check` passed; changed paths are limited to this handoff and the two normal ledgers.
+- limitations: No updater source changes, tests, builds, launches, installs, app cleanup, model calls, protected-document edits, Git/GitHub writes or publication. Historical repair evidence remains attributed to AC-20261007-003. Application execution and public release/device qualification remain later authorized work.
+
+
+<a id="ac-20261007-006"></a>
+## AC-20261007-006 — Accept v5 design and update the existing updater handoff
+- date: 2026-10-07
+- agent: agent
+- status: v5 design PASS with implementation clarifications; execution pending
+- prompt_id: [UP-20261007-006](userprompts.md#up-20261007-006)
+- changed: Reconciled the existing handoff with v3 plus v4/v5: no age cutoff for already verified staging; expiry rejection for new imports; header hidden offline in every state; Settings retains local install/import/cancellation/recovery; internal-folder source supports the visibility proof; network observations state their limits. Preserved the raw user requests, approved retention/process boundaries and public release scope. Added mandatory saved signed-evidence/ownership and supported-schema-transition clarifications, carried forward channel/capability foundations, and retained the manual checkpoints without requesting another plan revision. Appended the two normal ledgers.
+- inspected: Entire v5 attachment and the affected v3/v4 clauses, current status, AGENTS.md, PROJECT.md section 26, active tasks, focused release/security clauses and current updater offer/compatibility source. The four v4 review points are resolved at design level. A checksum or unsigned record alone does not authenticate a publisher; a higher schema number alone does not establish a supported transition.
+- verified: Document readback confirmed the committed raw request was retained, website/update boundaries and v5 clauses were present, committed ledger prefixes were unchanged and the only changed paths were the existing handoff and two normal ledgers. `git diff --check` passed. These are documentation checks, not application tests.
+- limitations: No application source, protected-document, data or package changes; no tests, builds, downloads, launches, installs, cleanup, host/network changes, Git/GitHub writes or publication. Design approval and the supplied attachment do not start implementation or establish device/release acceptance. Historical repair evidence remains attributed to AC-20261007-003.
+
+
+<a id="ac-20261007-007"></a>
+## AC-20261007-007 — In-app update: implementation and internal proof to checkpoint (a)
+- date: 2026-10-07
+- agent: agent
+- status: implemented, offline-tested and packaged-proven on this Mac (internal channel, unsigned); not updater/release acceptance
+- prompt_id: [UP-20261007-007](userprompts.md#up-20261007-007)
+- changed: backend/coordinator/{updates.py (sources incl. internal update folder, bounded outer bundles, source-tagged download, kept signed evidence, offline install admission, prepare, eligibility, unreachable wording), app_archive.py (new: bounded app-ZIP checks with acyclic in-app link chains, extraction, tree and bundle verification), recovery.py (update_id/data_root binding, keep previous journal, discard, block, launches never restore/commit), server.py (install gate, writer and request activity, close_for_install, prepare/check-folder/cancel-install/acknowledge routes; refused POST closes its connection), provisioning.py (writer registration, active()), engine.py (reap_recorded_process exposed; logic unchanged)}; desktop/{update_apply.py (new helper, launch gate, resume table, owned-process checks, swap/relaunch/supervise/rollback, sweep), shell.py (install sequence, ui_ready commit, SIGTERM via wakeup fd), refinix.py and __main__.py (helper mode, launch gate), lifecycle.py (commit removed from startup), build.py (--channel, install capability, label/build-number rule, CFBundleVersion, input binding, ditto --norsrc --noextattr, never-index), setup_py2app.py, refinix.spec, updates/internal-root.json and internal-feed.json (public root; keys outside the repository)}; scripts/update_repository.py (bundle naming/atomic write, channel check, qualified_migrations); frontend/app/{app.js (shared header update control, Settings card, lifecycle row fix), index/code/control.html, refinix.css}; tests: test_app_archive, test_update_install, test_update_quiesce, test_update_apply, test_install_flow, test-update-control (new) and updated test_recovery, test_build, test-models-card.
+- verified: desktop/.venv (Python 3.12.13, tuf 7.0.1): coordinator 1574 OK (4 skipped); desktop 180 OK (1 skipped); node --test frontend/app/test-*.cjs 238 pass. Source preview (headless coordinator): no console errors on Chat/Code/Settings, no /v1/updates request on load, honest unavailable state.
+- packaged: fixtures 0.1.0-internal.3 (c341ce38c2314547e114a889d975821ff906ef4a3b35f8be84491ee2e22bbd18) and 0.1.0-internal.4 (417e5a635acdd14de539e0c3c7d9b1ad1ffdb76a1efc107d7ad726d7ab11e92f), internal root 8ceaddd13f7c623187b1c95dd39ec6841e6b18cf8eb419d1cd6c7c42dd19921f; superseded fixtures 0.1.0-internal.1/.2 kept as ZIPs. In scratch roots under the session scratchpad: no update traffic or metadata before a request; folder check, copy with evidence and prepare (offline evidence, extraction, codesign seal, engine check) on real packages; real helper H1 commit in 3 s; H2 new version killed before commit rolled back with newer data kept; H3 helper crash after swap resumed by the next launch and committed; H4 unrelated process from the app blocked and never signalled; bad bundles (unsafe, older, other platform, expired, tampered package, app/offer mismatch) refused; SIGTERM gives an orderly exit. Real ~/.aegisforge store hashes unchanged.
+- found_and_fixed_during_proof: refused POST left its body to be parsed as a new request; resumed helper did not record itself as live; discarded attempts left their expanded app (79 MB).
+- remaining: the user's own Install and restart click and the Wi-Fi observation (checkpoint a), user bootstrap of /Applications/Refinix.app (b), first click-update on real data (c), cleanup of the three unpacked copies (d). Insufficient disk is unit-tested only. Credentials on macOS use /usr/bin/security, so Keychain access is not bound to Refinix's ad-hoc signature; pairing credentials are a deferred feature and were not exercised. No HTTPS feed in this batch; Windows/Linux helpers, Beta root, signing/notarisation, hosting and publication remain later authorised work. No Git/GitHub writes.
+- checkpoints (2026-10-07, later): (a) passed — user's click updated scratch 0.1.0-internal.3 → .4 (handed_off 23:19:21, committed 23:19:24 local), Wi-Fi off/on hid/showed the header icon (user-reported), 0 non-loopback connections from the scratch app in the measured window; Cmd+Q left no processes. Real store backed up with SHA256SUMS to ~/Refinix Backups/2026-10-07-before-updater (matches pre-session hashes). (b) passed — user installed /Applications/Refinix.app 0.1.0-internal.3 (seal ok, no quarantine, not translocated); real data schema 15, no migration. (c) passed — user's first real click-update to 0.1.0-internal.4 (quiescing 23:25:26 → committed 23:25:38); data journal committed for the same attempt; previous 0.1.0-internal.3 and data copy kept; old app and helper exited.
+- found: the Settings page polls status every 10 s and fetches /v1/worker, which makes the coordinator try a previously paired worker at 10.219.115.160:30443 (private LAN, worker port) — seen from both old and new versions, unrelated to updates; pre-existing deferred-mesh behaviour to review separately. Checkpoint (d) cleanup not yet done.
+
+
+<a id="ac-20261007-008"></a>
+## AC-20261007-008 — Enforce the standalone mesh boundary and prepare internal.5
+- date: 2026-10-07
+- agent: agent
+- status: source/offline checks and package preparation passed; primary internal.5 native update, normal Quit and checkpoint (d) pending
+- prompt_id: [UP-20261007-008](userprompts.md#up-20261007-008)
+- changed: Reused server.mesh_enabled for active-peer lookup, preflight, client construction and pairing, so packaged builds cannot contact saved workers or route work remotely. Source development still requires REFINIX_ENABLE_MESH=1; saved pairing rows remain unchanged. Settings requests /v1/worker only when mesh is enabled. Added offline regressions covering repeated observations/routing, direct transport/credential refusal, packaged opt-in refusal, development opt-in preservation and repeated Settings polls; retained remote fixtures explicitly opt into mesh. No deferred mesh code was removed.
+- verified: Focused dispatch/remote Code 96 OK. Full coordinator 1578 OK (4 skipped) with permitted loopback fake servers; the initial restricted run failed because local socket binds were denied. All frontend checks 239 pass. git diff --check passed. Primary disk identity is internal.4 at /Applications/Refinix.app; only that Refinix app process was observed (PID 44160, executable/start time recorded). Its install journal is committed for .3→.4; the three pre-updater backup files match their SHA256SUMS. These fresh observations do not repeat the user's earlier Wi-Fi/UI acceptance.
+- packaged: Cached-input-only updater-n5 / 0.1.0-internal.5, macos-arm64, bundle build 5, internal-test capability, unsigned/ad-hoc seal, schema 15. ZIP 35,838,758 bytes, SHA-256 46adeb724aab7882f51aa1d57ac6c3949bff9b3f6aa6fce615868816dac42270; shared source digest 38e67dce9d054c3539c848501219909f14d5e731dcf08782f09a6b07e2b1afa2. Existing private internal test signer used without key changes; local metadata versions advanced to 3. Real signed bundle .4→.5 passed folder offer, verified copy/staging, offline evidence authentication, bounded archive extraction, codesign seal and engine integrity, and reached ready against an isolated temporary install fixture. No swap or native launch in this preparation proof. Offline result saved in desktop/out/updater-n5/offline-admission-proof.json. Verified update bundle copied atomically to ~/Refinix Updates; the previous .4 bundle is retained.
+- cleanup/evidence: All three older review ZIPs match their manifests and retain a build record. Their unpacked folders remain untouched. A bounded 15-minute read-only process/connection sampler was started for the user's next click-update and normal Quit; /private/tmp/refinix-internal5-network-monitor.jsonl. Sampling is observational evidence, not network enforcement or proof that no transient connection occurred.
+- remaining: User opens Check for updates → Get internal.5 → Install and restart, verifies persisted work, visits Settings, then performs normal Quit. Confirm new app/owned-process exit and sampled worker traffic before checkpoint (d), which may move only the three named unpacked folders to the Bin and unregister them. Public release workflow, Beta root/HTTPS feed, signing/notarisation, Windows/Linux helpers and device qualification remain later separately authorised work. No Git/GitHub writes, protected-document changes, model calls/downloads, real-store migration, credential deletion or app-copy deletion occurred.
+- checkpoint continuation: User reports the internal.5 update completed with no visible issue. Fresh reads confirm /Applications/Refinix.app is updater-n5 / 0.1.0-internal.5, and install/data journals both committed for update_id 0d1d16596b654bd1 (.4→.5, same canonical data root). The old application PID 44160 and helper PID 79409 exited; only the updated primary app PID 79437 remains. The sampler recorded 193 post-commit samples over approximately 3 minutes 20 seconds with no non-loopback connections or observation errors. This is a sampled window, not network-enforcement proof. The previous app remains retained and the three older unpacked folders are untouched. Separate normal Quit and explicit checkpoint (d) cleanup confirmation remain pending.
+
+
+<a id="ac-20261007-009"></a>
+## AC-20261007-009 — Complete normal Quit and the approved primary-app consolidation
+- date: 2026-10-07
+- agent: agent
+- status: checkpoint (d) completed; internal macOS continuation complete, not public Beta release acceptance
+- prompt_id: [UP-20261007-009](userprompts.md#up-20261007-009)
+- changed: Unregistered only the three approved old app paths using lsregister -u and moved their containing unpacked folders through the native macOS Trash API. local-review-20261006/unpacked → ~/.Trash/unpacked; local-review-20261007e/unpacked → ~/.Trash/unpacked 23-52-40-456; local-review-20261007g/unpacked → ~/.Trash/unpacked 23-52-40-464. Full absolute recovery mapping is recorded in /private/tmp/refinix-checkpoint-d-trash-moves.json. Appended these normal ledgers; no source or protected-document edits.
+- verified: User's normal Quit followed by fresh process scans found no Refinix app/helper/engine processes. The monitor recorded 113 consecutive no-app samples after the last app observation at 18:20:59 UTC. All three old folders are absent from their original locations and present in the Bin, and their old paths are absent from the actual user-session Launch Services registry. Spotlight returned exactly /Applications/Refinix.app, whose identity remains updater-n5 / 0.1.0-internal.5 / schema 15. Primary identity and all 15 retained ZIP/manifest/checksum/testing/build-record files have unchanged SHA-256 hashes. The initial sandboxed registry/Spotlight reads returned an empty view; the user-session reads confirmed the result. git diff --check passed.
+- monitor: Stopped only this chat's own sampler after matching its exact script, PID 76840, executable and start time against the first log sample; its observations remain at /private/tmp/refinix-internal5-network-monitor.jsonl. Other historical stale Launch Services entries were outside the three-path cleanup scope and were left untouched; they did not appear in Spotlight's Refinix.app result.
+- remaining: Public release workflow, Beta trust root/HTTPS feed, signing/notarisation, Windows/Linux helpers and device qualification remain separate later work. No Git/GitHub writes, public publication, model/network configuration changes, real-data migration, credential/model/ZIP deletion or wider repository cleanup occurred. Application remains closed after the normal Quit check.
+
+
+<a id="ac-20261008-001"></a>
+## AC-20261008-001 — Repair updater retention, journal and trusted-root failure paths
+- date: 2026-10-08
+- agent: agent
+- status: implemented and offline-tested; source review passes for the three findings
+- prompt_id: [UP-20261008-001](userprompts.md#up-20261008-001)
+- tags: updater, recovery, journal, retention, root-rotation, offline-tests
+- paths: desktop/update_apply.py, desktop/test_update_apply.py, desktop/test_install_flow.py, backend/coordinator/updates.py, backend/coordinator/test_update_install.py
+- changes: Retention now runs under workspace ownership while the install remains committing, before the final committed marker. A subsequent attempt waits for the previous helper to exit; helper observation, timeout and lock adoption bind to the attempt ID, versions and data root. Stale helpers cannot prune or act on another attempt. Existing unreadable, malformed or incomplete install journals refuse startup/preparation; a missing install journal with unfinished data recovery also refuses. Offline authentication reads the newest cached trusted root and requires every consecutive authenticated rotation to it, refusing missing/unreadable history and disagreement at the final root. Optional process/status reads stay permissive. Existing install-flow fixtures now follow the real plan, snapshot, swap and retained-app sequence; returned fake helpers exit.
+- verification: The six initial regression methods failed on the original implementation (12 failures including subcases), confirming the findings. Repaired focused updater paths: 53 tests OK. Full offline coordinator: 1580 tests OK, 4 skipped; full desktop: 187 tests OK, 1 skipped. The final stale-helper/retention/crash checks: 3 OK after adding the lock-adoption assertion. git diff --check passed. Full suites used permitted loopback fixtures and temporary test workspaces; logs are /private/tmp/refinix-review-fixes-coordinator-tests.log and /private/tmp/refinix-review-fixes-desktop-tests.log.
+- remaining: These fixes are in source only. The installed internal.5 application was not rebuilt, launched or replaced, and package/device acceptance of these new bytes remains pending. No public release, Git/GitHub writes, protected-document changes, real-data migration, model calls/downloads, host configuration changes or further app/ZIP cleanup occurred.
+
+## AC-20261008-002 — Guard repeated update actions and prepare internal.6
+- date: 2026-10-08
+- agent: agent
+- status: implemented, offline-tested and internally packaged; native user install pending
+- prompt_id: [UP-20261008-002](userprompts.md#up-20261008-002)
+- related_prompts: UP-20261008-001
+- tags: updater, rapid-clicks, idempotency, internal-package, offline-tests
+- paths: frontend/app/app.js, frontend/app/test-update-control.cjs, backend/coordinator/updates.py, backend/coordinator/test_updates.py, backend/coordinator/test_update_install.py, desktop/shell.py, desktop/test_install_flow.py, desktop/out/updater-n6
+- summary: Repeated update clicks now share one in-progress action; authenticated staged downloads and prepared installs are reused, and the new internal.6 update bundle is ready for the user.
+- changes: The existing frontend busy state is claimed before asynchronous work and redraws both header and Settings, preventing duplicate checks, downloads, import choosers and install calls while preserving explicit retries after cancellation/failure. Coordinator download requests reuse a fully authenticated same-offer stage; damaged cached bytes are refused before a new explicit download. Install preparation shares the metadata-operation lock and revalidates/reuses its existing ready attempt. The native shell takes one nonblocking installation lock before showing confirmation. No new dependencies. Built internal.6/updater-n6 with cached engine inputs, schema 15 and the existing internal trust root, including AC-20261008-001's recovery/root-chain fixes. Signed local feed metadata advanced to targets/snapshot/timestamp version 4; the verified update bundle was placed in ~/Refinix Updates without replacing old bundles.
+- verification: Added regressions failed before repair (frontend: three failures; initial backend/native methods: three failures and one error). After repair, focused Python updater/native paths: 57 tests OK; updater frontend: 15 passed. Full offline coordinator: 1584 tests OK, 4 skipped; desktop: 188 tests OK, 1 skipped; frontend: 242 passed. Package identity/hash, exact shipped frontend/coordinator source and desktop bytecode, complete signed offline authentication, real ad-hoc macOS seal and pinned engine integrity passed. An isolated fixture verified 20 post-download requests reused one file and repeated preparation reused one attempt, then cancelled the expanded fixture without an app swap. Actual update-folder admission is recorded in desktop/out/updater-n6/offline-admission-proof.json; network sockets were blocked (one harmless urllib3 IPv6 loopback capability probe). All 69 pre-existing package/record/update-bundle/primary-identity hashes stayed unchanged. Artifact SHA-256: a7395f97ff1645b42af515bbd2b8467046b450c029fc7f564ce9956b3e5ecddf; update-bundle SHA-256: 790de9413d6de6d0145c8621252bb33e3d2fad12b94e423fc3d7f46bd3bc6ded. Logs: /private/tmp/refinix-internal6-*-tests.log, /private/tmp/refinix-internal6-build.log and /private/tmp/refinix-internal6-admission-proof.log.
+- remaining: /Applications/Refinix.app remains internal.5; the user will install internal.6 and observe the native result. Current changes are uncommitted. Public Beta release, Developer ID signing/notarisation, HTTPS feed and Windows/Linux qualification remain outside this batch. No Git/GitHub writes, protected-document edits, real-data migration, model calls/downloads, primary launch/install, or original-package cleanup occurred.
+
+<a id="ac-20261008-003"></a>
+## AC-20261008-003 — Public Beta update channel, Windows and Ubuntu install helpers, release tooling
+- date: 2026-10-08
+- agent: agent
+- status: implemented and offline-tested; Ubuntu .deb rules natively qualified in an emulated container; device and signing evidence pending
+- prompt_id: [UP-20261008-003](userprompts.md#up-20261008-003)
+- tags: updater, tuf, beta-feed, maturity, deb, pkexec, polkit, windows-job, release-tooling, workflows
+- paths: backend/coordinator/release.py, backend/coordinator/tuf_offline.py, backend/coordinator/install_methods.py, backend/coordinator/updates.py, backend/coordinator/app_archive.py, desktop/update_apply.py, desktop/update_windows.py, desktop/deb_root.py, desktop/install_check.py, desktop/refinix.py, desktop/shell.py, desktop/build.py, desktop/setup_py2app.py, desktop/packaging_plan.py, desktop/windows/refinix.iss, desktop/linux/control.in, desktop/linux/com.refinix.desktop.policy, desktop/macos/entitlements.plist, desktop/updates/beta-feed.json, desktop/python-version-windows.txt, scripts/update_repository.py, scripts/requirements-release.lock, scripts/release_assemble.py, scripts/qualify_deb.py, scripts/refinix, .github/workflows/release.yml, deploy/distribution/workflows/, frontend/app/app.js, tests beside each
+- changes: One release identity (internal/beta channels; preview/accepted/final maturity; ordering key; Debian X.Y.Z~R.S; linear public build number). Beta publisher with encrypted keys, consistent snapshots, separate preview/accepted pointers, no overwrites, forward-only history, advance/refresh/renew/withdraw/rotate/verify/bundle. Client: pointers by maturity, per-format payloads, packages via public TUF calls with redirects only to listed hosts, .deb recovery packages, evidence root continuity. Helper split into mac-app swap, Windows setup run inside a kill-on-close job from process creation with registry snapshot and file-list completeness, and Ubuntu .deb through a pkexec root step (request folder opened without links, copies authenticated with expiry at admission, offline re-check later, dpkg/APT under the front-end lock, recovery by dpkg state, recorded rollback). Builder: Beta labels, preview-test capability, Developer ID inside-out signing + notarisation + DMG, Authenticode hooks, shipped file list, polkit policy, control fields allow-list. release.yml (manual, read-only, designated main commit), distribution-repo deploy/advance/refresh templates, release assembly. Launcher address drift fixed at its cause.
+- verification: Full offline suites on macOS: coordinator 1624 OK (5 skipped), desktop 223+ OK, scripts OK, contracts 20 OK, frontend 242+ pass; new focused tests include test_updates_beta (26, incl. the unchanged e234a0a client reading new internal output and online-key rotation recovering from a fast-forward), test_update_methods (13), test_deb_root (16), test_build (48), test_workflows (10), test_release_assemble (6). Ubuntu 24.04 amd64 container (Docker Desktop, emulated; image ubuntu@sha256:534baea6…): 66 Linux unit tests OK as an unprivileged user and 14/14 native .deb qualification checks passed with dpkg 1.22.6 / apt 2.8.3 (Inst+Conf plan, --reinstall, refusals, admission, install, rollback, held lock, unfinished-work refusals, kill during unpack → same-copy repair, unpacked → configure). The container run found and fixed a real defect: request folders inherited Ubuntu's 002 umask and were refused by root.
+- remaining: Beta trust root/keys (user, offline, CP-A), signing (none ready), Windows native job/installer tests (CI runner or VM), clean-Ubuntu device and pkexec/polkit prompt behaviour, real package builds, website publication and live feed (owners, CP-B). No Git/GitHub writes, publication or protected-document edits yet.
+
+## AC-20261008-004 — Sandbox, cleanup, presentation, website downloads, release workflow repairs and local package builds
+- date: 2026-10-08
+- agent: agent
+- status: implemented and offline-tested; packages built locally for checking only; device testing, signing, publication and Beta acceptance pending
+- prompt_id: [UP-20261008-003](userprompts.md#up-20261008-003)
+- tags: sandbox, landlock, systemd-run, code-apply-modes, native-dialogs, performance, cleanup, sih-removal, website, release-workflow, deb, dmg, ocr-beta
+- paths: backend/coordinator/sandbox_launcher.py, backend/coordinator/sandbox_local.py, backend/coordinator/code_service.py, backend/coordinator/server.py, backend/coordinator/sandbox_probe.py, backend/coordinator/{db,engine,capacity,models,device}.py, desktop/shell.py, desktop/refinix.spec, frontend/app/app.js, frontend/design/{site.html,site.css,docs.html}, scripts/build-site.sh, scripts/release_assemble.py, scripts/measure_performance.py, .github/workflows/{release.yml,package.yml}, README.md, CONTRIBUTING.md, AGENTS.md, tasks.md, docs/{PROJECT,README,releases,security,evaluation,model-catalog}.md, docs/workflow-diagram.html, frontend/design/assets/README.md, tests beside each
+- changes: Ubuntu Code sandbox (provisional): a launcher on the system Python under `systemd-run --user` with no address families, a system-call filter, no new privileges, no namespaces and resource limits, Landlock confining files to a fixed-size workspace image, self-checks and an input digest; Code validation bound to proposal, inputs, command and profile; Apply modes `sandbox_validated` and an explicit, audited `unsandboxed`. Native error dialogs on Ubuntu (GTK → zenity → stderr). Performance harness (no optimisation justified). Dead code removed (ten unused functions); old checkpoint, presentation brief/PDFs and ignored build output moved to the private archive with a hash manifest. Current public presentation without SIH branding; repository renamed to Refinix in docs. Scan reading labelled Beta in the app and catalogue. Website: the 10 October countdown and "private for now" labels replaced by a tester-preview section whose download cards build-site.sh renders from a release's release.json (files only from that release's download folder, with SHA-256; unsigned platforms shown unavailable with the reason); owner publish commands updated. Release workflow repairs found by building: Windows/Ubuntu jobs installed only part of the packaging plan's locks (the bundle would have lacked the update client, psutil and PDF rendering), the Ubuntu job lacked libpython3.12 (PyInstaller refuses without it), the .deb qualification step used the wrong arguments, interpreter and guard, and feed-signing tests ran before their lock; macOS internal job lacked its build lock. Documented the one-time Beta key/root setup and that the first public build number is 7 or higher (internal builds 1–6 exist on the release Mac).
+- verification: Final offline suites on the Mac (Python 3.12, Node): coordinator 1635 OK (5 skipped), desktop 224 OK (1 skipped), scripts 62 OK, contracts 20 OK, frontend 247 pass; `git diff --check` clean. Ubuntu 24.04 amd64 container (emulated): the real `.deb` and AppImage of `0.1.0-preview.1` built the release.yml way in 45 s, then `qualify_deb.py --real` passed 23/23 (dpkg 1.22.6, APT 2.8.3: update rules, real control fields and files, APT install with dependencies, installed tree = file list, root entry refuses without pkexec); feed-signing Linux tests 42 OK once the release lock was installed. Release assembly and the site export ran on that package. macOS: unsigned Beta ZIP + DMG (public build 7) built in 20 s; DMG checksum valid, ad-hoc signature verifies, Gatekeeper rejects as expected, LSMinimumSystemVersion 26.0 (Homebrew Python). Website export checked in the browser at phone and desktop widths with no console errors. Landlock ABI 8 enforcement observed in a native arm64 container. Performance: launch to first status 330 ms, status 4.3 ms median, idle 0% CPU / 107 MB, 3-page scan render 111 ms, 256 MB update stage 326 ms + admission 200 ms. Incident: launching the packaged Mac app for a smoke check used the default data folder (the packaged entry ignores development flags); it ran the same idempotent post-update tidy-up internal.6 runs, kept the previous app and data copy, and migrated nothing (schema 15 both); later package checks read bundles without launching them. Not run: systemd-run/udisks sandbox properties, any Windows build or check, any device walkthrough, signing, publication.
+- remaining: Beta keys/root (user, offline), CP-A commit and member → dev → main, Windows build on the hosted runner, signing (none ready), owners' Pages/environments/About settings, CP-B publication, device walkthroughs (Ubuntu desktop, Windows PC), Codex deep review, one repair batch, Beta acceptance.
+
+
+<a id="ac-20261008-readme-sync"></a>
+## AC-20261008-README-SYNC — Copy only the final README from main
+- date: 2026-10-08
+- agent: agent
+- status: README synchronized; release-policy/doc/screenshot changes handed back to the implementation owner
+- prompt_id: [UP-20261008-README-SYNC](userprompts.md#up-20261008-readme-sync)
+- changed: Replaced only root README.md with GitHub's exact file from main commit 01928744466d75ad6f52064db450c7ca75c743b0; appended the normal ledgers. No merge, branch change, commit or push.
+- verified: GitHub blob SHA-1 11816fce2bae41d2e48330e24603fa24a714a2c2 matches the downloaded UTF-8 bytes; local README readback SHA-256 af2552d9a505283e3e25ff873f907a54c70dac3724a0a2884b5f9c74f38630bc matches. The prior dirty README is preserved at /private/tmp/refinix-readme-before-main-20261008-9z611f2j/README.md; adjacent sync-record.json records both hashes and the source identity.
+- findings: The current release assembler/docs still require platform signing; a coherent owner change is needed for the user's unsigned public Beta direction. The imported README preserves the teammate's final structure and includes older implementation-status paragraphs needing targeted owner reconciliation. Latest owner entry AC-20261008-004 reports Mac ZIP/DMG and Ubuntu packages built for checks, Windows build pending; those checks were not rerun here.
+- limitations: No app source changes, other protected-doc edits, screenshots, tests, builds, installations, live model calls, release publication, Git/GitHub writes or messages to the implementation owner occurred. Real screenshots, current Beta presentation, platform download/install verification and device acceptance remain owner work.
+
+<a id="ac-20261010-segment1-repair"></a>
+## AC-20261010-SEGMENT1-REPAIR — Recovery safeguards and native CI repairs
+- date: 2026-10-10
+- prompt_id: [UP-20261010-SEGMENT1-REPAIR](userprompts.md#up-20261010-segment1-repair)
+- changed: Loop ownership checked before sandbox unmount; damaged Ubuntu current-attempt authority refuses admission without pruning recovery; native report/exit gates fail closed; public verification checks requested website/package version. Bounded APT setup shared by four workflows, with one official mirror fallback. Windows native fixtures clean up their process trees. Focused regressions and approved evaluation/tasks evidence updated.
+- verified: Coordinator 1656 tests OK (16 skipped), desktop 253 OK (6 skipped), scripts 75 OK, contracts 21 OK, frontend 248 passed; focused recovery/CI/public regressions 73 OK; four workflows passed actionlint; diff whitespace clean. Hash-pinned test dependencies installed only in a temporary environment. Initial broad checks needed approved loopback fixture access and the missing pinned packaging dependency.
+- remaining: Fresh native qualification on the repaired commit, then production keys/root and user merge/publication checkpoints. Earlier run 37981019381: Windows unit failure, Linux APT stall/cancel, Mac lane success under the earlier gate. No production keys, app/data install, real models, dev/main merge or public release touched.
+
+## AC-20261010-SEGMENT1-NATIVE-REPAIR — Fix failures exposed by the repaired CI gates
+- date: 2026-10-10
+- changed: The shared Ubuntu build action exposes only system gi/cairo in an isolated virtual environment, preventing unrelated runner AWS/OpenSSL imports. Package-launch and update-journey status reads allow 10 seconds for bounded runtime probes. Regression checks preserve scratch-root identity and refuse missing toolkit bindings.
+- observed: Run 37988624319 at 0aa4645: Linux APT 18 seconds, builds passed, native signing-unit imports failed on inherited OpenSSL; Windows native units and both builds passed, package checks 5/6 (launch probe timed out while the app served requests). Local worker 217, deployment fixtures 140 and C07 fixtures 32 passed after completing the temporary test environment.
+- remaining: Hosted qualification of the follow-up commit and the agreed production-key/manual checkpoints.
+
+## AC-20261010-SEGMENT1-GTK-METADATA — Preserve GTK version metadata in the isolated build
+- date: 2026-10-10
+- changed: Link only PyGObject/pycairo egg-info alongside gi/cairo, preserving GTK isolation and the exact distribution version metadata required by PyInstaller's hook.
+- verified: Inspected the repository hash-pinned PyInstaller 6.22.3 Linux wheel without installing it; hook-gi reads importlib metadata for PyGObject. Workflow regression proves the selected metadata is discoverable and unrelated packages stay excluded; actionlint and whitespace checks passed.
+- observed: Run 37989900925 at 27915ee: Ubuntu GTK import passed but build hook failed without metadata; Windows package qualification plus update and rollback journeys passed after the timing fix. Fresh full native qualification remains required.
+
+## AC-20261010-SEGMENT1-INTERRUPTION-QUALIFIER — Recognise a safely discarded interrupted setup
+- date: 2026-10-10
+- changed: The interrupted-update qualifier recognises the existing cancelled/discarded terminal states only with the old installed version, matching shipped file manifest and unchanged saved work. Production recovery logic is unchanged.
+- verified: Focused workflow/public/journey regressions 24 passed, including rejection of a wrong version or incomplete restored tree. The isolated GTK metadata regression and four-workflow actionlint passed; fresh native qualification remains required.
+- observed: Run 37989900925 Mac package and all three journeys passed; Windows package, normal update and rollback passed before the interrupted-setup qualifier waited on an unrecognised recovery state.
+
+## AC-20261010-SEGMENT1-UBUNTU-SCRATCH-HOME — Respect the root updater's home boundary in CI
+- date: 2026-10-10
+- changed: Ubuntu journey fixtures live inside the runner user's home, as the real root updater requires. A failed bundle import or update preparation stops that journey promptly; interruption polling also recognises an already-ended attempt. Production filesystem restrictions are unchanged.
+- verified: Focused workflow/public/journey regressions 26 passed, including home placement despite a different system temporary folder and failed prerequisite refusal. Run 37991781158 at b8fbc81: Ubuntu setup 19 seconds, Ubuntu/Windows builds and package qualifiers passed, Mac package and 24 journey checks passed. Remaining native recovery and floor checks are pending.
+
+## AC-20261010-SEGMENT1-RECORDED-HELPER — Target the actual helper and retain diagnostic evidence
+- date: 2026-10-10
+- changed: Interruption qualification kills the helper identified by the update journal's PID, creation time and executable, then waits for death, instead of scanning command-line text. Native app/helper logs and helper status are retained inside report artifacts; user data and signed bundles are excluded.
+- observed: Run 37991781158 Windows package 6/6, normal update and rollback passed; interrupted recovery stayed at installer_running with N+1 installed (journey 22/24). This is not a passing recovery path. The follow-up qualifies an exact recorded-helper kill and preserves diagnostics for any remaining application defect.
+- verified: Focused qualification/workflow regressions 26 passed; native rerun is required.
+
+## AC-20261010-SEGMENT1-BOOTSTRAP-FUSE — Recover before application imports and use rootless storage
+- date: 2026-10-10
+- observed: Run 37995379252 at 5a4a052: Ubuntu package 29/29 and update journeys 25/25; sandbox UDisks authorization failed in the headless session. Windows package 6/6 and journeys 22/24; exact helper death was confirmed, but the partial installation failed to import pydantic_core before recovery (resume_count stayed zero). Mac package/journeys and the oldest macOS runner passed.
+- changed: Packaged startup uses the existing workspace lock and recovery gate before application imports; device profile imports are deferred until needed. Linux prefers the existing FUSE backend, journals the mount before launching it, preserves image/resource/security limits and retains failed cleanup for retry.
+- verified: Fresh-process regression proves a missing application dependency cannot prevent recovery handoff or cause database admission. Desktop suite 254 tests OK (6 skipped); coordinator 1657 tests OK (16 skipped); focused update/path/sandbox checks 134 OK; final startup/FUSE group 37 OK, including interrupted-mount cleanup. Native follow-up remains pending.
+
+## AC-20261010-SEGMENT1-MOUNT-PATHS — Detect escaped paths during sandbox cleanup
+- date: 2026-10-10
+- changed: Decode mountinfo's octal escapes once when matching a mount point or source, preserving detection for data folders containing spaces or literal backslashes.
+- verified: Sandbox suite 23 tests OK, including escaped paths and rejection of recursive decoding; whitespace check clean. A native run at the final source commit remains required.
+
+## AC-20261010-SEGMENT1-SYSTEMD-CONTROLS — Use the transient API's deny-all representation
+- date: 2026-10-10
+- observed: Run 38053285944 at 1bd7afe: Windows package 6/6 and journeys 25/25, including restored N and unchanged work after helper death; Mac package/journeys passed. Ubuntu package 29/29 and journeys 25/25 passed, but systemd rejected literal none before the launcher started. FUSE mount and cleanup worked.
+- changed: Use the systemd-run empty address-family allow-list (manager stores deny-all); explicitly permit only the three Landlock setup syscalls absent from systemd 255's service group, retaining the existing denials. Require actual cancellation/deadline reasons and observed truncated output in qualification. Preserve the normal Mac/Linux native error dialog; partial Windows uses the existing helper message.
+- verified: Inspected upstream systemd v255 serializer, manager setter and syscall groups. Offline coordinator 1659 tests OK (16 skipped), desktop 255 OK (6 skipped), scripts 82 OK; final focused sandbox/startup/qualification group 41 OK. Native correction remains pending.
+
+## AC-20261010-SEGMENT1-BOUNDED-OUTPUT — Retain the sandbox closing record after large output
+- date: 2026-10-10
+- observed: Run 38054409695 at 34e8761: Windows package 6/6 and journeys 25/25 passed; Mac lane passed. Ubuntu package 29/29 and journeys 25/25 passed; sandbox 6/7 passed, with only large output losing the closing report.
+- changed: Parse unittest's summary from a bounded ending tail, emit capped output before the small closing JSON and preserve the parent's existing nonce, output limit and pass controls.
+- verified: Focused sandbox/qualification group 26 tests OK, including a two-million-byte output test and actual launcher-to-parent protocol. Coordinator suite 1660 tests OK (16 skipped). Native checks remain pending.
+
+## AC-20261010-SEGMENT1-NATIVE-PASS — Complete source/native qualification through CP-A
+- date: 2026-10-10
+- verified: Run 38055591709 completed success at d109b49f6c9bdc4b72bda9f347c6481442f96984. Windows Server 2025: shared units 88 OK (5 skipped), native 5 OK, package 6/6, journeys 25/25. Ubuntu 24.04: shared units 88 OK (2 skipped), Linux 84 OK (1 skipped), package 29/29, journeys 25/25, sandbox 7/7 with real confinement, cancellation, deadline, capped output and clean teardown. macOS 15: units 88 OK (2 skipped), package 6/6, journeys 24/24; macOS 14.8.9: floor launch, merged package 7/7 and journeys 24/24 passed on the same package bytes. Every recovery resumed the helper and preserved saved work; Windows restored N, the other lanes completed N+1.
+- changed: Record the final qualified source commit and results in docs/evaluation.md and tasks.md; this closing update changes only those documents and this ledger. Repairs were pushed via aditya with plain Git messages and no agent trailers.
+- remaining: CP-A production Beta keys/root and affected checks, member-to-dev-to-main, exact public release-byte qualification, CP-B publication and physical-device walkthroughs. No production keys, user app, model runtime or published feed changed; throwaway .901/.902 packages remain never publishable.
+
+<a id="ac-20261010-beta-public-root"></a>
+## AC-20261010-BETA-PUBLIC-ROOT — Prepare the production public trust root
+- date: 2026-10-10
+- changed: Copy the user's public root byte for byte to desktop/updates/beta-root.json; update the previously approved results records in tasks.md and docs/evaluation.md to distinguish verified public metadata from user-reported encrypted cloud backup.
+- verified: Public root SHA-256 178eebae99d1cf1d621fbacf34ed521b8ec98097f3c46c50634d6518fa567101; valid self-signature, version 1, four distinct role keys with threshold 1, consistent snapshots, unexpired through 2027-10-10T14:39:33+00:00. Existing desktop.build.update_files accepted the root and HTTPS feed. No private-key contents or passphrases accessed during this preparation.
+- remaining: Commit/push and affected package qualification; reconcile docs/releases.md's offline custody with the user's encrypted iCloud/Apple Passwords decision under explicit permission; member-to-dev-to-main owner merges, website owner settings/secrets, exact release-byte qualification and CP-B approval/publication. Cloud upload/recovery remains user-reported, not independently checked. No packages built or publication performed.
+
+<a id="ac-20261010-refinix-cleanup-key-protection"></a>
+## AC-20261010-REFINIX-CLEANUP-KEY-PROTECTION — Clean generated work and protect release keys
+- date: 2026-10-10
+- changed: Remove 309 generated source bytecode files, 24 superseded Segment 1 logs and one completed upstream-inspection wheel: 334 files, 12,068,695 bytes. Exact allow-listed inventory/results remain in /private/tmp/refinix-cleanup-20261010.json. Retain final passing logs, release environment, installers/recovery proof, private archives, apps/data/models and all key copies; no unrelated files removed.
+- protected: Metadata-only operations set the original production folder and the two renamed local/iCloud folders to 0700, each keys folder to 0700, and all four role PEMs per copy to 0600; hide only the keys folders in Finder. No private-key contents or passphrases accessed. Same-user agents can still read encrypted files; Finder hiding/permissions are not a boundary against those agents.
+- changed_source: deploy/distribution/workflows/advance-feed.yml and refresh-feed.yml create unique owner-only temporary key directories under umask 077 and remove them on shell exit, including failed signing. Add a dummy-key lifecycle regression in scripts/test_workflows.py.
+- verified: Six TestFeedWorkflows checks passed, including both templates' real shell success/failure cleanup and directory/file permissions using synthetic keys; bash syntax checks passed for all seven template run blocks; git diff --check passed. Scan of 379 current tracked source files found no private-key markers or common GitHub/provider token patterns; local-history secret-file-name check returned none. Current public aditya/source and main/website trees contain no matched secret-file paths. Source Actions API reports zero repository secrets and no environments.
+- limitations: Website secret settings returned HTTP 403; no owner settings changed, no Git writes, no push/deployment. Filename/pattern checks do not establish an exhaustive secret audit of every historical blob or log. Backup recovery and iCloud upload completion remain unverified; custody documentation and release integration approval remain open.
+
+<a id="ac-20261010-beta-root-integration"></a>
+## AC-20261010-BETA-ROOT-INTEGRATION — Integrate the approved production public root and custody record
+- date: 2026-10-10
+- changed: Add desktop/updates/beta-root.json and record the user-approved encrypted local/iCloud PEM custody with Apple Passwords passphrases in docs/releases.md; update tasks.md and docs/evaluation.md to remove the resolved custody-approval checkpoint. Record shared Apple-account dependency and distinguish the exception from docs/security.md's offline default.
+- scope: Commit only the public root, those three approved documentation/evidence files and the two ledgers through aditya with a plain message. Preserve the three uncommitted temporary-key workflow/test changes for separate Git scope.
+- verified: Current public-root signature, expiry, four distinct threshold-1 roles and public-only key fields passed; SHA-256 remains 178eebae99d1cf1d621fbacf34ed521b8ec98097f3c46c50634d6518fa567101. Existing Beta build-input validator passed. Staged inventory contains only the six approved paths, matches their working bytes and has no private-key/common-token pattern matches; staged diff whitespace check passed.
+- remaining: Owner member-to-dev-to-main merges, website owner setup, exact production-root package qualification and CP-B publication approval. No private-key contents/passphrases accessed; no production package, live feed or installed user app changed. Push/PR result is reported after it is observed.
+
+<a id="ac-20261010-main-ci-repair"></a>
+## AC-20261010-MAIN-CI-REPAIR — Install the missing release-test dependencies
+- date: 2026-10-10
+- observed: Release PR #70 Main CI run 38065959834 failed with 28 errors, all ModuleNotFoundError for cryptography in Beta update tests generating throwaway keys. PR Flow Guard passed. Main CI omitted scripts/requirements-release.lock, which qualification and release workflows already install.
+- changed: Add the existing hash-pinned release-tooling installation before Python checks in .github/workflows/ci.yml. No package dependency, runtime, signing key, workflow trigger or security boundary changes. Preserve the separate temporary-key workflow/test repairs outside this CI repair commit.
+- verified: All 54 focused update/workflow/dependency checks passed. The full local CI-equivalent run passed: contracts 21, coordinator 1660 (16 skipped), worker 217, deploy/k3s 140, fixtures/c07 32, scripts 83, and frontend 248. An initial sandboxed coordinator attempt could not bind loopback fixtures; the authorised rerun with fixture access passed. git diff --check passed.
+- limitations: Local Python 3.14.6 and Node 26.7.0 differ from CI's Python 3.13 and Node 24; hosted Main CI must run on the updated dev-to-main PR after the user merges the repair into dev. Local scripts checks include the preserved uncommitted temporary-key regression. Owner merges, production package qualification and publication remain pending.

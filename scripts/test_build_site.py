@@ -1,4 +1,5 @@
 """Offline checks for the public website export boundary."""
+import json
 import shutil
 import subprocess
 import tempfile
@@ -7,6 +8,7 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).with_name("build-site.sh")
+REPOSITORY = "https://github.com/prachi-satbhai0741/Refinix"
 
 
 class SiteExportTests(unittest.TestCase):
@@ -65,6 +67,138 @@ class SiteExportTests(unittest.TestCase):
             '<img src="assets/../../../private.txt">', encoding="utf-8")
         self.assertNotEqual(self.export().returncode, 0)
         self.assertFalse(self.output.exists())
+
+    def release(self, **changes):
+        version = "0.1.0-preview.1"
+        folder = f"{REPOSITORY}/releases/download/v{version}/"
+        deb = "refinix_0.1.0-preview.1_amd64.deb"
+        data = {"version": version, "maturity": "preview", "public_build": 1,
+                "release_page": f"{REPOSITORY}/releases/tag/v{version}",
+                "checksums": folder + "SHA256SUMS", "device_testing": "pending",
+                "lanes": {
+                    "macos-arm64": {"platform": "macOS", "architecture": "Apple silicon",
+                                    "status": "unavailable",
+                                    "reason": "not yet signed: <Developer ID>", "files": []},
+                    "linux-x64": {"platform": "Ubuntu", "architecture": "x86_64 (amd64)",
+                                  "status": "available", "reason": None, "files": [{
+                                      "format": "deb", "label": ".deb — App Center",
+                                      "name": deb, "size": 151_000_000, "sha256": "a" * 64,
+                                      "url": folder + deb}]}}}
+        data.update(changes)
+        path = self.root / "release.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path, data
+
+    def export_with(self, release):
+        (self.source / "site.html").write_text(
+            '<main><!-- refinix-downloads --><p>none yet</p><!-- /refinix-downloads --></main>',
+            encoding="utf-8")
+        return subprocess.run(["sh", str(self.script), str(self.output), str(release)],
+                              cwd=self.root, capture_output=True, text=True)
+
+    def test_release_cards_offer_only_available_files_with_their_sha256(self):
+        path, _data = self.release()
+        result = self.export_with(path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        page = (self.output / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("none yet", page)
+        self.assertIn(f'href="{REPOSITORY}/releases/download/v0.1.0-preview.1/'
+                      'refinix_0.1.0-preview.1_amd64.deb"', page)
+        self.assertIn("SHA-256 " + "a" * 64, page)
+        self.assertIn("Tester preview — device testing pending", page)
+        # The unsigned platform keeps a card with its reason, escaped, and no link.
+        self.assertIn("Unavailable: not yet signed: &lt;Developer ID&gt;", page)
+        self.assertEqual(page.count("releases/download/"), 2)   # the .deb and SHA256SUMS
+        self.assertEqual((self.output / "release.json").read_bytes(), path.read_bytes())
+
+    def beta_release(self):
+        version = "0.1.0-beta.1"
+        folder = f"{REPOSITORY}/releases/download/v{version}/"
+
+        def item(fmt, name, minimum, first=True):
+            return {"format": fmt, "label": fmt.upper(), "name": name, "size": 200_000_000,
+                    "sha256": "b" * 64, "url": folder + name, "minimum_os": minimum,
+                    "first_install": first}
+        lanes = {
+            "macos-arm64": {"platform": "macOS", "architecture": "Apple silicon",
+                            "status": "available", "signing": "unsigned",
+                            "os_warning": "Not signed by Apple <b>. Choose Open Anyway.",
+                            "device_testing": "pending", "files": [
+                                item("dmg", "Refinix-0.1.0-beta.1-macos-arm64.dmg", "macOS 14.0"),
+                                item("zip", "Refinix-0.1.0-beta.1-macos-arm64.zip",
+                                     "macOS 14.0", first=False)]},
+            "windows-x64": {"platform": "Windows", "architecture": "x64",
+                            "status": "available", "signing": "unsigned",
+                            "os_warning": "SmartScreen may warn; Smart App Control blocks it.",
+                            "device_testing": "pending", "files": [
+                                item("exe", "Refinix-0.1.0-beta.1-windows-x64-setup.exe",
+                                     "Windows 11 (10.0.22000)")]},
+            "linux-x64": {"platform": "Ubuntu", "architecture": "x86_64 (amd64)",
+                          "status": "available", "signing": "unsigned",
+                          "os_warning": "Check the SHA-256.", "device_testing": "pending",
+                          "files": [item("deb", "refinix_0.1.0-beta.1_amd64.deb",
+                                         "Ubuntu 24.04 or later")]}}
+        data = {"version": version, "name": "Refinix Beta 0.1", "maturity": "beta",
+                "public_build": 8, "release_page": f"{REPOSITORY}/releases/tag/v{version}",
+                "checksums": folder + "SHA256SUMS", "device_testing": "pending",
+                "lanes": lanes}
+        path = self.root / "release.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path, data
+
+    def test_beta_cards_show_minimum_os_warning_and_pending_device_testing(self):
+        path, _data = self.beta_release()
+        result = self.export_with(path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        page = (self.output / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Refinix Beta 0.1", page)
+        self.assertEqual(page.count("Beta — testing on people&#x27;s own computers pending")
+                         + page.count("Beta — testing on people's own computers pending"), 3)
+        self.assertIn("Needs macOS 14.0", page)
+        self.assertIn("Needs Windows 11 (10.0.22000)", page)
+        self.assertIn("Not signed by Apple &lt;b&gt;. Choose Open Anyway.", page)
+        self.assertIn("Smart App Control", page)
+        # The ZIP is the update payload: on the release page, not a website button.
+        self.assertNotIn("macos-arm64.zip", page)
+        for name in ("Refinix-0.1.0-beta.1-macos-arm64.dmg",
+                     "Refinix-0.1.0-beta.1-windows-x64-setup.exe",
+                     "refinix_0.1.0-beta.1_amd64.deb"):
+            self.assertIn(f'href="{REPOSITORY}/releases/download/v0.1.0-beta.1/{name}"', page)
+        # The warning comes before the button it is about.
+        self.assertLess(page.index("Open Anyway"), page.index("macos-arm64.dmg"))
+        self.assertNotIn("tester preview", page.lower())
+
+    def test_a_name_with_characters_an_asset_may_lose_stops_the_export(self):
+        path, data = self.beta_release()
+        entry = data["lanes"]["linux-x64"]["files"][0]
+        entry["name"] = "refinix_0.1.0~2.1_amd64.deb"
+        entry["url"] = (f"{REPOSITORY}/releases/download/v0.1.0-beta.1/"
+                        "refinix_0.1.0~2.1_amd64.deb")
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertNotEqual(self.export_with(path).returncode, 0)
+        self.assertFalse(self.output.exists())
+
+    def test_a_file_from_anywhere_else_stops_the_export(self):
+        path, data = self.release()
+        data["lanes"]["linux-x64"]["files"][0]["url"] = "https://example.invalid/refinix.deb"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertNotEqual(self.export_with(path).returncode, 0)
+        self.assertFalse(self.output.exists())
+
+    def test_a_release_with_nothing_available_stops_the_export(self):
+        path, data = self.release()
+        data["lanes"]["linux-x64"]["status"] = "unavailable"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertNotEqual(self.export_with(path).returncode, 0)
+        self.assertFalse(self.output.exists())
+
+    def test_the_real_page_has_one_download_section_and_no_countdown(self):
+        page = (Path(__file__).resolve().parents[1] / "frontend/design/site.html").read_text(
+            encoding="utf-8")
+        self.assertEqual(page.count("<!-- refinix-downloads -->"), 1)
+        self.assertEqual(page.count("<!-- /refinix-downloads -->"), 1)
+        self.assertNotIn("countdown", page.lower())
+        self.assertNotIn("private for now", page)
 
     def test_existing_destination_is_preserved(self):
         self.output.mkdir()

@@ -341,12 +341,24 @@ function pushEvent(ev) {
   const li = document.createElement('li');
   const kind = document.createElement('span');
   kind.className = 'kind';
-  kind.textContent = ev.data.kind === 'job.state' ? 'job' : 'attempt';
   const time = document.createElement('time');
   time.textContent = ev.occurred_at.slice(11, 19);
-  li.append(kind,
-            document.createTextNode(` ${ev.data.previous || 'start'} → ${ev.data.current}`),
-            time);
+  /* Only state changes read as "previous → current". Anything else — a saved
+     document, or a kind this page does not know yet — is named for what it
+     is, never shown as a transition to "undefined". */
+  let line;
+  if (ev.data.kind === 'job.state' || ev.data.kind === 'attempt.state') {
+    kind.textContent = ev.data.kind === 'job.state' ? 'job' : 'attempt';
+    line = ` ${ev.data.previous || 'start'} → ${ev.data.current}`;
+  } else if (ev.data.kind === 'artifact.created') {
+    kind.textContent = 'document';
+    const media = (ev.data.artifact && ev.data.artifact.media_type) || '';
+    line = media ? ` saved (${media})` : ' saved';
+  } else {
+    kind.textContent = 'event';
+    line = ` ${String(ev.data.kind || 'unknown')}`;
+  }
+  li.append(kind, document.createTextNode(line), time);
   ul.prepend(li);
   while (ul.children.length > 24) ul.lastElementChild.remove();
 }
@@ -573,7 +585,10 @@ function openContextPopover() {
   box.style.top = `${Math.round(Math.max(8, rect.top - height - 8))}px`;
   contextPopover = box;
   meter.setAttribute('aria-expanded', 'true');
-  box.querySelector('p').setAttribute('tabindex', '-1');
+  // Focus moves into the details so a keyboard or screen-reader user lands on
+  // them; Escape or the meter returns it.
+  headline.setAttribute('tabindex', '-1');
+  headline.focus();
 }
 
 /* ---- capabilities, skills and attachments ---------------------------- */
@@ -728,7 +743,22 @@ function refreshSend() {
  * flipping the switch afterwards cannot change work already running. */
 let models = [];
 let modelSelections = {};
+// What each workflow would use for a request right now, and why (status
+// `model_choices`). Auto is the default; a stored key is a pinned model.
+let modelChoices = {};
 let modelPopover = null;
+
+/* A model is named by its origin-qualified key ("ollama|qwen3.5:4b-q4_K_M",
+ * "llama.cpp|gemma-3-4b-it-q4_k_m"): one family can be installed in both
+ * runtimes, and the bare name cannot say which. Older rows carry only an id. */
+const modelKey = (model) => (model && (model.key || model.id)) || null;
+const modelLabel = (model) => (model && (model.display_name || model.id)) || '';
+const isAuto = (scope) => !modelSelections[scope] || modelSelections[scope] === 'auto';
+
+function chosenKey(scope = modelScope()) {
+  if (!isAuto(scope)) return modelSelections[scope];
+  return modelChoices[scope]?.key || null;
+}
 
 function modelScope() {
   if ($('code-composer')) return 'code';
@@ -738,22 +768,35 @@ function modelScope() {
 }
 
 function activeModel(scope = modelScope()) {
-  return models.find((model) => model.id === modelSelections[scope]) || null;
+  const key = chosenKey(scope);
+  return models.find((model) => modelKey(model) === key || model.id === key) || null;
 }
 
 function renderModelPill() {
   const pill = $('model-pill');
   if (!pill) return;
   const model = activeModel();
-  pill.hidden = !model;
-  if (!model) return;
-  $('model-name').textContent = model.id;
+  const auto = isAuto(modelScope());
+  pill.hidden = !model && !(auto && modelScope());
+  if (pill.hidden) return;
+  const name = model ? modelLabel(model) : 'no model yet';
+  $('model-name').textContent = auto ? `Auto · ${name}` : name;
   const mark = $('model-reasoning');
-  mark.hidden = !model.reasoning;
+  mark.hidden = !model?.reasoning;
+  if (!model) {
+    pill.setAttribute?.('aria-label',
+                        'Model: Auto, no installed model can run this yet. Change it.');
+    pill.title = modelChoices[modelScope()]?.refusal || '';
+    return;
+  }
   pill.setAttribute('aria-label', model.reasoning
-    ? `Model ${model.id}, reasoning on. Change it.`
-    : `Model ${model.id}, reasoning off. Change it.`);
-  pill.title = model.eligible_scopes?.includes(modelScope()) ? ''
+    ? `Model ${auto ? 'Auto, now ' : ''}${modelLabel(model)}, reasoning on. Change it.`
+    : `Model ${auto ? 'Auto, now ' : ''}${modelLabel(model)}, reasoning off. Change it.`);
+  // A document skill running on the Chat-backed route is admitted under the
+  // model's Chat profile, and the capability row says so with `model_scope`.
+  const scope = (modelScope() === 'documents.generate'
+    && selectedSkill()?.model_scope) || modelScope();
+  pill.title = model.eligible_scopes?.includes(scope) ? ''
     : 'This model is not available for this workflow.';
 }
 
@@ -772,7 +815,7 @@ function openModelPopover() {
   closeModelPopover(false);
   const model = activeModel();
   const pill = $('model-pill');
-  if (!model || !pill) return;
+  if (!pill || (!model && !isAuto(modelScope()))) return;
 
   const box = document.createElement('div');
   box.className = 'model-popover';
@@ -788,7 +831,8 @@ function openModelPopover() {
                      modelScope() === 'code' ? 'Code model'
                      : modelScope() === 'chat' ? 'Chat model' : 'Document model');
   if (modelScope() === 'documents.generate') {
-    appendModelChoices(box, 'documents.ocr', 'Document OCR model');
+    // Reading scanned pages is Beta: its results are evidence, never an allow-list.
+    appendModelChoices(box, 'documents.ocr', 'Document OCR model (Beta)');
   }
   if (selectedSkill()?.id === 'write-document') {
     appendDocumentChoices(box);
@@ -807,21 +851,24 @@ function openModelPopover() {
   toggle.className = 'mp-switch';
   toggle.setAttribute('role', 'switch');
   toggle.setAttribute('aria-labelledby', 'mp-reasoning-label');
-  toggle.setAttribute('aria-checked', String(!!model.reasoning));
-  toggle.disabled = !model.eligible_scopes?.includes(modelScope());
+  toggle.setAttribute('aria-checked', String(!!model?.reasoning));
+  toggle.disabled = !model?.eligible_scopes?.includes(modelScope());
   const state = document.createElement('span');
   state.className = 'mp-state';
-  state.textContent = model.reasoning ? 'On' : 'Off';
+  state.textContent = model?.reasoning ? 'On' : 'Off';
   toggle.append(state);
   row.append(label, toggle);
   box.append(row);
 
   const note = document.createElement('p');
   note.className = 'mp-note';
-  note.textContent = model.eligible_scopes?.includes(modelScope())
+  note.textContent = model?.eligible_scopes?.includes(modelScope())
     ? 'On lets the model work through the problem first. Slower, and it can use '
-      + 'the whole reply budget before answering.'
-    : 'This model is not installed on this computer, so reasoning cannot change.';
+      + 'the whole reply budget before answering. Models without a reasoning '
+      + 'switch run without one.'
+    : model ? 'This model is not available for this workflow, so reasoning cannot change.'
+      : 'No installed model can run this workflow yet. Settings → Models '
+        + 'lists what can be downloaded or imported.';
   box.append(note);
 
   toggle.addEventListener('click', async () => {
@@ -830,7 +877,7 @@ function openModelPopover() {
     try {
       const saved = await api('/v1/model/reasoning', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: model.id, enabled: next }),
+        body: JSON.stringify({ model: modelKey(model), enabled: next }),
       });
       model.reasoning = saved.reasoning;
       toggle.setAttribute('aria-checked', String(saved.reasoning));
@@ -839,7 +886,7 @@ function openModelPopover() {
     } catch (err) {
       notice('That setting could not be saved.', 'error', err.message);
     } finally {
-      toggle.disabled = !model.eligible_scopes?.includes(modelScope());
+      toggle.disabled = !model?.eligible_scopes?.includes(modelScope());
     }
   });
 
@@ -1038,38 +1085,83 @@ function appendModelChoices(box, scope, labelText) {
   label.textContent = labelText;
   group.append(label);
 
+  // Auto: Refinix chooses an installed model for each request from what it
+  // needs. The tag says what Auto would use now, or why nothing can run.
   const auto = document.createElement('button');
   auto.type = 'button';
   auto.className = 'mp-model';
   auto.setAttribute('role', 'radio');
-  auto.setAttribute('aria-checked', 'false');
-  appendModelChoiceParts(auto, false, 'Auto model', 'after internal hackathon');
-  auto.disabled = true;
+  const autoSelected = isAuto(scope);
+  auto.dataset.selected = String(autoSelected);
+  auto.setAttribute('aria-checked', String(autoSelected));
+  const now = models.find((m) => modelKey(m) === modelChoices[scope]?.key);
+  appendModelChoiceParts(auto, autoSelected, 'Auto',
+    now ? `now ${modelLabel(now)}` : 'no installed model fits yet');
+  auto.title = modelChoices[scope]?.reason || modelChoices[scope]?.refusal || '';
+  auto.onclick = async () => {
+    auto.disabled = true;
+    try {
+      await api('/v1/model/select', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope, model: 'auto' }),
+      });
+      await loadStatus();
+      closeModelPopover(true);
+    } catch (err) {
+      notice('Auto could not be chosen.', 'error', err.message);
+      auto.disabled = false;
+    }
+  };
   group.append(auto);
 
   for (const candidate of models) {
+    // Only models on this computer (or a paired worker) are choices; a model
+    // offered for download is chosen in Settings → Models instead.
+    if (!candidate.installed) continue;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'mp-model';
-    const selected = modelSelections[scope] === candidate.id;
+    const selected = !isAuto(scope) && modelSelections[scope] === modelKey(candidate);
     const unavailable = !candidate.eligible_scopes?.includes(scope);
     button.dataset.selected = String(selected);
     button.setAttribute('role', 'radio');
     button.setAttribute('aria-checked', String(selected));
-    const location = locationLabel(candidate.locations);
-    appendModelChoiceParts(button, selected, candidate.id,
-      candidate.installed && unavailable
-        ? `${location} — unavailable for this workflow` : location);
+    const location = locationLabel(candidate.locations)
+      + (candidate.runtime_label ? ` · ${candidate.runtime_label}` : '');
+    const why = candidate.locality === 'remote' ? 'runs on another host'
+      : candidate.locality === 'unknown' ? 'locality not confirmed'
+      : !candidate.enabled ? 'switched off' : 'unavailable for this workflow';
+    // A model Auto would not use is still the person's to choose; say why
+    // before they choose it, not only in the record afterwards.
+    const caution = candidate.auto_excluded?.[scope]
+      ? `Auto does not use it for ${SCOPE_WORDS[scope] || scope}: its check here did not `
+        + 'finish within the check limit'
+      : candidate.limited_to?.length
+        ? `Documented for ${candidate.limited_to.map((r) => STRENGTH_WORDS[r] || r).join(', ')} only`
+        : null;
+    appendModelChoiceParts(button, selected, modelLabel(candidate),
+      unavailable ? `${location} — ${why}` : location);
+    if (caution && !unavailable) {
+      const note = document.createElement('span');
+      note.className = 'mp-model-caution';
+      note.textContent = caution;
+      button.append(note);
+      button.title = caution;
+    }
     button.disabled = unavailable;
     button.onclick = async () => {
       button.disabled = true;
       try {
         await api('/v1/model/select', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope, model: candidate.id }),
+          body: JSON.stringify({ scope, model: modelKey(candidate) }),
         });
         await loadStatus();
         closeModelPopover(true);
+        if (caution) {
+          notice(`Chosen: ${modelLabel(candidate)}`, 'error',
+                 `${caution}. Its answers here may not be useful. Choose Auto to go back.`);
+        }
       } catch (err) {
         notice('That model could not be selected.', 'error', err.message);
         button.disabled = false;
@@ -2371,27 +2463,48 @@ function proposalCard(proposal) {
     const validation = codeState?.validation;
     const passed = !!(validation?.observed && validation?.passed
       && validation.patch_sha256 === proposal.digest);
+    const sandbox = codeState?.local_sandbox;
+    const localPassed = local && !!validation?.matches;
+    const localFailed = local && validation && !validation.matches;
     const action = document.createElement('button');
     action.className = 'btn btn-primary';
     // A local change is applied after review here; a distributed one still
-    // has to come back from the sandbox first. One button, two honest labels.
-    action.textContent = local ? 'Accept and apply'
+    // has to come back from the sandbox first. After a local sandbox run the
+    // label says which Apply this is, and a failed run is never applied by
+    // the ordinary button.
+    action.textContent = localPassed ? 'Apply (sandbox passed)'
+      : localFailed ? 'Apply without the sandbox…'
+      : local ? 'Accept and apply'
       : passed ? 'Apply this change' : 'Validate in sandbox';
-    action.onclick = () => (local || passed)
-      ? applyProposal(proposal.proposal_id, null)
-      : validateProposal(proposal.proposal_id);
+    action.onclick = () => {
+      if (localFailed) return applyAfterFailedValidation(proposal, validation);
+      if (localPassed) return applyProposal(proposal.proposal_id, null, 'sandbox_validated');
+      return (local || passed) ? applyProposal(proposal.proposal_id, null)
+        : validateProposal(proposal.proposal_id);
+    };
     actions.append(action);
+    if (local && sandbox?.available && !validation) {
+      const check = document.createElement('button');
+      check.className = 'btn';
+      check.textContent = sandbox.qualification === 'provisional'
+        ? 'Validate in sandbox (provisional)' : 'Validate in sandbox';
+      check.title = sandbox.detail || '';
+      check.onclick = () => validateProposal(proposal.proposal_id);
+      actions.append(check);
+    }
     const reject = document.createElement('button');
     reject.className = 'btn';
     reject.textContent = 'Reject';
     reject.onclick = () => rejectProposal(proposal.proposal_id);
     actions.append(reject);
-    if (validation && !local) {
+    if (validation) {
       const result = document.createElement('span');
       result.className = 'lbl';
-      result.textContent = passed
-        ? `Sandbox passed ${validation.tests_run} test(s).`
-        : `Sandbox did not pass${validation.detail ? `: ${validation.detail}` : '.'}`;
+      const where = local ? `This computer's sandbox (${validation.pod?.qualification
+        || 'provisional'})` : 'Sandbox';
+      result.textContent = (local ? localPassed : passed)
+        ? `${where} passed ${validation.tests_run} test(s).`
+        : `${where} did not pass${validation.detail ? `: ${validation.detail}` : '.'}`;
       actions.append(result);
     }
     card.append(actions);
@@ -2737,13 +2850,14 @@ async function proposeChange(approvalId) {
   }
 }
 
-async function applyProposal(proposalId, approvalId) {
+async function applyProposal(proposalId, approvalId, mode) {
   if (!proposalId || !codeState?.active) return;
   try {
     const body = await codeApi('/v1/code/apply', {
       repo_id: codeState.active, proposal_id: proposalId,
       approval_id: approvalId || undefined,
       conversation_id: codeConversation,
+      mode: mode || undefined,
     });
     if (body.needs_approval) {
       notice('Refinix needs your approval before writing.', 'warn',
@@ -2765,6 +2879,17 @@ async function applyProposal(proposalId, approvalId) {
   // Re-read from disk, so the centre column shows the file rather than the
   // text that was proposed for it.
   await refreshOpenFile();
+}
+
+/* After a failed sandbox run, applying is its own explicit, recorded choice,
+   and the failure stays attached to the change. */
+async function applyAfterFailedValidation(proposal, validation) {
+  const why = validation.detail || 'the sandbox did not pass this change';
+  const ok = window.confirm('Apply without the sandbox?\n\nThe sandbox did not pass this '
+    + `change: ${why}.\n\nRefinix will still back up every file it replaces, and the `
+    + 'failed result stays recorded with the change.');
+  if (!ok) return;
+  await applyProposal(proposal.proposal_id, null, 'unsandboxed');
 }
 
 async function validateProposal(proposalId) {
@@ -2877,6 +3002,17 @@ let lastStatus = null;
 function renderReadyLine(s) {
   const line = $('ready-line');
   if (!line) return;
+  /* One typed answer from the coordinator: the specific cause and its fix,
+   * never one sentence for several different problems. */
+  if (s.readiness) {
+    line.dataset.state = s.readiness.state === 'ok' ? 'ok'
+      : s.readiness.state === 'failed' ? 'failed' : 'attention';
+    line.textContent = s.readiness.message;
+    line.title = s.readiness.detail || '';
+    line.dataset.code = s.readiness.code;
+    return;
+  }
+  // An older coordinator without typed readiness.
   const reachable = s.runtime.reachable;
   const available = s.model_available ?? s.model_installed;
   if (available && s.model_installed) {
@@ -2914,6 +3050,9 @@ function renderComputerCard(s) {
     ['Where your data is kept', shell.state_folder, 'not reported by the window'],
     ['Conversations saved', Object.values(s.jobs_by_state).reduce((a, b) => a + b, 0) + ' request(s) recorded'],
     ['Repaired when it last started', `${s.repaired_on_start} unfinished request(s)`],
+    // Never "available" in this build: the line names what this computer has
+    // and what is still missing, so a tester sees the real state.
+    ['Code sandbox', s.device?.code_validation?.detail, 'not checked'],
   ]);
   const list = [];
   if (window.pywebview && window.pywebview.api && window.pywebview.api.open_state_folder) {
@@ -2924,10 +3063,102 @@ function renderComputerCard(s) {
   actions($('c-computer-actions'), list);
 }
 
+async function startOllama() {
+  try {
+    await postJson('/v1/runtime/ollama/start', {});
+    notice('Ollama started.', 'ok', 'Refinix stops it when you quit, because it started it.');
+  } catch (err) {
+    notice('Ollama did not start.', 'error', err.message);
+  }
+  await loadStatus().catch(() => {});
+}
+
+function openLink(url) {
+  // The desktop shell opens links in the system browser; a browser tab
+  // opens them itself. Either way the person chose to go there.
+  const bridge = nativeBridge();
+  if (bridge?.open_url) bridge.open_url(url);
+  else if (typeof window.open === 'function') window.open(url, '_blank', 'noopener');
+}
+
+function readinessActions(s) {
+  const action = s.readiness && s.readiness.action;
+  const list = [];
+  if (action && action.kind === 'start_ollama') {
+    list.push({ label: action.label, run: startOllama });
+  } else if (action && action.kind === 'open_url') {
+    list.push({ label: action.label, run: () => openLink(action.url) });
+  } else if (action && action.kind === 'open_settings') {
+    list.push({ label: action.label, run: () => {
+      const card = document.getElementById(action.target || 'models');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else location.href = '/control.html#' + (action.target || 'models');
+    } });
+  } else if (action && action.kind === 'open_setup') {
+    list.push({ label: action.label, run: () => {
+      const card = document.getElementById('setup');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else location.href = '/control.html#setup';
+    } });
+  } else if (action && action.kind === 'reinstall') {
+    list.push({ label: action.label, run: () => notice(
+      'Repair Refinix', 'error',
+      'Install the same or a newer Refinix package from a verified download, '
+      + 'or restore it from the package you installed. Your conversations, '
+      + 'settings and models are kept outside the application and are not '
+      + 'changed by reinstalling.') });
+  }
+  list.push({ label: 'Check again', run: () => loadStatus().catch(() => {}) });
+  return list;
+}
+
+// Names a person recognises, with the runtime that serves each one; the
+// origin-qualified key stays in tooltips and requests, not in sentences.
+function modelWords(s, key) {
+  const row = (s.models || []).find((m) => modelKey(m) === key);
+  if (!row) return key || null;
+  return row.runtime_label ? `${modelLabel(row)} (${row.runtime_label})` : modelLabel(row);
+}
+
+function chatModelWords(s) {
+  const choice = s.model_choices?.chat;
+  const key = choice ? choice.key : s.model_configured;
+  if (!key || choice?.refusal) return null;
+  return `${choice && !choice.pinned ? 'Auto, now ' : ''}${modelWords(s, key)}`;
+}
+
+function installedModelWords(s) {
+  const here = (s.models || []).filter((m) => m.installed
+    && (m.locations || []).includes('this computer'));
+  return here.length ? here.map((m) => modelWords(s, modelKey(m))).join(', ') : null;
+}
+
 function renderEngineCard(s) {
   if (!$('c-engine-facts')) return;
   const r = s.runtime;
   const target = $('c-engine-chip');
+  const engine = s.engine || {};
+  if (engine.mode === 'managed') {
+    const ready = s.readiness || {};
+    chip(target, ready.code === 'ready' ? 'ready'
+      : ready.state === 'failed' ? 'needs repair' : 'needs attention',
+      ready.code === 'ready' ? 'enforced' : ready.state === 'failed' ? 'fault' : 'caution');
+    $('c-engine-lead').textContent = ready.code === 'ready'
+      ? 'Refinix runs its own verified engine on this computer. Updates to other '
+        + 'AI software installed here do not change it.'
+      : `${ready.message || ''} ${ready.detail || ''}`.trim();
+    facts($('c-engine-facts'), [
+      ['Engine', engine.release ? `Refinix engine ${engine.release} (${engine.backend})` : null,
+       'not part of this installation'],
+      ['Integrity', engine.verified === true ? 'verified before every start'
+        : (engine.problems || []).join('; ') || null, 'not verified'],
+      ['Running now', engine.running ? `yes — ${engine.model || 'model loading'}` : 'no; starts on first use'],
+      ['Model for Chat', chatModelWords(s), 'no installed model fits yet'],
+      ['Installed models', installedModelWords(s), 'none yet'],
+    ]);
+    actions($('c-engine-actions'), readinessActions(s));
+    return;
+  }
   const list = [];
   if (!r.reachable) {
     chip(target, 'not answering', 'fault');
@@ -3000,36 +3231,162 @@ const SELFTEST_CHIP = {
 function selftestSummary(model) {
   const runs = Object.values(model.selftests || {})
     .filter((run) => run.state !== 'not_run');
+  // The chip names which workflow the news is about, and says when a result
+  // describes bytes or check settings that are no longer what is installed.
+  const named = (chipValue, list) => {
+    const words = list.map((r) => (SCOPE_WORDS[r.scope] || r.scope || '')
+      + (r.matches_now === false && r.state === 'failed' ? ' (older result)' : ''))
+      .filter(Boolean);
+    return words.length ? [`${chipValue[0]} — ${words.join(', ')}`, chipValue[1]] : chipValue;
+  };
   if (!runs.length) return SELFTEST_CHIP.not_run;
-  if (runs.some((r) => r.state === 'failed')) return SELFTEST_CHIP.failed;
+  const failed = runs.filter((r) => r.state === 'failed');
+  if (failed.length) return named(SELFTEST_CHIP.failed, failed);
   if (runs.some((r) => r.superseded)) return SELFTEST_CHIP.superseded;
-  if (runs.some((r) => r.current)) return SELFTEST_CHIP.passed;
+  const passed = runs.filter((r) => r.current);
+  if (passed.length) return named(SELFTEST_CHIP.passed, passed);
   if (runs.some((r) => r.state === 'passed')) return SELFTEST_CHIP.unconfirmed;
   if (runs.some((r) => r.state === 'unavailable')) return SELFTEST_CHIP.unavailable;
   return SELFTEST_CHIP.not_run;
 }
 
-function modelFactRows(model) {
+/* Why a check failed, in plain words: formatting and wrong answers apart. */
+const FAILURE_WORDS = {
+  empty: 'formatting: the reply was empty',
+  multi_line: 'formatting: answered on more than one line',
+  missing_label: 'formatting: left out the requested label (older check)',
+  incomplete: 'did not finish its answer within the check limit',
+  extra_text: 'formatting: not in the exact form asked for',
+  wrong_verdict: 'wrong answer: the verdict was backwards',
+  wrong_number: 'wrong answer: the wrong number',
+  invalid_output: 'the output could not be used',
+  no_vision: 'it does not accept images here',
+};
+
+/* One line per workflow's check, with its reason and whether it still
+ * describes this model and these settings. */
+function selftestLine(run) {
+  const line = document.createElement('p');
+  line.className = 'selftest-line';
+  const word = SCOPE_WORDS[run.scope] || run.scope;
+  const state = { passed: 'passed', failed: 'failed', not_run: 'not run yet',
+                  unavailable: 'could not run' }[run.state] || run.state;
+  const parts = [`${word} check: ${state}`];
+  if (run.state === 'failed') {
+    parts.push(FAILURE_WORDS[run.failure_kind] || 'reason not recorded (older check)');
+  }
+  if (run.state !== 'not_run') {
+    parts.push(run.matches_now ? 'matches this model and settings now'
+      : run.superseded ? 'older result: the model changed'
+      : run.matches_now === false ? 'older result: the model or check settings changed'
+      : 'not confirmed against what is installed now');
+  }
+  line.textContent = parts.join(' · ') + '.';
+  if (run.state === 'failed' && run.detail) {
+    const why = document.createElement('span');
+    why.className = 'selftest-detail';
+    why.textContent = ` ${run.detail}`;
+    line.append(why);
+  }
+  if (run.reply_excerpt) {
+    const reply = document.createElement('q');
+    reply.className = 'selftest-excerpt';
+    // textContent only: a model's reply is shown as inert text, never markup.
+    reply.textContent = run.reply_excerpt;
+    const label = document.createElement('span');
+    label.textContent = ' Reply: ';
+    line.append(label, reply);
+  }
+  return line;
+}
+
+/* A problem that must stay visible while Details is closed. */
+function modelAlert(model) {
+  const local = model.integrity?.local || {};
+  let text = null;
+  let formattingOnly = false;
+  if (local.state === 'mismatch') {
+    text = 'Its files changed since they were installed, so it is not used.';
+  } else if (model.state === 'cloud') {
+    text = 'Runs on another host through Ollama, so Refinix never sends work to it.';
+  } else if (model.state === 'locality_unknown') {
+    text = 'Whether it runs on this computer could not be confirmed, so nothing is sent to it.';
+  } else {
+    const failed = Object.values(model.selftests || {})
+      .filter((r) => r.state === 'failed' && r.matches_now);
+    if (failed.length) {
+      text = failed.map((r) => `${SCOPE_WORDS[r.scope] || r.scope} check failed — `
+        + (FAILURE_WORDS[r.failure_kind] || 'see Details')).join('; ') + '.';
+      // A reply in the wrong shape is worth knowing, not a fault in the model.
+      formattingOnly = failed.every((r) => FORMATTING_KINDS.has(r.failure_kind));
+    }
+  }
+  if (!text) return null;
+  const alert = document.createElement('span');
+  alert.className = formattingOnly ? 'model-alert model-note' : 'model-alert';
+  alert.textContent = text;
+  return alert;
+}
+
+const FORMATTING_KINDS = new Set(['empty', 'multi_line', 'missing_label', 'extra_text']);
+
+function modelFactRows(model, choices = {}) {
   const p = model.provenance || {};
   const local = model.integrity?.local;
   const worker = model.integrity?.worker;
+  // Refinix's own engine also reports installed files that changed (no
+  // digest is published for them) and files not yet re-read this session.
+  const words = {
+    pending: 'installed sizes match; checked again before it loads',
+    mismatch: 'changed since it was installed, so it is not used',
+  };
   const integrity = [
-    local?.observed ? `this computer: ${local.state}` : null,
+    local?.observed || local?.state === 'mismatch'
+      ? `this computer: ${words[local.state] || local.state}` : null,
     worker?.observed ? `paired worker: ${worker.state}` : null,
   ].filter(Boolean).join('; ');
   return [
     ['Where', model.locations?.length ? model.locations.join(' and ') : null,
      'not installed anywhere Refinix can see'],
+    ...(model.runtime_label ? [['Runs in', model.runtime_label
+      + (model.managed_by === 'Ollama' ? ' (managed by your Ollama)' : ''), null]] : []),
     ['Source', p.source, 'not recorded by Refinix'],
     ['Licence', p.licence, 'not recorded by Refinix'],
     ['Format', p.format, 'not recorded'],
     ['Integrity', integrity, 'not observed'],
     ['Expected manifest', p.manifest_sha256, 'not recorded by Refinix'],
     ['Observed here', model.digests?.local, 'not observed on this computer'],
-    ['Used for', model.selected_for?.length ? model.selected_for.join(', ') : null,
-     'no workflow is set to use it'],
+    ['Used for', usedForWords(model, choices), 'not chosen for any workflow right now'],
     ['Evidence', p.evidence || p.note, 'nothing recorded'],
+    ...(model.evidence && Object.keys(model.evidence).length
+      ? [['Here', evidenceLine(model), null]] : []),
+    ...(model.fit_label ? [['Fit', model.fit_label, null]] : []),
   ];
+}
+
+/* One line per workflow: compatible, checked here, measured, or not usable.
+ * Never stronger than what was observed. */
+const EVIDENCE_WORDS = {
+  compatible: 'compatible, not yet run here', checked_here: 'checked here',
+  measured: 'measured in Refinix', not_usable: 'not usable',
+};
+const SCOPE_WORDS = { chat: 'Chat', code: 'Code', 'documents.generate': 'Documents',
+                      'documents.ocr': 'Page reading (Beta)' };
+// Pinned workflows, then the ones Auto would give this model right now.
+function usedForWords(model, choices) {
+  const pinned = (model.selected_for || []).map((scope) => `${SCOPE_WORDS[scope] || scope} (pinned)`);
+  const auto = Object.entries(choices || {})
+    .filter(([scope, c]) => c && !c.pinned && !c.refusal && c.key === modelKey(model)
+      && !(model.selected_for || []).includes(scope))
+    .map(([scope]) => `${SCOPE_WORDS[scope] || scope} (Auto, right now)`);
+  const all = [...pinned, ...auto];
+  return all.length ? all.join(', ') : null;
+}
+
+function evidenceLine(model) {
+  return Object.entries(model.evidence || {})
+    .map(([scope, label]) => `${SCOPE_WORDS[scope] || scope}: ${EVIDENCE_WORDS[label] || label}`)
+    .join(' · ');
 }
 
 async function setModelEnabled(model, enabled, button) {
@@ -3070,14 +3427,25 @@ async function showRemovalImpact(model, button) {
   }
 }
 
-async function runSelfTest(scope, button) {
+/* "Check Chat" rather than an API scope name. */
+function checkButton(scope, model) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn';
+  button.textContent = `Check ${SCOPE_WORDS[scope] || scope}`;
+  button.onclick = () => runSelfTest(scope, button, model.key || null);
+  return button;
+}
+
+async function runSelfTest(scope, button, model = null) {
   button.disabled = true;
   const original = button.textContent;
   button.textContent = 'Checking…';
   try {
+    // A row's check runs on that row's own model, whatever Auto would pick.
     const { selftest } = await api('/v1/model/selftest', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope }),
+      body: JSON.stringify(model ? { scope, model } : { scope }),
     });
     notice(selftest.state === 'passed' ? 'Self-test passed.'
       : selftest.state === 'failed' ? 'Self-test failed.'
@@ -3124,7 +3492,8 @@ function renderModelsCard(s) {
     const name = document.createElement('span');
     const id = document.createElement('span');
     id.className = 'model-id';
-    id.textContent = model.id;
+    id.textContent = modelLabel(model);
+    id.title = model.id;
     const where = document.createElement('span');
     where.className = 'model-where';
     // Where it is, not what state it is in: the chip beside it already says
@@ -3132,8 +3501,17 @@ function renderModelsCard(s) {
     where.textContent = (model.locations?.length
       ? model.locations.join(' and ')
       : 'not installed on this computer')
+      + (model.runtime_label && model.installed ? ` · ${model.runtime_label}` : '')
+      + (model.state === 'cloud' ? ' — runs on another host, not used' : '')
       + (model.enabled ? '' : ' — switched off for new work');
     name.append(id, where);
+    const roles = document.createElement('span');
+    roles.className = 'model-roles';
+    roles.textContent = [model.installed ? modelRoleWords(model) : null, model.fit_label]
+      .filter(Boolean).join(' · ');
+    name.append(roles);
+    const alert = modelAlert(model);
+    if (alert) name.append(alert);
     const badge = document.createElement('span');
     const [chipText, chipKind] = MODEL_STATE_CHIP[model.state]
       || MODEL_STATE_CHIP.unavailable;
@@ -3141,15 +3519,25 @@ function renderModelsCard(s) {
     badge.textContent = model.enabled ? chipText : 'switched off';
     head.append(name, badge);
 
+    // Provenance, hashes, runtime and every check: one press away, never
+    // removed. A native <details> is keyboard operable and reports its open
+    // state to assistive technology by itself.
+    const details = document.createElement('details');
+    details.className = 'model-details';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Details';
     const dl = document.createElement('dl');
     dl.className = 'model-facts';
-    for (const [key, value, fallback] of modelFactRows(model)) {
+    for (const [key, value, fallback] of modelFactRows(model, s.model_choices)) {
       const row = document.createElement('div');
       const dt = document.createElement('dt');
       dt.textContent = key;
       row.append(dt, cell(value, fallback));
       dl.append(row);
     }
+    const checks = document.createElement('div');
+    checks.className = 'selftest-rows';
+    details.append(summary, dl, checks);
 
     const row = document.createElement('div');
     row.className = 'model-actions';
@@ -3159,48 +3547,1169 @@ function renderModelsCard(s) {
     test.textContent = testText;
     row.append(test);
 
-    if (model.setup?.command) {
-      const code = document.createElement('p');
-      code.className = 'setup-command';
-      code.textContent = model.setup.command;
-      row.append(code);
+    if (model.setup?.kind === 'command') {
+      // Refinix gives no terminal steps. An Ollama model is installed with
+      // Ollama itself; Refinix uses it once it is there.
+      const note = document.createElement('p');
+      note.className = 'fit-note';
+      note.textContent = 'Available through Ollama: once Ollama has it, Refinix '
+        + 'uses it without copying it.';
+      row.append(note);
     }
-    for (const scope of model.selected_for || []) {
-      if (!(s.selftest_scopes || []).includes(scope)) continue;
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'btn';
-      button.textContent = `Self-test ${scope}`;
-      button.onclick = () => runSelfTest(scope, button);
-      row.append(button);
+    // Refinix's own engine: download or import only when the person asks,
+    // and show a download or import that is running or just ended.
+    const operation = (s.provisioning || {})[model.id];
+    if (operation) row.append(provisioningLine(model.id, operation));
+    if (model.setup?.kind === 'download' && operation?.state !== 'running') {
+      const download = document.createElement('button');
+      download.type = 'button';
+      download.className = 'btn';
+      download.textContent = `Download (${gib(model.setup.download_bytes)} GB)`;
+      download.onclick = () => downloadModel(model.id, download);
+      row.append(download);
+      if (nativeBridge()?.choose_model_files) {
+        const importer = document.createElement('button');
+        importer.type = 'button';
+        importer.className = 'btn';
+        importer.textContent = 'Import files…';
+        importer.onclick = () => importModel(model.id, importer);
+        row.append(importer);
+      }
     }
-    if (model.installed) {
+    // Checks run on this row's model. With Auto as the default, "the model
+    // selected for a workflow" is no longer the only one worth checking.
+    const checkable = model.installed && model.locality !== 'remote'
+      && (model.eligible_scopes?.length || model.selected_for?.length);
+    const scopes = checkable
+      ? (model.eligible_scopes?.length ? model.eligible_scopes : model.selected_for) : [];
+    for (const run of Object.values(model.selftests || {})) {
+      if (run.state !== 'not_run' || scopes.includes(run.scope)) {
+        const line = selftestLine(run);
+        if (scopes.includes(run.scope) && (s.selftest_scopes || []).includes(run.scope)) {
+          line.append(checkButton(run.scope, model));
+        }
+        checks.append(line);
+      }
+    }
+    for (const scope of scopes) {
+      if (!(s.selftest_scopes || []).includes(scope) || model.selftests?.[scope]) continue;
+      const line = selftestLine({ scope, state: 'not_run' });
+      line.append(checkButton(scope, model));
+      checks.append(line);
+    }
+    if (model.installed && model.state !== 'cloud') {
       const toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.className = 'btn';
       toggle.textContent = model.enabled ? 'Switch off for new work'
                                          : 'Switch back on';
-      toggle.onclick = () => setModelEnabled(model.id, !model.enabled, toggle);
+      toggle.onclick = () => setModelEnabled(modelKey(model), !model.enabled, toggle);
       const impact = document.createElement('button');
       impact.type = 'button';
       impact.className = 'btn';
-      impact.textContent = 'What removing this affects';
-      impact.onclick = () => showRemovalImpact(model.id, impact);
+      const removable = model.removable !== undefined ? model.removable
+        : (s.engine?.mode === 'managed') && !!model.provenance?.known;
+      impact.textContent = removable ? 'Remove…' : 'What removing this affects';
+      impact.onclick = () => (removable ? removeModel(modelKey(model), impact)
+                                        : showRemovalImpact(modelKey(model), impact));
       row.append(toggle, impact);
     }
 
-    li.append(head, dl, row);
+    li.append(head, details, row);
     host.append(li);
   }
 
   const note = $('c-models-note');
   if (note) {
     note.textContent =
-      'Refinix never downloads or removes a model on its own. Switching a '
+      'Refinix never downloads or removes a model on its own: only when you '
+      + 'choose to, after seeing its source, size and checksums. Switching a '
       + 'model off stops it being chosen for new work; it does not delete it, '
-      + 'and nothing you have written or generated is removed with it. A '
-      + 'self-test shows a capability ran once here — it is not a measure of '
-      + 'answer quality.';
+      + 'and nothing you have written or generated is removed with it — not '
+      + 'even when the model itself is removed. A self-test shows a capability '
+      + 'ran once here — it is not a measure of answer quality.';
+  }
+}
+
+const gib = (bytes) => (Number(bytes || 0) / 1024 ** 3).toFixed(1);
+
+/* Settings -> Updates. Nothing here checks on its own: the person presses
+ * Check for updates, and only a signed, verified offer is shown. There is no
+ * Install control in this build, so none is drawn; a verified package's
+ * folder is shown instead. */
+/* How requests pick a model, in one sentence per workflow. */
+function renderModelChoiceNote(s) {
+  const host = $('c-auto-note');
+  if (!host) return;
+  const choices = s.model_choices || {};
+  const parts = Object.entries(SCOPE_WORDS).map(([scope, word]) => {
+    const choice = choices[scope] || {};
+    const pinned = s.model_selections?.[scope] && s.model_selections[scope] !== 'auto';
+    const row = (s.models || []).find((m) => modelKey(m) === choice.key);
+    const name = row ? modelLabel(row) : null;
+    if (choice.refusal) return `${word}: ${pinned ? 'your pinned model cannot run it' : 'no installed model fits yet'}`;
+    return `${word}: ${pinned ? 'pinned to' : 'Auto, now'} ${name || 'a model'}`;
+  });
+  host.textContent = (s.auto_model?.detail ? s.auto_model.detail + ' ' : '')
+    + parts.join(' · ') + '.';
+}
+
+/* The person's Ollama: version, whether it meets the baseline, Start, update. */
+function renderOllamaLine(s) {
+  const host = $('c-ollama');
+  if (!host) return;
+  host.replaceChildren();
+  const o = s.ollama;
+  if (!o || !o.active) return;
+  const text = document.createElement('span');
+  if (o.reachable) {
+    text.textContent = `Ollama ${o.version || ''} is answering`
+      + (o.update_recommended
+        ? ` — older than ${o.baseline?.minimum}, so its models are not used until it is updated.`
+        : '. Its models run through Ollama, without copying them.')
+      + (o.cloud_models?.length
+        ? ` Cloud models (${o.cloud_models.join(', ')}) run on another host and are not used.`
+        : '');
+  } else if (o.installed) {
+    text.textContent = 'Ollama is installed but not running. Start it to use the '
+      + 'models you already have there.';
+  } else if (o.installed === null) {
+    text.textContent = 'Ollama is not answering on this computer.';
+  } else {
+    text.textContent = 'Ollama is not installed. That is fine: Refinix can download '
+      + 'and run models itself.';
+  }
+  host.append(text);
+  if (o.startable) {
+    const start = document.createElement('button');
+    start.type = 'button';
+    start.className = 'btn';
+    start.textContent = 'Start Ollama';
+    start.onclick = () => { start.disabled = true; startOllama(); };
+    host.append(start);
+  }
+  if (o.update_recommended) {
+    const update = document.createElement('button');
+    update.type = 'button';
+    update.className = 'btn';
+    update.textContent = 'Get the current Ollama';
+    update.onclick = () => openLink(o.update_url);
+    host.append(update);
+  }
+}
+
+/* ---- Settings -> Overview and setup ----------------------------------- *
+ *
+ * Opens Settings with three answers — is local AI ready, which models can I
+ * use, what next — and the one action that matters now. Everything below it
+ * (the hardware Refinix observed at startup, the person's Ollama models,
+ * choices by kind of work) comes from /v1/status; nothing is counted, started
+ * or downloaded here without the person pressing a button.
+ */
+
+const STRENGTH_WORDS = { general: 'general use', code: 'coding', vision: 'images',
+                         reasoning: 'reasoning', ocr: 'page reading' };
+const EVIDENCE_SOURCE_WORDS = { 3: "publisher's card", 2: "repository's tags",
+                                1: "model file's metadata" };
+
+/* What a model is documented to be good at, or limited to, in plain words. */
+function modelRoleWords(model) {
+  const source = EVIDENCE_SOURCE_WORDS[model.evidence_level];
+  const excluded = Object.keys(model.auto_excluded || {});
+  if (excluded.length) {
+    return `Auto does not use it for ${excluded.map((sc) => SCOPE_WORDS[sc] || sc).join(', ')}: `
+      + 'its check there did not finish within the check limit (current model and settings)';
+  }
+  if (model.limited_to?.length) {
+    return `Documented for ${model.limited_to.map((r) => STRENGTH_WORDS[r] || r).join(', ')} only`
+      + (source ? ` (${source})` : '');
+  }
+  if (model.hints?.length) {
+    return `Good for: ${model.hints.map((r) => STRENGTH_WORDS[r] || r).join(', ')}`
+      + (source ? ` (${source})` : '');
+  }
+  return 'Strengths not documented — usable; Auto prefers documented models';
+}
+
+const NEEDS_SETUP = (s) => !!(s.readiness && s.readiness.state !== 'ok');
+
+/* The footer link to Setup is always there, so setup can be reopened at any
+ * time; only the attention badge and outline depend on readiness. */
+function renderSetupAction(s) {
+  const action = $('setup-action');
+  const needs = NEEDS_SETUP(s);
+  if (action) {
+    action.hidden = false;
+    action.dataset.attention = needs ? 'true' : 'false';
+  }
+  const link = $('settings-link');
+  if (link) link.dataset.attention = needs ? 'true' : 'false';
+  const badge = $('settings-attention');
+  if (badge) badge.hidden = !needs;
+}
+
+/* On the first launch of this data, Setup opens by itself — once. The
+ * coordinator remembers it, because the desktop window keeps no storage. */
+function openSetupOnce(s) {
+  if (!s.setup || s.setup.first_opened) return false;
+  postJson('/v1/setup', { first_opened: true }).catch(() => {});
+  const here = typeof location !== 'undefined' ? location : null;
+  if (!here) return true;
+  if ($('setup')) {
+    $('setup').scrollIntoView?.({ block: 'start' });
+  } else {
+    here.href = '/control.html#setup';
+  }
+  return true;
+}
+
+async function saveSetup(change, success) {
+  try {
+    await postJson('/v1/setup', change);
+    if (success) notice(success[0], 'ok', success[1]);
+    await loadStatus();
+  } catch (err) {
+    notice('That choice could not be saved.', 'error', err.message);
+  }
+}
+
+function hardwareWords(s) {
+  const f = (s.hardware && s.hardware.facts) || {};
+  const memory = (s.hardware && s.hardware.memory) || {};
+  const parts = [];
+  if (f.cpu_brand) parts.push(f.cpu_brand);
+  if (f.memory_total_bytes) parts.push(`${gib(f.memory_total_bytes)} GB memory`);
+  if (memory.capacity_bytes) {
+    parts.push(`about ${gib(memory.capacity_bytes)} GB usable for models (estimated)`);
+  }
+  if (f.disk_free_bytes) parts.push(`${gib(f.disk_free_bytes)} GB free disk`);
+  return parts.length
+    ? `${parts.join(' · ')}. Read when Refinix started; suggestions below use it.`
+    : 'Refinix could not read this computer\'s memory and disk yet, so model fit is unknown.';
+}
+
+function usableModels(s) {
+  return (s.models || []).filter((m) => m.installed && m.locality === 'local');
+}
+
+function autoWords(s) {
+  const choices = s.model_choices || {};
+  return Object.entries(SCOPE_WORDS).map(([scope, word]) => {
+    const choice = choices[scope] || {};
+    if (choice.refusal) return `${word}: none suitable yet`;
+    const row = (s.models || []).find((m) => modelKey(m) === choice.key);
+    return `${word}: ${row ? modelLabel(row) : 'a model'}${choice.pinned ? ' (your choice)' : ''}`;
+  }).join(' · ');
+}
+
+function renderOverview(s) {
+  if (!$('o-ready')) return;
+  const ready = s.readiness || {};
+  chip($('o-chip'), ready.state === 'ok' ? 'ready'
+    : ready.state === 'failed' ? 'needs repair' : 'needs setup',
+  ready.state === 'ok' ? 'enforced' : ready.state === 'failed' ? 'fault' : 'caution');
+
+  const setup = s.setup || {};
+  const intro = $('o-intro');
+  intro.hidden = !!setup.intro_dismissed;
+  const introActions = [];
+  introActions.push(setup.intro_dismissed
+    ? { label: 'Show the setup explanation',
+        run: () => saveSetup({ intro_dismissed: false }) }
+    : { label: 'Hide this explanation',
+        run: () => saveSetup({ intro_dismissed: true }) });
+  actions($('o-intro-actions'), introActions);
+
+  $('o-ready').textContent = ready.state === 'ok'
+    ? 'Yes. Chat can run on this computer.'
+    : `Not yet. ${ready.message || ''}`.trim();
+  const here = usableModels(s);
+  const usable = here.filter((m) => m.enabled && m.eligible_scopes?.length);
+  $('o-models').textContent = here.length
+    ? `${usable.length} of ${here.length} installed model(s) can take work now. `
+      + `Auto right now — ${autoWords(s)}.`
+    : 'None installed yet. Use your Ollama models, or download one below.';
+  $('o-next').textContent = ready.state === 'ok'
+    ? 'Nothing is required. Ask something in Chat, or add models for other kinds of work below.'
+    : (ready.detail || ready.message || 'Check again.');
+  actions($('o-actions'), readinessActions(s));
+  $('o-hardware').textContent = hardwareWords(s);
+  renderOllamaPanel(s);
+  renderCategories(s);
+}
+
+/* The person's Ollama models: found, explained, and usable without a copy. */
+function renderOllamaPanel(s) {
+  const host = $('o-ollama');
+  if (!host) return;
+  host.replaceChildren();
+  const o = s.ollama || {};
+  const say = (text) => {
+    const p = document.createElement('p');
+    p.className = 'card-note';
+    p.textContent = text;
+    host.append(p);
+  };
+  if (!o.active) {
+    say('This copy of Refinix does not use Ollama.');
+    return;
+  }
+  if (!o.reachable) {
+    if (o.installed) {
+      say('Start Ollama to check your models. Refinix starts it only when you press '
+          + 'the button, and stops it when you quit only if Refinix started it.');
+      if (o.startable) {
+        const row = document.createElement('div');
+        row.className = 'card-actions';
+        host.append(row);
+        actions(row, [{ label: 'Start Ollama', run: startOllama }]);
+      }
+    } else if (o.installed === null) {
+      say('Ollama is not answering on this computer.');
+    } else {
+      say('Ollama is not installed. That is fine: choose models to download below.');
+    }
+    return;
+  }
+  const found = (s.models || []).filter((m) => m.origin === 'ollama' && m.installed);
+  const local = found.filter((m) => m.locality === 'local');
+  say(`Found ${local.length} model${local.length === 1 ? '' : 's'} in Ollama on this computer`
+      + (o.version ? ` (Ollama ${o.version})` : '') + '. Refinix uses these files '
+      + 'through Ollama; using them does not download another copy.'
+      + (o.update_recommended ? ` This Ollama is older than ${o.baseline?.minimum}; `
+         + 'update it to use these models.' : ''));
+  const list = document.createElement('ul');
+  list.className = 'found-list';
+  for (const model of local) {
+    const li = document.createElement('li');
+    const name = document.createElement('strong');
+    name.textContent = modelLabel(model);
+    const roles = document.createElement('span');
+    const can = (model.eligible_scopes || []).map((sc) => SCOPE_WORDS[sc] || sc);
+    roles.textContent = ` — ${modelRoleWords(model)}`
+      + (can.length ? `. Can run: ${can.join(', ')}.` : '. Cannot run a Refinix workflow here.')
+      + (model.enabled ? '' : ' Switched off for new work.');
+    li.append(name, roles);
+    list.append(li);
+  }
+  if (local.length) host.append(list);
+  if (o.cloud_models?.length) {
+    say(`Cloud models (${o.cloud_models.join(', ')}) run on another host and are not used.`);
+  }
+  const chosen = (s.setup || {}).choice === 'existing_models';
+  const buttons = document.createElement('div');
+  buttons.className = 'card-actions';
+  host.append(buttons);
+  actions(buttons, [
+    ...(local.length && !chosen ? [{
+      label: 'Use existing models',
+      run: () => saveSetup({ choice: 'existing_models', intro_dismissed: true },
+        ['Using your Ollama models.', 'Auto now chooses among them for each request. '
+         + 'Nothing was copied or downloaded, and no model was switched on or off.']),
+    }] : []),
+    { label: 'Review models', run: () => $('models')?.scrollIntoView?.({ block: 'start' }) },
+  ]);
+  if (chosen && local.length) say('You chose to use these models. Auto picks among them per request.');
+}
+
+/* Choices by kind of work. Any combination; downloads run one after another. */
+function categoryOption(option, s) {
+  const li = document.createElement('li');
+  li.dataset.state = option.installed ? 'installed' : 'absent';
+  const name = document.createElement('span');
+  name.className = 'model-id';
+  name.textContent = option.display_name;
+  const sub = document.createElement('span');
+  sub.className = 'model-where';
+  sub.textContent = [option.runtime_label,
+    option.storage_bytes ? `${gib(option.storage_bytes)} GB` : null,
+    option.fit_label, option.licence].filter(Boolean).join(' · ');
+  li.append(name, sub);
+  const operation = (s.provisioning || {})[option.id];
+  if (option.installed) {
+    const here = document.createElement('span');
+    here.className = 'fit-note';
+    here.textContent = option.origin === 'ollama' ? 'Already here, in Ollama — no download'
+      : 'Already here';
+    li.append(here);
+  } else if (operation && ['running', 'queued'].includes(operation.state)) {
+    li.append(provisioningLine(option.id, operation));
+  } else if (option.disk_short) {
+    const short = document.createElement('span');
+    short.className = 'fit-note';
+    short.textContent = 'Not enough free disk space for this download now.';
+    li.append(short);
+  } else if (option.download) {
+    const download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'btn';
+    download.textContent = `Download (${gib(option.storage_bytes)} GB)`;
+    download.onclick = () => downloadModel(option.id, download);
+    li.append(download);
+  }
+  return li;
+}
+
+function renderCategories(s) {
+  const host = $('o-categories');
+  if (!host) return;
+  host.replaceChildren();
+  const categories = (s.categories || []).filter(
+    (c) => c.initial.length || c.more.length || c.id !== 'other');
+  const note = $('o-categories-note');
+  if (note) {
+    note.textContent = categories.some((c) => c.initial.some((o) => o.download))
+      ? 'Estimates from this computer\'s memory and each model\'s published size — '
+        + 'not measurements. Choose any combination: one model, one per kind of work, '
+        + 'several in one, or none. One model can serve several kinds of work, so it '
+        + 'is never downloaded twice. Downloads run one after another and can be cancelled.'
+      : 'Downloads run in the Refinix engine, which this copy does not include.';
+  }
+  for (const category of categories) {
+    const box = document.createElement('section');
+    box.className = 'category';
+    const head = document.createElement('h4');
+    head.textContent = category.label;
+    const detail = document.createElement('p');
+    detail.className = 'card-note';
+    detail.textContent = category.detail;
+    box.append(head, detail);
+    const list = document.createElement('ul');
+    list.className = 'model-list';
+    list.append(...category.initial.map((o) => categoryOption(o, s)));
+    if (!category.initial.length) {
+      const none = document.createElement('li');
+      none.textContent = 'Nothing documented for this yet. Browse Hugging Face under Models.';
+      list.append(none);
+    }
+    box.append(list);
+    if (category.more.length) {
+      const more = document.createElement('ul');
+      more.className = 'model-list';
+      more.hidden = true;
+      more.append(...category.more.map((o) => categoryOption(o, s)));
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'btn';
+      toggle.textContent = `Show more (${category.more.length})`;
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.onclick = () => {
+        more.hidden = !more.hidden;
+        toggle.setAttribute('aria-expanded', String(!more.hidden));
+        toggle.textContent = more.hidden ? `Show more (${category.more.length})` : 'Show fewer';
+      };
+      box.append(toggle, more);
+    }
+    host.append(box);
+  }
+}
+
+/* Browse Hugging Face: search, pick a file, see the pinned plan, then download. */
+async function hubSearch(event) {
+  event?.preventDefault?.();
+  const query = ($('c-hub-query').value || '').trim();
+  const host = $('c-hub-results');
+  if (!query) return;
+  host.replaceChildren();
+  try {
+    const { results } = await postJson('/v1/hub/search', { query });
+    if (!results.length) {
+      const li = document.createElement('li');
+      li.textContent = 'No GGUF repositories matched.';
+      host.append(li);
+    }
+    for (const item of results) host.append(hubRepositoryRow(item));
+  } catch (err) {
+    notice('Hugging Face could not be searched.', 'error', err.message);
+  }
+}
+
+function hubRepositoryRow(item) {
+  const li = document.createElement('li');
+  const head = document.createElement('div');
+  head.className = 'model-head';
+  const name = document.createElement('span');
+  const id = document.createElement('span');
+  id.className = 'model-id';
+  id.textContent = item.repo;
+  const sub = document.createElement('span');
+  sub.className = 'model-where';
+  sub.textContent = item.gated ? 'needs a Hugging Face account — not supported'
+    : `${item.downloads ?? 0} downloads`;
+  name.append(id, sub);
+  head.append(name);
+  const row = document.createElement('div');
+  row.className = 'model-actions';
+  if (!item.gated && !item.private) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn';
+    open.textContent = 'See files';
+    open.onclick = () => hubFiles(item.repo, row, open);
+    row.append(open);
+  }
+  li.append(head, row);
+  return li;
+}
+
+async function hubFiles(repo, row, button) {
+  button.disabled = true;
+  try {
+    const listing = await postJson('/v1/hub/repository', { repo });
+    renderHubFiles(repo, listing, row);
+  } catch (err) {
+    notice('That repository could not be read.', 'error', err.message);
+    button.disabled = false;
+  }
+}
+
+// The coordinator says which projectors belong to each file's model. One named
+// for exactly that model, and only one, is added on its own, with text only
+// beside it; several, or one the repository does not tie to this file, are
+// the person's choice, text only included. A projector is never paired by its
+// position in the listing.
+function hubPairingPlan(choice) {
+  const projectors = choice.projectors || [];
+  if (!projectors.length) return { mode: 'text', projector: null };
+  if (projectors.length === 1 && choice.pairing !== 'ambiguous') {
+    return { mode: 'paired', projector: projectors[0].file };
+  }
+  return { mode: 'choose', projector: null };
+}
+
+const HUB_PLAN_WORDS = { text: 'text only', paired: 'with its image projector',
+  choose: 'choose image support' };
+
+function hubButton(text, onclick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn';
+  button.textContent = text;
+  button.onclick = () => onclick(button);
+  return button;
+}
+
+function renderHubFiles(repo, listing, row) {
+  row.replaceChildren();
+  const meta = document.createElement('p');
+  meta.className = 'fit-note';
+  meta.textContent = [`revision ${listing.revision.slice(0, 12)}…`,
+    listing.licence ? `licence tag: ${listing.licence}` : 'no licence stated',
+    listing.base_model ? `base: ${listing.base_model}` : null,
+    listing.architecture ? `architecture: ${listing.architecture}` : null]
+    .filter(Boolean).join(' · ');
+  row.append(meta);
+  for (const choice of listing.choices) {
+    const plan = hubPairingPlan(choice);
+    const pick = hubButton(`${choice.file}${choice.parts.length > 1
+      ? ` (+${choice.parts.length - 1} parts)` : ''} — ${gib(choice.size)} GB · `
+      + HUB_PLAN_WORDS[plan.mode], (button) => (plan.mode === 'choose'
+      ? renderHubProjectors(repo, listing, choice, row)
+      : hubResolve(repo, choice.file, listing.revision, plan.projector, button)));
+    if (plan.projector) pick.title = plan.projector;
+    row.append(pick);
+    if (plan.mode === 'paired') {
+      row.append(hubButton(`${choice.file} · text only`,
+        (button) => hubResolve(repo, choice.file, listing.revision, null, button)));
+    }
+  }
+}
+
+function renderHubProjectors(repo, listing, choice, row) {
+  row.replaceChildren();
+  const note = document.createElement('p');
+  note.className = 'fit-note';
+  note.textContent = choice.pairing === 'ambiguous'
+    ? `${choice.file}: nothing in this repository ties these image projectors to `
+      + 'this exact model — one may be for a related model or another model '
+      + 'here. Add one only if you know it belongs to this model.'
+    : `${choice.file}: more than one image projector is published for this `
+      + 'model. Choose one, or text only.';
+  row.append(note);
+  // Chosen here, by the person: that is what `projector_confirmed` records.
+  for (const projector of choice.projectors) {
+    row.append(hubButton(`With ${projector.file} — ${gib(projector.size)} GB`,
+      (button) => hubResolve(repo, choice.file, listing.revision, projector.file, button,
+                             true)));
+  }
+  row.append(
+    hubButton('Text only (no image input)',
+      (button) => hubResolve(repo, choice.file, listing.revision, null, button)),
+    hubButton('Back to files', () => renderHubFiles(repo, listing, row)));
+}
+
+async function hubResolve(repo, file, revision, projector, button, confirmed = false) {
+  button.disabled = true;
+  try {
+    const { entry } = await postJson('/v1/hub/resolve', {
+      repo, file, revision, projector, projector_confirmed: Boolean(projector && confirmed),
+    });
+    await downloadModel(entry.id, button);
+  } catch (err) {
+    notice('That model could not be prepared for download.', 'error', err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function initHubBrowse() {
+  const form = $('c-hub-form');
+  if (form && form.addEventListener) form.addEventListener('submit', hubSearch);
+}
+
+/* ---- Updates ------------------------------------------------------------
+ * One reading of the update state drives both the header control (Chat, Code
+ * and Settings) and Settings -> Updates. Nothing here checks on its own:
+ * opening the panel, loading a page, polling and the browser's "online" event
+ * only redraw what the coordinator already reports. A check, a download, an
+ * install each start from a click.
+ *
+ * Online-only: the header control appears only while the computer reports a
+ * network connection (navigator.onLine — a hint, never proof) and hides in
+ * every state when it does not. Settings keeps everything that works without
+ * the internet: Cancel, Install and restart for a verified download, Import,
+ * the update folder on internal builds, and what is kept for going back. */
+let updateBusy = '';
+let updatePollTimer = null;
+let updateNoticeShown = false;
+let uiReadySent = false;
+let updatePopoverOpen = false;
+
+function setUpdateBusy(state) {
+  updateBusy = state;
+  renderUpdateControl(lastStatus);
+  renderUpdatesCard(lastStatus || {});
+}
+
+function online() {
+  return !(typeof navigator !== 'undefined' && navigator && navigator.onLine === false);
+}
+
+function mb(bytes) {
+  return bytes == null ? null : `${Math.max(1, Math.round(bytes / 1048576))} MB`;
+}
+
+function updateView(u) {
+  u = u || {};
+  const d = u.download || null;
+  const offer = u.offer || null;
+  const install = u.install || {};
+  const last = u.last_check || null;
+  const since = last && last.last_success ? ` Last successful check: ${last.last_success}.` : '';
+  if (updateBusy === 'checking') return { state: 'checking', label: 'Checking for updates…', detail: '' };
+  if (updateBusy === 'importing') return { state: 'importing', label: 'Importing the update…', detail: '' };
+  if (updateBusy === 'cancelling') return { state: 'cancelling', label: 'Cancelling the download…', detail: '' };
+  if (updateBusy === 'installing') {
+    return { state: 'installing', label: 'Installing — Refinix will close and open again',
+             detail: 'Your conversations, documents and models are kept.' };
+  }
+  if (updateBusy === 'preparing' || install.state === 'preparing') return { state: 'preparing', label: 'Preparing the update…', detail: '' };
+  if (updateBusy === 'downloading' && (!d || d.state !== 'running')) {
+    return { state: 'downloading', label: 'Starting the download…', detail: '' };
+  }
+  if (install.state === 'ready') {
+    return { state: 'ready', label: `Version ${install.version} is ready to install`,
+             detail: u.install_note || '' };
+  }
+  if (install.state === 'failed') {
+    return { state: 'failed', label: 'The update could not be prepared',
+             detail: `${install.error || ''} Nothing was changed.`.trim() };
+  }
+  if (d && d.state === 'running') {
+    const pct = d.bytes_total ? Math.floor((100 * d.bytes_done) / d.bytes_total) : 0;
+    return { state: 'downloading', label: `Getting version ${d.version}… ${pct}%`, detail: '' };
+  }
+  if (d && d.state === 'verified') {
+    const needsPrepare = u.install_supported && u.install_method === 'deb';
+    return { state: 'verified', label: `Version ${d.version} is downloaded and verified`,
+             detail: needsPrepare
+               ? 'Next, prepare it: Ubuntu asks for an administrator password so the '
+                 + 'package can be checked again in protected storage. Nothing is installed yet.'
+               : u.install_supported ? (u.install_note || '') : (u.install_reason || '') };
+  }
+  if (d && (d.state === 'failed' || d.state === 'cancelled')) {
+    return { state: 'failed', label: d.state === 'cancelled' ? 'The download was cancelled'
+                                                             : 'The download did not complete',
+             detail: d.error || 'The installed version is unchanged.' };
+  }
+  if (offer) {
+    return { state: 'available', label: `Version ${offer.version} is available`,
+             detail: [offer.size ? `${mb(offer.size)}.` : '', offer.notes || ''].join(' ').trim() };
+  }
+  if (last && last.result === 'up_to_date') {
+    return { state: 'current', label: u.source === 'folder' ? 'No newer verified update'
+                                                            : 'Refinix is up to date',
+             detail: `${last.detail || ''} Checked ${last.at}.`.trim() };
+  }
+  if (last && last.result === 'incomplete') {
+    return { state: 'incomplete', label: 'Not every update was checked', detail: last.detail || '' };
+  }
+  if (last && last.result === 'unreachable') {
+    return { state: 'unreachable', label: "Couldn't reach the update server",
+             detail: `${last.detail || ''}${since}`.trim() };
+  }
+  if (last && last.result === 'failed') {
+    return { state: 'failed', label: 'The check did not complete', detail: `${last.detail || ''}${since}`.trim() };
+  }
+  return { state: 'idle', label: 'Not checked yet', detail: '' };
+}
+
+/* The buttons for the current state. `header` drops the ones that belong only
+   in Settings, and every connected action needs the online hint. */
+function updateActions(u, header) {
+  u = u || {};
+  const list = [];
+  const d = u.download || null;
+  const offer = u.offer || null;
+  const install = u.install || {};
+  const isOnline = online();
+  const busy = Boolean(updateBusy) || install.state === 'preparing';
+  if (busy) return list;
+  if (d && d.state === 'running') {
+    list.push({ label: 'Cancel download', run: () => updateStep('/v1/updates/cancel') });
+    return list;
+  }
+  const verified = d && d.state === 'verified';
+  // Ubuntu .deb: preparing is its own step, behind an administrator password;
+  // Install and restart appears only once that admission succeeded.
+  const separatePrepare = u.install_method === 'deb' && install.state !== 'ready';
+  if (verified && separatePrepare && u.install_supported) {
+    list.push({ label: 'Prepare (asks for your password)', run: () => prepareUpdate() });
+  } else if ((verified || install.state === 'ready') && u.install_supported
+      && nativeBridge() && nativeBridge().install_update) {
+    list.push({ label: 'Install and restart', run: () => installAndRestart() });
+  }
+  if (!verified && offer) {
+    const fromFolder = offer.source && offer.source.kind === 'bundle';
+    if (fromFolder) {
+      list.push({ label: `Get ${offer.version} from the update folder`,
+                  run: () => updateStep('/v1/updates/download', true) });
+    } else if (isOnline && u.can_check) {
+      list.push({ label: `Download ${offer.version}`, run: () => updateStep('/v1/updates/download', true) });
+    }
+  }
+  if (u.can_check && isOnline && (u.source === 'https' || (header && u.source === 'folder'))) {
+    list.push({ label: 'Check for updates', run: () => checkForUpdates(u.source) });
+  }
+  if (!header && u.source === 'folder') {
+    list.push({ label: 'Check update folder', run: () => checkForUpdates('folder') });
+  }
+  if (!header && u.can_import && nativeBridge() && nativeBridge().choose_update_bundle) {
+    list.push({ label: 'Import update…', run: () => importUpdate() });
+  }
+  return list;
+}
+
+function renderUpdatesCard(s) {
+  if (!$('c-updates-facts')) return;
+  const u = s.updates || {};
+  const v = updateView(u);
+  const kinds = { ready: 'enforced', verified: 'enforced', current: 'enforced',
+                  available: 'caution', downloading: 'caution', preparing: 'caution',
+                  checking: 'caution', installing: 'caution', incomplete: 'caution',
+                  importing: 'caution', cancelling: 'caution',
+                  unreachable: 'fault', failed: 'fault' };
+  const chips = { ready: 'ready to install', verified: 'package verified', current: 'up to date',
+                  available: 'update available', downloading: 'downloading',
+                  preparing: 'preparing', checking: 'checking', installing: 'installing',
+                  importing: 'importing', cancelling: 'cancelling',
+                  incomplete: 'not all checked', unreachable: "couldn't reach",
+                  failed: 'check failed', idle: 'not checked' };
+  chip($('c-updates-chip'), chips[v.state] || 'not checked', kinds[v.state] || 'unknown');
+  $('c-updates-lead').textContent = u.unavailable
+    || 'Refinix checks for updates only when you ask, and offers one only after '
+       + 'its signed details are verified.';
+  const offer = u.offer;
+  const download = u.download;
+  const last = u.last_check;
+  const kept = u.kept;
+  facts($('c-updates-facts'), [
+    ['Installed version', u.version ? `${u.version} (${u.maturity === 'preview'
+      ? 'tester preview' : u.maturity === 'beta' ? 'Beta' : u.channel})` : null,
+     'not reported'],
+    ['Updates come from', u.source === 'folder' ? `the update folder ${u.folder}`
+      : u.source === 'https' ? 'the online update channel' : null, 'no update source'],
+    ['Last check', last ? `${last.at} — ${last.detail}` : null, 'not checked yet'],
+    ['Offered', offer ? `${offer.version}, ${gib(offer.size)} GB` : null,
+     last && last.result === 'up_to_date' ? 'nothing newer' : 'nothing offered'],
+    ['What changed', (offer && offer.notes) || null, offer ? 'no notes' : '—'],
+    ['Download', download ? (download.state === 'running'
+      ? `${gib(download.bytes_done)} of ${gib(download.bytes_total)} GB`
+      : download.state === 'verified' ? `verified — ${download.version}`
+      : download.error || download.state) : null, 'not downloaded'],
+    ['Install', u.install_supported ? v.label : (u.install_reason || null), 'not available'],
+    ...(u.install_capability === 'provisional' ? [['How installing was checked',
+      'Beta: checked on hosted test machines; not yet confirmed on your kind of computer. '
+        + 'Your work and the previous version are kept for going back.', '—']] : []),
+    ['Kept for going back', kept && kept.previous_app
+      ? `version ${kept.previous_version} (${mb(kept.previous_app_bytes) || 'size unknown'})`
+        + (kept.data_copy ? ` and its data copy (${mb(kept.data_copy_bytes) || 'size unknown'})` : '')
+      : null, 'nothing yet'],
+  ]);
+  actions($('c-updates-actions'), updateActions(u, false));
+  const note = $('c-updates-note');
+  if (!online() && u.can_check && u.source === 'https') {
+    note.textContent = 'Connect to the internet to check for updates. Importing an update, '
+      + 'installing one already downloaded, and cancelling still work offline.';
+  } else if (v.detail) {
+    note.textContent = v.detail;
+  } else {
+    note.textContent = 'Checking sends nothing about this computer, your work or your models.';
+  }
+}
+
+/* The header control: shown only for a build that can update, while online. */
+function renderUpdateControl(s) {
+  const btn = $('update-toggle');
+  if (!btn) return;
+  const u = (s && s.updates) || {};
+  const show = Boolean(u.header_eligible) && online();
+  btn.hidden = !show;
+  if (!show) {
+    if (updatePopoverOpen) closeUpdatePopover(false);
+    return;
+  }
+  const v = updateView(u);
+  const dot = $('update-dot');
+  if (dot) dot.hidden = !['available', 'verified', 'ready'].includes(v.state);
+  const label = `Updates: ${v.label}`;
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  if (['checking', 'downloading', 'preparing', 'installing', 'importing', 'cancelling'].includes(v.state)) {
+    btn.setAttribute('data-busy', '');
+  } else {
+    btn.removeAttribute('data-busy');
+  }
+  if (updatePopoverOpen) renderUpdatePopover(u);
+}
+
+function renderUpdatePopover(u) {
+  const v = updateView(u);
+  $('update-popover-state').textContent = v.label;
+  $('update-popover-detail').textContent = v.detail || (u.version ? `Installed: ${u.version}` : '');
+  const list = updateActions(u, true);
+  list.push({ label: 'Later', run: () => closeUpdatePopover(true) });
+  actions($('update-popover-actions'), list);
+}
+
+function openUpdatePopover() {
+  const btn = $('update-toggle');
+  const pop = $('update-popover');
+  if (!btn || !pop) return;
+  updatePopoverOpen = true;
+  const box = btn.getBoundingClientRect();
+  pop.style.top = `${Math.round(box.bottom + 8)}px`;
+  pop.style.right = `${Math.max(8, Math.round((window.innerWidth || 0) - box.right))}px`;
+  pop.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  renderUpdatePopover((lastStatus && lastStatus.updates) || {});
+  const first = pop.querySelector('button');
+  if (first) first.focus();
+}
+
+function closeUpdatePopover(returnFocus) {
+  const btn = $('update-toggle');
+  const pop = $('update-popover');
+  updatePopoverOpen = false;
+  if (pop) pop.hidden = true;
+  if (btn) {
+    btn.setAttribute('aria-expanded', 'false');
+    if (returnFocus) btn.focus();
+  }
+}
+
+function wireUpdateControl() {
+  const btn = $('update-toggle');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      if (updatePopoverOpen) closeUpdatePopover(true);
+      else openUpdatePopover();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && updatePopoverOpen) closeUpdatePopover(true);
+  });
+  document.addEventListener('click', (e) => {
+    const pop = $('update-popover');
+    if (updatePopoverOpen && pop && !pop.contains(e.target) && btn && !btn.contains(e.target)) {
+      closeUpdatePopover(false);
+    }
+  });
+  /* A connection change only redraws: it never checks. */
+  const redraw = () => {
+    renderUpdateControl(lastStatus);
+    if (lastStatus) renderUpdatesCard(lastStatus);
+  };
+  window.addEventListener('online', redraw);
+  window.addEventListener('offline', redraw);
+  window.addEventListener('pywebviewready', sendUiReady);
+}
+
+/* The window has loaded: a version being verified after an update may finish. */
+function sendUiReady() {
+  const bridge = nativeBridge();
+  if (uiReadySent || !bridge || !bridge.ui_ready) return;
+  uiReadySent = true;
+  Promise.resolve(bridge.ui_ready())
+    .then((result) => { if (result && result.committed) return loadStatus(); })
+    .catch(() => {});
+}
+
+function showUpdateNotice(u) {
+  const n = u && u.notice;
+  if (!n || updateNoticeShown) return;
+  updateNoticeShown = true;
+  if (n.kind === 'updated') {
+    notice(`Refinix was updated to ${n.to}.`, 'ok',
+           'Your conversations, documents and models were kept. The previous version is '
+           + 'kept in Settings → Updates for going back.');
+  } else {
+    notice(n.kind === 'rolled_back' ? 'The update did not complete.' : 'The update was not installed.',
+           'warn', n.detail || '');
+  }
+  postJson('/v1/updates/acknowledge', {}).catch(() => {});
+}
+
+function afterStatus(s) {
+  renderUpdateControl(s);
+  showUpdateNotice(s && s.updates);
+  sendUiReady();
+  const u = (s && s.updates) || {};
+  const running = (u.download && u.download.state === 'running')
+    || (u.install && u.install.state === 'preparing');
+  if (running && !updatePollTimer) {
+    updatePollTimer = setTimeout(() => {
+      updatePollTimer = null;
+      loadStatus().catch(() => {});
+    }, 700);
+  }
+}
+
+async function checkForUpdates(source) {
+  if (updateBusy) return;
+  setUpdateBusy('checking');
+  try {
+    await postJson(source === 'folder' ? '/v1/updates/check-folder' : '/v1/updates/check', {});
+  } catch (err) {
+    // The coordinator records why; the card and panel show it after reloading.
+  } finally {
+    await loadStatus().catch(() => {});
+    setUpdateBusy('');
+  }
+}
+
+async function updateStep(path, poll) {
+  if (updateBusy) return;
+  const d = lastStatus && lastStatus.updates && lastStatus.updates.download;
+  if (path === '/v1/updates/download' && d && ['running', 'verified'].includes(d.state)) return;
+  setUpdateBusy(path === '/v1/updates/cancel' ? 'cancelling' : 'downloading');
+  try {
+    await postJson(path, {});
+  } catch (err) {
+    notice('That update step did not complete.', 'error', err.message);
+  } finally {
+    await loadStatus().catch(() => {});
+    setUpdateBusy('');
+  }
+}
+
+/* Ubuntu .deb: the administrator-password admission on its own. A dismissed
+   prompt leaves the download as it was: downloaded, not prepared. */
+async function prepareUpdate() {
+  if (updateBusy) return;
+  setUpdateBusy('preparing');
+  try {
+    await postJson('/v1/updates/prepare', {});
+    let u = {};
+    for (let i = 0; i < 1200; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const s = await loadStatus();
+      u = (s && s.updates) || {};
+      if (u.install && u.install.state !== 'preparing') break;
+    }
+    if (!u.install || u.install.state !== 'ready') {
+      notice('The update was not prepared.', 'error',
+             ((u.install && u.install.error) || 'It was not verified.')
+             + ' It stays downloaded; nothing was installed.');
+    }
+  } catch (err) {
+    notice('The update was not prepared.', 'error', err.message);
+  } finally {
+    await loadStatus().catch(() => {});
+    setUpdateBusy('');
+  }
+}
+
+/* Prepare (verify again offline and expand beside the app), then hand over to
+   the window, which drains work, keeps the data, closes and reopens. */
+async function installAndRestart() {
+  if (updateBusy) return;
+  let u = (lastStatus && lastStatus.updates) || {};
+  setUpdateBusy(u.install && u.install.state === 'ready' ? 'installing' : 'preparing');
+  let closing = false;
+  try {
+    if (!u.install || u.install.state !== 'ready') {
+      await postJson('/v1/updates/prepare', {});
+      for (let i = 0; i < 600; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const s = await loadStatus();
+        u = (s && s.updates) || {};
+        if (u.install && u.install.state !== 'preparing') break;
+      }
+      if (!u.install || u.install.state !== 'ready') {
+        notice('The update could not be prepared.', 'error',
+               ((u.install && u.install.error) || 'It was not verified.') + ' Nothing was changed.');
+        return;
+      }
+    }
+    setUpdateBusy('installing');
+    const result = await nativeBridge().install_update();
+    closing = Boolean(result && result.installing);
+    if (closing) return;                              // the window is closing
+    if (result && result.error) notice('The update was not installed.', 'error', result.error);
+  } catch (err) {
+    notice('The update was not installed.', 'error', err.message);
+  } finally {
+    if (!closing) {
+      await loadStatus().catch(() => {});
+      setUpdateBusy('');
+    }
+  }
+}
+
+async function importUpdate() {
+  if (updateBusy) return;
+  setUpdateBusy('importing');
+  try {
+    const result = await nativeBridge().choose_update_bundle();
+    if (result?.error) notice('That update was not imported.', 'error', result.error);
+  } catch (err) {
+    notice('That update was not imported.', 'error', err.message);
+  } finally {
+    await loadStatus().catch(() => {});
+    setUpdateBusy('');
+  }
+}
+
+/* One line per download or import: how far, or why it stopped. */
+function provisioningLine(model, operation) {
+  const line = document.createElement('p');
+  line.className = 'provisioning-line';
+  const verb = operation.kind === 'import' ? 'Importing' : 'Downloading';
+  if (operation.state === 'queued') {
+    line.textContent = `Waiting to start: ${operation.kind === 'import' ? 'imports' : 'downloads'} `
+      + 'run one after another. ';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = 'Cancel';
+    cancel.onclick = () => cancelProvisioning(model, cancel);
+    line.append(cancel);
+  } else if (operation.state === 'running') {
+    const share = operation.bytes_total
+      ? Math.floor((100 * operation.bytes_done) / operation.bytes_total) : 0;
+    line.textContent = `${verb}${operation.file ? ` ${operation.file}` : ''}: `
+      + `${gib(operation.bytes_done)} of ${gib(operation.bytes_total)} GB (${share}%). `;
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = 'Cancel';
+    cancel.onclick = () => cancelProvisioning(model, cancel);
+    line.append(cancel);
+  } else if (operation.state === 'failed') {
+    line.textContent = `${verb} stopped: ${operation.error}`;
+  } else if (operation.state === 'cancelled') {
+    line.textContent = `${verb} cancelled. What was already downloaded is kept `
+      + 'and checked again if you start it later.';
+  } else {
+    line.textContent = `${verb} finished; every file matched its checksum.`;
+  }
+  return line;
+}
+
+const postJson = (path, body) => api(path, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+async function downloadModel(model, button) {
+  button.disabled = true;
+  try {
+    const plan = await api(`/v1/model/plan?model=${encodeURIComponent(model)}`);
+    if (!plan.enough_space) {
+      notice('There is not enough free space for this model.', 'error',
+             `About ${gib(plan.download_bytes)} GB, plus 1 GB to spare, is needed`
+             + (plan.pending_bytes ? `, beside ${gib(plan.pending_bytes)} GB for models `
+                + 'already chosen' : '')
+             + `; ${gib(plan.free_bytes)} GB is free.`);
+      return;
+    }
+    const files = plan.files.map(
+      (f) => `• ${f.name}: ${gib(f.size)} GB, SHA-256 ${f.sha256}`).join('\n');
+    const ok = window.confirm(
+      `Download ${plan.display_name}?\n\n`
+      + `From: ${plan.source}\n`
+      + `Licence: ${plan.licence || 'not recorded'}\n`
+      + `Revision: ${plan.revision || 'not recorded'}\n`
+      + `To download: ${gib(plan.download_bytes)} GB`
+      + (plan.already_staged_bytes
+        ? ` (${gib(plan.already_staged_bytes)} GB is already here)` : '')
+      + `\nSaved in: ${plan.location}\n\n${files}\n\n`
+      + 'Each file is checked against its SHA-256 before it is used. You can '
+      + 'cancel at any time.');
+    if (!ok) return;
+    await postJson('/v1/model/download', { model });
+    await loadStatus();
+  } catch (err) {
+    notice('The download could not start.', 'error', err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function importModel(model, button) {
+  button.disabled = true;
+  try {
+    const result = await nativeBridge().choose_model_files(model);
+    if (result?.error) notice('Those files could not be imported.', 'error', result.error);
+    await loadStatus();
+  } catch (err) {
+    notice('Those files could not be imported.', 'error', err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function cancelProvisioning(model, button) {
+  button.disabled = true;
+  try {
+    await postJson('/v1/model/provisioning/cancel', { model });
+    await loadStatus();
+  } catch (err) {
+    notice('That could not be cancelled.', 'error', err.message);
+    button.disabled = false;
+  }
+}
+
+/* Removal says what stops working first, and keeps everything written. */
+async function removeModel(model, button) {
+  button.disabled = true;
+  try {
+    const { impact } = await api(
+      `/v1/model/impact?model=${encodeURIComponent(model)}`);
+    const affected = impact.blocked_capabilities?.length
+      ? `This stops: ${impact.blocked_capabilities.join(', ')}.\n\n` : '';
+    const ok = window.confirm(
+      `Remove ${model} from this computer?\n\n${affected}${impact.detail}\n\n`
+      + 'Its files are deleted. Your chats, documents and history are kept.');
+    if (!ok) return;
+    await postJson('/v1/model/remove', { model });
+    notice(`${model} was removed.`, 'ok');
+    await loadStatus();
+  } catch (err) {
+    notice('The model could not be removed.', 'error', err.message);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -3209,7 +4718,17 @@ function renderModelsCard(s) {
  * fabricated health this card exists to avoid. */
 function renderOthersCard(s, worker) {
   if (!$('c-others-facts')) return;
+  /* Running work on other computers is post-Beta. An unfinished control must
+   * not look functional, so the whole card stays hidden unless the coordinator
+   * says the feature is switched on (development builds only). */
+  const factsEl = $('c-others-facts');
+  const card = factsEl.closest ? factsEl.closest('.card') : null;
+  const meshOn = !!(s.features && s.features.mesh);
+  if (card) card.hidden = !meshOn;
+  if (!meshOn) return;
   const form = $('pair-form');
+  const storeReady = !!(worker && worker.credential_store
+                        && worker.credential_store.available);
 
   if (!worker) {
     chip($('c-others-chip'), 'unavailable', 'unknown');
@@ -3244,12 +4763,10 @@ function renderOthersCard(s, worker) {
 
   if (!worker.paired) {
     chip($('c-others-chip'), 'none connected', 'unknown');
-    $('c-others-lead').textContent = worker.keychain_available
+    $('c-others-lead').textContent = storeReady
       ? 'Refinix can share work with another computer you connect. None is '
         + 'connected, so everything runs here.'
-      // The coordinator names this computer's own missing prerequisite. Only
-      // an older coordinator omits it, so the macOS wording is the fallback
-      // rather than the sentence every operating system is shown.
+      // The coordinator names this computer's own missing prerequisite.
       : 'Connecting another computer needs a protected credential store to '
         + 'hold its credential. '
         + ((worker.credential_store && worker.credential_store.detail)
@@ -3260,7 +4777,7 @@ function renderOthersCard(s, worker) {
       ['This computer', `${s.node_id.slice(0, 8)} — the only one in use`],
       ['Where requests run', 'on this computer'],
     ]);
-    actions($('c-others-actions'), worker.keychain_available
+    actions($('c-others-actions'), storeReady
       ? [{ label: 'Connect a computer', run: () => { if (form) form.hidden = false; } }]
       : []);
     return;
@@ -3546,7 +5063,12 @@ function renderProofCard(card) {
        entry.sources.pod],
       ['Pod image', proof.pod ? proof.pod.image_digest : null, entry.sources.pod],
       ['Approval', proof.approval_id, entry.sources.approval],
-      ['Network', null, entry.sources.network],
+      // Observed counts only when an observer recorded this attempt; the
+      // source line says what was and was not watched.
+      ['Network', proof.network && proof.network.observer
+        ? `${proof.network.public_outbound_flows} public, `
+          + `${proof.network.trusted_lan_connections} local-network connection(s) observed`
+        : null, entry.sources.network],
     ];
     for (const [label, value, source] of rows) proofRow(facts, label, value, source);
     block.append(facts);
@@ -3588,7 +5110,8 @@ function renderProofCard(card) {
   note.textContent = card.evidence_note;
   host.append(note);
   const network = document.createElement('p');
-  network.className = 'unavailable';
+  const observed = card.attempts.some((a) => a.proof.network && a.proof.network.observer);
+  network.className = observed ? 'proof-note' : 'unavailable';
   network.textContent = card.network;
   host.append(network);
 }
@@ -4077,27 +5600,36 @@ async function loadStatus() {
   if (Array.isArray(s.models)) {
     models = s.models;
     modelSelections = s.model_selections || modelSelections;
+    modelChoices = s.model_choices || modelChoices;
     renderModelPill();
   }
   renderReadyLine(s);
+  renderSetupAction(s);
+  openSetupOnce(s);
   renderSkill();
+  afterStatus(s);
   if ($('kv-unavailable') && !$('c-cap-list')) {
     // Chat's Details rail carries the same "not observed" list.
     kv($('kv-unavailable'), Object.entries(s.unavailable).map(([k, v]) => [k, null, v]));
   }
   if (!$('c-computer-facts')) return s;
   const { jobs } = await api('/v1/jobs');
-  // Preflight is a live observation and can fail on its own; a worker that
-  // cannot be read must not blank the rest of the Control Center.
+  // The deferred mesh must not contact saved peers during standalone work.
   let worker = null;
-  try {
-    worker = await api('/v1/worker');
-  } catch (error) {
-    worker = null;
+  if (s.features?.mesh) {
+    try {
+      worker = await api('/v1/worker');
+    } catch (error) {
+      worker = null;
+    }
   }
+  renderOverview(s);
   renderComputerCard(s);
   renderEngineCard(s);
   renderModelsCard(s);
+  renderModelChoiceNote(s);
+  renderOllamaLine(s);
+  renderUpdatesCard(s);
   renderOthersCard(s, worker);
   renderWorkCard(s, jobs);
   renderCapabilityCard(s);
@@ -4391,6 +5923,7 @@ function wirePanels() {
 window.addEventListener('DOMContentLoaded', () => {
   wirePanels();
   wireTheme();
+  wireUpdateControl();
   syncScrollGutter();
   window.addEventListener('resize', syncScrollGutter);
   const thread = $('thread');
@@ -4426,7 +5959,17 @@ window.addEventListener('DOMContentLoaded', () => {
     draftReady = true;
     if ($('draft-mark')) $('draft-mark').hidden = !draftInput.value;
     saveDraftSoon();
+    // The context meter follows the draft, without a request per keystroke.
+    refreshContextSoon();
   });
+  const meter = $('context-meter');
+  if (meter) {
+    meter.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (contextPopover) closeContextPopover(true);
+      else openContextPopover();
+    });
+  }
   document.addEventListener('click', (e) => {
     if (openMenu && !openMenu.contains(e.target)) closeMenu();
     if (plusMenu && !plusMenu.contains(e.target) && e.target !== $('plus-btn')) {
@@ -4437,11 +5980,13 @@ window.addEventListener('DOMContentLoaded', () => {
         && !(pill && pill.contains(e.target))) {
       closeModelPopover(false);
     }
+    if (contextPopover && !contextPopover.contains(e.target)) closeContextPopover(false);
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && openMenu) closeMenu();
     if (e.key === 'Escape' && plusMenu) { closePlusMenu(); $('plus-btn').focus(); }
     if (e.key === 'Escape' && modelPopover) closeModelPopover(true);
+    if (e.key === 'Escape' && contextPopover) closeContextPopover(true);
   });
   publishSlot();
   wirePairForm();
@@ -4518,6 +6063,7 @@ window.addEventListener('DOMContentLoaded', () => {
     setInterval(() => loadStatus().catch(() => {}), 15000);
   } else if ($('refresh')) {
     $('refresh').onclick = () => loadStatus().catch(() => {});
+    initHubBrowse();
     setInterval(() => loadStatus().catch(() => {}), 10000);
   }
 });
@@ -4988,6 +6534,13 @@ const TARGETS = [
 ];
 
 function appendTargetChoices(box) {
+  /* "Paired worker" is a post-Beta target: offered only when the coordinator
+   * reports the paired-computer feature on. */
+  const meshOn = !!(lastStatus && lastStatus.features && lastStatus.features.mesh);
+  if (!meshOn) {
+    executionTarget = 'this_device';
+    return;
+  }
   appendChoiceGroup(box, 'Run on', TARGETS, executionTarget, (id) => {
     executionTarget = id;
   });

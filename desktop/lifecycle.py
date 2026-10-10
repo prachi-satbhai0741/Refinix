@@ -32,7 +32,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 
-from backend.coordinator import paths, runtime
+from backend.coordinator import db, ownership, paths, runtime
 
 # Which root this installation uses is a platform decision, and
 # `backend.coordinator.paths` owns it: the OS-native location, the existing
@@ -45,8 +45,9 @@ DATA_ROOT = paths.select_root()
 STATE_DIR = DATA_ROOT.path
 STATE_DB = DATA_ROOT.database
 # One lock per store, so two different roots are two different applications
-# rather than one lock silently guarding the wrong data.
-LOCK_FILE = STATE_DIR / "desktop.lock"
+# rather than one lock silently guarding the wrong data. An explicit `--state`
+# gets the lock beside that database (`ownership.lock_path`), not this one.
+LOCK_FILE = ownership.lock_path(STATE_DB)
 
 DEFAULT_PORT = 8770
 # Bounded and explicit. 8443/30443 belong to the worker contract and 8080 to
@@ -168,70 +169,22 @@ def _check_cancelled(cancelled):
 # Single instance
 # --------------------------------------------------------------------------
 
-def _lock_exclusive(handle) -> bool:
-    """True when this process took the lock; False when another holds it."""
-    try:
-        if sys.platform == "win32":
-            import msvcrt
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return False
-    return True
+class SingleInstance(ownership.WorkspaceLock):
+    """One Refinix per workspace, enforced by an OS lock, not a PID guess.
 
-
-class SingleInstance:
-    """One Refinix per user account, enforced by an OS lock, not a PID guess.
-
-    A stale lock from a crash is reclaimed automatically: the lock is released
-    by the operating system when the holding process dies.
+    The lock guards the database a launch will open: the default root's store
+    unless a path is given, in which case the lock beside that path. A stale
+    lock from a crash is reclaimed automatically, because the operating system
+    releases it when the holding process dies. The holder keeps it for the
+    whole life of the coordinator it starts.
     """
 
     def __init__(self, path: Path = LOCK_FILE):
-        self.path = path
-        self._handle = None
-        # Windows byte locks also deny reads. Keep JSON after the locked byte.
-        self._metadata_offset = 1 if sys.platform == "win32" else 0
+        super().__init__(path)
 
-    def acquire(self) -> dict | None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(self.path, "a+", encoding="utf-8")
-        # Windows locks a byte range from the current offset, unlike flock.
-        # Every process must lock byte zero, including when metadata exists.
-        handle.seek(0)
-        if not _lock_exclusive(handle):
-            handle.seek(self._metadata_offset)
-            try:
-                existing = json.loads(handle.read() or "{}")
-            except ValueError:
-                existing = {}
-            handle.close()
-            return existing if isinstance(existing, dict) else {}
-        self._handle = handle
-        return None
-
-    def record(self, **fields) -> None:
-        if self._handle is None:
-            return
-        self._handle.seek(self._metadata_offset)
-        self._handle.truncate()
-        json.dump({"pid": os.getpid(), **fields}, self._handle)
-        self._handle.flush()
-        os.fsync(self._handle.fileno())
-
-    def release(self) -> None:
-        if self._handle is None:
-            return
-        try:
-            self._handle.seek(self._metadata_offset)
-            self._handle.truncate()
-            self._handle.flush()
-            self._handle.close()
-        except OSError:
-            pass
-        self._handle = None
+    @classmethod
+    def for_state(cls, state_path: Path) -> "SingleInstance":
+        return cls(ownership.lock_path(state_path))
 
 
 # --------------------------------------------------------------------------
@@ -281,7 +234,8 @@ def check_data_root(state_path: Path = STATE_DB,
     so it starts normally even while two other stores exist on the computer.
     """
     root = DATA_ROOT if root is None else root
-    if root.conflict is None or Path(state_path) != root.database:
+    if root.conflict is None or ownership.canonical_database(state_path) \
+            != ownership.canonical_database(root.database):
         return
     raise StartupError(
         "Refinix found workspace data in two places and will not choose for you.",
@@ -289,19 +243,22 @@ def check_data_root(state_path: Path = STATE_DB,
 
 
 def read_workspace_id(state_path: Path = STATE_DB) -> str | None:
-    """Read the saved workspace identity without creating or upgrading a file."""
-    if not state_path.is_file():
-        return None
-    import sqlite3
+    """Read the saved workspace identity without creating or touching a file.
+
+    Taken from the admission copy, never from the canonical database: even a
+    read-only SQLite open of a WAL store can create or change its sidecars.
+    """
     try:
-        conn = sqlite3.connect(f"file:{state_path}?mode=ro", uri=True, timeout=5)
-        try:
-            row = conn.execute("SELECT value FROM meta WHERE key='workspace_id'").fetchone()
-        finally:
-            conn.close()
-    except sqlite3.Error:
+        return db.admit(state_path).workspace_id
+    except db.AdmissionRefused:
         return None
-    return row[0] if row else None
+
+
+def admission_error(exc: "db.AdmissionRefused", state_path: Path) -> StartupError:
+    """A refused store, said in words, with where it lives."""
+    return StartupError(
+        str(exc), f"{exc.detail} Workspace folder: {Path(state_path).parent}".strip(),
+        {"kind": "retry", "label": "Try again"})
 
 
 @dataclass
@@ -396,6 +353,10 @@ class EngineSupervisor:
         self.owned = False
         self.last = {}
 
+    def installed(self) -> bool:
+        """Whether an Ollama binary exists here. Never installs anything."""
+        return self._locate() is not None
+
     def ready(self, state: dict) -> bool:
         """Real readiness: the server answered *and* listed its models."""
         return bool(state.get("reachable")) and isinstance(state.get("models"), list) \
@@ -475,6 +436,70 @@ class EngineSupervisor:
         return True
 
 
+class ManagedEngineControl:
+    """Startup and shutdown face of Refinix's own engine.
+
+    Exposes the same `owned`/`stop()` surface as `EngineSupervisor`, so the
+    window and the headless entry stop it the same way: only the engine this
+    application started is stopped, and only on quit.
+    """
+
+    owned = True
+
+    def __init__(self, backend, ollama=None):
+        self.backend = backend
+        # The person's Ollama, when Refinix started it on their request. It is
+        # stopped at quit only in that case; one already running is left alone.
+        self.ollama = ollama
+        self.last = {}
+
+    def stop(self, timeout: float = 5.0) -> bool:
+        """True once the engine is confirmed stopped.
+
+        A survivor is not an error at quit: its record stays on disk, and the
+        next launch refuses to start a second engine until it is gone.
+        """
+        from backend.coordinator import engine as engine_module
+        if self.ollama is not None:
+            try:
+                self.ollama.stop(timeout)
+            except Exception:                              # noqa: BLE001
+                pass
+        try:
+            return self.backend.stop()
+        except engine_module.EngineError:
+            return False
+
+
+def configure_managed_engine(selection, coordinator, state_path: Path):
+    """Route this process's inference through the verified managed engine."""
+    from backend.coordinator import local_engine
+    backend = local_engine.LocalEngine(
+        selection, Path(state_path).parent, registry=coordinator.installed_models,
+        settings_for=coordinator.engine_settings_for)
+    runtime.configure_managed(backend)
+    # Models the person already has in Ollama stay usable through Ollama's own
+    # local API, beside Refinix's engine. Ollama is read and run, never
+    # installed, updated or started without the person asking.
+    runtime.configure_ollama(True)
+    if getattr(coordinator, "ollama_control", None) is None:
+        # Ollama alone: the combined probe answers for the Refinix engine too,
+        # which would read as a running Ollama and never start the real one.
+        coordinator.ollama_control = EngineSupervisor(probe=runtime.probe_ollama)
+    if backend.engine is not None:
+        # A crash may have left the previous engine running. It is stopped only
+        # when its PID, start time and executable all match the record. One
+        # that cannot be identified or stopped stays recorded, is reported
+        # through readiness, and blocks a second engine.
+        from backend.coordinator import engine as engine_module
+        try:
+            backend.engine.reap_orphan()
+        except engine_module.EngineError:
+            pass                      # kept as backend.engine.last_error
+    coordinator.refresh_hardware()
+    return backend
+
+
 def model_status(state: dict, model: str = runtime.MODEL) -> dict:
     """Whether the configured model is installed. Never triggers a download."""
     models = state.get("models") or []
@@ -514,7 +539,7 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
                 preferred_port: int = DEFAULT_PORT, start_server=None,
                 supervisor: EngineSupervisor | None = None,
                 budget: float = STARTUP_BUDGET_SECONDS,
-                clock=time.monotonic, cancelled=None) -> Startup:
+                clock=time.monotonic, cancelled=None, owner=None) -> Startup:
     """Bring the local services up, reporting each step as it happens.
 
     The caller must already hold the SingleInstance lock; that is what the
@@ -524,6 +549,9 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
     a half-started state, and never leaves the caller without an answer.
     """
     deadline = clock() + budget
+    # One spelling of the store from here on: the lock, admission, the
+    # coordinator and the engine's data folder all name the real database.
+    state_path = ownership.canonical_database(state_path)
     _check_cancelled(cancelled)
     progress.set("window", "ok", "Window open.")
     # Callers take the SingleInstance lock before reaching here, so arriving at
@@ -539,14 +567,37 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
     def remaining(minimum=1.0):
         return max(minimum, deadline - clock())
 
+    # Ownership comes first: nothing below may read the store through SQLite
+    # unless this process holds the lock that guards it.
+    if owner is not None:
+        try:
+            ownership.require(owner, state_path)
+        except ownership.OwnershipError as exc:
+            raise StartupError("Refinix does not own this workspace.", str(exc),
+                               {"kind": "retry", "label": "Try again"}) from exc
+        db.clear_stale_admissions(Path(state_path).parent)
+        _update_recovery(owner, state_path, "before")
+    try:
+        admission = db.admit(state_path, owner=owner)
+    except db.AdmissionRefused as exc:
+        raise admission_error(exc, state_path) from exc
+
     progress.set("port", "running")
-    workspace_id = read_workspace_id(state_path)
-    choice = choose_port(preferred_port, workspace_id=workspace_id)
+    choice = choose_port(preferred_port, workspace_id=admission.workspace_id)
     progress.set("port", "ok", choice.detail)
 
     progress.set("coordinator", "running")
     server = coordinator = None
-    supervisor = supervisor or EngineSupervisor()
+    # The engine is chosen without consulting PATH or any port: a packaged build
+    # always uses its own verified engine; a source checkout uses one fetched
+    # into desktop/engine/dist, or the labelled developer Ollama.
+    selection = None
+    if supervisor is None:
+        from backend.coordinator import engine as engine_module
+        selection = engine_module.select()
+        if selection.mode != engine_module.MANAGED:
+            selection = None
+            supervisor = EngineSupervisor()
     try:
         _check_cancelled(cancelled)
         if choice.reused:
@@ -554,10 +605,14 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
                          "Reusing the coordinator that is already running.")
         else:
             if start_server is None:
+                from functools import partial
                 from backend.coordinator.server import build_server
-                start_server = build_server
+                start_server = partial(build_server, owner=owner,
+                                       admitted=admission)
             try:
                 server, coordinator = start_server(state_path, choice.port)
+            except db.AdmissionRefused as exc:
+                raise admission_error(exc, state_path) from exc
             except OSError as exc:
                 raise StartupError("The local coordinator would not start.",
                                    str(exc), {"kind": "retry", "label": "Try again"}) from exc
@@ -570,31 +625,71 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
 
         progress.set("engine", "running")
         engine_error = None
-        try:
-            engine = supervisor.ensure(budget=min(RUNTIME_START_SECONDS, remaining()),
-                                       cancelled=cancelled)
-        except StartupError as exc:
-            supervisor.stop()
-            # Chat cannot run without the engine, but the window must still open
-            # with a readable explanation instead of a spinner.
-            engine = dict(supervisor.last or {})
-            engine_error = exc
-            progress.set("engine", "attention", f"{exc} {exc.detail}".strip(), exc.action)
+        if selection is not None:
+            engine, model, engine_error, supervisor = _managed_engine_steps(
+                progress, selection, coordinator, state_path)
         else:
-            started = (" Refinix started it." if engine.get("started_by_refinix")
-                       else " It was already running.")
-            progress.set("engine", "ok",
-                         f"Ollama {engine.get('server_version') or 'unknown version'} answered."
-                         + started)
+            try:
+                engine = supervisor.ensure(budget=min(RUNTIME_START_SECONDS, remaining()),
+                                           cancelled=cancelled)
+            except StartupError as exc:
+                supervisor.stop()
+                # Chat cannot run without the engine, but the window must still
+                # open with a readable explanation instead of a spinner.
+                engine = dict(supervisor.last or {})
+                engine_error = exc
+                progress.set("engine", "attention", f"{exc} {exc.detail}".strip(),
+                             exc.action)
+            else:
+                started = (" Refinix started it." if engine.get("started_by_refinix")
+                           else " It was already running.")
+                progress.set("engine", "ok",
+                             "Developer engine: external Ollama "
+                             f"{engine.get('server_version') or 'unknown version'} "
+                             "answered." + started)
 
-        progress.set("model", "running")
-        model = model_status(engine)
-        progress.set("model", "ok" if model["state"] == "ok" else "attention",
-                     model["detail"], model["action"])
+            progress.set("model", "running")
+            try:
+                if coordinator is not None and getattr(coordinator, "ollama_control",
+                                                       None) is None:
+                    coordinator.ollama_control = supervisor
+            except AttributeError:
+                pass                  # a stand-in coordinator without that slot
+            # Ollama alone (a source checkout): memory and disk are still read,
+            # so model fit and recommendations are not left unknown.
+            refresh = getattr(coordinator, "refresh_hardware", None)
+            if callable(refresh):
+                try:
+                    refresh()
+                except Exception:                          # noqa: BLE001
+                    pass              # facts stay unknown and Settings says so
+            ready = _chat_readiness(coordinator) if coordinator is not None else None
+            if ready is None:
+                model = model_status(engine)
+            elif ready["code"] == "ready":
+                chosen = coordinator.model_for("chat")
+                model = {"state": "ok", "model": chosen,
+                         "installed": engine.get("models") or [],
+                         "detail": "A local model is ready for Chat.",
+                         "action": None, "readiness": ready}
+            else:
+                # Installed is not runnable: the selection, a switch, the file
+                # identity, locality or the Ollama version can still say no.
+                model = {"state": "attention", "model": None,
+                         "installed": engine.get("models") or [], "readiness": ready,
+                         "detail": f"{ready['message']} {ready['detail']}".strip(),
+                         "action": ready["action"]}
+            progress.set("model", "ok" if model["state"] == "ok" else "attention",
+                         model["detail"], model["action"])
 
+        ready = model.get("readiness")
+        # An update to this version is committed later, by the packaged window
+        # once its interface has loaded (desktop/update_apply.commit_if_supervised);
+        # opening the data alone is not enough evidence, and a headless start
+        # never commits.
         if engine_error is not None or model["state"] != "ok":
-            progress.finish("attention",
-                            "Refinix is open. Chat needs one more step on this computer.")
+            progress.finish("attention", "Refinix is open. " + (
+                ready["message"] if ready else "Chat needs one more step on this computer."))
         else:
             progress.finish("ready", "Refinix is ready.")
 
@@ -609,5 +704,99 @@ def run_startup(progress: Progress, *, state_path: Path = STATE_DB,
             server.server_close()
         if coordinator is not None:
             coordinator.conn.close()
-        supervisor.stop()
+        if supervisor is not None:
+            supervisor.stop()
         raise
+
+
+def _managed_engine_steps(progress, selection, coordinator, state_path):
+    """The engine and model steps for Refinix's own engine.
+
+    Nothing is downloaded and no model is loaded here: the engine is verified,
+    configured and left to load a model on first use.
+    """
+    if coordinator is None:
+        # The window is showing a coordinator another process owns; that
+        # process owns its engine too.
+        progress.set("engine", "ok", "Using the engine of the Refinix already running.")
+        progress.set("model", "ok", "Models are managed by that Refinix.")
+        return {}, {"state": "ok"}, None, ManagedEngineControl(_NoEngine())
+    backend = configure_managed_engine(selection, coordinator, state_path)
+    state = runtime.probe()
+    manifest = selection.manifest or {}
+    # The same typed answer the status screen shows: installed weights alone
+    # never make Chat ready.
+    ready = _chat_readiness(coordinator, state)
+    engine_error = None
+    if selection.problems or backend.engine is None:
+        engine_error = StartupError(
+            "The Refinix engine is missing or was changed.",
+            "; ".join(selection.problems[:3]) + ". Reinstall Refinix from a "
+            "verified package; nothing is downloaded automatically. Your "
+            "conversations and models are kept.",
+            {"kind": "reinstall", "label": "How to repair Refinix"})
+        progress.set("engine", "attention", f"{engine_error} {engine_error.detail}",
+                     engine_error.action)
+    elif ready is not None and ready["code"].startswith("engine_"):
+        engine_error = StartupError(ready["message"], ready["detail"], ready["action"])
+        progress.set("engine", "attention", f"{ready['message']} {ready['detail']}".strip(),
+                     ready["action"])
+    else:
+        progress.set("engine", "ok",
+                     f"Refinix engine {manifest.get('release')} "
+                     f"({manifest.get('backend')}) verified on this computer.")
+    progress.set("model", "running")
+    installed = state.get("models") or []
+    chosen = coordinator.model_for("chat") if ready is not None else None
+    if ready is not None and ready["code"] == "ready":
+        model = {"state": "ok", "model": chosen, "installed": installed,
+                 "detail": f"{chosen} is ready; it loads on first use.",
+                 "action": None, "readiness": ready}
+    elif ready is not None and ready["code"].startswith("engine_"):
+        model = {"state": "attention", "model": chosen, "installed": installed,
+                 "detail": "Models are used once the engine is working.",
+                 "action": None, "readiness": ready}
+    elif ready is not None:
+        model = {"state": "attention", "model": chosen, "installed": installed,
+                 "detail": f"{ready['message']} {ready['detail']}".strip(),
+                 "action": ready["action"], "readiness": ready}
+    else:
+        model = {"state": "attention", "model": None, "installed": installed,
+                 "detail": "Refinix could not check whether Chat is ready. "
+                           "Settings → Models shows each model's state.",
+                 "action": {"kind": "open_settings", "target": "models",
+                            "label": "Open Settings → Models"}}
+    progress.set("model", "ok" if model["state"] == "ok" else "attention",
+                 model["detail"], model["action"])
+    return state, model, engine_error, ManagedEngineControl(
+        backend, ollama=getattr(coordinator, "ollama_control", None))
+
+
+def _update_recovery(owner, state_path: Path, moment: str) -> None:
+    """Finish an interrupted update copy before the workspace is opened.
+
+    Only mechanical completion happens here (`recovery.at_startup`); commit,
+    discard and restore belong to the update helper.
+    """
+    from backend.coordinator import build_info, recovery
+    version = build_info.describe()["version"]
+    try:
+        recovery.at_startup(owner, state_path, version)
+    except recovery.RecoveryError as exc:
+        raise StartupError("Refinix could not finish an update recovery.",
+                           f"{exc} Nothing else was changed.",
+                           {"kind": "retry", "label": "Try again"}) from exc
+
+
+def _chat_readiness(coordinator, state=None) -> dict | None:
+    """The coordinator's typed Chat readiness, or None when it cannot be read."""
+    try:
+        ready = coordinator.chat_readiness(state)
+    except Exception:                                      # noqa: BLE001
+        return None
+    return ready if isinstance(ready, dict) and isinstance(ready.get("code"), str) else None
+
+
+class _NoEngine:
+    def stop(self) -> bool:
+        return False

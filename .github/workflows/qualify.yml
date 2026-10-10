@@ -1,0 +1,321 @@
+name: Native qualification
+
+# Qualifies the commit under review on each operating system's own disposable
+# GitHub-hosted runner, before it is merged. Runs only when someone pushes a
+# `qualify/...` branch on purpose (or by hand once this file is on main), so
+# routine pushes cost nothing. Nothing here signs anything public, publishes,
+# tags or writes to the repository.
+#
+# For each lane it builds two private test packages of this commit, N and N+1
+# (`desktop/build.py --scratch`: recorded as never publishable), trusting a
+# throwaway update root made here, and then observes:
+#   * the native unit suites on the real operating system (Windows: real job
+#     objects, process lifetime and registry);
+#   * the release-bytes qualifier run on package N (install, file list,
+#     registration, scratch-data launch, uninstall / seal checks);
+#   * the packaged update journeys N -> N+1: update, a new version that never
+#     confirms (rolled back), and a helper stopped mid-install (resumed),
+#     each with synthetic saved work on scratch data;
+#   * Ubuntu: the Code sandbox with a real systemd user service.
+# A second macOS job repeats the Mac launch and journeys on the oldest free
+# arm64 macOS runner. Every report names the commit it ran on.
+
+on:
+  push:
+    branches:
+      - "qualify/**"
+  workflow_dispatch:
+    inputs:
+      macos_floor_runner:
+        description: "Oldest free arm64 macOS runner label"
+        required: true
+        default: macos-14
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qualify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OLD: 0.1.0-beta.901
+  NEW: 0.1.0-beta.902
+  MAC_MINIMUM: "14.0"
+
+jobs:
+  lane:
+    name: ${{ matrix.lane }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {"lane": "macos-arm64", "runner": "macos-15", "fmt": "zip",
+             "locks": "desktop/requirements-macos.lock backend/requirements-runtime.lock desktop/requirements-build-macos.lock"}
+          - {"lane": "windows-x64", "runner": "windows-2025", "fmt": "exe",
+             "locks": "desktop/requirements-windows.lock backend/requirements-runtime.lock backend/requirements-render.lock desktop/requirements-build-windows.lock"}
+          - {"lane": "linux-x64", "runner": "ubuntu-24.04", "fmt": "deb",
+             "locks": "desktop/requirements-linux.lock backend/requirements-runtime.lock backend/requirements-render.lock desktop/requirements-build-linux.lock"}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      REFINIX_QUALIFY_DISPOSABLE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Name the work folders
+        run: |
+          {
+            echo "REFINIX_CACHE=$RUNNER_TEMP/refinix-build-cache"
+            echo "Q=$RUNNER_TEMP/qualify"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/qualify/reports"
+
+      - name: Install Ubuntu build and session packages
+        if: matrix.lane == 'linux-x64'
+        timeout-minutes: 17
+        uses: ./.github/actions/refinix-apt
+        with:
+          packages: >-
+            python3-venv python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+            libwebkit2gtk-4.1-0 dpkg-dev libpython3.12 xvfb xauth dbus dbus-x11 pkexec
+            polkitd fuse3 fuse2fs e2fsprogs
+
+      - name: Set up the pinned build Python
+        uses: ./.github/actions/refinix-python
+        with:
+          lane: ${{ matrix.lane }}
+          venv: ${{ runner.temp }}/venv
+
+      - name: Install pinned dependencies
+        run: |
+          args=()
+          for lock in ${{ matrix.locks }}; do args+=(-r "$lock"); done
+          python -m pip install --require-hashes "${args[@]}"
+          python -m pip check
+
+      - name: Restore verified engine archives and packaging tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/refinix-build-cache
+          key: engine-${{ matrix.lane }}-${{ runner.arch }}-${{ hashFiles('desktop/engine/engine-pins.json', 'desktop/packaging-tools.json') }}
+
+      - name: Native unit suites
+        env:
+          REFINIX_NATIVE_WINDOWS: ${{ matrix.lane == 'windows-x64' && '1' || '' }}
+        run: |
+          status=0
+          python -m unittest desktop.test_build desktop.test_update_methods \
+            desktop.test_qualify_control desktop.test_review_fixes \
+            desktop.test_engine_fetch backend.coordinator.test_windows_durability || status=1
+          if [ "${{ matrix.lane }}" = "windows-x64" ]; then
+            python -m unittest desktop.test_update_windows_native -v || status=1
+          fi
+          exit $status
+
+      # Feed tooling in its own environment, so nothing of it can reach a package.
+      - name: Throwaway update root and feed
+        env:
+          REFINIX_KEY_PASSPHRASE_ROOT: throwaway qualification root
+          REFINIX_KEY_PASSPHRASE_TARGETS: throwaway qualification targets
+          REFINIX_KEY_PASSPHRASE_SNAPSHOT: throwaway qualification snapshot
+          REFINIX_KEY_PASSPHRASE_TIMESTAMP: throwaway qualification timestamp
+        run: |
+          "$REFINIX_PYTHON" -m venv "$RUNNER_TEMP/tools"
+          if [ "$RUNNER_OS" = "Windows" ]; then T="$RUNNER_TEMP/tools/Scripts/python"; else T="$RUNNER_TEMP/tools/bin/python"; fi
+          echo "TOOLS=$T" >> "$GITHUB_ENV"
+          "$T" -m pip install --require-hashes -r backend/requirements-runtime.lock \
+            -r scripts/requirements-release.lock
+          "$T" scripts/update_repository.py init --channel beta --keys "$Q/keys" --repo "$Q/feed"
+          cat > "$Q/feed.json" <<'JSON'
+          {"metadata_url": "https://qualify.invalid/updates/beta/metadata/",
+           "targets_url": "https://qualify.invalid/updates/beta/targets/",
+           "packages_url": "https://qualify.invalid/releases/download/",
+           "package_hosts": ["qualify.invalid"]}
+          JSON
+
+      - name: Build private test packages N and N+1 of this commit
+        run: |
+          extra=()
+          if [ "${{ matrix.lane }}" = "macos-arm64" ]; then extra+=(--macos-minimum "$MAC_MINIMUM"); fi
+          for pair in "$OLD 901" "$NEW 902"; do
+            set -- $pair
+            python desktop/build.py --channel beta --scratch --version "$1" \
+              --build-set "bs-q$2" --build-number "$2" --source-commit "$GITHUB_SHA" \
+              --cache "$REFINIX_CACHE" --out "$Q/build-$2" \
+              --trust-root "$Q/feed/metadata/1.root.json" --update-feed "$Q/feed.json" \
+              --disposable-host "${extra[@]}"
+          done
+
+      - name: Sign N and N+1 into the throwaway feed, and bundle N+1
+        env:
+          REFINIX_KEY_PASSPHRASE_ROOT: throwaway qualification root
+          REFINIX_KEY_PASSPHRASE_TARGETS: throwaway qualification targets
+          REFINIX_KEY_PASSPHRASE_SNAPSHOT: throwaway qualification snapshot
+          REFINIX_KEY_PASSPHRASE_TIMESTAMP: throwaway qualification timestamp
+        run: |
+          fmt=${{ matrix.fmt }}
+          mkdir -p "$Q/assets"
+          for n in 901 902; do
+            files=$(ls "$Q/build-$n"/* | grep -E "\.$fmt$")
+            "$TOOLS" scripts/update_repository.py stage --fixture --keys "$Q/keys" \
+              --repo "$Q/feed" --maturity beta $files
+            "$TOOLS" scripts/update_repository.py advance --keys "$Q/keys" --repo "$Q/feed"
+            cp "$Q/build-$n"/* "$Q/assets/"
+          done
+          recovery=()
+          if [ "$fmt" = "deb" ]; then recovery+=(--recovery-version "$OLD"); fi
+          "$TOOLS" scripts/update_repository.py bundle --channel beta --repo "$Q/feed" \
+            --lane ${{ matrix.lane }} --format "$fmt" --packages "$Q/assets" \
+            --maturity beta --output "$Q/bundle-N1.zip" "${recovery[@]}"
+
+      - name: Release-bytes qualifier on package N (Ubuntu)
+        if: matrix.lane == 'linux-x64'
+        run: |
+          # The release lock goes into the build environment only after both
+          # packages are built, as in the release workflow.
+          python -m pip install --require-hashes -r scripts/requirements-release.lock
+          python -m unittest desktop.test_deb_root backend.coordinator.test_updates_beta \
+            backend.coordinator.test_sandbox_local -q
+          sudo env REFINIX_QUALIFY_DISPOSABLE=1 GITHUB_SHA="$GITHUB_SHA" \
+            "$RUNNER_TEMP/venv/bin/python" scripts/qualify_deb.py \
+            --real "$Q/build-901"/refinix_*_amd64.deb --report "$Q/reports/deb-n.json"
+
+      - name: Release-bytes qualifier on package N (Windows)
+        if: matrix.lane == 'windows-x64'
+        run: |
+          python scripts/qualify_windows.py --setup "$Q"/build-901/Refinix-*-setup.exe \
+            --report "$Q/reports/windows-n.json"
+
+      - name: Release-bytes qualifier on package N (macOS)
+        if: matrix.lane == 'macos-arm64'
+        run: |
+          python scripts/qualify_macos.py --dmg "$Q"/build-901/Refinix-*.dmg \
+            --zip "$Q"/build-901/Refinix-*.zip --report "$Q/reports/macos-n-partial.json"
+
+      - name: Packaged update journeys N -> N+1
+        run: |
+          old=$(ls "$Q/build-901"/* | grep -E "\.${{ matrix.fmt }}$")
+          if [ "${{ matrix.lane }}" = "linux-x64" ]; then
+            Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
+            export DISPLAY=:99
+            eval "$(dbus-launch --sh-syntax)"
+          fi
+          "$TOOLS" scripts/qualify_update_journey.py --lane ${{ matrix.lane }} --old "$old" \
+            --new-bundle "$Q/bundle-N1.zip" --old-version "$OLD" --new-version "$NEW" \
+            --report "$Q/reports/journey.json"
+
+      - name: Ubuntu Code sandbox with a real systemd user service
+        if: matrix.lane == 'linux-x64'
+        run: |
+          sudo loginctl enable-linger "$USER"
+          uid=$(id -u)
+          for i in $(seq 1 30); do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
+          export XDG_RUNTIME_DIR="/run/user/$uid"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
+          systemctl --user show-environment >/dev/null && echo "user manager ready"
+          python scripts/qualify_sandbox.py --report "$Q/reports/sandbox.json"
+
+      - name: Summarise
+        if: always()
+        env:
+          LANE: ${{ matrix.lane }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          from scripts.qualification_record import REQUIRED
+          folder = pathlib.Path(os.environ["Q"]) / "reports"
+          lane = os.environ["LANE"]
+          native = {"linux-x64": "deb-n.json", "windows-x64": "windows-n.json",
+                    "macos-arm64": "macos-n-partial.json"}[lane]
+          expected = [native, "journey.json"] + (["sandbox.json"] if lane == "linux-x64" else [])
+          failed = []
+          for name in expected:
+              path = folder / name
+              if not path.is_file():
+                  failed.append(name)
+                  print(f"MISSING {name}")
+                  continue
+              data = json.loads(path.read_text())
+              checks = data.get("checks") or []
+              bad = [c["check"] for c in checks if c.get("passed") is not True]
+              if name == native:
+                  required = set(REQUIRED[lane])
+                  if lane == "macos-arm64":
+                      required.remove("packaged app starts on the oldest supported macOS runner")
+                  bad += sorted(required - {c["check"] for c in checks})
+              print(f"{path.name}: {len(checks) - len(bad)}/{len(checks)} passed")
+              for check_name in bad:
+                  print(f"   FAILED  {check_name}")
+              if (bad or not checks or data.get("commit_tested") != os.environ["GITHUB_SHA"]
+                      or (lane != "macos-arm64" or name != native) and data.get("passed") is not True):
+                  failed.append(path.name)
+          if failed:
+              raise SystemExit(f"failed: {failed}")
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: qualify-${{ matrix.lane }}
+          path: |
+            ${{ env.Q }}/reports
+            ${{ env.Q }}/build-901
+            ${{ env.Q }}/bundle-N1.zip
+            ${{ env.Q }}/data-*/app.log
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
+
+  macos-floor:
+    name: macos-arm64 on the oldest macOS runner
+    needs: lane
+    if: ${{ !cancelled() }}
+    runs-on: ${{ inputs.macos_floor_runner || 'macos-14' }}
+    timeout-minutes: 90
+    env:
+      REFINIX_QUALIFY_DISPOSABLE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: qualify-macos-arm64
+          path: ${{ runner.temp }}/qualify
+      - name: Set up the pinned Python
+        uses: ./.github/actions/refinix-python
+        with:
+          lane: macos-arm64
+          venv: ${{ runner.temp }}/venv
+      - name: Journey tooling
+        run: python -m pip install --require-hashes -r backend/requirements-runtime.lock
+      - name: Package N and the journeys on this macOS
+        run: |
+          Q="$RUNNER_TEMP/qualify"
+          sw_vers
+          python scripts/qualify_macos.py --dmg "$Q"/build-901/Refinix-*.dmg \
+            --zip "$Q"/build-901/Refinix-*.zip --floor \
+            --merge "$Q/reports/macos-n-partial.json" --report "$Q/floor-n.json"
+          python scripts/qualify_update_journey.py --lane macos-arm64 \
+            --old "$(ls "$Q"/build-901/*.zip)" --new-bundle "$Q/bundle-N1.zip" \
+            --old-version "$OLD" --new-version "$NEW" --report "$Q/floor-journey.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: qualify-macos-floor
+          path: |
+            ${{ runner.temp }}/qualify/floor-*.json
+          if-no-files-found: warn
+          retention-days: 14

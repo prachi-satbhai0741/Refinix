@@ -1,4 +1,7 @@
-# macOS arm64, CPython 3.12; PyPI metadata inspected 2026-09-04.
+# macOS arm64. Release builds run CPython 3.13 (python.org installer, see
+# desktop/packaging-tools.json python_runtime_macos); local development may use
+# CPython 3.12. Version-specific wheels list both cp312 and cp313 digests (cp313
+# digests read from PyPI metadata 2026-10-08). PyPI metadata inspected 2026-09-04.
 # Exact upstream artifacts, unmodified. Hashes are checked before installation.
 # All 21 artifacts total 16,002,752 bytes including the build lock.
 # Includes the existing backend/requirements.txt pins.
@@ -43,23 +46,33 @@ pydantic==2.13.5 --hash=sha256:346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8
 
 # https://pypi.org/pypi/pydantic-core/2.46.5/json
 # pydantic_core-2.46.5-cp312-cp312-macosx_11_0_arm64.whl | 1922874 bytes | MIT
-pydantic-core==2.46.5 --hash=sha256:a39ac25a9a2fa4072efdb429833c4a4c8009a51ff9eea3eeae131713cd27991e
+# pydantic_core-2.46.5-cp313-cp313-macosx_11_0_arm64.whl | 1922768 bytes | MIT
+pydantic-core==2.46.5 --hash=sha256:a39ac25a9a2fa4072efdb429833c4a4c8009a51ff9eea3eeae131713cd27991e \
+    --hash=sha256:f332f0e72a5a0400141f830744e141bf9f97917878dbe968669e8a7fefea78ff
 
 # https://pypi.org/pypi/pyobjc-core/json
 # pyobjc_core-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 6427637 bytes | MIT
-pyobjc-core==12.2.2 --hash=sha256:122e6ad302a2abf5d4d4adb0156db751600ddf2768441696cba17b31323085e7
+# pyobjc_core-12.2.2-cp313-cp313-macosx_10_13_universal2.whl | 6427113 bytes | MIT
+pyobjc-core==12.2.2 --hash=sha256:122e6ad302a2abf5d4d4adb0156db751600ddf2768441696cba17b31323085e7 \
+    --hash=sha256:950bd2d9c74634398c4e3d24ef2f213d4e23d705083697464fa67afedc53c1ad
 
 # https://pypi.org/pypi/pyobjc-framework-cocoa/json
 # pyobjc_framework_cocoa-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 388117 bytes | MIT
-pyobjc-framework-cocoa==12.2.2 --hash=sha256:e106f395531e67694376b0f1184612cbeea3ec8b9bf56b55ef41d026171d2a2d
+# pyobjc_framework_cocoa-12.2.2-cp313-cp313-macosx_10_13_universal2.whl | 388181 bytes | MIT
+pyobjc-framework-cocoa==12.2.2 --hash=sha256:e106f395531e67694376b0f1184612cbeea3ec8b9bf56b55ef41d026171d2a2d \
+    --hash=sha256:600b1723184ca094931330e79355274949965460e23de38628d601b5a967baf9
 
 # https://pypi.org/pypi/pyobjc-framework-quartz/json
 # pyobjc_framework_quartz-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 219003 bytes | MIT
-pyobjc-framework-quartz==12.2.2 --hash=sha256:7f668979d0c7320bf8f7ed6e030da578f93ab0f5dd619b295ec735cd8d5faa34
+# pyobjc_framework_quartz-12.2.2-cp313-cp313-macosx_10_13_universal2.whl | 219404 bytes | MIT
+pyobjc-framework-quartz==12.2.2 --hash=sha256:7f668979d0c7320bf8f7ed6e030da578f93ab0f5dd619b295ec735cd8d5faa34 \
+    --hash=sha256:0ec9751904ef975bf0789d760dc4fadcb400edc4ffe4a736eb54971968babe5c
 
 # https://pypi.org/pypi/pyobjc-framework-security/json
 # pyobjc_framework_security-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 41298 bytes | MIT
-pyobjc-framework-security==12.2.2 --hash=sha256:266f41995f2fc80660c8451bdb199a7e259a6cad02fbc1e0e2f69dd5576e2203
+# pyobjc_framework_security-12.2.2-cp313-cp313-macosx_10_13_universal2.whl | 41303 bytes | MIT
+pyobjc-framework-security==12.2.2 --hash=sha256:266f41995f2fc80660c8451bdb199a7e259a6cad02fbc1e0e2f69dd5576e2203 \
+    --hash=sha256:ca580d5f56e1222d63f1322a4fbf63be0bad77e77cca084290310df007b3fdde
 
 # https://pypi.org/pypi/pyobjc-framework-uniformtypeidentifiers/json
 # pyobjc_framework_uniformtypeidentifiers-12.2.2-py2.py3-none-any.whl | 5045 bytes | MIT
@@ -67,7 +80,9 @@ pyobjc-framework-uniformtypeidentifiers==12.2.2 --hash=sha256:1dc6a538df07c410e4
 
 # https://pypi.org/pypi/pyobjc-framework-webkit/json
 # pyobjc_framework_webkit-12.2.2-cp312-cp312-macosx_10_13_universal2.whl | 50371 bytes | MIT
-pyobjc-framework-webkit==12.2.2 --hash=sha256:ef37692f0280151bf8164a718e334a9b3cb0abfc5455be14172280de7e277505
+# pyobjc_framework_webkit-12.2.2-cp313-cp313-macosx_10_13_universal2.whl | 50395 bytes | MIT
+pyobjc-framework-webkit==12.2.2 --hash=sha256:ef37692f0280151bf8164a718e334a9b3cb0abfc5455be14172280de7e277505 \
+    --hash=sha256:206f88451e1c3e152c72c16c2af2664646cd752a3007c9cda8029a9e3f0ec9a4
 
 # https://pypi.org/pypi/pypdfium2/5.13.0/json
 # pypdfium2-5.13.0-py3-none-macosx_13_0_arm64.whl | 3507415 bytes | BSD-3-Clause, Apache-2.0 (bundles PDFium, BSD-3-Clause)

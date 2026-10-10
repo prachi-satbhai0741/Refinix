@@ -1,0 +1,304 @@
+name: Beta packages
+
+# Builds the public (`beta` channel) macOS, Windows and Ubuntu packages for one
+# designated `main` commit, on GitHub-hosted runners (fresh virtual machines
+# discarded after each job), and qualifies each package natively on its exact
+# bytes. Started by hand only. It never publishes, tags, releases or writes to
+# the repository: its only outputs are workflow artifacts — the packages, their
+# build records and their native qualification records — which
+# scripts/release_assemble.py checks against the same commit before anything
+# is published (docs/releases.md).
+#
+# Unsigned macOS and Windows packages are built and published as the Beta when
+# their checks pass; the website and release notes show each operating
+# system's warning. Windows Authenticode signing stays available in the
+# `beta-sign` environment for a later release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Public label: 0.1.0-beta.N (or 0.1.0-preview.N / 0.1.0)"
+        required: true
+        type: string
+      public_build:
+        description: "Public build number, above every earlier public build"
+        required: true
+        type: string
+      build_set:
+        description: "Build-set label, for example bs-0101"
+        required: true
+        type: string
+      designated_commit:
+        description: "The full main commit SHA this release is built from"
+        required: true
+        type: string
+      lanes:
+        description: "Which packages to build"
+        required: true
+        default: all
+        type: choice
+        options: [all, macos-arm64, windows-x64, linux-x64]
+      macos_minimum:
+        description: "macOS minimum to declare: the oldest macOS the packages are run on below"
+        required: true
+        default: "14.0"
+        type: string
+      macos_floor_runner:
+        description: "Oldest free arm64 macOS runner label, which runs the final Mac bytes"
+        required: true
+        default: macos-14
+        type: string
+      windows_signing:
+        description: "Authenticode-sign the Windows package (needs the beta-sign environment)"
+        required: true
+        default: none
+        type: choice
+        options: [none, release]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-packages-${{ inputs.build_set }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the designated commit and labels
+    runs-on: ubuntu-24.04
+    outputs:
+      include: ${{ steps.lanes.outputs.include }}
+    env:
+      REFINIX_VERSION: ${{ inputs.version }}
+      REFINIX_PUBLIC_BUILD: ${{ inputs.public_build }}
+      REFINIX_BUILD_SET: ${{ inputs.build_set }}
+      REFINIX_COMMIT: ${{ inputs.designated_commit }}
+      REFINIX_LANES: ${{ inputs.lanes }}
+      REFINIX_MAC_MINIMUM: ${{ inputs.macos_minimum }}
+    steps:
+      - name: Only main, only the designated commit
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "start this from main"; exit 1; }
+          [ "$GITHUB_SHA" = "$REFINIX_COMMIT" ] || {
+            echo "main is at $GITHUB_SHA, not the designated $REFINIX_COMMIT"; exit 1; }
+          [[ "$REFINIX_PUBLIC_BUILD" =~ ^[1-9][0-9]{0,5}$ ]] || {
+            echo "public_build must be a whole number"; exit 1; }
+          [[ "$REFINIX_BUILD_SET" =~ ^bs-[0-9A-Za-z-]{1,32}$ ]] || {
+            echo "build_set must look like bs-0101"; exit 1; }
+          [[ "$REFINIX_MAC_MINIMUM" =~ ^[1-9][0-9]\.[0-9]$ ]] || {
+            echo "macos_minimum must look like 14.0"; exit 1; }
+
+      - name: Check out the designated commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: The label is a public label of this application version
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, ".")
+          from backend.coordinator import build_info, release
+          label = release.parse(os.environ["REFINIX_VERSION"])
+          if label.channel != "beta" or label.core != build_info.APP_VERSION:
+              sys.exit(f"{label} is not a public label of {build_info.APP_VERSION}")
+          print(f"{label}: maturity {label.maturity}, Debian {label.debian()}")
+          PY
+
+      - name: The Beta trust root and feed are committed
+        run: |
+          test -f desktop/updates/beta-root.json
+          test -f desktop/updates/beta-feed.json
+
+      - id: lanes
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          lanes = [
+              {"lane": "macos-arm64", "runner": "macos-15",
+               "locks": "desktop/requirements-macos.lock backend/requirements-runtime.lock desktop/requirements-build-macos.lock"},
+              {"lane": "windows-x64", "runner": "windows-2025",
+               "locks": "desktop/requirements-windows.lock backend/requirements-runtime.lock backend/requirements-render.lock desktop/requirements-build-windows.lock"},
+              {"lane": "linux-x64", "runner": "ubuntu-24.04",
+               "locks": "desktop/requirements-linux.lock backend/requirements-runtime.lock backend/requirements-render.lock desktop/requirements-build-linux.lock"},
+          ]
+          wanted = os.environ["REFINIX_LANES"]
+          print("include=" + json.dumps([i for i in lanes if wanted in ("all", i["lane"])]))
+          PY
+
+  package:
+    name: ${{ matrix.lane }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.check.outputs.include) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    # Signing secrets live only in this environment, and only the Windows job
+    # with release signing asks for it.
+    environment: ${{ (matrix.lane == 'windows-x64' && inputs.windows_signing == 'release') && 'beta-sign' || '' }}
+    env:
+      REFINIX_VERSION: ${{ inputs.version }}
+      REFINIX_PUBLIC_BUILD: ${{ inputs.public_build }}
+      REFINIX_BUILD_SET: ${{ inputs.build_set }}
+      REFINIX_MAC_MINIMUM: ${{ inputs.macos_minimum }}
+      REFINIX_QUALIFY_DISPOSABLE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out the designated commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # The runner context only exists inside steps, never in job-level env.
+      - name: Name the cache folder
+        run: echo "REFINIX_CACHE=$RUNNER_TEMP/refinix-build-cache" >> "$GITHUB_ENV"
+
+      # Ubuntu: the system Python 3.12, whose GTK/WebKitGTK bindings come from
+      # Ubuntu's python3-gi package; xvfb and D-Bus for the scratch launch.
+      - name: Install Ubuntu build packages
+        if: matrix.lane == 'linux-x64'
+        timeout-minutes: 17
+        uses: ./.github/actions/refinix-apt
+        with:
+          packages: >-
+            python3-venv python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+            libwebkit2gtk-4.1-0 dpkg-dev libpython3.12 xvfb xauth dbus dbus-x11
+
+      # macOS and Windows: python.org's pinned 3.13 installer, verified;
+      # Ubuntu: the distribution's python3.12 (desktop/python_runtime.py).
+      - name: Set up the pinned build Python
+        uses: ./.github/actions/refinix-python
+        with:
+          lane: ${{ matrix.lane }}
+          venv: ${{ runner.temp }}/venv
+
+      - name: Install pinned dependencies
+        run: |
+          args=()
+          for lock in ${{ matrix.locks }}; do args+=(-r "$lock"); done
+          python -m pip install --require-hashes "${args[@]}"
+          python -m pip check
+
+      - name: Restore verified engine archives and packaging tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/refinix-build-cache
+          key: engine-${{ matrix.lane }}-${{ runner.arch }}-${{ hashFiles('desktop/engine/engine-pins.json', 'desktop/packaging-tools.json') }}
+
+      - name: Run the build and update checks natively
+        env:
+          REFINIX_NATIVE_WINDOWS: ${{ matrix.lane == 'windows-x64' && '1' || '' }}
+        run: |
+          python -m unittest desktop.test_build desktop.test_update_methods \
+            desktop.test_qualify_control -q
+          if [ "${{ matrix.lane }}" = "windows-x64" ]; then
+            python -m unittest desktop.test_update_windows_native -v
+          fi
+          if [ "${{ matrix.lane }}" = "linux-x64" ]; then
+            python -m unittest backend.coordinator.test_release -q
+          fi
+
+      - name: Build the package
+        env:
+          REFINIX_WINDOWS_SIGN_COMMAND: ${{ secrets.REFINIX_WINDOWS_SIGN_COMMAND }}
+          REFINIX_WINDOWS_PUBLISHER: ${{ vars.REFINIX_WINDOWS_PUBLISHER }}
+        run: |
+          signing=unsigned
+          if [ "${{ matrix.lane }}" = "windows-x64" ] && [ "${{ inputs.windows_signing }}" = "release" ]; then
+            signing=release
+          fi
+          extra=()
+          if [ "${{ matrix.lane }}" = "macos-arm64" ]; then
+            extra+=(--macos-minimum "$REFINIX_MAC_MINIMUM")
+          fi
+          python desktop/build.py --channel beta --version "$REFINIX_VERSION" \
+            --build-set "$REFINIX_BUILD_SET" --build-number "$REFINIX_PUBLIC_BUILD" \
+            --source-commit "$GITHUB_SHA" --cache "$REFINIX_CACHE" --out out \
+            --trust-root desktop/updates/beta-root.json \
+            --update-feed desktop/updates/beta-feed.json \
+            --signing "$signing" --disposable-host "${extra[@]}"
+
+      # The .deb's own install, update and recovery rules, with the real dpkg
+      # and APT on this throwaway Ubuntu machine, then the exact package. The
+      # release tooling's own lock (throwaway feed signing) goes in only after
+      # the package is built, so it can never end up inside the package.
+      - name: Qualify the Ubuntu package natively
+        if: matrix.lane == 'linux-x64'
+        run: |
+          python -m pip install --require-hashes -r scripts/requirements-release.lock
+          # These build throwaway signed feeds, so they need the release lock too.
+          python -m unittest desktop.test_deb_root backend.coordinator.test_updates_beta -q
+          sudo env REFINIX_QUALIFY_DISPOSABLE=1 GITHUB_SHA="$GITHUB_SHA" \
+            "$RUNNER_TEMP/venv/bin/python" \
+            scripts/qualify_deb.py --real out/refinix_*_amd64.deb \
+            --report out/deb-qualification.json
+
+      - name: Qualify the Windows setup natively
+        if: matrix.lane == 'windows-x64'
+        run: |
+          python scripts/qualify_windows.py --setup out/Refinix-*-windows-x64-setup.exe \
+            --report out/windows-qualification.json
+
+      - name: Qualify the Mac packages natively (this runner)
+        if: matrix.lane == 'macos-arm64'
+        run: |
+          python scripts/qualify_macos.py --dmg out/Refinix-*-macos-arm64.dmg \
+            --zip out/Refinix-*-macos-arm64.zip --report out/macos-qualification-partial.json
+
+      - name: Show the recorded hashes
+        if: always()
+        run: cat out/*.sha256 || true
+
+      - name: Keep the packages, their records and qualification
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: refinix-${{ inputs.version }}-${{ matrix.lane }}
+          path: |
+            out/Refinix-*
+            out/refinix_*
+            out/build-record-*.json
+            out/*-qualification*.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+  macos-floor:
+    name: macos-arm64 on the oldest macOS runner
+    needs: package
+    if: inputs.lanes == 'all' || inputs.lanes == 'macos-arm64'
+    runs-on: ${{ inputs.macos_floor_runner }}
+    timeout-minutes: 45
+    env:
+      REFINIX_QUALIFY_DISPOSABLE: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: refinix-${{ inputs.version }}-macos-arm64
+          path: out
+      # The same bytes the first Mac job built and checked, launched here.
+      - name: Run the final Mac packages on this macOS
+        run: |
+          python3 scripts/qualify_macos.py --dmg out/Refinix-*-macos-arm64.dmg \
+            --zip out/Refinix-*-macos-arm64.zip --floor \
+            --merge out/macos-qualification-partial.json --report macos-qualification.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: refinix-${{ inputs.version }}-macos-arm64-floor
+          path: macos-qualification.json
+          if-no-files-found: error
+          retention-days: 90

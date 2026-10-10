@@ -13,11 +13,77 @@ The plan now uses five large implementation phases. A phase is a **coherent outc
 of microscopic tasks. An authorised agent should execute as much of the current phase as can be
 completed safely within the user's scope, pausing only at genuine human checkpoints.
 
-**Current active phase: Phase 1 — Cross-platform foundation.**
+Keep the phase identifiers for historical references. For the standalone Beta, execute **Phase 1 ->
+Phase 2 -> local Phase 4 acceptance -> Phase 5**. **Phase 3 and peer-specific Phase 4 work are deferred
+until after Beta 0.1.** The Beta includes qualified in-app updates on Windows, macOS and Linux.
+
+**Current active phase: Phase 5 — Refinix Beta 0.1 publication, then device acceptance.** The source
+work of Phases 1, 2, local Phase 4 and Phase 5 is implemented and offline-tested. The review A1 repair
+batch (10 October 2026) is repaired, locally checked and native-qualified at
+`d109b49f6c9bdc4b72bda9f347c6481442f96984` on Windows Server 2025, Ubuntu 24.04 and macOS 15/14.
+Segment 1's repair/source/native work is complete. The user has generated the production Beta keys
+and confirmed an encrypted iCloud backup; the public root is verified at
+`desktop/updates/beta-root.json`, with production-root package qualification still pending.
+`docs/releases.md` records the user's approved encrypted iCloud/Apple Passwords exception to the
+offline custody default. [evaluation.md](docs/evaluation.md#beta-01-segment-1) records
+the observed results and remaining gates. Device acceptance is open on every platform, so none of
+those phases is complete.
+
+**5 October 2026 direction:** the [full user statements](docs/beta-user-direction-2026-10-05.md) are
+preserved verbatim: broad upstream model choice, existing Ollama reuse, managed llama.cpp,
+lightweight recommendations and automatic local task-to-model routing, without team certification
+of every model/device/version, on the existing foundation, with distribution deferred.
+
+**10 October 2026 direction (user):** the public name is **Refinix Beta 0.1** (`0.1.0-beta.N`, a normal
+GitHub release, public build 8); macOS and Windows are published **unsigned** with each OS's warning;
+the website offers the macOS DMG, the Windows setup and the Ubuntu `.deb`; the release happens
+**before** the user's device walkthrough, and device acceptance stays a separate record.
+
+### Launch sequence (current)
+
+1. Repairs and native qualification of one recorded commit on hosted runners (`qualify.yml`); any
+   later code change repeats the affected checks. Segment 1 passed run
+   [38055591709](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38055591709) at the commit
+   recorded above; the closing results-only update does not change application/workflow code.
+2. Production Beta keys and root (the user; custody in `docs/releases.md`) →
+   `desktop/updates/beta-root.json` committed.
+3. Member → dev → main, the user merging; `main`'s file tree equals the qualified tree.
+4. `release.yml` on that commit: all three lanes, each package qualified on its exact bytes, the
+   Mac bytes again on the oldest arm64 macOS runner; `release_assemble.py`; the CP-B manifest.
+5. CP-B (the user): publish the release, stage the feed offline, merge the website PR, advance the
+   feed (exact live check), `verify-public.yml` and anonymous downloads of the DMG, setup and `.deb`.
+6. Launch complete / device testing pending → the user's device walkthrough → one repair batch as new
+   immutable versions → device acceptance recorded per platform.
+
+### Completed in source (offline-tested; native runner results in evaluation.md; not device-accepted)
+
+- Public Beta update channel: signed TUF feed with preview and Beta pointers, one version ordering
+  key, forward-only publisher, exact live-feed check, daily refresh, root rotation, offline bundles.
+- In-app updates on all three platforms: macOS app swap; Windows per-user setup inside a
+  kill-on-close job with registry restore and file-list completeness; Ubuntu `.deb` through a
+  password-protected root step with one current attempt per installation and direction-aware
+  recovery; packaged N → N+1 update, rollback and interrupted-update journeys on hosted runners.
+- Release tooling: Beta package workflow for all three lanes with bound native qualification, release
+  assembly for the unsigned Beta, website feed workflows (templates for the website repository),
+  public verification workflow; Developer ID/notarisation and Authenticode paths kept for later.
+- Ubuntu Code sandbox (provisional until device qualification) wired into validation and Apply, with
+  prompt Cancel, recoverable cleanup and live-input re-checks before a sandbox-validated Apply.
+- Linux native messages, context indicator details, dead-code removal, launcher drift fix.
+- Website download cards rendered from the release record, with minimum OS, OS warning and
+  device-testing state; scan reading labelled Beta.
+
+### Open acceptance items
+
+- Every device walkthrough (Windows 11, macOS, Ubuntu desktop) on published packages: SmartScreen /
+  Smart App Control, Gatekeeper's Open Anyway, the real polkit prompt, real workflows and updates.
+- Ubuntu sandbox qualification on a real desktop session (still provisional after the runner checks).
+- Production Beta keys, the website owner's settings and secrets, and the live feed.
+- Developer ID and Windows code signing (optional later; not a Beta prerequisite).
 
 Phase 1 is only the first part of the total Refinix Beta path. Completing Phase 1 does **not** mean
 Refinix is Beta-complete, release-ready or production-qualified. It establishes the portable
-foundation needed by the later local-product, trusted-mesh, safety/proof and release phases.
+foundation needed by the local-product, standalone safety/proof and release phases. Trusted-mesh
+work remains a later product section, not a first-Beta prerequisite.
 
 The product contract is [`docs/PROJECT.md`](docs/PROJECT.md). Security, models and release/update
 detail remain in their focused authorities.
@@ -27,14 +93,30 @@ detail remain in their focused authorities.
 - Preserve the existing UI, harness, useful adapters, user data and security boundaries.
 - Reuse working source before replacing it. A technology change requires a demonstrated product or
   portability need, not preference.
-- Windows, macOS and Linux are all required desktop OS families for the Beta direction. Exact
-  versions/architectures/backends must be qualified; the project does not promise every computer.
+- Continue prototype work from the existing repository and preserve merged capabilities. Trace each
+  relevant UI/API, coordinator, runtime/tool, storage and validator path before adding code; repair
+  or adapt the existing path instead of rebuilding it or overlooking available behaviour.
+- Reuse upstream infrastructure and published evidence within the Beta scope. Local
+  model admission uses actual compatibility and capacity; team measurements are evidence, not a
+  general allowlist. Keep graphical setup, a managed engine path and existing Ollama reuse.
+- Keep the current orchestration harness. LangGraph remains a considered option under
+  `docs/PROJECT.md` section 7.0, not a dependency to install or a prerequisite to completing Beta.
+- Windows, macOS and Linux are all required desktop OS families for the Beta direction. Publish
+  evidence-backed minimum OS versions/ranges, architectures and backends; record exact tested builds
+  separately. Linux initially targets Ubuntu. The project does not promise every computer.
+- Prepare reviewed hardware/capability presets from existing research and representative evidence;
+  setup matches those records with lightweight current-capacity checks. Reuse established offline
+  tools and the existing code. Do not build a custom startup optimizer or require ownership of every
+  target laptop before research or implementation. Model benchmarks do not replace package acceptance.
 - The existing macOS application is the strongest current desktop baseline, not a permanent product
   restriction.
 - The existing Linux/K3s/Redis worker/sandbox path is retained infrastructure, not a mandatory
   requirement for ordinary desktop peer participation.
 - Plan/implementation/test/device/release states remain separate. Source existence is not acceptance.
 - Do not split a coherent implementation merely because it spans multiple modules.
+- Organise work only by the major sections/outcomes in `docs/PROJECT.md` and these phases. Complete
+  the authorised section directly, including integration and authorised verification. Do not add
+  further task tiers, per-file assignments or subagent delegation unless the user changes this rule.
 - Do not create a new task or handoff document for each agent session.
 - Core documentation is protected by `AGENTS.md`; agents must obtain user permission before changing
   it.
@@ -47,7 +129,8 @@ detail remain in their focused authorities.
 For the active phase:
 
 1. Read `AGENTS.md`, `docs/PROJECT.md`, and this phase.
-2. Inspect the current implementation path and relevant tests.
+2. Inspect the existing implementation, affected callers and relevant tests; identify reusable
+   behaviour and concrete gaps before implementing anything.
 3. Read `security.md`, `model-catalog.md` or `releases.md` only when the work enters that domain.
 4. Recover historical evidence only when needed; do not preload the archive/ledgers.
 5. Identify any facts/permissions that only the user can provide.
@@ -59,6 +142,8 @@ For the active phase:
 
 A phase may involve several code changes and several manual checkpoints. These are **checklist items**,
 not separate project-management tasks unless the user explicitly chooses to split ownership.
+Routine code organisation and obvious fixes remain agent-owned. Do not turn inspection, planning,
+implementation, integration and verification into separately delegated tasks or repeated handoffs.
 
 ## 3. Human checkpoint model
 
@@ -107,13 +192,14 @@ At the end of Phase 1, the repository should have one explicit cross-platform fo
 - document/PDF/image dependencies;
 - bounded Code filesystem access;
 - protected credential storage abstraction;
-- packaged peer execution-agent direction;
+- retained shared job/identity interfaces for later peer execution;
 - installer/dependency/sandbox prerequisites;
 - exact support-profile assumptions ready for later device qualification.
 
 Phase 1 establishes these foundations; Phase 2 proves the complete standalone product workflows.
-Phase 3 proves trusted peer execution. Phase 4 closes sandbox/recovery/proof behaviour. Phase 5 turns
-that integrated product into the published Beta candidate.
+The local part of Phase 4 closes sandbox/recovery/proof behaviour. Phase 5 turns that standalone
+product, including qualified in-app updates, into the published Beta candidate. Phase 3 proves
+trusted peer execution after Beta and then repeats the relevant Phase 4 checks for exposed peer paths.
 
 ## Starting point
 
@@ -132,17 +218,19 @@ credential storage, Windows-safe bounded filesystem operations, a desktop packag
 contain the full peer execution role, and unqualified runtime/installer/sandbox paths on the three
 OS families.
 
-### Current SIH reviewer priority
+### Standalone-first priority
 
-For the current SIH reviewer cycle, prioritise a dependable standalone Refinix
-installation on the selected Windows, macOS and Linux profiles before expanding
-the trusted-device mesh.
+For Beta 0.1, prioritise a dependable standalone Refinix installation on the
+selected Windows, macOS and Linux profiles before expanding the trusted-device
+mesh.
 
 The immediate target is:
 
 download/install -> detect hardware -> recommend compatible local models ->
 set up or import a model -> self-test -> use Chat, Documents and Code locally ->
 persist and reopen work successfully.
+
+Then qualify the in-app update and recovery journey on each advertised OS profile before publication.
 
 During this portability pass:
 
@@ -153,21 +241,26 @@ During this portability pass:
   for the dedicated stabilization pass rather than interrupting cross-platform
   foundation work;
 - after standalone operation is established across all three OS families, run a
-  focused stabilization/bug-fix pass before reviewer packaging and publication;
+  focused stabilization/bug-fix pass before tester-preview packaging and publication;
 - trusted-device discovery, pairing, distributed execution and scheduling remain
   part of the product architecture, but should not delay a usable standalone
-  reviewer build. Resume that work when the standalone baseline is stable and
-  schedule permits.
+  build. Resume that work after Beta 0.1 when the standalone baseline is
+  stable and schedule permits.
 
-This is an execution priority, not a product-scope reduction. The trusted-device
-mesh and later release phases remain in scope and retain their existing security,
-qualification and acceptance requirements.
+This is a **Beta 0.1 release-scope reduction**. Discovery, pairing, peer-agent packaging, remote
+execution, fleet scheduling and private-server use are not Beta prerequisites. Preserve their source
+and shared contracts for post-Beta work, with their security and acceptance requirements intact.
+Do not make standalone workflows or Beta installation depend on a second machine.
 
 ## Phase 1 checklist
 
 ### A. Current profile facts and assumptions
 
 - Select/confirm one narrow candidate desktop profile in each OS family for the first Beta path.
+- Derive candidate tiers from official dependency/model data and published benchmarks first. Record
+  minimum versions, CPU/backend, RAM/VRAM and storage, with measured/estimated limits distinguished.
+  Device brands are labels. Arrange remaining package/device checks through available machines,
+  suitable CI or volunteer observations; the user need not own all target hardware.
 - Record OS edition/architecture/backend facts from current user/device evidence when freshness is
   required; do not treat old inventory as fresh release acceptance.
 - Keep capability support per profile: an inference-capable profile does not automatically gain a
@@ -196,21 +289,33 @@ facts first. Run larger probes only when the user authorises them or the simple 
 - Ensure failure states are truthful when a required runtime/native dependency is unavailable.
 - Do not introduce a new frontend framework merely for portability.
 
-### D. App-managed inference runtime
+<a id="d-app-managed-inference-runtime"></a>
+### D. Reused local runtimes and compatible model admission
 
-- Reuse the current Ollama path where it qualifies.
-- Evaluate/implement the preferred bundled `llama.cpp`/`llama-server` path only when parity and
-  packaging requirements justify it; do not force a migration simply because it is the target
-  candidate.
-- Preserve model selection, streaming, cancellation, structured output, context bounds, reasoning
-  controls and health semantics across supported runtime adapters.
-- Keep inference endpoints on loopback.
-- Establish memory/resource budgeting hooks needed by later concurrency work.
-- Do not require ordinary users to install/manage model servers from a terminal.
+- Reuse the existing Ollama adapter as a product path for installed local Ollama models, without
+  copying weights. Keep the managed upstream llama.cpp path for users who need it.
+- Select the backend from model origin internally; show runtime/source on entries. Users with
+  Ollama may also download managed models. No mandatory technical runtime chooser or second install.
+- Preserve managed-engine executable/configuration/integrity ownership; an external updater cannot
+  replace its bytes. Broaden managed model choice beyond the current static measured entry.
+- Replace blanket local exact-profile gates with actual API/format/task capability, health/locality,
+  resource and data/tool-policy admission. Preserve measured evidence honestly; no spoofed versions,
+  invented qualification, weakened worker checks or unsafe host execution.
+- A newer Ollama version alone does not block normal work. Refresh metadata and explain real missing
+  features/security exclusions, offering normal graphical upstream update/start guidance under user
+  authority rather than requiring every customer to maintain a measured version.
+- Preserve streaming, cancellation, context bounds, reasoning, structured parsing, model identity,
+  task validators, persisted history and approvals across both adapters and every affected caller.
+- Keep inference local/offline and reject cloud-backed choices before work is sent.
+- Reuse allocation/loading/queuing features for multiple models/jobs. Permit concurrency where
+  capacity allows it; do not impose a universal one-model rule or disturb other Ollama clients.
+- Use lightweight hardware facts and published estimates for recommendations, not a mandatory
+  optimizer, per-model benchmark or hardware allowlist. Real format/capacity failures stay visible.
 
-**Decision checkpoint:** if runtime parity evidence shows that keeping Ollama or moving to bundled
-llama.cpp materially changes the Beta package, the agent must present a recommendation and obtain
-user approval before changing the product/runtime direction or protected docs.
+**Next planning checkpoint:** the implementation owner inspects current source/callers and proposes
+one coherent plan against the user's verbatim requirements. The user returns that plan for independent
+review. Ask only for genuine new scope/security/host actions; do not re-ask settled model freedom,
+Documents/Code use, automatic assignment or distribution deferral.
 
 ### E. Cross-platform document/image foundation
 
@@ -232,13 +337,14 @@ user approval before changing the product/runtime direction or protected docs.
   sandbox execution proves a stronger route.
 - Do not silently read the entire repository to solve selection friction.
 
-### G. Protected credentials, identity and peer-agent packaging foundation
+<a id="g-protected-credentials-identity-and-peer-agent-packaging-foundation"></a>
+### G. Protected credentials, identity and retained peer interfaces
 
 - Define OS-appropriate protected credential storage for macOS, Windows and Linux.
 - Preserve scoped relationship identity and revocation semantics.
-- Make the production desktop package capable, in architecture/source, of including the app-managed
-  execution-agent role rather than coordinator-only macOS packaging.
-- Do not require Kubernetes or Redis on ordinary desktop peers.
+- Qualify local protected storage and installation identity without requiring discovery, pairing or
+  a packaged peer execution agent. Complete peer packaging in the deferred Phase 3.
+- Do not require Kubernetes, Redis or peer certificates for standalone Beta use.
 - Preserve the existing authenticated worker/job contract so later peer execution can reuse its
   receipts/cancellation/reconciliation semantics.
 
@@ -257,7 +363,8 @@ user approval before changing the product/runtime direction or protected docs.
 ### I. Sandbox feasibility boundary
 
 - Preserve the existing restricted Kubernetes validator as a real candidate/evidence path.
-- Select at least one safe Beta Code-validation route that can later be qualified end-to-end.
+- Select at least one safe local Beta Code-validation route that can later be qualified end-to-end
+  on an eligible advertised profile; a remote sandbox is not a standalone Beta dependency.
 - Do not treat a container, timed host subprocess or remote inference peer as proof of sandbox
   isolation.
 - Windows Home limitations must be considered; Windows Sandbox cannot be assumed universal.
@@ -276,13 +383,14 @@ Completion should include:
 - a defined/implemented local runtime packaging direction with no silent terminal dependency;
 - a portable document-processing route for the Phase 2 workflow;
 - safe bounded Code path handling across the selected profiles;
-- an app-managed peer execution-agent packaging foundation;
+- retained shared job/identity interfaces without a peer-packaging completion gate;
 - a safe sandbox route identified for later integrated qualification;
 - known external/manual/device gates listed clearly.
 
 **Phase 1 does not require:** publication, full model lifecycle UX, complete local document/code
-quality acceptance, finished LAN mesh routing, final Proof Card egress evidence, or public Beta
-installers. Those belong to later phases.
+quality acceptance, updater acceptance, final Proof Card egress evidence or public Beta installers.
+Those belong to the later standalone/release sections. LAN discovery, pairing, routing and peer
+packaging remain deferred until after Beta.
 
 ---
 
@@ -292,21 +400,32 @@ installers. Those belong to later phases.
 
 ## Phase 2 outcome
 
-Make each selected desktop profile useful on its own through the existing Refinix interface, with
-qualified local models and dependable Chat/Documents/Code workflows.
+Make each selected desktop profile useful through the existing interface, with broad compatible
+local models, automatic task-to-model routing and useful Chat/Documents/Code workflows. Reuse existing
+infrastructure and published evidence; do not certify every model as a prerequisite.
 
 ## Phase 2 required outcomes
 
 - Persistent **Settings -> Models** lifecycle:
-  - installed vs supported/uninstalled entries;
+  - existing Ollama and managed entries with runtime/source identity, plus broad upstream discovery;
   - explicit compatible download or verified offline import;
   - progress/cancellation;
   - provenance/integrity verification;
-  - capability self-test;
+  - lightweight compatibility/health/locality information and honest task failures;
   - enable/disable;
   - safe removal without losing chats or unrelated models.
-- At least two qualified task/model combinations across at least two task types; installed model
-  names alone are insufficient.
+- Reuse download/import integrity, progress and cancellation. Local checks or real task execution
+  show observed results without mandatory synthetic certification for every model/version. Customers
+  do not register qualification profiles. Preserve app/tool/package safety evidence separately.
+- Recommend using lightweight hardware facts and published/estimated requirements. Users may choose
+  beyond recommendations; show source, evidence, format/runtime needs and resource warnings. No
+  hardware-brand/device allowlist or compulsory benchmark. Ordinary runtime remains offline.
+- Implement automatic local assignment from workflow/prompt/attachments, available capabilities
+  and capacity; preserve optional manual overrides and persist a concise routing reason.
+- Exercise multiple model identities/jobs and representative Chat/Documents/Code tasks, including
+  existing Ollama and managed paths. Use available small models and deterministic fixtures where
+  appropriate; do not require a large model download or claim mocked checks establish real performance.
+- Demonstrate capacity-aware concurrent work or queuing, preserving cancellation and other clients.
 - Real multi-turn Chat with bounded context, reasoning behaviour, cancellation, persisted history and
   truthful omissions/failures.
 - Grounded scan/image + selected SOP -> readable Word artifact with page/source citations and
@@ -320,8 +439,8 @@ qualified local models and dependable Chat/Documents/Code workflows.
 ## Human/device checkpoints
 
 Use real device/model checks only when authorised. Ask the user for simple device/UI observations
-before escalating to broad diagnostic commands. Qualify exact model/runtime/profile combinations;
-do not extrapolate one machine's result to another.
+before escalating to broad diagnostic commands. Record exact identities/settings for observed runs;
+do not extrapolate one result to another or make every model's measurement a local admission gate.
 
 ## Phase 2 completion condition
 
@@ -333,7 +452,10 @@ capability status and without public-cloud inference.
 
 # Phase 3 — Trusted-device mesh
 
-**Status: AFTER PHASE 2 FOUNDATION; PREPARATION MAY OVERLAP WHEN SAFE**
+**Status: DEFERRED UNTIL AFTER BETA 0.1; NOT A BETA RELEASE GATE**
+
+Preserve existing source, contracts and historical evidence. Do not resume mesh expansion merely
+because a local Beta change touches shared code; finish the authorised standalone section first.
 
 ## Phase 3 outcome
 
@@ -367,27 +489,29 @@ selected and why, and the receiver can control shared compute.
 
 # Phase 4 — Safe execution, recovery and sovereignty evidence
 
-**Status: AFTER THE RELEVANT PHASE 2/3 PATHS EXIST**
+**Status: LOCAL PATHS AFTER PHASE 2, BEFORE BETA; PEER PATHS AFTER DEFERRED PHASE 3**
 
 ## Phase 4 outcome
 
-Turn the integrated local/peer product into a defensible private agent system by closing sandbox,
-failure, recovery, approval and network-evidence behaviour.
+Qualify the standalone product's sandbox, failure, recovery, approval and network-evidence behaviour
+before Beta. Extend the same requirements to peer paths after Phase 3; peer acceptance does not
+block the local release.
 
 ## Phase 4 required outcomes
 
-- At least one qualified Code sandbox execution profile with observed network denial, host-file
+- At least one qualified local Code sandbox execution profile with observed network denial, host-file
   isolation and resource limits.
 - No unsupported desktop profile is advertised as having local sandbox execution.
 - Canonical writes remain approval-bound and idempotent.
-- Disconnect/restart, cancellation, validation failure, no-compatible-model, busy/low-memory peer,
-  denied approval, revoked identity and ambiguous-receipt paths are handled visibly.
+- Local runtime disconnect/restart, cancellation, validation failure, no-compatible-model,
+  busy/low-memory device and denied approval are handled visibly before Beta. Peer disconnect,
+  revoked relationships, receiver admissions and ambiguous remote receipts are qualified after Phase 3.
 - Retry/recovery reconciles uncertain work before creating another attempt; duplicate canonical
   writes are prevented.
 - Status UI shows real model, device, stage, queue/failure state and routing reason.
 - Sovereignty evidence distinguishes enforcement from observation.
-- Scoped independent public-egress evidence is captured for representative local and paired
-  workflows; unavailable evidence remains unavailable.
+- Scoped independent public-egress evidence is captured for representative local workflows before
+  Beta and paired workflows after Phase 3; unavailable evidence remains unavailable.
 - Proof Cards bind job/model/device/input-output hashes/validation/approval/network observation
   without overstating universal security.
 
@@ -405,7 +529,9 @@ observed/enforced evidence.
 
 ## Phase 5 outcome
 
-Produce the first defensible **Refinix Beta 0.1 / SIH Reviewer Preview** from the integrated product.
+Produce the first defensible standalone **Refinix Beta 0.1** on Windows, macOS and Linux, including
+in-app updates and recovery — reached through the launch sequence above: a natively qualified public
+Beta first, device testing on its downloads, one repair batch, then device acceptance.
 
 ## Phase 5 required outcomes
 
@@ -416,12 +542,23 @@ Produce the first defensible **Refinix Beta 0.1 / SIH Reviewer Preview** from th
   signing/notarisation requirements.
 - Nondeveloper journey:
   website candidate -> package -> install -> hardware detection -> model setup/import -> self-test ->
-  standalone work -> trusted pairing -> remote work -> validated Code path.
+  standalone work -> persist/reopen -> in-app update -> offline restart with preserved work.
+  Code sandbox validation is demonstrated locally on an eligible profile; other profiles disclose
+  their validation limits without requiring peer setup.
 - Test first launch/relaunch, missing/denied dependencies/permissions, insufficient disk,
   cancellation, unsupported capability and uninstall/data preservation.
+- Verify that the package uses its recorded app-managed engine and still performs offline work
+  after an unrelated system-runtime update/change. Release-engineering checks cover wrong/missing
+  packaged engine bytes and qualification-record mismatch with truthful refusal and graphical recovery.
+- Qualify a Refinix release transition that changes the managed engine; matching profiles, selected
+  models, local work, migration/recovery and preserved state must work without customer qualification.
 - Exercise Settings -> Models after onboarding.
+- Trace and reuse existing updater/packaging code where suitable, then qualify **Settings -> Updates**
+  connected check/download/install/restart and verified offline import with two labelled builds on
+  every published Beta profile, following `docs/releases.md`. No silent checks or unverified controls.
 - Rehearse authenticated **manual full-package replacement and recovery** on every published Beta
-  profile. Beta 0.1 does not require a finished in-app updater.
+  profile as a recovery path. It is not a substitute for the in-app updater unless the user explicitly
+  approves changing this Beta scope. An unqualified updater remains a release blocker.
 - Preserve chats, model references, credentials, artifacts and compatible state across the offered
   replacement/recovery path.
 - Release notes disclose Beta limitations, supported models/targets and recovery/removal guidance.
@@ -452,13 +589,14 @@ unless the user deliberately promotes one into the Beta claim set.
 
 ## Beta 0.2 / 0.3 improvements
 
+- complete the deferred Phase 3 trusted-device mesh and peer-specific Phase 4 acceptance;
 - smarter fleet scheduling, queue/transfer estimates and fairness across requesting users/workspaces;
 - stronger recovery/performance/Proof Card UX and measured cache tuning;
 - hybrid semantic + lexical retrieval, corpus lifecycle and curated memory;
 - additional qualified models and calibrated recommendation scoring;
 - more OS/hardware/backend/sandbox profiles;
-- explicit **Settings -> Updates** workflow with authenticated connected check/download/install and
-  verified offline update import.
+- extend the qualified Beta updater with additional profiles/transitions and improvements justified
+  by measured need; retain explicit connected actions and verified offline import.
 
 ## Finals / production maturity
 

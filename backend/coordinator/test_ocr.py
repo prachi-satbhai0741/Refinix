@@ -25,10 +25,13 @@ from unittest.mock import patch
 from backend.contracts import profiles as inference_profiles
 from backend.contracts import v1
 from backend.coordinator import documents, ocr, pdfrender, runtime
+from backend.coordinator.test_pdfrender import minimal_pdf
 
 SCAN_FIXTURE = "fixtures/c07/documents/inspection-report-scan.pdf"
 
-RUNTIME_READY = {"reachable": True, "server_version": "0.0.0-fake",
+# A version at or above Ollama's 0.12.6 baseline, so locality is readable;
+# what these checks exercise is the capability logic, not the version.
+RUNTIME_READY = {"reachable": True, "server_version": "0.34.2",
                  "models": [runtime.OCR_MODEL],
                  "digests": {runtime.OCR_MODEL: "c" * 64},
                  "loaded": None, "endpoint": runtime.HOST, "error": None}
@@ -153,7 +156,8 @@ class FakeQuartz:
 TEST_OCR_DIGEST = "c" * 64
 
 
-def test_ocr_profile(max_output: int = ocr.PAGE_NUM_PREDICT):
+def test_ocr_profile(max_output: int = ocr.PAGE_NUM_PREDICT, *,
+                     runtime_name: str = inference_profiles.RUNTIME):
     """A qualified OCR profile, built HERE and only here.
 
     The product registry deliberately contains no OCR profile, so these checks
@@ -165,7 +169,7 @@ def test_ocr_profile(max_output: int = ocr.PAGE_NUM_PREDICT):
     values = {
         "model": inference_profiles.model_ref(
             "0.0.0-fake", model_id=runtime.OCR_MODEL,
-            manifest_sha256=TEST_OCR_DIGEST),
+            manifest_sha256=TEST_OCR_DIGEST, runtime=runtime_name),
         "target_profile_id": "test-target",
         "workflow_mode": inference_profiles.OCR,
         "qualified_context_tokens": 8192,
@@ -587,6 +591,24 @@ class TestExtractPdf(unittest.TestCase):
         self.assertTrue(any("Confidence is unavailable" in note
                             for note in result["uncertain"]))
 
+    def test_the_stored_method_names_the_reader_and_its_runtime(self):
+        self.assertIn("(reader:1 on Refinix engine)",
+                      ocr.method_label("a" * 64, "llama.cpp|reader:1", renderer=pdfrender.PDFIUM))
+        self.assertIn("(reader:1 on Ollama)", ocr.image_method_label("a" * 64, "ollama|reader:1"))
+        self.assertIn(f"({runtime.OCR_MODEL})", ocr.method_label("a" * 64),
+                      "a bare name claims no runtime it cannot show")
+
+    def test_the_record_names_the_runtime_that_actually_read_it(self):
+        """Review finding: the record said "ollama" whatever read the pages."""
+        for name in ("llama.cpp", "ollama"):
+            with self.subTest(runtime=name), self.ready():
+                result = ocr.extract_pdf(
+                    b"%PDF", profile=test_ocr_profile(runtime_name=name), filename="scan.pdf",
+                    render=render_ok,
+                    chat=fake_chat(['{"status":"transcription","text": "a"}'] * 3))
+                self.assertEqual(result["model"]["runtime"], name)
+                self.assertEqual(result["model"]["runtime_version"], "0.0.0-fake")
+
     def test_the_extraction_says_which_model_read_it(self):
         with self.ready():
             result = ocr.extract_pdf(
@@ -695,7 +717,7 @@ class TestThroughDocuments(unittest.TestCase):
         self.assertEqual(rendered, [])
 
     def test_extracted_pages_reach_the_document_record_one_based(self):
-        path, digest = self.write(b"%PDF fixture")
+        path, digest = self.write(minimal_pdf(pages=2))
         reading = {
             "pages": [{"number": 1, "text": "first", "confidence": None, "note": None},
                       {"number": 2, "text": "second", "confidence": None, "note": None}],
@@ -1005,7 +1027,7 @@ class TestNoQualifiedProfileRefusal(unittest.TestCase):
         state = ocr.probe(profile=None)
         self.assertFalse(state["available"])
         self.assertEqual(state["model"]["state"], ocr.NO_PROFILE_STATE)
-        self.assertIn("no qualified reading profile", state["detail"])
+        self.assertIn("cannot read page images", state["detail"])
 
     def test_the_image_probe_refuses_and_names_the_prerequisite(self):
         state = ocr.image_probe(profile=None)
@@ -1050,7 +1072,7 @@ class TestNoQualifiedProfileRefusal(unittest.TestCase):
         summary = documents.capability_summary(RUNTIME_READY, ocr_profile=None)
         self.assertFalse(summary["reads_scans"])
         self.assertFalse(summary["detail"]["ocr"]["available"])
-        self.assertIn("no qualified reading profile",
+        self.assertIn("cannot read page images",
                       summary["detail"]["ocr"]["detail"])
 
     def test_text_and_word_attachments_are_unaffected_by_the_ocr_refusal(self):
@@ -1105,7 +1127,7 @@ class TestSignatureFailuresStayContained(unittest.TestCase):
         with patch.object(ocr, "probe", return_value=SCAN_READY), \
                 patch.object(ocr, "extract_pdf", obsolete):
             with self.assertRaises(documents.DocumentError) as caught:
-                documents._extract_pdf(b"%PDF", "scan.pdf",
+                documents._extract_pdf(minimal_pdf(), "scan.pdf",
                                        ocr_profile=test_ocr_profile())
         self.assertEqual(caught.exception.code, "reading_failed")
         self.assertNotIn("stream_chat", str(caught.exception))

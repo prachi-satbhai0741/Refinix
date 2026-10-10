@@ -9,8 +9,10 @@ is actually installed, not by what the interface would like to offer:
   pages at explicit page breaks.
 * **Excel** — `.xlsx`. Also a ZIP of OOXML, read by `xlsx.py`, one page per
   worksheet so a cell reference resolves. No formula is ever calculated.
-* **PDF** — rendered page by page by whichever renderer this computer has, and
-  read by the local vision model (`pdfrender.py` and `ocr.py`). The portable
+* **PDF** — the text layer is read first with the bundled PDFium engine, which
+  needs no model. Only a PDF whose pages carry no usable text is a scan: it is
+  rendered page by page by whichever renderer this computer has, and read by
+  the local vision model (`pdfrender.py` and `ocr.py`). The portable
   PDFium engine is preferred on Windows, macOS and Linux alike, with the macOS
   Quartz framework retained as a fallback. Where no renderer or no model is
   present, `probe()` reports the exact missing prerequisite and the file is
@@ -109,7 +111,7 @@ def probe(runtime_state: dict | None = None,
     """
     if ocr_model is None:
         model = {"state": "disabled", "model": None,
-                 "detail": "The selected OCR model is switched off for new work."}
+                 "detail": ocr.no_profile_detail(None)}
         scan = {"available": False, "renderer": pdfrender.probe(),
                 "model": model, "detail": model["detail"]}
         image = {"available": False, "model": model,
@@ -127,6 +129,10 @@ def probe(runtime_state: dict | None = None,
         image = (ocr.image_probe(ocr_model, profile=ocr_profile)
                  if runtime_state is None
                  else _image_capability(runtime_state, ocr_model, ocr_profile))
+    layer = pdfrender.text_probe()
+    text_layer = {"available": layer["available"],
+                  "formats": ["pdf"] if layer["available"] else [],
+                  "module": layer["module"], "detail": layer["detail"]}
     return {
         "text": {
             "available": True,
@@ -138,6 +144,9 @@ def probe(runtime_state: dict | None = None,
             "formats": ["docx"],
             "detail": "Read with the standard library: a .docx is a ZIP of XML.",
         },
+        # Text-layer PDFs need only PDFium, never a model. `pdf` below is the
+        # scanned-page path, which needs a qualified reading profile as well.
+        "pdf_text": text_layer,
         "pdf": {
             "available": scan["available"],
             "formats": ["pdf"] if scan["available"] else [],
@@ -161,6 +170,22 @@ def probe(runtime_state: dict | None = None,
     }
 
 
+def _observed_capabilities(runtime_state: dict, model: str | None) -> list | None:
+    """What the runtime reported this model can do, from the observation first.
+
+    Asking the runtime is what keeps OCR from being advertised because a tag
+    has "VL" in its name; a probe that already carried the answer is reused.
+    """
+    if not model or not runtime_state.get("reachable"):
+        return None
+    entry = ocr.runtime.find(runtime_state, model)
+    if entry is None:
+        return None
+    if entry.get("capabilities") is not None:
+        return list(entry["capabilities"])
+    return ocr.runtime.model_capabilities(entry["key"])
+
+
 def _scan_capability(runtime_state: dict,
                      ocr_model: str = ocr.runtime.OCR_MODEL,
                      ocr_profile=None) -> dict:
@@ -170,12 +195,7 @@ def _scan_capability(runtime_state: dict,
         model = ocr.profile_state(ocr_model, ocr_profile)
         return {"available": False, "renderer": render, "model": model,
                 "detail": model["detail"]}
-    caps = None
-    if runtime_state.get("reachable") and \
-            ocr_model in (runtime_state.get("models") or []):
-        # A cheap metadata read (~10 ms, no model load). Asking is what keeps
-        # this from advertising OCR because a tag has "VL" in its name.
-        caps = ocr.runtime.model_capabilities(ocr_model)
+    caps = _observed_capabilities(runtime_state, ocr_model)
     model = ocr.runtime.model_state_from(
         runtime_state, ocr_model,
         requires=ocr.runtime.VISION_CAPABILITY, capabilities=caps)
@@ -202,10 +222,7 @@ def _image_capability(runtime_state: dict,
     if ocr_profile is None:
         model = ocr.profile_state(ocr_model, ocr_profile)
         return {"available": False, "model": model, "detail": model["detail"]}
-    caps = None
-    if runtime_state.get("reachable") and \
-            ocr_model in (runtime_state.get("models") or []):
-        caps = ocr.runtime.model_capabilities(ocr_model)
+    caps = _observed_capabilities(runtime_state, ocr_model)
     model = ocr.runtime.model_state_from(
         runtime_state, ocr_model,
         requires=ocr.runtime.VISION_CAPABILITY, capabilities=caps)
@@ -222,7 +239,7 @@ def supported_suffixes(runtime_state: dict | None = None,
     """Exactly what `extract` implements on this computer, right now."""
     capability = probe(runtime_state, ocr_model, ocr_profile)
     suffixes = [*TEXT_SUFFIXES, WORD_SUFFIX, SHEET_SUFFIX]
-    if capability["pdf"]["available"]:
+    if capability["pdf_text"]["available"] or capability["pdf"]["available"]:
         suffixes.append(PDF_SUFFIX)
     if capability["ocr"]["formats"]:
         suffixes.extend(IMAGE_SUFFIXES)
@@ -234,16 +251,20 @@ def capability_summary(runtime_state: dict | None = None,
                        ocr_profile=None) -> dict:
     """One shape the surfaces and the capability rows both read."""
     capability = probe(runtime_state, ocr_model, ocr_profile)
+    # The `pdf` entry is the scanned-page path. Reported as `pdf_scan` so a
+    # computer that reads text-layer PDFs is not listed as unable to read PDFs.
     unavailable = [
-        {"kind": kind, "detail": entry["detail"]}
+        {"kind": "pdf_scan" if kind == "pdf" else kind, "detail": entry["detail"]}
         for kind, entry in capability.items() if not entry["available"]
     ]
+    reads_pdf = capability["pdf_text"]["available"] or capability["pdf"]["available"]
     return {
         "supported": [s.lstrip(".") for s in
                       sorted([*TEXT_SUFFIXES, WORD_SUFFIX]
-                             + ([PDF_SUFFIX] if capability["pdf"]["available"] else []))],
+                             + ([PDF_SUFFIX] if reads_pdf else []))],
         "unavailable": unavailable,
-        "reads_pdf": capability["pdf"]["available"],
+        "reads_pdf": reads_pdf,
+        "reads_pdf_text": capability["pdf_text"]["available"],
         "reads_scans": capability["ocr"]["available"],
         "detail": capability,
         "max_bytes": MAX_DOCUMENT_BYTES,
@@ -501,20 +522,89 @@ def _reading_failure(exc: Exception, filename: str) -> "DocumentError":
         "before producing any text. Nothing was transcribed or saved.")
 
 
+def _extract_pdf_text(data: bytes, filename: str, *, should_cancel=None):
+    """Read a PDF's own text layer, or return None when it has none to read.
+
+    Deterministic and model-free. A page with no usable text is kept, empty and
+    numbered, and named in `uncertain`, so a mixed document is never reported
+    as read whole. A page over the per-page ceiling is read up to it and named
+    as partially read. None means every page lacked usable text: the file is a
+    scan, and only the vision path could read it.
+    """
+    try:
+        read = pdfrender.text_pages(data, should_cancel=should_cancel)
+    except pdfrender.RenderError as exc:
+        raise DocumentError(exc.code, f"{filename}: {exc}") from exc
+    usable = {page.number for page in read
+              if any(ch.isalnum() for ch in page.text)}
+    if not usable:
+        return None
+    pages, unread, partial = [], [], []
+    for page in read:
+        note = None
+        if page.number not in usable:
+            unread.append(page.number)
+            note = "No usable text layer on this page; it was not read."
+        elif page.truncated:
+            partial.append(page.number)
+            note = (f"Only the first {pdfrender.MAX_TEXT_CHARS_PER_PAGE} of "
+                    f"{page.chars} characters on this page were read.")
+        pages.append(Page(page.number,
+                          _clean(page.text) if page.number in usable else "",
+                          note=note))
+    uncertain = []
+    if unread:
+        uncertain.append(
+            f"{_page_list(unread)} {'has' if len(unread) == 1 else 'have'} "
+            "no usable text layer (scanned) and "
+            f"{'was' if len(unread) == 1 else 'were'} not read.")
+    if partial:
+        uncertain.append(
+            f"{_page_list(partial)} {'was' if len(partial) == 1 else 'were'} "
+            f"only partly read: at most {pdfrender.MAX_TEXT_CHARS_PER_PAGE} "
+            "characters are read from one page.")
+    return pages, "pdf text layer (pypdfium2)", uncertain, len(read)
+
+
+def _page_list(numbers: list[int]) -> str:
+    return (f"Page {numbers[0]}" if len(numbers) == 1
+            else "Pages " + ", ".join(str(n) for n in numbers))
+
+
+def _reader(ocr_model, ocr_profile, ocr_reader):
+    """The page reader, chosen now that a page needs reading.
+
+    `ocr_reader`, when given, is the coordinator's callback that picks and
+    admits a reader; it is called only here, so text, Word, workbook and
+    text-layer PDF reading never wait for a page-reading model.
+    """
+    return ocr_reader() if ocr_reader is not None else (ocr_model, ocr_profile)
+
+
 def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
                  ocr_model: str | None = ocr.runtime.OCR_MODEL,
-                 ocr_profile=None):
-    """Render each page and read it with the local vision model.
+                 ocr_profile=None, ocr_chat=None, ocr_reader=None):
+    """Read the text layer; render and read pages with a model only for a scan.
 
-    The capability is re-checked here rather than trusted from an earlier
-    probe: a runtime that stopped answering between the status poll and this
-    request must refuse, not half-read. A page that cannot be read fails the
-    whole extraction — a document silently missing a page would be worse than
-    no document at all.
+    The text layer comes first and needs no model. Only when no page carries
+    usable text is the file treated as a scan. The scan capability is re-checked
+    here rather than trusted from an earlier probe: a runtime that stopped
+    answering between the status poll and this request must refuse, not
+    half-read. A scanned page that cannot be read fails the whole extraction —
+    a document silently missing a page would be worse than no document at all.
     """
+    scanned = ""
+    if pdfrender.text_probe()["available"]:
+        text = _extract_pdf_text(data, filename, should_cancel=should_cancel)
+        if text is not None:
+            return text
+        # Said only when the text layer was actually checked and found empty.
+        scanned = f"{filename} has no usable text layer (scanned pages). "
+    ocr_model, ocr_profile = _reader(ocr_model, ocr_profile, ocr_reader)
     if ocr_model is None:
         raise DocumentError(
-            "model_disabled", "The selected OCR model is switched off for new work.")
+            "model_disabled",
+            scanned + ocr.no_profile_detail(None))
     scan = ocr.probe(ocr_model, profile=ocr_profile)
     if not scan["available"]:
         # Several prerequisites, several codes. Collapsing them would send
@@ -525,10 +615,11 @@ def _extract_pdf(data: bytes, filename: str, *, should_cancel=None,
         code = (_OCR_MODEL_STATE_CODES[state] if state == ocr.NO_PROFILE_STATE
                 else "no_pdf_parser" if not scan["renderer"]["available"]
                 else _OCR_MODEL_STATE_CODES.get(state, "no_ocr_model"))
-        raise DocumentError(code, scan["detail"])
+        raise DocumentError(code, scanned + scan["detail"])
     try:
         read = ocr.extract_pdf(data, filename=filename, profile=ocr_profile,
-                               should_cancel=should_cancel, model=ocr_model)
+                               should_cancel=should_cancel, model=ocr_model,
+                               chat=ocr_chat)
     except Exception as exc:
         # `cancelled` keeps its own code so the workflow can tell a stop from a
         # failure; everything else is a refusal with the extractor's reason.
@@ -569,15 +660,16 @@ def _extract_xlsx(data: bytes, filename: str) -> tuple[list[Page], str, list[str
 def _extract_image(data: bytes, filename: str, media_type: str, *,
                    should_cancel=None,
                    ocr_model: str | None = ocr.runtime.OCR_MODEL,
-                   ocr_profile=None):
+                   ocr_profile=None, ocr_chat=None, ocr_reader=None):
     """Send one supplied image to the local vision model, as page 1.
 
     No renderer at all: the file already is a page image. The method string says
     exactly that, so a reader is never told a PDF was rendered when none was.
     """
+    ocr_model, ocr_profile = _reader(ocr_model, ocr_profile, ocr_reader)
     if ocr_model is None:
         raise DocumentError(
-            "model_disabled", "The selected OCR model is switched off for new work.")
+            "model_disabled", ocr.no_profile_detail(None))
     state = ocr.image_probe(ocr_model, profile=ocr_profile)
     if not state["available"]:
         code = _OCR_MODEL_STATE_CODES.get(state["model"]["state"], "no_ocr_model")
@@ -585,7 +677,8 @@ def _extract_image(data: bytes, filename: str, media_type: str, *,
     try:
         read = ocr.extract_image(data, filename=filename, media_type=media_type,
                                  profile=ocr_profile,
-                                 should_cancel=should_cancel, model=ocr_model)
+                                 should_cancel=should_cancel, model=ocr_model,
+                                 chat=ocr_chat)
     except Exception as exc:
         raise _reading_failure(exc, filename) from exc
     pages = [Page(number=page["number"], text=_clean(page["text"]),
@@ -640,8 +733,12 @@ def verified_bytes(path: Path, *, filename: str, expected_sha256: str) -> bytes:
 def extract(path: Path, *, source_id: str, filename: str, media_type: str,
             expected_sha256: str, should_cancel=None,
             ocr_model: str | None = ocr.runtime.OCR_MODEL,
-            ocr_profile=None) -> Extraction:
-    """Read one attachment, after proving it is the file that was accepted."""
+            ocr_profile=None, ocr_chat=None, ocr_reader=None) -> Extraction:
+    """Read one attachment, after proving it is the file that was accepted.
+
+    `ocr_chat` is the page-reading call (the runtime's own when omitted); the
+    coordinator passes one that holds a memory reservation for each page.
+    """
     data = verified_bytes(path, filename=filename,
                           expected_sha256=expected_sha256)
     actual = expected_sha256
@@ -668,11 +765,12 @@ def extract(path: Path, *, source_id: str, filename: str, media_type: str,
     elif suffix in IMAGE_SUFFIXES:
         pages, method, uncertain, declared_pages = _extract_image(
             data, filename, media_type, should_cancel=should_cancel,
-            ocr_model=ocr_model, ocr_profile=ocr_profile)
+            ocr_model=ocr_model, ocr_profile=ocr_profile, ocr_chat=ocr_chat,
+            ocr_reader=ocr_reader)
     elif suffix == PDF_SUFFIX:
         pages, method, uncertain, declared_pages = _extract_pdf(
             data, filename, should_cancel=should_cancel, ocr_model=ocr_model,
-            ocr_profile=ocr_profile)
+            ocr_profile=ocr_profile, ocr_chat=ocr_chat, ocr_reader=ocr_reader)
     else:
         readable = sorted([*TEXT_SUFFIXES, WORD_SUFFIX, SHEET_SUFFIX,
                            PDF_SUFFIX, *IMAGE_SUFFIXES])

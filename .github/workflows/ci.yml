@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+      # Only so Dependabot's version updates, which target dev, are checked;
+      # the job below skips every other pull request into dev.
+      - dev
   push:
     branches:
       - main
@@ -14,6 +17,14 @@ permissions:
 jobs:
   ci:
     name: ci
+    # Pushes to main and every pull request into main, as before. Into dev,
+    # only Dependabot's pull requests: member -> dev stays a convention with
+    # no automated checks. Dependabot-triggered runs get a read-only token and
+    # no repository secrets, and this workflow uses none.
+    if: >-
+      github.event_name == 'push' ||
+      github.base_ref == 'main' ||
+      github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -28,6 +39,11 @@ jobs:
         with:
           python-version: "3.13"
 
+      # Before anything is installed: a declaration bumped without its
+      # hash-pinned locks fails here (standard library only).
+      - name: Check declared pins against the shipped locks
+        run: python -m unittest discover -s desktop -p 'test_dependency_pins.py' -q
+
       - name: Install pinned Python dependencies
         run: python -m pip install --disable-pip-version-check --require-hashes -r backend/worker-image/requirements.lock
 
@@ -36,6 +52,15 @@ jobs:
       # Linux runner that can prove it works there.
       - name: Install the pinned PDF renderer
         run: python -m pip install --disable-pip-version-check --require-hashes -r backend/requirements-render.lock
+
+      # psutil for owned-engine identity and hardware facts, and the update
+      # verification client. Without it the managed-engine cleanup checks
+      # cannot run.
+      - name: Install the pinned coordinator runtime libraries
+        run: python -m pip install --disable-pip-version-check --require-hashes -r backend/requirements-runtime.lock
+
+      - name: Install the pinned release tooling
+        run: python -m pip install --disable-pip-version-check --require-hashes -r scripts/requirements-release.lock
 
       - name: Run Python checks
         run: |

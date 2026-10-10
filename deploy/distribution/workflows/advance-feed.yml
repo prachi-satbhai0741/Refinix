@@ -1,0 +1,156 @@
+name: Advance the Beta feed
+
+# Makes a staged targets version current: the release manager has already
+# (1) published the GitHub release with its assets and (2) committed the
+# offline-signed `updates/beta/metadata/<N>.targets.json` and its pointer
+# files to main. This workflow, approved by a required reviewer in the
+# `beta-publish` environment, then:
+#
+#   sign    checks the staged targets against the current root, downloads each
+#           new release asset anonymously and checks its size and SHA-256,
+#           signs snapshot and timestamp with the online keys, commits;
+#   deploy  deploys exactly that commit to Pages (no signing secrets);
+#   live    reads the live feed with the real client, starting from the
+#           committed first root, until it is exactly the signed commit's
+#           feed, then the live page and every download, anonymously
+#           (no secrets).
+#
+# Failure before the commit changes nothing. After it: re-run the deploy of the
+# same commit, or fix forward with higher versions — never restore older
+# metadata (docs/releases.md).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-feed
+  cancel-in-progress: false
+
+env:
+  TOOLING_REPOSITORY: prachi-satbhai0741/Refinix
+  PACKAGES_URL: https://github.com/prachi-satbhai0741/Refinix/releases/download/
+  FEED_URL: https://refinix.runs-on.dev/updates/beta/
+  SITE_URL: https://refinix.runs-on.dev/
+
+jobs:
+  sign:
+    runs-on: ubuntu-24.04
+    environment: beta-publish
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.commit.outputs.commit }}
+    steps:
+      - name: Check out the head of main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Check out the release tooling at its pinned commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ env.TOOLING_REPOSITORY }}
+          ref: ${{ vars.REFINIX_TOOLING_COMMIT }}
+          path: tooling
+          persist-credentials: false
+
+      - name: Install the hash-pinned release tooling
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check --require-hashes \
+            -r tooling/backend/requirements-runtime.lock -r tooling/scripts/requirements-release.lock
+
+      - name: Check, sign and commit
+        id: commit
+        env:
+          SNAPSHOT_KEY: ${{ secrets.REFINIX_SNAPSHOT_KEY }}
+          TIMESTAMP_KEY: ${{ secrets.REFINIX_TIMESTAMP_KEY }}
+          REFINIX_KEY_PASSPHRASE_SNAPSHOT: ${{ secrets.REFINIX_KEY_PASSPHRASE_SNAPSHOT }}
+          REFINIX_KEY_PASSPHRASE_TIMESTAMP: ${{ secrets.REFINIX_KEY_PASSPHRASE_TIMESTAMP }}
+        run: |
+          keys="$RUNNER_TEMP/keys"; mkdir -m 700 "$keys"
+          printf '%s\n' "$SNAPSHOT_KEY" > "$keys/snapshot.pem"
+          printf '%s\n' "$TIMESTAMP_KEY" > "$keys/timestamp.pem"
+          chmod 600 "$keys"/*.pem
+          before=$(git rev-parse HEAD)
+          "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py advance \
+            --keys "$keys" --repo updates/beta --packages-url "$PACKAGES_URL" \
+            --feed-config tooling/desktop/updates/beta-feed.json
+          rm -rf "$keys"
+          "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py verify \
+            --repo updates/beta
+          git config user.name "refinix-feed"
+          git config user.email "refinix-feed@users.noreply.github.com"
+          git add updates/beta/metadata
+          git commit -m "Advance the Beta feed"
+          # Only on top of the head this run started from; a moved branch fails here.
+          git push origin "HEAD:refs/heads/main" --force-with-lease="main:$before"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: sign
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Check out exactly the signed commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.sign.outputs.commit }}
+          persist-credentials: false
+      - name: Package the site and feed
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: .
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  live:
+    needs: [sign, deploy]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      # The expectation comes from exactly the signed, deployed commit; a feed
+      # that is merely valid (say, the previous one still cached) fails.
+      - name: Check out exactly the signed commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.sign.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ env.TOOLING_REPOSITORY }}
+          ref: ${{ vars.REFINIX_TOOLING_COMMIT }}
+          path: tooling
+          persist-credentials: false
+      - name: The live feed and site are exactly what was signed
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check --require-hashes \
+            -r tooling/backend/requirements-runtime.lock
+          "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py expected \
+            --repo updates/beta > "$RUNNER_TEMP/expected.json"
+          cat "$RUNNER_TEMP/expected.json"
+          ok=""
+          for attempt in $(seq 1 20); do
+            if "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py verify \
+                --url "$FEED_URL" --trust-root updates/beta/metadata/1.root.json \
+                --expect "$RUNNER_TEMP/expected.json" --monitor; then
+              ok=1; break
+            fi
+            sleep 30        # Pages and its CDN can take a few minutes
+          done
+          [ -n "$ok" ] || { echo "the live feed never became the signed one"; exit 1; }
+          "$RUNNER_TEMP/venv/bin/python" tooling/scripts/verify_public.py --site "$SITE_URL" \
+            --expect-site . --report "$RUNNER_TEMP/public.json"

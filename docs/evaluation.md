@@ -1,8 +1,254 @@
 # Evaluation, Prototype Plan, and Demonstration
 
+Evidence snapshots below retain their recorded dates and scope. Current requirements and execution
+gates come from [PROJECT.md](PROJECT.md) and [tasks.md](../tasks.md), not historical PRD/P-task labels.
+The [2026-10-04 runtime finding](#runtime-ownership-20261004) is a user report plus current source
+inspection; it does not establish fresh device, inference, packaged-runtime or release acceptance.
+
 ## Current status
 
-Source and test bodies re-inspected on **2026-09-16**, at
+<a id="beta-01-segment-1"></a>
+### Beta 0.1 Segment 1 — 2026-10-10
+
+The continuation preserves the existing `aditya` commits and completes the A1 repair batch before
+production Beta keys, merges or publication. Native qualification uses disposable packages
+`0.1.0-beta.901` and `.902` with throwaway trust keys; they must never be published.
+
+**Repairs checked in this continuation:** sandbox teardown verifies the loop device's backing image
+before unmounting it; damaged Ubuntu current-attempt authority blocks admission and preserves
+recovery copies; native CI fails on missing/failed reports and qualifier exits; public verification
+binds the live website and installed packages to the requested version. Windows native test fixtures
+use the actual interpreter, allow legitimate console processes and wait for cleanup. Ubuntu CI
+bounds APT index fetches and installation, with one authenticated official-mirror fallback.
+
+**Local offline evidence:** Python 3.14.6 on the development Mac, using an isolated temporary
+environment with repository hash-pinned test dependencies and the existing Pydantic environment;
+Node for the frontend. Coordinator: 1,660 tests, OK (16 skipped); desktop: 255 tests, OK (6 skipped);
+scripts: 82 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. Worker: 217 tests, OK;
+deployment fixtures: 140 tests, OK; C07 fixtures: 32 tests, OK. The focused recovery/CI/public
+regressions passed 73 tests. `actionlint` passed on all four changed workflows and
+`git diff --check` was clean. Initial broad runs were blocked by the tool sandbox's loopback
+restriction and a missing test dependency; the approved temporary environment resolved both.
+These are source/fixture checks, not native Windows/Linux or device acceptance.
+
+**Final hosted qualification: PASS.**
+[38055591709](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38055591709) completed
+successfully at source commit `d109b49f6c9bdc4b72bda9f347c6481442f96984`. Every primary report
+passed its current-commit/nonempty-check gate. The separate macOS floor job reused the Mac package
+bytes from this run, merged the floor result and repeated all three update journeys.
+
+| Hosted profile | Observed result |
+|---|---|
+| Windows Server 2025 x64 | Shared units 88, OK (5 skipped); Windows-native 5, OK; package 6/6; journeys 25/25 |
+| Ubuntu 24.04 x64 | Shared units 88, OK (2 skipped); Linux checks 84, OK (1 skipped); package 29/29; journeys 25/25; real sandbox 7/7 |
+| macOS 15 arm64 | Shared units 88, OK (2 skipped); package 6/6 before the floor result; journeys 24/24 |
+| macOS 14.8.9 arm64, build 23J631 | Oldest-supported launch passed; merged package record 7/7; journeys 24/24 |
+
+Interrupted recovery resumed the recorded helper on every platform. Windows restored N and
+discarded the incomplete setup; Ubuntu and both Mac runners completed N+1. The recovered version,
+saved work and applicable installed-file manifests passed. Ubuntu observed socket, outside-file,
+signal and io_uring denial, prompt cancellation (3.0 seconds), deadline (8.0 seconds), capped large
+output and empty service/mount/journal cleanup. APT setup completed in about 18 seconds.
+
+This completes Segment 1's source/native work through CP-A. The final results-only update changes
+`docs/evaluation.md`, `tasks.md` and the change ledger; it does not change the qualified application
+or workflows. Qualification remains bound to the source commit above. Production-root or other
+later implementation changes require the affected checks before merge/release. These disposable
+packages are not public release-byte or physical-device acceptance evidence.
+
+**Earlier hosted run:** [37981019381](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37981019381)
+tested `bbf54225d132b78276f3013f80a531dd00eafae3`, before these repairs. Windows failed native unit
+tests (Linux-only import and process-count assumption); package/install journeys were skipped.
+Linux was cancelled after stalling on the Azure Ubuntu APT mirror, before any build. The Mac lane
+reported success under the older summary gate; this does not qualify the repaired tree.
+
+**First repair qualification:** [37988624319](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37988624319)
+tested `0aa4645c49cd6da025b05df83a362c49a4d0b3fe`. Linux APT setup passed in 18 seconds and both
+packages built; the next checks exposed inherited system AWS/OpenSSL packages conflicting with
+the pinned cryptography library. Windows native units passed, both installers built, and package
+install/file-list/registration/uninstall passed; the launch check timed out while the app served
+requests. The follow-up isolates Ubuntu's `gi`/`cairo` bindings and allows 10 seconds for a status
+response in both package and journey checks. Regressions cover toolkit isolation, missing bindings
+and delayed status responses without accepting a different data root. The follow-ups are included
+in the final qualification above.
+
+**Second repair qualification:** [37989900925](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37989900925)
+tested `27915ee2436edc6ada2fea9824e77d29f1c8c8db`. The isolated Ubuntu environment loaded GTK,
+but PyInstaller's GTK hook also requires the distribution's version metadata. The follow-up links
+only PyGObject/pycairo metadata, verified against the hash-pinned PyInstaller 6.22.3 wheel's hook
+and covered by the isolation regression. The Mac lane passed package and all three update journeys.
+Windows package qualification and the update/rollback journeys passed with the corrected timeout;
+the interrupted-setup qualifier was waiting only for commit/rollback, although the updater's
+existing recovery can restore the old installation and discard the incomplete attempt. The
+qualifier now accepts this final state only with the expected old version, complete file manifest
+and unchanged saved work; a regression rejects the wrong version or a damaged restored tree.
+
+**CP-A production root preparation:** The user generated four encrypted production role keys and
+confirmed the iCloud backup. The selected custody is encrypted PEM backups in iCloud Drive with
+passphrases in Apple Passwords under the same Apple account, retaining the local archive outside
+the repository. Backup completion is user-reported; private-key recovery and cloud contents have
+not been independently checked. The user explicitly approved this encrypted cloud-custody
+exception; `docs/releases.md` now records it separately from the offline default in
+`docs/security.md`, including the shared Apple-account dependency.
+
+The agent copied only public `1.root.json` byte for byte into `desktop/updates/beta-root.json`.
+Current public-metadata checks observed a valid root self-signature, version 1, four distinct role
+keys with threshold 1, consistent snapshots and expiry `2027-10-10T14:39:33+00:00`. The SHA-256 is
+`178eebae99d1cf1d621fbacf34ed521b8ec98097f3c46c50634d6518fa567101`. The existing Beta build-input
+validator accepted this root and the committed HTTPS feed configuration. This preparation accessed
+no private-key contents or passphrases and built no packages; the earlier native run above still
+qualifies its recorded source tree and throwaway-root packages, not production-root release bytes.
+
+**Remaining:** Production-root package qualification, member → dev → main,
+website owner setup, release-byte qualification and CP-B publication; then the user's device
+walkthroughs. No installed user app, real model runtime, published feed or device acceptance changed.
+
+**Third repair qualification:**
+[37991781158](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37991781158) tests
+`b8fbc81eced2074aeb049726af3b000f0b97803c`. Ubuntu APT setup passed in 19 seconds; both packages
+now build and the package-byte qualifier passed. Windows builds and package qualification passed.
+The Mac lane passed package checks (6/6 before the separate floor check) and all 24 journey checks.
+While the other journeys ran, source inspection identified an invalid Ubuntu test location:
+the qualifier creates its data under system temporary storage, whereas the real privileged updater
+requires a request inside the caller's home. The fixture now uses the home folder; import/admission
+failures stop the journey promptly instead of waiting for an update that cannot start. The focused
+workflow/public/journey regressions passed 26 tests. Windows normal update and rollback passed,
+but interruption remained at `installer_running` after the qualifier's command-line-based kill
+(22/24 journey checks passed). The qualifier now targets the exact helper identity in the update
+journal and waits for its death. Native synthetic-run app/helper diagnostics are retained alongside
+the reports, excluding the data store. These findings required the subsequent repaired native runs.
+
+**Fourth repair qualification:**
+[37995379252](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37995379252) tested
+`5a4a05226307fbbaabf0374a1289b134bb0f27b5`. Ubuntu passed all 29 package and all 25 update-journey
+checks; the sandbox stopped at UDisks authorization in the headless session (1/2 checks passed).
+The follow-up prefers the existing rootless `fuse2fs` backend, with the same fixed ext4 image and
+confinement controls. Its mount is journalled before starting the mount command so interrupted
+mounts remain recoverable. Windows package qualification passed 6/6 and normal update/rollback
+passed, but interrupted recovery failed again (22/24 journey checks): the exact recorded helper
+was killed and the next launch's retained log showed `pydantic_core._pydantic_core` missing before
+the recovery gate. The packaged entry now resolves the data root, takes the same workspace lock
+and checks update recovery before importing the application; the profile registry is imported
+only when its measured hardware match is needed. A fresh-process regression refuses application
+imports, resumes the known-good helper and proves the database was not opened. Both Mac lanes,
+including the separate macOS floor check, passed. Local follow-up: desktop 254 tests, OK (6 skipped);
+coordinator 1,657 tests, OK (16 skipped); focused update/path/sandbox regressions 134 tests, OK.
+The final startup/FUSE group passed 37 tests, including interrupted-mount cleanup.
+The final sandbox group passed 23 tests after adding mount-table escape decoding, so data folders
+containing spaces or backslashes remain detectable during cleanup.
+These follow-ups were exercised by the subsequent native runs.
+
+**Startup/sandbox follow-up qualification:**
+[38053285944](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38053285944) tested
+`1bd7afe3d524e4772e9583999387a18d8490d03f`. Windows passed package checks 6/6 and update journeys
+25/25: after the exact helper was killed during setup, the next launch resumed a helper, restored
+N, discarded the incomplete attempt, matched the file manifest and reopened unchanged saved work.
+Mac package and journeys passed. Ubuntu package 29/29 and journeys 25/25 passed; FUSE mounted and
+cleaned up, but the transient service rejected an argument. The [systemd 255 CLI serializer](https://github.com/systemd/systemd/blob/v255/src/shared/bus-unit-util.c)
+and [manager setter](https://github.com/systemd/systemd/blob/v255/src/core/dbus-execute.c) show why:
+an empty command-line address-family allow-list denies every family, while literal `none` is sent
+as an invalid family name. The corrected command retains that denial. The launcher also needs
+the three Landlock setup calls, absent from [255's service group](https://github.com/systemd/systemd/blob/v255/src/shared/seccomp-util.c);
+only those confinement calls are added. Cancellation/deadline qualification now requires the
+matching refusal reason, and output qualification requires an actual passing run with observed
+truncation, so an early launcher failure cannot pass those checks. Native startup error dialogs
+on Mac/Linux are preserved, while partial Windows installations use the existing dependency-light
+helper message. Final local suites: coordinator 1,659, desktop 255, scripts 82; focused sandbox,
+startup and qualification checks 41, all OK (the broad suites retain 22 platform skips).
+The next native run exposed the bounded-output defect below.
+
+**Bounded-output follow-up:**
+[38054409695](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38054409695) tested
+`34e876121a13ef400ec23abcb97db521d76d8eec`. Windows again passed package 6/6 and journeys
+25/25; the Mac lane passed. Ubuntu package 29/29 and journeys 25/25 passed; sandbox 6/7 passed,
+including actual confinement, hostile tests, cancellation, deadline and cleanup. The large-output
+case exposed a protocol defect: the closing JSON embedded the capped output and exceeded the
+parent's retained report tail, while the launcher looked for unittest's ending summary in the
+output prefix. The launcher now retains a bounded summary tail and emits capped output before
+the small closing record. The existing output limit and confinement checks are preserved.
+The 26 focused sandbox/qualification regressions passed, including a two-million-byte test and
+the actual launcher-to-parent report protocol. The final coordinator suite passed 1,660 tests
+(16 skipped). All-OS native qualification of this repair passed in the final run above.
+
+<a id="tester-preview-batch-20261008"></a>
+### Tester-preview batch — 2026-10-08
+
+Run by the agent on the development Mac (Apple M5, 16 GB, macOS 26.7.1, Python 3.12) and in
+Docker containers on that Mac, against the uncommitted working tree on `aditya` (base
+`e234a0a`). These are **build and offline checks**, not device acceptance: no Windows computer
+and no clean Ubuntu desktop was available, so every device walkthrough below stays pending.
+
+| Check | Where it ran | Result |
+|---|---|---|
+| Coordinator, desktop, scripts, contracts suites | Mac | See [the final run](#tester-preview-batch-suites) |
+| Frontend suite | Mac (Node) | See [the final run](#tester-preview-batch-suites) |
+| Linux-only unit tests (deb root step, update methods, sandbox) | Ubuntu 24.04 amd64 container (emulated), unprivileged user | 66 passed |
+| `.deb` update root step against real dpkg 1.22.6 / apt 2.8.3 (`scripts/qualify_deb.py`) | Same container, disposable root environment | 14/14 passed: exact Inst+Conf plan, same-version reinstall, refusal of plans needing other packages, admission on root's copies, install, rollback, held dpkg lock, refusal with other unfinished packages, repair after a killed unpack, unpacked → configured |
+| Landlock in the Code sandbox launcher | Ubuntu 24.04 arm64 container (native) | ABI 8 enforced: paths outside the workspace denied, tests inside ran |
+| `systemd-run --user` sandbox properties, udisks image mount | — | **Not run**: needs a real Ubuntu desktop session. The Ubuntu sandbox stays provisional |
+| Windows setup inside a job, registry undo, Authenticode | — | **Not run**: no Windows computer. Source and fakes only |
+| macOS app swap with a Developer ID build | — | **Not run**: no Developer ID identity; the DMG is unsigned and not published |
+
+<a id="tester-preview-batch-suites"></a>
+**Final offline run on the Mac** (same tree, Python 3.12, Node): coordinator 1635 passed (5
+skipped), desktop 224 passed (1 skipped), scripts 62 passed, contracts 20 passed, frontend 247
+passed; `git diff --check` clean. Baseline at `e234a0a` before the batch: coordinator 1584,
+desktop 188, scripts with 2 failures (launcher address drift, fixed at its cause), contracts 20,
+frontend 242.
+
+**Packages built locally** (not publishable: uncommitted tree, throwaway update trust root):
+
+| Package | Where | Result |
+|---|---|---|
+| macOS ZIP + DMG, Beta `0.1.0-preview.1`, public build 7, unsigned | the development Mac | Built in 20 s; DMG checksum valid; ad-hoc signature verifies; Gatekeeper rejects it, as expected for an unsigned app; embedded identity preview/build 7/`preview-test`. `LSMinimumSystemVersion` is 26.0 because this Mac's Python is Homebrew's; the release Mac should build with a python.org framework Python to lower it |
+| Ubuntu `.deb` (+ AppImage), Beta `0.1.0-preview.1` | Ubuntu 24.04 amd64 container (emulated) | Built in 45 s (`.deb` 58 MB, AppImage 62 MB); see [the container build](#tester-preview-batch-deb) |
+| Windows setup | — | **Not built**: needs the hosted Windows runner (`release.yml`) from the reviewed `main` commit |
+
+<a id="tester-preview-batch-deb"></a>
+**The Ubuntu package, built the way `release.yml` builds it** (system Python 3.12 with Ubuntu's
+GTK/WebKitGTK bindings, the lane's pinned locks, PyInstaller, the pinned engine archives), then
+qualified as root in the same throwaway container with `scripts/qualify_deb.py --real`: 23/23
+checks passed with dpkg 1.22.6 and APT 2.8.3. They include the 14 update-rule checks above plus,
+on the real package, only supported control fields; the program, build identity, file list,
+polkit policy and desktop entry present; installation through APT with its dependencies; the
+installed tree matching its file list; and the root entry refusing to run without pkexec. A dry run
+of `release_assemble.py` and `build-site.sh` on that package produced `SHA256SUMS`, release
+notes and download cards offering only the `.deb`.
+
+Building it found four defects in the release workflow, fixed in this batch and covered by
+`scripts/test_workflows.py`. The Windows and Ubuntu jobs installed only part of the packaging plan's
+locks, so the bundle would have lacked the update client, `psutil` and PDF rendering. The Ubuntu
+job lacked `libpython3.12`, without which PyInstaller refuses Ubuntu's Python. The qualification
+step used the wrong arguments, interpreter and guard. The `.deb` root-step tests ran before the
+lock they need. Docker's amd64 emulation cannot execute AppImages (their header magic fails the
+emulator's match), so in the container only, the build ran AppImages from copies with those three
+bytes zeroed; hosted x86_64 runners run them directly. The trust root inside these packages was a
+throwaway one: they are for checking only and are never published.
+
+**Refinix's own overhead** (`scripts/measure_performance.py`, no model running, Ollama stopped):
+
+| Measure | Result |
+|---|---|
+| Launch to first answered `/v1/status` | 330 ms |
+| `/v1/status` (30 calls) | median 4.3 ms, p95 6.0 ms, 62 KB |
+| Idle after 20 s | 0% CPU, 107 MB resident, 3 threads |
+| Rendering a 3-page scanned PDF (warm) | 111 ms, about 40 MB peak traced memory |
+| 256 MB update package: check / download and stage / offline admission | 19 ms / 326 ms / 200 ms; 512 MB staged including the recovery package |
+
+No Refinix-side cost was large enough to justify an optimisation in this batch. Model time
+(first token, OCR) was not measured: no live model ran.
+
+**Removed as dead code** (no caller in source or tests): `db.get_sources`,
+`db.get_model_enabled`, `db.model_enablement`, `engine.ManagedEngine._blocked`,
+`capacity.Ledger._pending`, `models.entries_for`, `server.preview_model`, `server._engine_kind`,
+`server.default_model`, `device.target_identities`. Deferred paired-device, worker, Kubernetes and
+Redis code was kept.
+
+**Moved out of the repository** (recoverable, with a hash manifest, in a private archive outside
+Git): the former presentation brief and generated PDFs, an old Beta-foundation checkpoint folder
+under `tmp/`, and ignored build output. Git history still contains the files that were tracked.
+
+Earlier snapshot, kept for history: source and test bodies re-inspected on **2026-09-16**, at
 `942b87deaf9fbb5d070e069ebbe0bb1f74322604` (clean `aditya` before this documentation
 change). This supersedes the 2026-09-15 snapshot for **source status**; it is not a
 new runtime, package, model, worker or egress verification. No application tests,
@@ -1059,3 +1305,89 @@ Implementation, runtime qualification and release acceptance remain separate.
 | Create Pods | API/executor Deployments and bounded validation Job builder exist | Current readiness, resource/egress enforcement, termination and cleanup unqualified | Pending P07/P11/P12/P14 |
 | Service API | Versioned authenticated worker API and Service manifests exist | Current requester-to-worker integrated run unqualified; source or a Ready Pod alone is insufficient | Pending P08/P09/P11/P14 |
 | Redis | Streams, receipts, leases, cancellation/replay and executor paths exist | Component/mock and historical results do not prove current restart, retention or failure recovery | Pending P08/P11/P12/P14; fleet improvements P15 |
+
+
+<a id="runtime-ownership-20261004"></a>
+## 2026-10-04 — Runtime ownership and external-update usability finding
+
+**User-reported:** after an external Ollama update, Refinix showed “The selected model is unavailable
+for new work. Open Settings.” The updated runtime version, current selected model/digest, live status
+response and packaged application were not observed in this documentation task.
+
+**Source-inspected:**
+
+- [profiles.for_observation](../backend/contracts/profiles.py) matches model ID, digest, runtime name,
+  exact runtime version and target profile. An unmatched updated engine yields no matching profile.
+- [Coordinator._model_capability_blocker](../backend/coordinator/server.py) distinguishes no qualified
+  workflow profile for the observed Ollama version from a missing or disabled model.
+- [renderReadyLine](../frontend/app/app.js) uses the reported generic line when the runtime is reachable
+  and the model is installed but unavailable for new work. Several blockers can share this line;
+  version mismatch is a source-supported explanation, not a confirmed live diagnosis.
+
+**Product decision:** runtime/model/workflow qualification remains engineering/release work.
+Customers receive one managed app/engine setup, with explicit model provisioning and automatic local
+installation checks. An external engine update must not change Refinix's engine. A pinned app-managed
+llama.cpp build remains the preferred candidate, pending parity, packaging and recovery qualification;
+no runtime migration or admission change was made here. Unsupported engine combinations need their
+specific reason and an approved graphical recovery action, not instructions to edit profiles.
+
+**Orchestration decision:** keep the existing harness. LangGraph is an unadopted evaluation option for
+an evidenced workflow gap; no comparative Refinix integration/performance/maintenance result was
+established in this review.
+Framework orchestration and inference-engine ownership are separate decisions. See
+[PROJECT.md](PROJECT.md#70-orchestration-choice-and-alternatives) for the options and reconsideration criteria.
+
+**Verification boundary:** source inspection and documentation review only. No application tests,
+model calls, runtime probes, downloads, installs, migrations, framework adoption or Git writes.
+
+<a id="hardware-presets-20261004"></a>
+## 2026-10-04 — Published evidence for hardware/capability presets
+
+**User direction:** prepare category recommendations and runtime/context/cache/resource presets from
+existing research; collect hardware facts and match the reviewed records. Reuse existing tools and
+code. Device brands are labels, and owning every target laptop is not a research prerequisite.
+[PROJECT.md §4.3.1](PROJECT.md#431-reviewed-hardware-and-capability-presets) and
+[model-catalog.md §4.1](model-catalog.md#reviewed-presets) define the current contract.
+
+The following public primary records were inspected on 2026-10-04. These are externally reported
+results or artifact metadata, not fresh Refinix measurements:
+
+| Source | Reported observation | Appropriate use / limitation |
+|---|---|---|
+| [Benchmark author's Apple dataset](https://huggingface.co/datasets/enescingoz/humaneval-apple-silicon) | M1, 16 GB, macOS 26.3.1: Qwen3.5 4B Q4_K_M generation 14.05/13.49 tok/s at 128/256 output tokens; Gemma 3 4B Q4_K_M 21.34/20.69 tok/s. Rows dated 2026-04-07 | Candidate comparisons. Short prompts, full GPU offload and flash attention; no pinned engine commit identified on the card. Does not prove 8 GB, long context or OCR; its memory column is insufficient for total peak-memory qualification |
+| [Same benchmark record](https://huggingface.co/datasets/enescingoz/humaneval-apple-silicon) | M2 Max, 32 GB: Qwen3.5 4B Q4_K_M generation 48.35/48.07 tok/s at 128/256 tokens, 2026-04-07 | Evidence for this configuration only; not a forecast for base M2/M1 or Windows GPUs |
+| [Quantizer's Qwen3.5 files](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/tree/main) | Q4_K_M weights 2.74 GB; F16 multimodal projector 672 MB | Download/storage seed, not peak RAM. Different bytes from the historical 3,389,971,840-byte Ollama blob; provenance/hashes and parity must be established before substitution |
+| [Google's Gemma 3 QAT files](https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/tree/main) | Q4_0 weights 3.16 GB; F16 projector 851 MB; gated distribution | Alternative candidate with licence/access review needed. This QAT Q4_0 artifact is not the benchmark's Q4_K_M artifact |
+
+The [upstream CUDA benchmark discussion](https://github.com/ggml-org/llama.cpp/discussions/15013)
+provides additional GPU observations. No matching RTX 2050/Qwen3.5 4B result was established in this
+review; do not invent that minimum or transfer another GPU's measured speed. Use exact comparable
+rows where available; label conservative estimates and their missing inputs otherwise.
+
+**Starting points, not accepted defaults:** retain Qwen3.5 4B as the existing reuse baseline. Compare
+Gemma against the actual Chat/Code/document fixtures before selecting it. The historical Mac path
+records context 8192 and Chat output 2048; Ubuntu context 4096 remains separate evidence in
+[the first-model record](model-catalog.md#bounded-execution-settings-for-the-first-path).
+These are not new-engine or all-device qualification. Specify and justify cache types, actual peak
+resources, available-memory/storage floors and engine build before promoting a complete preset.
+Do not synthesize missing KV values or minimum macOS versions from these short benchmarks.
+
+**Reuse finding:** existing upstream runtime, Hub download/cache and platform-metric libraries cover
+substantial commodity functionality; the catalogue's [reuse inventory](model-catalog.md#42-reuse-before-new-infrastructure)
+records integration and offline-policy gaps. No single inspected package supplies all Refinix
+workflow qualification, native packaging, sandbox enforcement and update/state recovery.
+
+The already-considered `llmfit` has
+[documented target-hardware profiles and JSON plans](https://github.com/AlexsJones/llmfit/blob/main/docs/cli.md),
+including context caps and storage estimates. This can support internal preset preparation without
+the physical computer. Outputs include estimates and limitations; they do not prove workflow quality
+or actual peak resource use. No tool was installed, run or adopted as a shipped dependency here.
+
+**Plan review:** the implementation-owner proposal needs correction for preset matching/evidence,
+reuse choices, compatible-data rollback, sandbox resource enforcement and sampled-observer claims.
+See the [consolidated review](beta-execution-handoff.md#review-agent-assessment-20261004).
+The owner must review these doc changes and reconcile the proposal before joint PASS or implementation.
+
+**Verification boundary:** documentation and source/public-record inspection only; no application
+tests, benchmarks, model weights, installers, live runtime calls or Git writes. Published research
+does not accept Refinix packages, supported OS ranges, security controls or the updater.

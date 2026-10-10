@@ -19,9 +19,10 @@ import tempfile
 import time
 import unittest
 import uuid
+from unittest.mock import patch
 
 from backend.contracts import profiles, v1
-from backend.coordinator import db, dispatch, pairing, server
+from backend.coordinator import db, dispatch, models, pairing, server
 
 NODE = "22222222-2222-4222-8222-222222222222"
 OTHER_NODE = "33333333-3333-4333-8333-333333333333"
@@ -648,6 +649,63 @@ class TestFallbackVersusRefusal(unittest.TestCase):
             dispatch.consume(Changed(), env)
 
 
+class TestStandaloneMeshBoundary(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.c = server.Coordinator(pathlib.Path(self.tmp.name) / "state.db")
+        self.addCleanup(self.c.conn.close)
+        mesh = patch.dict("os.environ", REFINIX_ENABLE_MESH="0")
+        mesh.start()
+        self.addCleanup(mesh.stop)
+        self.relationship_id = db.new_id()
+        db.record_relationship(
+            self.c.conn, relationship_id=self.relationship_id,
+            workspace_id=self.c.workspace_id, node_id=NODE,
+            display_name="saved worker", address="192.0.2.10", port=30443,
+            fingerprint="AB:CD", certificate_pem="pem")
+        self.relationship = db.active_relationship(self.c.conn, self.c.workspace_id)
+
+    def test_standalone_observations_and_routing_never_contact_a_saved_peer(self):
+        with patch.object(self.c, "worker_client") as client:
+            for _ in range(3):
+                self.assertFalse(self.c.worker_state()["paired"])
+                self.assertIsNone(self.c.preflight(self.relationship))
+                self.assertIsNone(self.c.worker_model(models.CHAT))
+                self.assertFalse(self.c.choose_route(require_model=False).remote)
+            client.assert_not_called()
+        self.assertEqual(db.active_relationship(self.c.conn, self.c.workspace_id),
+                         self.relationship)
+
+    def test_direct_peer_operations_refuse_before_credentials_or_transport(self):
+        with patch.object(pairing, "load_credential") as credential, \
+                patch.object(server.http.client, "HTTPSConnection") as transport:
+            with self.assertRaisesRegex(server.RequestError, "switched off"):
+                self.c.worker_client(self.relationship)
+            with self.assertRaisesRegex(server.RequestError, "switched off"):
+                self.c.pair(address="192.0.2.10", port=30443, fingerprint="AB:CD",
+                            certificate_pem="pem", pairing_code="unused")
+            credential.assert_not_called()
+            transport.assert_not_called()
+
+    def test_packaged_build_stays_local_even_with_development_opt_in(self):
+        with patch.dict("os.environ", REFINIX_ENABLE_MESH="1"), \
+                patch.object(server.sys, "frozen", True, create=True), \
+                patch.object(self.c, "worker_client") as client:
+            self.assertFalse(server.mesh_enabled())
+            self.assertIsNone(self.c.paired_worker())
+            self.assertIsNone(self.c.preflight(self.relationship))
+            client.assert_not_called()
+
+    def test_source_development_opt_in_keeps_the_saved_peer_path(self):
+        with patch.dict("os.environ", REFINIX_ENABLE_MESH="1"), \
+                patch.object(server.sys, "frozen", False, create=True), \
+                patch.object(self.c, "worker_client") as client:
+            self.assertEqual(self.c.paired_worker(), self.relationship)
+            self.assertEqual(self.c.preflight(), client.return_value.health.return_value)
+            client.assert_called_once_with(self.relationship)
+
+
 class TestRelationshipRecords(unittest.TestCase):
     """The canonical half of pairing: a real database, no worker, no Keychain."""
 
@@ -864,6 +922,9 @@ class TestAmbiguityNeverRunsLocally(unittest.TestCase):
     """
 
     def setUp(self):
+        mesh = patch.dict("os.environ", REFINIX_ENABLE_MESH="1")
+        mesh.start()
+        self.addCleanup(mesh.stop)
         self._dir = tempfile.TemporaryDirectory()
         self.coordinator = server.Coordinator(
             pathlib.Path(self._dir.name) / "state.db")

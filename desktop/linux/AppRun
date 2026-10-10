@@ -1,0 +1,5 @@
+#!/bin/sh
+# AppImage entry point. Runs the bundled application from inside the mounted
+# image; durable data stays under $XDG_DATA_HOME/refinix (paths.py), outside it.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/lib/refinix/Refinix" "$@"

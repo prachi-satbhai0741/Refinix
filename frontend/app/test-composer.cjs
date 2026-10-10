@@ -497,14 +497,40 @@ test('an unsupported platform offers no connect button', async () => {
   assert.match(p.document.getElementById('thread').textContent, /unavailable here/);
 });
 
-test('the model selector lists inventory and keeps Auto disabled for now', () => {
+test('the model selector lists inventory and offers Auto as a real choice', () => {
   assert.match(source, /for \(const candidate of models\)/,
     'the selector is populated from the coordinator inventory');
-  assert.match(source,
-    /appendModelChoiceParts\(auto, false, 'Auto model', 'after internal hackathon'\)/);
-  assert.match(source, /auto\.disabled = true/);
+  assert.match(source, /body: JSON\.stringify\(\{ scope, model: 'auto' \}\)/,
+    'choosing Auto stores Auto, not a model');
+  assert.doesNotMatch(source, /after internal hackathon/);
   assert.match(source, /skill\?\.id === 'search-documents'\) return null/,
     'search does not claim to select a model it never runs');
+});
+
+test('reading scanned pages is labelled Beta wherever its model is chosen or named', () => {
+  assert.match(source, /appendModelChoices\(box, 'documents\.ocr', 'Document OCR model \(Beta\)'\)/);
+  assert.match(source, /'documents\.ocr': 'Page reading \(Beta\)'/);
+});
+
+test('Auto says which model it would use now, by its display name', () => {
+  const p = page();
+  p.run(`
+    models = [{ id: 'gemma-3-4b-it-q4_k_m', key: 'llama.cpp|gemma-3-4b-it-q4_k_m',
+                display_name: 'Gemma 3 4B instruct (Q4_K_M)', installed: true,
+                runtime_label: 'Refinix engine',
+                eligible_scopes: ['chat'], locations: ['this computer'] }];
+    modelSelections = { chat: 'auto' };
+    modelChoices = { chat: { key: 'llama.cpp|gemma-3-4b-it-q4_k_m',
+                             reason: 'Auto: Chat → Gemma', refusal: null } };
+    appendModelChoices(document.body, 'chat', 'Chat model');
+  `);
+  const group = p.document.body.children[0];
+  const auto = group.children[1];
+  assert.equal(auto.children[1].textContent, 'Auto');
+  assert.match(auto.children[2].textContent, /now Gemma 3 4B instruct/);
+  assert.equal(auto.getAttribute('aria-checked'), 'true');
+  const row = group.children[2];
+  assert.match(row.children[2].textContent, /Refinix engine/);
 });
 
 test('model choices fill the three grid columns instead of the tick column', () => {
@@ -522,11 +548,58 @@ test('model choices fill the three grid columns instead of the tick column', () 
   const selected = group.children[2];
   assert.deepEqual(auto.children.map((node) => node.className),
                    ['mp-tick', 'mp-model-name', 'mp-tag']);
-  assert.equal(auto.children[1].textContent, 'Auto model');
+  assert.equal(auto.children[1].textContent, 'Auto');
   assert.deepEqual(selected.children.map((node) => node.className),
                    ['mp-tick', 'mp-model-name', 'mp-tag']);
   assert.equal(selected.children[1].textContent, 'qwen3.5:4b-q4_K_M');
   assert.equal(selected.getAttribute('aria-checked'), 'true');
+});
+
+test('a model Auto avoids says why in the menu, before it is chosen', () => {
+  const p = page();
+  p.run(`
+    models = [{
+      id: 'reader:1', key: 'ollama|reader:1', installed: true,
+      eligible_scopes: ['chat'], locations: ['this computer'],
+      auto_excluded: { chat: 'did not finish its answer within the check limit' }
+    }, {
+      id: 'plain:1', key: 'ollama|plain:1', installed: true,
+      eligible_scopes: ['chat'], locations: ['this computer'], hints: ['general']
+    }];
+    modelSelections = { chat: 'auto' };
+    appendModelChoices(document.body, 'chat', 'Chat model');
+  `);
+  const group = p.document.body.children[0];
+  const reader = group.children[2];
+  const plain = group.children[3];
+  assert.equal(reader.disabled, false, 'still the person\'s to choose');
+  assert.match(reader.textContent, /Auto does not use it for Chat: its check here did not finish/);
+  assert.doesNotMatch(plain.textContent, /Auto does not use it/);
+});
+
+test('a Chat-backed document skill is not told its model is unavailable', () => {
+  // On the limited route the model selected for Documents runs under its Chat
+  // profile. The capability row says so with model_scope, and the pill must
+  // check that scope rather than documents.generate, which the model rightly
+  // lacks.
+  const p = page();
+  // The Chat surface: there is no Code composer on this page.
+  const byId = p.document.getElementById.bind(p.document);
+  p.document.getElementById = (id) => (id === 'code-composer' ? null : byId(id));
+  const title = (row) => p.run(`
+    models = [{ id: 'qwen3.5:4b-q4_K_M', installed: true, reasoning: false,
+                eligible_scopes: ['chat', 'code'] }];
+    modelSelections = { chat: 'qwen3.5:4b-q4_K_M',
+                        'documents.generate': 'qwen3.5:4b-q4_K_M' };
+    skillByChat.set(currentSlot(), ${JSON.stringify(row)});
+    renderModelPill();
+    document.getElementById('model-pill').title;
+  `);
+  const base = { id: 'read-document', name: 'Read a document', kind: 'document',
+                 state: 'available', icon: 'document' };
+  assert.equal(title({ ...base, model_scope: 'chat' }), '');
+  assert.equal(title(base), 'This model is not available for this workflow.',
+    'without the Chat-backed scope the structured requirement still applies');
 });
 
 test('Write Document offers an explicit Word or PDF choice', () => {
@@ -916,4 +989,20 @@ test('sending still works unchanged from the new layout', async () => {
   assert.equal(p.requests[0].body.doc_workflow, APPROVAL);
   assert.equal(p.requests[0].body.text, 'Draft the approval note');
   p.requests.shift().reply({ job_id: 'job-1' }); await sending;
+});
+
+test('the context indicator opens its details and Escape closes them', async () => {
+  const p = page();
+  await estimate(p, OK_ESTIMATE);
+  p.run('openContextPopover()');
+  const meter = p.document.getElementById('context-meter');
+  assert.equal(meter.getAttribute('aria-expanded'), 'true');
+  assert.ok(p.run('contextPopover !== null'));
+  p.run('closeContextPopover(true)');
+  assert.equal(meter.getAttribute('aria-expanded'), 'false');
+  assert.ok(p.run('contextPopover === null'));
+  // The page wires the meter to open them, and typing to refresh the estimate.
+  assert.match(source, /meter\.addEventListener\('click'[\s\S]*?openContextPopover\(\)/);
+  assert.match(source, /saveDraftSoon\(\);\s*\/\/[^\n]*\n\s*refreshContextSoon\(\);/);
+  assert.match(source, /e\.key === 'Escape' && contextPopover\) closeContextPopover\(true\)/);
 });

@@ -280,15 +280,27 @@ class TestTheSharedBoundary(unittest.TestCase):
         with self.assertRaises(ValueError):
             packaging_plan.icon_for("solaris")
 
-    def test_only_macos_claims_it_can_be_built_from_this_checkout(self):
-        """A plan that read as a capability would be fabricated readiness."""
+    def test_windows_and_linux_build_only_on_their_own_native_host(self):
+        """Buildable means pinned tools and a driver, not a produced package.
+
+        PyInstaller cannot cross-build, so the plan must say the package comes
+        from a native host or runner, and that a produced package is test
+        evidence rather than a release."""
         self.assertTrue(packaging_plan.plan("macos")["buildable"])
         for platform in ("windows", "linux"):
             with self.subTest(platform=platform):
                 plan = packaging_plan.plan(platform)
-                self.assertFalse(plan["buildable"])
-                self.assertIn("No ", plan["checkpoint"])
-                self.assertIn("remaining step", plan["checkpoint"])
+                self.assertTrue(plan["buildable"])
+                self.assertIn("native", plan["checkpoint"])
+                self.assertIn("cannot cross-build", plan["checkpoint"])
+                self.assertIn("internal test evidence", plan["checkpoint"])
+
+    def test_the_build_driver_is_never_shipped_but_build_info_is(self):
+        names = packaging_plan.application_module_names()
+        self.assertNotIn("desktop/build.py", names)
+        self.assertIn("backend/coordinator/build_info.py", names)
+        for prefix in ("fake_", "check_"):
+            self.assertFalse(any(Path(n).name.startswith(prefix) for n in names))
 
     def test_every_platform_names_the_native_prerequisites_it_imposes(self):
         for platform in ("macos", "windows", "linux"):
