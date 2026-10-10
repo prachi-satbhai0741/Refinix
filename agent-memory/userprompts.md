@@ -2498,3 +2498,10 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - authorised: Update docs/releases.md for encrypted iCloud PEM backup and Apple Passwords custody; commit the public root and evidence records, push through aditya without agent trailers, and open aditya-to-dev PR.
 - constraints: Preserve private keys/passphrases outside GitHub and agent output; owner merges and CP-B publication remain separate. The additional local temporary-key workflow repairs are outside this root/evidence commit.
 - linked_changes: [AC-20261010-BETA-ROOT-INTEGRATION](agentchangelog.md#ac-20261010-beta-root-integration)
+
+<a id="up-20261010-main-ci-repair"></a>
+## UP-20261010-MAIN-CI-REPAIR — Address the release PR's failed Main CI
+- date: 2026-10-10
+- request: The user reported failed CI after member-to-dev integration and creation of the dev-to-main release PR.
+- scope: Continue the authorised CI repair and offline-check work; use aditya for the repair commit and member PR, with no agent trailers. Preserve the separate temporary-key workflow changes outside this CI repair commit; owner merges and publication remain checkpoints.
+- linked_changes: [AC-20261010-MAIN-CI-REPAIR](agentchangelog.md#ac-20261010-main-ci-repair)
