@@ -57,7 +57,9 @@ jobs:
           REFINIX_KEY_PASSPHRASE_SNAPSHOT: ${{ secrets.REFINIX_KEY_PASSPHRASE_SNAPSHOT }}
           REFINIX_KEY_PASSPHRASE_TIMESTAMP: ${{ secrets.REFINIX_KEY_PASSPHRASE_TIMESTAMP }}
         run: |
-          keys="$RUNNER_TEMP/keys"; mkdir -m 700 "$keys"
+          umask 077
+          keys=$(mktemp -d "$RUNNER_TEMP/refinix-feed-keys.XXXXXX")
+          trap 'rm -rf "$keys"' EXIT
           printf '%s\n' "$SNAPSHOT_KEY" > "$keys/snapshot.pem"
           printf '%s\n' "$TIMESTAMP_KEY" > "$keys/timestamp.pem"
           chmod 600 "$keys"/*.pem

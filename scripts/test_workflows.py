@@ -253,6 +253,37 @@ class TestFeedWorkflows(unittest.TestCase):
     def read(self, name):
         return (DISTRIBUTION / name).read_text(encoding="utf-8")
 
+    def test_temporary_signing_keys_are_private_and_removed_on_exit(self):
+        check = '''
+"$CHECK_PYTHON" - "$keys" <<'PY'
+import stat, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+assert stat.S_IMODE(p.stat().st_mode) == 0o700
+for name in ("snapshot.pem", "timestamp.pem"):
+    assert stat.S_IMODE((p / name).stat().st_mode) == 0o600
+(p.parent / "created-key-directory").write_text(str(p))
+PY
+'''
+        for name in ("advance-feed.yml", "refresh-feed.yml"):
+            setup = re.search(r"(?ms)^          umask 077\n.*?(?=^          before=)",
+                              self.read(name)).group()
+            for exit_code in (0, 23):
+                with self.subTest(workflow=name, exit_code=exit_code):
+                    with tempfile.TemporaryDirectory() as folder:
+                        result = subprocess.run(
+                            ["bash", "-e", "-c", textwrap.dedent(setup)
+                             + check + f"exit {exit_code}\n"],
+                            env={"PATH": os.environ["PATH"], "RUNNER_TEMP": folder,
+                                 "CHECK_PYTHON": sys.executable,
+                                 "SNAPSHOT_KEY": "synthetic snapshot fixture",
+                                 "TIMESTAMP_KEY": "synthetic timestamp fixture"},
+                            capture_output=True, text=True)
+                        self.assertEqual(result.returncode, exit_code, result.stderr)
+                        created = Path((Path(folder) / "created-key-directory").read_text())
+                        self.assertEqual(created.parent, Path(folder))
+                        self.assertFalse(created.exists())
+
     def test_every_deploy_and_feed_change_shares_one_queue(self):
         for name in ("deploy-site.yml", "advance-feed.yml", "refresh-feed.yml"):
             with self.subTest(name=name):
