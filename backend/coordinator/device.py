@@ -33,8 +33,6 @@ import platform as _platform
 import subprocess
 import sys
 
-from backend.contracts import profiles as inference_profiles
-
 # The label for work that ran on the computer the user is sitting at. A role,
 # not an operating system: the same words are correct on all three families.
 HERE = "this computer"
@@ -250,5 +248,6 @@ def qualified_target_profile(*, platform: str | None = None,
         except ValueError:
             memory_bytes = None
     if hardware_model == "Mac17,3" and memory_bytes == 16 * 1024 ** 3:
+        from backend.contracts import profiles as inference_profiles
         return inference_profiles.MAC_M5_16GB
     return None

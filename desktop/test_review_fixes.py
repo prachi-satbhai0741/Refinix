@@ -3,6 +3,7 @@
 import json
 import os
 import runpy
+import subprocess
 import sys
 import tempfile
 import threading
@@ -11,10 +12,57 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from backend.coordinator import ownership
 from desktop import lifecycle, refinix, shell
 
 
 class TestDesktopReviewFixes(unittest.TestCase):
+    def test_interrupted_setup_recovers_before_importing_application_dependencies(self):
+        script = '''
+import importlib.abc, json, sys
+from pathlib import Path
+from backend.coordinator import ownership
+from desktop import refinix, update_apply as ua
+
+class MissingApplication(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if (fullname.startswith(("pydantic", "backend.contracts")) or fullname in
+                ("backend.coordinator.db", "desktop.lifecycle", "desktop.shell")):
+            raise ImportError("setup has not copied " + fullname)
+sys.meta_path.insert(0, MissingApplication())
+from backend.coordinator import paths
+state = ownership.canonical_database(paths.select_root().database)
+helper = ua.attempt_folder(state, "interrupted") / "helper" / "Refinix"
+helper.mkdir(parents=True)
+(helper / "Refinix.exe").write_bytes(b"known-good helper fixture")
+ua._atomic_json(ua.journal_file(state), {
+    "update_id": "interrupted", "state": "installer_running",
+    "from_version": "0.1.0-beta.901", "to_version": "0.1.0-beta.902",
+    "data_root": str(state.parent), "install_path": str(state.parent / "partial"),
+    "incoming": str(state.parent / "setup.exe"), "method": "windows-setup",
+    "helper_bundle": str(helper), "resume_count": 0,
+})
+class System(ua.System):
+    def spawn(self, argv, environment, log):
+        assert argv == [str(helper / "Refinix.exe"), "--resume", str(state)], argv
+        return {"pid": 123, "create_time": 1, "exe": argv[0]}
+    def tell(self, title, text):
+        raise AssertionError(text)
+ua.System = System
+sys.argv = ["Refinix"]
+assert refinix.main() == 0
+assert ua.read_journal(state)["resume_count"] == 1
+assert not state.exists(), "recovery must precede database admission"
+lock = ownership.WorkspaceLock.for_database(state)
+assert lock.acquire() is None, "the entry releases the lock for its helper"
+lock.release()
+'''
+        with tempfile.TemporaryDirectory() as folder:
+            result = subprocess.run([sys.executable, "-c", script],
+                cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
+                env=dict(os.environ, REFINIX_DATA_ROOT=folder), timeout=20)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_windows_launches_lock_the_same_byte_and_can_read_metadata(self):
         offsets = []
 
@@ -57,7 +105,9 @@ class TestDesktopReviewFixes(unittest.TestCase):
         # Both entries take the lock beside the database they will open.
         lock_class = Mock(return_value=instance)
         lock_class.for_state.return_value = instance
+        lock_class.for_database.return_value = instance
         with patch.object(lifecycle, "SingleInstance", lock_class), \
+                patch.object(ownership, "WorkspaceLock", lock_class), \
                 patch.object(shell, "run", run):
             with patch.object(sys, "argv", ["Refinix"]):
                 self.assertEqual(refinix.main(), 0)
@@ -72,12 +122,14 @@ class TestDesktopReviewFixes(unittest.TestCase):
         # workspace is touched. Finder's own -psn_ argument is not an option.
         lock_class = Mock()
         with patch.object(lifecycle, "SingleInstance", lock_class), \
+                patch.object(ownership, "WorkspaceLock", lock_class), \
                 patch.object(shell, "run") as started:
             for argv in (["Refinix", "--no-window"], ["Refinix", "--port", "9000"],
                          ["Refinix", "--state", "/tmp/x"]):
                 with self.subTest(argv=argv), patch.object(sys, "argv", argv):
                     self.assertEqual(refinix.main(), 2)
             lock_class.for_state.assert_not_called()
+            lock_class.for_database.assert_not_called()
             started.assert_not_called()
         self.assertEqual(refinix.unsupported_arguments(["-psn_0_12345"]), [])
 

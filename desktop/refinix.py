@@ -79,14 +79,19 @@ def main() -> int:
                          "packaged app takes no options; to use another data folder, "
                          "set REFINIX_DATA_ROOT to its absolute path.\n")
         return 2
-    from desktop import lifecycle, shell
-    instance = lifecycle.SingleInstance.for_state(lifecycle.STATE_DB)
+    # An interrupted setup may not have copied native application dependencies yet.
+    from backend.coordinator import ownership, paths
+    state_db = paths.select_root().database
+    instance = ownership.WorkspaceLock.for_database(state_db)
     existing = instance.acquire()
     if existing is not None:
         # LSMultipleInstancesProhibited normally prevents this; the lock covers
         # a copy started another way, for example from the command line.
         port = existing.get("port")
-        if isinstance(port, int) and lifecycle.identify_occupant(port):
+        if not isinstance(port, int):
+            return 0
+        from desktop import lifecycle
+        if lifecycle.identify_occupant(port):
             import urllib.request
             request = urllib.request.Request(
                 f"http://127.0.0.1:{port}/v1/desktop/focus", data=b"{}",
@@ -100,11 +105,13 @@ def main() -> int:
         return 0
     try:
         instance.record(port=None, mode="starting")
-        gate = _update_gate(instance, lifecycle.STATE_DB)
+        gate = _update_gate(instance, state_db)
         if not gate.proceed:
             if gate.message:
-                shell._native_message("Refinix update", gate.message)
+                from desktop import update_apply
+                update_apply.System().tell("Refinix update", gate.message)
             return 0
+        from desktop import lifecycle, shell
         return shell.run(owner=instance, update_gate=gate,
                          on_started=lambda startup: instance.record(
                              port=startup.port, mode="bundle"))

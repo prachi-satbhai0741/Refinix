@@ -78,6 +78,24 @@ journal and waits for its death. Native synthetic-run app/helper diagnostics are
 the reports, excluding the data store. Windows/Ubuntu journeys and the floor runner remain
 unqualified until a repaired native run passes.
 
+**Fourth repair qualification:**
+[37995379252](https://github.com/prachi-satbhai0741/Refinix/actions/runs/37995379252) tested
+`5a4a05226307fbbaabf0374a1289b134bb0f27b5`. Ubuntu passed all 29 package and all 25 update-journey
+checks; the sandbox stopped at UDisks authorization in the headless session (1/2 checks passed).
+The follow-up prefers the existing rootless `fuse2fs` backend, with the same fixed ext4 image and
+confinement controls. Its mount is journalled before starting the mount command so interrupted
+mounts remain recoverable. Windows package qualification passed 6/6 and normal update/rollback
+passed, but interrupted recovery failed again (22/24 journey checks): the exact recorded helper
+was killed and the next launch's retained log showed `pydantic_core._pydantic_core` missing before
+the recovery gate. The packaged entry now resolves the data root, takes the same workspace lock
+and checks update recovery before importing the application; the profile registry is imported
+only when its measured hardware match is needed. A fresh-process regression refuses application
+imports, resumes the known-good helper and proves the database was not opened. Both Mac lanes,
+including the separate macOS floor check, passed. Local follow-up: desktop 254 tests, OK (6 skipped);
+coordinator 1,657 tests, OK (16 skipped); focused update/path/sandbox regressions 134 tests, OK.
+The final startup/FUSE group passed 37 tests, including interrupted-mount cleanup.
+A full native rerun of these follow-ups is pending.
+
 <a id="tester-preview-batch-20261008"></a>
 ### Tester-preview batch — 2026-10-08
 

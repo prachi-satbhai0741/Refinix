@@ -204,10 +204,11 @@ class LocalSandbox:
                            "labelled local Apply/Undo still work.")}
 
     def storage_method(self) -> str | None:
-        if self.host.which("udisksctl"):
-            return "udisks"
+        # FUSE does not depend on an interactive session's UDisks authorization.
         if self.host.which("fuse2fs") and self.host.which("fusermount3"):
             return "fuse2fs"
+        if self.host.which("udisksctl"):
+            return "udisks"
         return None
 
     # -- the journal ----------------------------------------------------------
@@ -338,6 +339,7 @@ class LocalSandbox:
             return Path(found.group(1)), device
         mount = folder / "workspace"
         mount.mkdir(mode=0o700)
+        self._note(run_id, mount=str(mount))
         mounted = self.host.run(["fuse2fs", str(image), str(mount), "-o",
                                  "rw,nosuid,nodev"], timeout=60)
         if mounted.returncode != 0:

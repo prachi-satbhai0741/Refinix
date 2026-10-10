@@ -62,8 +62,9 @@ class FakeHost(sandbox_local.Host):
     """Answers like Ubuntu's tools; records every command."""
 
     def __init__(self, report=None, udisks=True, flood=0, *, quiet=False, hold=False,
-                 returncode=0, busy=False, stuck_unit=False, stuck_loop=False):
+                 returncode=0, busy=False, stuck_unit=False, stuck_loop=False, fuse=None):
         self.commands, self.report, self.udisks, self.flood = [], report, udisks, flood
+        self.fuse = not udisks if fuse is None else fuse
         self.quiet, self.hold, self.returncode = quiet, hold, returncode
         self.busy, self.stuck_unit, self.stuck_loop = busy, stuck_unit, stuck_loop
         self.mounts, self.loops, self.process = set(), {}, None
@@ -71,6 +72,8 @@ class FakeHost(sandbox_local.Host):
     def which(self, name):
         if name == "udisksctl":
             return "/usr/bin/udisksctl" if self.udisks else None
+        if name in ("fuse2fs", "fusermount3") and not self.fuse:
+            return None
         return f"/usr/bin/{name}"
 
     def mounted(self, target):
@@ -97,6 +100,10 @@ class FakeHost(sandbox_local.Host):
             self.mounts.clear()
         elif argv[0] == "udisksctl" and argv[1] == "loop-delete" and not self.stuck_loop:
             self.loops.pop(argv[-1], None)
+        elif argv[0] == "fuse2fs":
+            self.mounts.add(argv[2])
+        elif argv[:2] == ["fusermount3", "-u"] and not self.busy:
+            self.mounts.discard(argv[-1])
         elif argv[:3] == ["systemctl", "--user", "show"]:
             out = "active\n" if self.stuck_unit else "inactive\n"
         elif argv[:3] == ["systemctl", "--user", "kill"] and self.process:
@@ -170,6 +177,47 @@ class TestRunner(unittest.TestCase):
             with self.assertRaises(sandbox_local.SandboxError):
                 sandbox.validate([{"path": "a.py", "text": "x", "sha256": "a" * 64}])
             self.assertFalse(any(c[0] == "systemd-run" for c in host.commands))
+
+    def test_fuse_is_preferred_with_both_tools_and_cleanup_is_confirmed(self):
+        for busy in (False, True):
+            with self.subTest(busy=busy), tempfile.TemporaryDirectory() as folder, \
+                    patch.object(sandbox_local.Path, "is_file", return_value=True):
+                host = FakeHost(PASS, fuse=True, busy=busy)
+                sandbox = self.sandbox(host, Path(folder))
+                self.assertEqual(sandbox.storage_method(), "fuse2fs")
+                report = sandbox.validate(
+                    [{"path": "test_x.py", "text": "x", "sha256": "a" * 64}])
+                mount = next(c for c in host.commands if c[0] == "fuse2fs")
+                self.assertEqual(mount[-2:], ["-o", "rw,nosuid,nodev"])
+                self.assertIn(["fusermount3", "-u", mount[2]], host.commands)
+                self.assertFalse(any(c[0] == "udisksctl" for c in host.commands))
+                self.assertTrue(sandbox_local.passed(report))
+                self.assertEqual(bool(sandbox.stuck_runs()), busy)
+                self.assertEqual(Path(mount[1]).exists(), busy)
+                self.assertEqual(sandbox.status()["available"], not busy)
+                host.busy = False
+                sandbox.cleanup_leftovers()
+                self.assertFalse(Path(mount[1]).exists())
+
+    def test_fuse_mount_is_journalled_before_an_interrupted_mount_command(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(sandbox_local.Path, "is_file", return_value=True):
+            host = FakeHost(PASS, fuse=True)
+            original = host.run
+
+            def interrupted(argv, **kwargs):
+                result = original(argv, **kwargs)
+                if argv[0] == "fuse2fs":
+                    raise OSError("mount succeeded, but its client stopped")
+                return result
+
+            host.run = interrupted
+            sandbox = self.sandbox(host, Path(folder))
+            with self.assertRaises(OSError):
+                sandbox.validate([{"path": "a.py", "text": "x", "sha256": "a" * 64}])
+            self.assertFalse(host.mounts)
+            self.assertEqual(sandbox._journal()["runs"], {})
+            self.assertFalse(any((Path(folder) / "sandbox" / "runs").iterdir()))
 
     def test_a_refused_control_or_changed_inputs_is_never_a_pass(self):
         for report in ({**PASS, "ran": False, "refused": "Landlock",
