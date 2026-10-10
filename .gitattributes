@@ -1,0 +1,5 @@
+# Every platform builds the committed bytes. Text is stored and checked out
+# with LF, overriding a host's core.autocrlf (Windows runners default to true,
+# which rewrote the update trust root and sources inside the Windows package);
+# files Git detects as binary are never converted.
+* text=auto eol=lf
