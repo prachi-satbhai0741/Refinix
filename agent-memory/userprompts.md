@@ -2505,3 +2505,10 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - request: The user reported failed CI after member-to-dev integration and creation of the dev-to-main release PR.
 - scope: Continue the authorised CI repair and offline-check work; use aditya for the repair commit and member PR, with no agent trailers. Preserve the separate temporary-key workflow changes outside this CI repair commit; owner merges and publication remain checkpoints.
 - linked_changes: [AC-20261010-MAIN-CI-REPAIR](agentchangelog.md#ac-20261010-main-ci-repair)
+
+<a id="up-20261011-checkout-bytes"></a>
+## UP-20261011-CHECKOUT-BYTES — Repair the Windows line-ending mismatch before the Beta rebuild
+- date: 2026-10-11
+- request: After assembly refused run 38078049278, implement the repair with `* text=auto eol=lf` and a behavioural regression exercising core.autocrlf=true in an isolated Git fixture, run before packaging in qualify.yml and release.yml; run the focused build/feed-workflow checks.
+- constraints: Preserve binary bytes and the production root/key material; do not weaken assembly checks; no repository-wide renormalisation; commit the feed-workflow hardening separately with the user's configured identity and no trailers. No merges, protected-document edits, signing, publication, deployment or further Actions dispatches.
+- linked_changes: [AC-20261011-CHECKOUT-BYTES](agentchangelog.md#ac-20261011-checkout-bytes)

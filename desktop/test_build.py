@@ -10,6 +10,8 @@ whose binaries need a newer macOS than it declares is refused.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import plistlib
 import sys
@@ -674,6 +676,91 @@ class TestChannelsAndLabels(unittest.TestCase):
     def test_the_mac_archive_carries_no_finder_metadata(self):
         text = Path(build.__file__).read_text(encoding="utf-8")
         self.assertIn('"--norsrc", "--noextattr"', text)
+
+
+class TestCheckoutKeepsTheCommittedBytes(unittest.TestCase):
+    """Every lane builds the committed bytes, whatever its host's Git defaults.
+
+    Windows runners check out with core.autocrlf=true. Without the repository's
+    line-ending policy, the Windows package embedded CRLF copies of the update
+    trust root, the feed and every source file, so its identity disagreed with
+    the other lanes and release assembly refused it.
+    """
+
+    REPO = DESKTOP.parent
+    # The update trust root and feed, shared sources every package carries, a
+    # Windows-only build file, and binaries (a PNG's own signature holds CRLF).
+    PATHS = ("desktop/updates/beta-root.json", "desktop/updates/beta-feed.json",
+             "backend/coordinator/release.py", "frontend/app/app.js",
+             "desktop/build.py", "desktop/windows/refinix.iss",
+             "desktop/icons/Refinix.ico", "desktop/icons/refinix-16.png")
+
+    def setUp(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not installed")
+        folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(folder.cleanup)
+        self.folder = Path(folder.name)
+        config = self.folder / "gitconfig"
+        config.write_text("", encoding="utf-8")
+        # Only the fixture's own settings: no system, global or caller repository.
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith("GIT_")}
+        self.env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=str(config),
+                        HOME=str(self.folder), GIT_TERMINAL_PROMPT="0")
+
+    def git(self, *args, cwd):
+        subprocess.run(["git", "-c", "user.name=fixture",
+                        "-c", "user.email=fixture@example.invalid",
+                        "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main",
+                        *args], cwd=cwd, env=self.env, check=True,
+                       capture_output=True, text=True)
+
+    def checkout_with_windows_defaults(self, name, attributes):
+        """Commit PATHS (and the attributes), then clone fresh with core.autocrlf=true."""
+        source, clone = self.folder / name, self.folder / f"{name}-clone"
+        for relative in self.PATHS:
+            (source / relative).parent.mkdir(parents=True, exist_ok=True)
+            (source / relative).write_bytes((self.REPO / relative).read_bytes())
+        if attributes is not None:
+            (source / ".gitattributes").write_bytes(attributes)
+        self.git("init", "-q", cwd=source)
+        self.git("add", "-A", cwd=source)
+        self.git("commit", "-q", "-m", "fixture", cwd=source)
+        self.git("clone", "-q", "--config", "core.autocrlf=true", str(source), str(clone),
+                 cwd=self.folder)
+        return clone
+
+    def test_a_fresh_autocrlf_checkout_keeps_every_committed_byte(self):
+        clone = self.checkout_with_windows_defaults(
+            "policy", (self.REPO / ".gitattributes").read_bytes())
+        for relative in self.PATHS:
+            with self.subTest(path=relative):
+                self.assertEqual((clone / relative).read_bytes(),
+                                 (self.REPO / relative).read_bytes())
+
+    def test_without_the_policy_the_same_checkout_rewrites_the_trust_root(self):
+        # The fixture reproduces the original failure, so the test above is
+        # evidence of the policy rather than of a host that never converts.
+        clone = self.checkout_with_windows_defaults("no-policy", None)
+        root = "desktop/updates/beta-root.json"
+        self.assertIn(b"\r\n", (clone / root).read_bytes())
+        self.assertNotEqual((clone / root).read_bytes(), (self.REPO / root).read_bytes())
+
+    def test_this_checkout_kept_the_stored_line_endings(self):
+        # The checkout this build runs from: on a Windows runner before the
+        # policy, every text file stored with LF had been rewritten to CRLF.
+        listed = subprocess.run(["git", "ls-files", "--eol"], cwd=self.REPO,
+                                capture_output=True, text=True)
+        if listed.returncode != 0:
+            self.skipTest("not a Git checkout")
+        rewritten = []
+        for line in listed.stdout.splitlines():
+            flags, _tab, path = line.partition("\t")
+            index, worktree = flags.split()[:2]
+            if index == "i/lf" and worktree in ("w/crlf", "w/mixed"):
+                rewritten.append(f"{path} ({worktree})")
+        self.assertEqual(rewritten, [])
 
 
 if __name__ == "__main__":
