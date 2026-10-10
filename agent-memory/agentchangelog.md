@@ -3091,3 +3091,9 @@ work. No repository file change means no changelog entry.
 - observed: Run 38053285944 at 1bd7afe: Windows package 6/6 and journeys 25/25, including restored N and unchanged work after helper death; Mac package/journeys passed. Ubuntu package 29/29 and journeys 25/25 passed, but systemd rejected literal none before the launcher started. FUSE mount and cleanup worked.
 - changed: Use the systemd-run empty address-family allow-list (manager stores deny-all); explicitly permit only the three Landlock setup syscalls absent from systemd 255's service group, retaining the existing denials. Require actual cancellation/deadline reasons and observed truncated output in qualification. Preserve the normal Mac/Linux native error dialog; partial Windows uses the existing helper message.
 - verified: Inspected upstream systemd v255 serializer, manager setter and syscall groups. Offline coordinator 1659 tests OK (16 skipped), desktop 255 OK (6 skipped), scripts 82 OK; final focused sandbox/startup/qualification group 41 OK. Native correction remains pending.
+
+## AC-20261010-SEGMENT1-BOUNDED-OUTPUT — Retain the sandbox closing record after large output
+- date: 2026-10-10
+- observed: Run 38054409695 at 34e8761: Windows package 6/6 and journeys 25/25 passed; Mac lane passed. Ubuntu package 29/29 and journeys 25/25 passed; sandbox 6/7 passed, with only large output losing the closing report.
+- changed: Parse unittest's summary from a bounded ending tail, emit capped output before the small closing JSON and preserve the parent's existing nonce, output limit and pass controls.
+- verified: Focused sandbox/qualification group 26 tests OK, including a two-million-byte output test and actual launcher-to-parent protocol. Coordinator suite 1660 tests OK (16 skipped). Native checks remain pending.

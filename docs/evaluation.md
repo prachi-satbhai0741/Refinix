@@ -23,7 +23,7 @@ bounds APT index fetches and installation, with one authenticated official-mirro
 
 **Local offline evidence:** Python 3.14.6 on the development Mac, using an isolated temporary
 environment with repository hash-pinned test dependencies and the existing Pydantic environment;
-Node for the frontend. Coordinator: 1,659 tests, OK (16 skipped); desktop: 255 tests, OK (6 skipped);
+Node for the frontend. Coordinator: 1,660 tests, OK (16 skipped); desktop: 255 tests, OK (6 skipped);
 scripts: 82 tests, OK; contracts: 21 tests, OK; frontend: 248 passed. Worker: 217 tests, OK;
 deployment fixtures: 140 tests, OK; C07 fixtures: 32 tests, OK. The focused recovery/CI/public
 regressions passed 73 tests. `actionlint` passed on all four changed workflows and
@@ -116,6 +116,19 @@ on Mac/Linux are preserved, while partial Windows installations use the existing
 helper message. Final local suites: coordinator 1,659, desktop 255, scripts 82; focused sandbox,
 startup and qualification checks 41, all OK (the broad suites retain 22 platform skips).
 All-OS qualification of the final service correction remains pending.
+
+**Bounded-output follow-up:**
+[38054409695](https://github.com/prachi-satbhai0741/Refinix/actions/runs/38054409695) tested
+`34e876121a13ef400ec23abcb97db521d76d8eec`. Windows again passed package 6/6 and journeys
+25/25; the Mac lane passed. Ubuntu package 29/29 and journeys 25/25 passed; sandbox 6/7 passed,
+including actual confinement, hostile tests, cancellation, deadline and cleanup. The large-output
+case exposed a protocol defect: the closing JSON embedded the capped output and exceeded the
+parent's retained report tail, while the launcher looked for unittest's ending summary in the
+output prefix. The launcher now retains a bounded summary tail and emits capped output before
+the small closing record. The existing output limit and confinement checks are preserved.
+The 26 focused sandbox/qualification regressions passed, including a two-million-byte test and
+the actual launcher-to-parent report protocol. The final coordinator suite passed 1,660 tests
+(16 skipped). Native qualification of this repair remains pending.
 
 <a id="tester-preview-batch-20261008"></a>
 ### Tester-preview batch — 2026-10-08

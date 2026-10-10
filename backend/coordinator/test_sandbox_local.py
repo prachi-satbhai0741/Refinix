@@ -12,6 +12,7 @@ until the Ubuntu device qualification (plan v4.3 W2.3).
 from __future__ import annotations
 
 import io
+import contextlib
 import json
 import tempfile
 import threading
@@ -400,11 +401,43 @@ class TestLauncherTimeLimit(unittest.TestCase):
         noisy = ("import sys, unittest\n"
                  "class T(unittest.TestCase):\n"
                  "    def test_prints(self):\n"
-                 "        sys.stdout.write('y' * 300000)\n")
+                 "        sys.stdout.write('y' * 2000000)\n")
         result, _took = self.run_tests(noisy, 60)
         self.assertEqual(result["exit_status"], 0)
         self.assertTrue(result["output_truncated"])
         self.assertFalse(result["timed_out"])
+        self.assertEqual(result["tests_run"], 1)
+        self.assertLessEqual(len(result["output"]), sandbox_local.OUTPUT_LIMIT)
+
+    def test_capped_output_does_not_hide_the_closing_record_from_the_parent(self):
+        from backend.coordinator import sandbox_launcher as launcher
+        digest = sandbox_local.inputs_digest([])
+        with tempfile.TemporaryDirectory() as folder:
+            manifest = Path(folder) / "manifest.json"
+            manifest.write_text(json.dumps({"report_code": "fixture", "files": []}))
+            output = io.StringIO()
+            with patch.object(launcher, "close_inherited"), \
+                    patch.object(launcher, "landlock", return_value=7), \
+                    patch.object(launcher, "self_check", return_value=PASS["controls"]), \
+                    patch.object(launcher, "check_limits", return_value=[]), \
+                    patch.object(launcher, "check_inputs", return_value=digest), \
+                    patch.object(launcher, "run_tests", return_value={"exit_status": 0,
+                        "tests_run": 1, "output": "y" * sandbox_local.OUTPUT_LIMIT,
+                        "output_truncated": True}), patch.dict(launcher.os.environ), \
+                    contextlib.redirect_stdout(output):
+                self.assertEqual(launcher.main([folder, str(manifest)]), 0)
+            body = output.getvalue()
+            closing = json.loads(body.split("REFINIX-SANDBOX-REPORT fixture ")[-1])
+            self.assertNotIn("output", closing)
+            host = FakeHost()
+            host.popen = lambda argv: FakeProcess(body.encode())
+            sandbox = sandbox_local.LocalSandbox(Path(folder), host=host)
+            report, text = sandbox._run(["synthetic-launcher"], "refinix-sandbox-fixture", None,
+                                       "fixture")
+            report["expected_inputs_sha256"] = digest
+            self.assertTrue(sandbox_local.passed(report), report)
+            self.assertTrue(report["output_truncated"])
+            self.assertEqual(text, "y" * sandbox_local.OUTPUT_LIMIT)
 
 
 class TestCodeWorkflow(Base):

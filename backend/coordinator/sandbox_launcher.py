@@ -241,7 +241,7 @@ def run_tests(workspace: str, environment: dict, seconds: int) -> dict:
                                env=environment, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                close_fds=True)
-    output, state = bytearray(), {"truncated": False}
+    output, state = bytearray(), {"truncated": False, "tail": b""}
 
     def read():
         try:
@@ -251,6 +251,7 @@ def run_tests(workspace: str, environment: dict, seconds: int) -> dict:
                     output.extend(block[:room])
                 if len(block) > room:
                     state["truncated"] = True
+                state["tail"] = (state["tail"] + block)[-16384:]
         except (OSError, ValueError):
             pass
     # A daemon thread: a descendant still holding the pipe at the time limit
@@ -268,7 +269,7 @@ def run_tests(workspace: str, environment: dict, seconds: int) -> dict:
     truncated = state["truncated"]
     text = bytes(output).decode("utf-8", errors="replace")
     tests_run = None
-    for line in text.splitlines():
+    for line in state["tail"].decode("utf-8", errors="replace").splitlines():
         if line.startswith("Ran ") and " test" in line:
             try:
                 tests_run = int(line.split()[1])
@@ -312,6 +313,8 @@ def main(argv: list[str]) -> int:
         report.update(refused="launcher", error=f"{type(exc).__name__}: {exc}")
         code = 3
     code_word = str(manifest.get("report_code") or "") if isinstance(manifest, dict) else ""
+    # Keep bounded user output outside the closing record, which the parent retains separately.
+    sys.stdout.write(report.pop("output", ""))
     sys.stdout.write(f"\nREFINIX-SANDBOX-REPORT {code_word} "
                      + json.dumps(report, sort_keys=True) + "\n")
     sys.stdout.flush()
