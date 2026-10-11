@@ -126,7 +126,10 @@ lock.release()
         lock_class = Mock(return_value=instance)
         lock_class.for_state.return_value = instance
         lock_class.for_database.return_value = instance
-        with patch.object(lifecycle, "SingleInstance", lock_class), \
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.dict(os.environ, {"REFINIX_DATA_ROOT": folder}), \
+                patch.object(lifecycle, "STATE_DB", Path(folder) / "coordinator.sqlite3"), \
+                patch.object(lifecycle, "SingleInstance", lock_class), \
                 patch.object(ownership, "WorkspaceLock", lock_class), \
                 patch.object(shell, "run", run):
             with patch.object(sys, "argv", ["Refinix"]):
@@ -134,6 +137,9 @@ lock.release()
             with patch.object(sys, "argv", ["desktop"]), self.assertRaises(SystemExit) as exit:
                 runpy.run_module("desktop", run_name="__main__")
             self.assertEqual(exit.exception.code, 0)
+            state = Path(folder) / "coordinator.sqlite3"
+            lock_class.for_database.assert_called_once_with(state)
+            lock_class.for_state.assert_called_once_with(ownership.canonical_database(state))
         self.assertEqual(records, [None, 8771, None, 8771])
 
     def test_the_packaged_entry_refuses_options_before_opening_any_workspace(self):

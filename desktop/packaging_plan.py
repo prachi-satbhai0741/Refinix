@@ -433,7 +433,7 @@ def shared_snapshot_digest(root: Path | None = None) -> str:
     root = Path(root) if root is not None else REPO
     shared = set(application_module_names()) - {"backend/__init__.py"}
     for _destination, sources in frontend_data_files():
-        shared.update(str(Path(source).relative_to(REPO)) for source in sources)
+        shared.update(Path(source).relative_to(REPO).as_posix() for source in sources)
     shared.update(BUILD_DEFINITION)
     shared.update(("backend/requirements-runtime.lock", "backend/requirements-render.lock"))
     body = "".join(f"{p}\0{hashlib.sha256((root / p).read_bytes()).hexdigest()}\n"
