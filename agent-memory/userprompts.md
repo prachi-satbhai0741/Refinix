@@ -2512,3 +2512,11 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - request: After assembly refused run 38078049278, implement the repair with `* text=auto eol=lf` and a behavioural regression exercising core.autocrlf=true in an isolated Git fixture, run before packaging in qualify.yml and release.yml; run the focused build/feed-workflow checks.
 - constraints: Preserve binary bytes and the production root/key material; do not weaken assembly checks; no repository-wide renormalisation; commit the feed-workflow hardening separately with the user's configured identity and no trailers. No merges, protected-document edits, signing, publication, deployment or further Actions dispatches.
 - linked_changes: [AC-20261011-CHECKOUT-BYTES](agentchangelog.md#ac-20261011-checkout-bytes)
+
+<a id="up-20261011-cpb-continuation"></a>
+## UP-20261011-CPB-CONTINUATION — Repair the shared fingerprint and continue CP-B preparation
+- date: 2026-10-11
+- request: Take over the remaining release work, fix issues and execute CP-B to maximum quality; identify human intervention points.
+- authorised: Focused offline release checks; commit and push the repair on aditya with the configured identity and no agent trailers; open its PR. After user merges through dev to main, run qualification and all-lane Beta packaging at that exact main commit (0.1.0-beta.1, build 8, bs-0103, macOS minimum 14.0 on macos-14, no Windows signing), download the artifacts and run strict assembly.
+- constraints: User retains merge, production-key signing and final publication approval. Repository owners handle website/source settings and online secrets. Preserve production root bytes, assembly agreement checks, user data and failed-run evidence; protected documentation remains unchanged.
+- linked_changes: [AC-20261011-CPB-FINGERPRINT](agentchangelog.md#ac-20261011-cpb-fingerprint)

@@ -18,7 +18,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -142,6 +142,15 @@ class TestInputs(unittest.TestCase):
                   ["components"]["shared_snapshot_digest"]
                   for lane in packaging_plan.LANES}
         self.assertEqual(len(shared), 1)
+
+    def test_shared_snapshot_uses_the_same_paths_on_windows_and_posix(self):
+        frontend = packaging_plan.frontend_data_files()
+        expected = packaging_plan.shared_snapshot_digest()
+        for path_type in (PurePosixPath, PureWindowsPath):
+            with self.subTest(path_type=path_type.__name__), \
+                    patch.object(packaging_plan, "frontend_data_files", return_value=frontend), \
+                    patch.object(packaging_plan, "Path", path_type):
+                self.assertEqual(packaging_plan.shared_snapshot_digest(), expected)
 
 
 class TestReuse(unittest.TestCase):
