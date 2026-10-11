@@ -147,9 +147,14 @@ class TestInputs(unittest.TestCase):
         frontend = packaging_plan.frontend_data_files()
         expected = packaging_plan.shared_snapshot_digest()
         for path_type in (PurePosixPath, PureWindowsPath):
+            def frontend_path(source):
+                path = path_type(Path(source).as_posix())
+                return SimpleNamespace(relative_to=lambda root:
+                    path.relative_to(path_type(root.as_posix())))
+
             with self.subTest(path_type=path_type.__name__), \
                     patch.object(packaging_plan, "frontend_data_files", return_value=frontend), \
-                    patch.object(packaging_plan, "Path", path_type):
+                    patch.object(packaging_plan, "Path", side_effect=frontend_path):
                 self.assertEqual(packaging_plan.shared_snapshot_digest(), expected)
 
 
