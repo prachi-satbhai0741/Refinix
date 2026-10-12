@@ -2520,3 +2520,11 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - authorised: Focused offline release checks; commit and push the repair on aditya with the configured identity and no agent trailers; open its PR. After user merges through dev to main, run qualification and all-lane Beta packaging at that exact main commit (0.1.0-beta.1, build 8, bs-0103, macOS minimum 14.0 on macos-14, no Windows signing), download the artifacts and run strict assembly.
 - constraints: User retains merge, production-key signing and final publication approval. Repository owners handle website/source settings and online secrets. Preserve production root bytes, assembly agreement checks, user data and failed-run evidence; protected documentation remains unchanged.
 - linked_changes: [AC-20261011-CPB-FINGERPRINT](agentchangelog.md#ac-20261011-cpb-fingerprint)
+
+<a id="up-20261013-cpb-public-verification"></a>
+## UP-20261013-CPB-PUBLIC-VERIFICATION — Publish the approved Beta and finish public checks
+- date: 2026-10-13
+- authorised: Publish the verified normal 0.1.0-beta.1 release (build 8, source 222c790fc0ed68067f80dde9eca04211c66cca47), verify immutability, mark website PR #2 ready, start Advance feed after the website merge and run all-OS public verification after the user's deployment approval. Continue the previously authorised CP-B repair/check and member-branch Git scope with the configured identity and no trailers.
+- observed: The user confirmed the website merge and approved beta-publish. Feed signing and deployment succeeded; its hosted live verifier failed with a missing pydantic import.
+- constraints: Preserve immutable packages, production trust/target bytes and user data. Website owner merge and physical-device testing remain human checkpoints; protected documentation and private keys/passphrases stay untouched.
+- linked_changes: [AC-20261013-CPB-LIVE-DEPENDENCIES](agentchangelog.md#ac-20261013-cpb-live-dependencies)
