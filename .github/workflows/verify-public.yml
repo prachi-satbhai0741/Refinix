@@ -84,6 +84,7 @@ jobs:
     timeout-minutes: 90
     env:
       REFINIX_QUALIFY_DISPOSABLE: "1"
+      PYTHONUTF8: "1"
       SITE: ${{ inputs.site }}
       VERSION: ${{ inputs.version }}
     defaults:

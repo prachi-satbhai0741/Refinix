@@ -227,6 +227,8 @@ class TestQualificationAndPublicChecks(unittest.TestCase):
         for word in ("secrets.", "GH_TOKEN", "github.token", "gh release"):
             self.assertNotIn(word, text)
         self.assertIn("scripts/verify_public.py", text)
+        # OS warnings contain arrows; Windows' redirected stdout defaults to cp1252.
+        self.assertIn('PYTHONUTF8: "1"', jobs(text)["install"])
 
     def test_live_feed_verifiers_install_their_contract_dependencies(self):
         # The default HTTPS pool imports provisioning -> db -> pydantic.
