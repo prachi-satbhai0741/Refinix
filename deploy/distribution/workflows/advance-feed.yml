@@ -136,11 +136,16 @@ jobs:
           ref: ${{ vars.REFINIX_TOOLING_COMMIT }}
           path: tooling
           persist-credentials: false
+      # The contract lock contains a Linux CPython 3.13 native wheel.
+      - name: Set up Python for the live verifier
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
       - name: The live feed and site are exactly what was signed
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check --require-hashes \
-            -r tooling/backend/requirements-runtime.lock
+            -r tooling/backend/worker-image/requirements.lock -r tooling/backend/requirements-runtime.lock
           "$RUNNER_TEMP/venv/bin/python" tooling/scripts/update_repository.py expected \
             --repo updates/beta > "$RUNNER_TEMP/expected.json"
           cat "$RUNNER_TEMP/expected.json"
