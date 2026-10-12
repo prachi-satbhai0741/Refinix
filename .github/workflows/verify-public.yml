@@ -40,11 +40,16 @@ jobs:
           persist-credentials: false
       - name: The live page, its downloads and SHA256SUMS
         run: python3 scripts/verify_public.py --site "$SITE" --expect-version "$VERSION" --report public.json
+      # The contract lock contains a Linux CPython 3.13 native wheel.
+      - name: Set up Python for the live verifier
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
       - name: The live feed offers this version on every lane
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check --require-hashes \
-            -r backend/requirements-runtime.lock
+            -r backend/worker-image/requirements.lock -r backend/requirements-runtime.lock
           "$RUNNER_TEMP/venv/bin/python" scripts/update_repository.py verify \
             --url "${SITE%/}/updates/beta/" --trust-root desktop/updates/beta-root.json \
             --monitor > feed.json

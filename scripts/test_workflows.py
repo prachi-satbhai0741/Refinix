@@ -228,6 +228,23 @@ class TestQualificationAndPublicChecks(unittest.TestCase):
             self.assertNotIn(word, text)
         self.assertIn("scripts/verify_public.py", text)
 
+    def test_live_feed_verifiers_install_their_contract_dependencies(self):
+        # The default HTTPS pool imports provisioning -> db -> pydantic.
+        # The contract lock's native wheel requires Linux CPython 3.13.
+        paths = [WORKFLOWS / "verify-public.yml",
+                 DISTRIBUTION / "advance-feed.yml", DISTRIBUTION / "refresh-feed.yml"]
+        for path in paths:
+            block = jobs(path.read_text())["site" if path.parent == WORKFLOWS else "live"]
+            with self.subTest(workflow=path.name):
+                pins = set()
+                for lock in re.findall(r"-r ([^\s\\]+)", block):
+                    text = (REPO / lock.removeprefix("tooling/")).read_text()
+                    pins.update(re.findall(r"^([\w-]+)==", text, re.M))
+                self.assertTrue({"pydantic", "pydantic-core", "tuf", "urllib3",
+                                 "securesystemslib"}.issubset(pins), pins)
+                self.assertIn('python-version: "3.13"', block)
+                self.assertIn("--require-hashes", block)
+
 
 class TestPackageLocks(unittest.TestCase):
     """A packaging workflow installs exactly the locks the packaging plan ships
