@@ -1,0 +1,43 @@
+{
+  "pins_version": 1,
+  "kind": "llama.cpp",
+  "component": "llama-server",
+  "release": "b11390",
+  "commit": "dd266785c2595775001c1c714bd9d92b3ef34cde",
+  "source": "https://github.com/ggml-org/llama.cpp",
+  "licence": "MIT",
+  "published_at": "2026-10-04T12:52:49Z",
+  "evidence": "Release asset names, sizes and SHA-256 digests read from the GitHub releases API on 2026-10-04. Upstream marks every tagged build as a prerelease; this pin is an exact build, not a channel.",
+  "lanes": {
+    "macos-arm64": {
+      "backend": "metal",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11390/llama-b11390-bin-macos-arm64.tar.gz",
+      "size": 11915895,
+      "sha256": "58f9636642b33f2929ee3a70da2a1b658f84312c85a1da56fd715f83b83d9228"
+    },
+    "windows-x64-vulkan": {
+      "backend": "vulkan",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11390/llama-b11390-bin-win-vulkan-x64.zip",
+      "size": 33280099,
+      "sha256": "a76809824873cf50de3038096521968d50a99a5d2ffac614d288eb212d53a05f"
+    },
+    "windows-x64-cpu": {
+      "backend": "cpu",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11390/llama-b11390-bin-win-cpu-x64.zip",
+      "size": 19363545,
+      "sha256": "071e95e15271ec8424a76caa3559f5353080635289b073b5b83067c13d035fc3"
+    },
+    "linux-x64-vulkan": {
+      "backend": "vulkan",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11390/llama-b11390-bin-ubuntu-vulkan-x64.tar.gz",
+      "size": 31579891,
+      "sha256": "d0738cbcbb0c08eed0dce14824979a4f0fae952a9394e13ae4d114103255730c"
+    },
+    "linux-x64-cpu": {
+      "backend": "cpu",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11390/llama-b11390-bin-ubuntu-x64.tar.gz",
+      "size": 17635643,
+      "sha256": "e533bc71f5d680f9f9ba80a3d7291ea9d7f878a6821213449756bb4850c8836a"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Refinix
+Comment=Offline AI workbench that runs on this computer
+Exec=refinix
+Icon=refinix
+Terminal=false
+Categories=Office;Development;
+StartupWMClass=Refinix

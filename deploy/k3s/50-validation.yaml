@@ -1,0 +1,313 @@
+# AF-011 — the restricted validation sandbox, and the narrow authority to run it.
+#
+# APPLY ONLY AFTER C06 acceptance and the C09 handoff. Nothing here is applied
+# by the C05/C06 steps, so a cluster that has not reached C09 has no Job
+# authority at all, which is the correct closed state.
+#
+# Three things live in this file, and they are separated on purpose:
+#
+#   1. a job package volume, SEPARATE from `worker-state`, so the executor can
+#      be given repository text without ever being given pairing credentials;
+#   2. admission policy that limits Job creation to the exact safe template;
+#   3. a ServiceAccount whose Role grants exactly the six operations
+#      `backend/worker/kube.py` performs, in this namespace only;
+#   4. a NetworkPolicy pair that gives the validation Pod no ingress and
+#      default-deny egress WITH NO EXCEPTION.
+#
+# The Job object itself is built in `backend/worker/jobspec.py`, checked by
+# `backend/worker/test_validation.py`, and never written by hand.
+---
+# Selected repository text for in-flight attempts. Coordination state only:
+# the coordinator holds the canonical proposal, and `PackageStore.purge_expired`
+# reclaims anything nothing came back for.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aegisforge-jobs
+  namespace: aegisforge
+spec:
+  # ReadWriteOnce is sufficient and is what local-path provides: the worker
+  # API, the executor and the validation Pod are all scheduled on the one node
+  # this deployment has.
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      # 32 packages x 2 MiB is the format's own ceiling, with room for the
+      # replacement half of a validation package.
+      storage: 256Mi
+---
+# The executor's identity. The worker API keeps `automountServiceAccountToken:
+# false` and is NOT bound to this: only the process that creates Jobs gets Job
+# authority.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aegisforge-executor
+  namespace: aegisforge
+automountServiceAccountToken: false
+---
+# The Job itself uses a credential-free identity. Admission below requires this
+# exact account and automount=false; an executor-created Job cannot borrow the
+# executor's Kubernetes authority or another workload's identity.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aegisforge-validation
+  namespace: aegisforge
+automountServiceAccountToken: false
+---
+# RBAC cannot restrict the Pod template carried by `create jobs`. This policy
+# can: every Job submitted by the executor identity must be the validation
+# template built in backend/worker/jobspec.py. An omitted label is not a bypass
+# because the match condition selects the authenticated creator, not the object.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: aegisforge-validation-job
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["jobs"]
+  matchConditions:
+    - name: executor-identity
+      expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:aegisforge:aegisforge-executor'
+  validations:
+    - expression: >-
+        object.metadata.namespace == 'aegisforge' &&
+        object.metadata.name.startsWith('af-validate-') &&
+        has(object.metadata.labels) &&
+        object.metadata.labels['app'] == 'aegisforge-validation' &&
+        'aegisforge.dev/attempt' in object.metadata.labels
+      message: validation Job identity is not approved
+    - expression: >-
+        object.spec.backoffLimit == 0 &&
+        object.spec.completions == 1 &&
+        object.spec.parallelism == 1 &&
+        object.spec.activeDeadlineSeconds >= 10 &&
+        object.spec.activeDeadlineSeconds <= 300 &&
+        object.spec.ttlSecondsAfterFinished == 300 &&
+        (!has(object.spec.suspend) || object.spec.suspend == false) &&
+        (!has(object.spec.manualSelector) || object.spec.manualSelector == false) &&
+        !has(object.spec.selector)
+      message: validation Job lifecycle is not approved
+    - expression: >-
+        has(object.spec.template.metadata.labels) &&
+        object.spec.template.metadata.labels.size() == 2 &&
+        object.spec.template.metadata.labels['app'] == 'aegisforge-validation' &&
+        object.spec.template.metadata.labels['aegisforge.dev/attempt'] ==
+          object.metadata.labels['aegisforge.dev/attempt'] &&
+        (!has(object.spec.template.metadata.annotations) ||
+          object.spec.template.metadata.annotations.size() == 0)
+      message: validation Pod labels or annotations are not approved
+    - expression: >-
+        object.spec.template.spec.serviceAccountName == 'aegisforge-validation' &&
+        object.spec.template.spec.automountServiceAccountToken == false &&
+        object.spec.template.spec.restartPolicy == 'Never' &&
+        object.spec.template.spec.enableServiceLinks == false &&
+        (!has(object.spec.template.spec.hostNetwork) ||
+          object.spec.template.spec.hostNetwork == false) &&
+        (!has(object.spec.template.spec.hostPID) ||
+          object.spec.template.spec.hostPID == false) &&
+        (!has(object.spec.template.spec.hostIPC) ||
+          object.spec.template.spec.hostIPC == false) &&
+        !has(object.spec.template.spec.imagePullSecrets) &&
+        !has(object.spec.template.spec.initContainers) &&
+        !has(object.spec.template.spec.ephemeralContainers)
+      message: validation Pod identity or isolation is not approved
+    - expression: >-
+        object.spec.template.spec.containers.size() == 1 &&
+        object.spec.template.spec.containers[0].name == 'validate' &&
+        object.spec.template.spec.containers[0].image ==
+          'docker.io/library/aegisforge-worker@sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a' &&
+        object.spec.template.spec.containers[0].imagePullPolicy == 'Never' &&
+        object.spec.template.spec.containers[0].command ==
+          ['python', '-m', 'backend.worker.validate', '/package', '/workspace'] &&
+        !has(object.spec.template.spec.containers[0].args) &&
+        !has(object.spec.template.spec.containers[0].envFrom) &&
+        object.spec.template.spec.containers[0].env.size() == 2 &&
+        object.spec.template.spec.containers[0].env.all(e,
+          !has(e.valueFrom) &&
+          ((e.name == 'PYTHONDONTWRITEBYTECODE' && e.value == '1') ||
+           (e.name == 'HOME' && e.value == '/workspace')))
+      message: validation container image, command or environment is not approved
+    - expression: >-
+        object.spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation == false &&
+        object.spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem == true &&
+        object.spec.template.spec.containers[0].securityContext.privileged == false &&
+        object.spec.template.spec.containers[0].securityContext.capabilities.drop == ['ALL'] &&
+        !has(object.spec.template.spec.containers[0].securityContext.capabilities.add) &&
+        !has(object.spec.template.spec.containers[0].securityContext.seccompProfile) &&
+        !has(object.spec.template.spec.containers[0].securityContext.procMount) &&
+        !has(object.spec.template.spec.containers[0].securityContext.runAsUser) &&
+        !has(object.spec.template.spec.containers[0].securityContext.runAsGroup) &&
+        !has(object.spec.template.spec.containers[0].securityContext.runAsNonRoot) &&
+        !has(object.spec.template.spec.containers[0].securityContext.appArmorProfile) &&
+        !has(object.spec.template.spec.containers[0].securityContext.seLinuxOptions) &&
+        object.spec.template.spec.securityContext.runAsNonRoot == true &&
+        object.spec.template.spec.securityContext.runAsUser == 10001 &&
+        object.spec.template.spec.securityContext.runAsGroup == 10001 &&
+        object.spec.template.spec.securityContext.fsGroup == 10001 &&
+        object.spec.template.spec.securityContext.seccompProfile.type == 'RuntimeDefault' &&
+        !has(object.spec.template.spec.securityContext.sysctls) &&
+        !has(object.spec.template.spec.securityContext.seLinuxOptions)
+      message: validation container security context is not approved
+    - expression: >-
+        object.spec.template.spec.containers[0].resources.requests.size() == 2 &&
+        object.spec.template.spec.containers[0].resources.requests['cpu'] == quantity('100m') &&
+        object.spec.template.spec.containers[0].resources.requests['memory'] == quantity('128Mi') &&
+        object.spec.template.spec.containers[0].resources.limits.size() == 2 &&
+        object.spec.template.spec.containers[0].resources.limits['cpu'] == quantity('1') &&
+        object.spec.template.spec.containers[0].resources.limits['memory'] == quantity('512Mi')
+      message: validation container resources are not approved
+    - expression: >-
+        object.spec.template.spec.volumes.size() == 2 &&
+        object.spec.template.spec.volumes.all(v,
+          v.name in ['package', 'workspace']) &&
+        object.spec.template.spec.volumes.exists(v,
+          v.name == 'package' &&
+          has(v.persistentVolumeClaim) &&
+          v.persistentVolumeClaim.claimName == 'aegisforge-jobs' &&
+          v.persistentVolumeClaim.readOnly == true) &&
+        object.spec.template.spec.volumes.exists(v,
+          v.name == 'workspace' && has(v.emptyDir) &&
+          v.emptyDir.sizeLimit == quantity('64Mi')) &&
+        object.spec.template.spec.containers[0].volumeMounts.size() == 2 &&
+        object.spec.template.spec.containers[0].volumeMounts.exists(m,
+          m.name == 'package' && m.mountPath == '/package' && m.readOnly == true &&
+          has(m.subPath) &&
+          m.subPath.matches('^packages/[0-9a-f-]{36}/[0-9a-f-]{36}/[0-9a-f-]{36}$') &&
+          !has(m.subPathExpr)) &&
+        object.spec.template.spec.containers[0].volumeMounts.exists(m,
+          m.name == 'workspace' && m.mountPath == '/workspace' &&
+          (!has(m.readOnly) || m.readOnly == false) &&
+          !has(m.subPath) && !has(m.subPathExpr)) &&
+        !has(object.spec.template.spec.containers[0].volumeDevices)
+      message: validation volumes are not approved
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: aegisforge-validation-job
+spec:
+  policyName: aegisforge-validation-job
+  validationActions: [Deny]
+---
+# Exactly the verbs `backend/worker/kube.py` calls, and nothing else.
+#
+# Deliberately ABSENT, and therefore unreachable from the executor:
+#   secrets, configmaps            - the pairing and Redis credentials
+#   deployments, services, nodes   - the rest of the cluster
+#   pods/exec, pods/attach,
+#   pods/portforward               - a shell into any Pod
+#   persistentvolumes, PVC write   - storage administration
+#   every cluster-scoped resource  - this Role is namespaced
+#
+# `create` on Jobs is safe only with the admission policy above. It denies any
+# template that could mount operational Secrets/PVCs, borrow another service
+# account, change the image/command or widen the sandbox.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aegisforge-validation
+  namespace: aegisforge
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aegisforge-validation
+  namespace: aegisforge
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aegisforge-validation
+subjects:
+  - kind: ServiceAccount
+    name: aegisforge-executor
+    namespace: aegisforge
+---
+# Nothing may open a connection to a validation Pod. The empty list is the
+# policy, not an omission.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: validation-ingress
+  namespace: aegisforge
+spec:
+  podSelector:
+    matchLabels:
+      app: aegisforge-validation
+  policyTypes: [Ingress]
+  ingress: []
+---
+# DEFAULT-DENY EGRESS WITH NO EXCEPTION.
+#
+# This is the one NetworkPolicy in the repository that has no `egress` rules at
+# all, and that is the whole point: the validation Pod may not reach Redis, the
+# model runtime, the Kubernetes API, the LAN, DNS or the Internet. The approved
+# command is `python3 -m unittest` over standard-library code, which needs none
+# of them.
+#
+# Note the label: `app: aegisforge-validation`, NOT `app: aegisforge-worker`.
+# The runtime-egress policy in 30-runtime-egress.yaml selects on the worker
+# label, so a validation Pod is deliberately outside it and inherits no path to
+# the model runtime.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: validation-egress
+  namespace: aegisforge
+spec:
+  podSelector:
+    matchLabels:
+      app: aegisforge-validation
+  policyTypes: [Egress]
+  egress: []
+---
+# The executor's egress to the Kubernetes API.
+#
+# APPLY ONLY AFTER SUBSTITUTING THE OBSERVED ADDRESS. The `kubernetes` Service
+# ClusterIP is assigned per cluster and is NOT recorded in this repository, so
+# the placeholder below is deliberately not a working value. Read it first:
+#
+#     kubectl -n default get service kubernetes -o jsonpath='{.spec.clusterIP}'
+#
+# and replace `API_SERVER_IP` with that exact address, keeping the /32.
+#
+# A subnet-wide rule, or 0.0.0.0/0, would give the executor a path to every
+# Service in the cluster. Leaving this file unapplied fails closed: validation
+# reports the API as unreachable, which is honest, rather than passing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: executor-egress-kubernetes
+  namespace: aegisforge
+spec:
+  podSelector:
+    matchLabels:
+      app: aegisforge-worker
+      component: executor
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: API_SERVER_IP/32      # substitute the observed ClusterIP
+      ports:
+        - protocol: TCP
+          port: 443

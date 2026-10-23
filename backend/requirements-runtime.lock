@@ -1,0 +1,29 @@
+# Coordinator runtime libraries for the standalone Beta, hash-pinned.
+#
+# Same pattern as backend/requirements-render.lock: every wheel a supported
+# profile installs is listed, so one `--require-hashes` install works on macOS
+# arm64, Windows x64 and Linux x86_64/aarch64. pip accepts several hashes for
+# one requirement and matches the wheel it selected against any of them.
+# PyPI metadata and digests read 2026-10-04.
+#
+# psutil 7.2.2 — BSD-3-Clause. Memory, disk and process facts for hardware
+#   presets, owned-process identity for update recovery and socket snapshots
+#   for the sampled network observer. No network access of its own.
+#   cp36-abi3 macosx_11_0_arm64 / manylinux x86_64 / manylinux aarch64 and
+#   cp37-abi3 win_amd64 wheels.
+# urllib3 2.8.0 — MIT. HTTP client shared by update-metadata verification and
+#   explicit, user-initiated model downloads. Pure Python.
+# securesystemslib 1.5.1 — MIT. Pure-Python ed25519 verification by default;
+#   the `crypto` extra (signing) belongs to release tooling only.
+# tuf 7.0.1 — Apache-2.0 OR MIT. Update metadata/target verification client.
+psutil==7.2.2 \
+    --hash=sha256:1a7b04c10f32cc88ab39cbf606e117fd74721c831c98a27dc04578deb0c16979 \
+    --hash=sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9 \
+    --hash=sha256:b0726cecd84f9474419d67252add4ac0cd9811b04d61123054b9fb6f57df6e9e \
+    --hash=sha256:eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988
+urllib3==2.8.0 \
+    --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
+securesystemslib==1.5.1 \
+    --hash=sha256:ada8bdf817da29ece4ba91654f6a162ce7cfbadbc3ae3f840f7313f9d22675de
+tuf==7.0.1 \
+    --hash=sha256:d30434bda6e079ab303fb30d1b3006d939a10ca34783b1573d61cd9b802fa45c

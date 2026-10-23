@@ -1,0 +1,156 @@
+/* Refinix — pairing exchange.
+ * Load after tokens.css, app.css and control.css.
+ *
+ * Draws docs/workflows.md section 8. Pairing is reached from the Control
+ * Center, so it is drawn as a dialog over it rather than as its own screen.
+ *
+ * Three things this dialog has to make plain, because they are what makes
+ * pairing safe to accept:
+ *   - both sides show workspace and device identity before anyone confirms;
+ *   - the receiving installation keeps its own workspace, unmerged;
+ *   - the credential is unique and revocable, and revoking is not deleting.
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+}
+
+/* The modal takes --glass-modal rather than the ordinary glass base: over a
+   scrim, a .55 fill composites to a muddy mid-tone that dark text cannot hold
+   4.5:1 against. */
+.dialog {
+  background: var(--glass-fill), var(--glass-modal);
+  box-shadow: var(--glass-hi), 0 24px 70px rgba(0, 0, 0, .35);
+  width: min(880px, 100%);
+  max-height: 92vh;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  min-height: 0;
+}
+.dialog-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--veil-sunken);
+  flex-wrap: wrap;
+}
+.dialog-h h2 { margin: 0; font-size: var(--fs-body); font-weight: 600; }
+.dialog-h em { font-style: normal; font-family: var(--font-data); font-size: var(--fs-micro); color: var(--text-faint); }
+.dialog-h .head-spacer { flex: 1; }
+.dialog-b { padding: var(--sp-4); overflow-y: auto; min-height: 0; }
+.dialog-f {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--line-soft);
+  background: var(--veil-sunken);
+  flex-wrap: wrap;
+}
+.dialog-f .head-spacer { flex: 1; }
+
+/* ------------------------------------------------- the two identities --- */
+/* Shown side by side because the point of the step is comparison: a user
+   confirms that what this device shows matches what the other device shows. */
+
+.sides { display: grid; grid-template-columns: 1fr 44px 1fr; gap: var(--sp-3); align-items: stretch; }
+.side {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3) var(--sp-4);
+}
+.side h3 { margin: 0 0 2px; font-size: var(--fs-sm); font-weight: 600; }
+.side .role {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-dim);
+  display: block;
+  margin-bottom: var(--sp-3);
+}
+.side dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 5px var(--sp-3); font-size: var(--fs-sm); }
+.side dt { color: var(--text-dim); }
+.side dd { margin: 0; font-family: var(--font-data); font-size: var(--fs-label); text-align: right; overflow-wrap: anywhere; }
+
+.link-glyph {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  font-family: var(--font-data);
+  font-size: var(--fs-lg);
+}
+
+/* --------------------------------------------------------- the code --- */
+
+.code-box {
+  border: 1px solid var(--signal);
+  border-radius: var(--radius-xl);
+  padding: var(--sp-4);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-3) var(--sp-4);
+  align-items: center;
+}
+.code-val {
+  font-family: var(--font-data);
+  font-size: 26px;
+  letter-spacing: .22em;
+  color: var(--text);
+}
+.code-meta { font-size: var(--fs-sm); color: var(--text-dim); grid-column: 1 / -1; margin: 0; }
+.qr {
+  width: 92px; height: 92px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background:
+    repeating-linear-gradient(90deg, var(--text) 0 6px, transparent 6px 12px),
+    repeating-linear-gradient(0deg, var(--text) 0 6px, transparent 6px 12px),
+    var(--surface);
+  opacity: .5;
+}
+
+/* -------------------------------------------------- what pairing means --- */
+
+.terms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.terms > li {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: var(--sp-3);
+  align-items: start;
+  padding: 9px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-sm);
+}
+.terms > li:last-child { border-bottom: 0; }
+/* Neither marker is a state claim. [+] is something pairing does, so it takes
+   the live accent; [-] is something it does not do, which is reassurance and
+   not a fault, so it rests in silver. Red here would read as an error on the
+   four rows that exist to calm the reader. */
+.terms .yes { color: var(--signal);   font-family: var(--font-data); font-size: var(--fs-micro); }
+.terms .no  { color: var(--text-dim); font-family: var(--font-data); font-size: var(--fs-micro); }
+.terms small { display: block; color: var(--text-dim); margin-top: 2px; }
+
+@media (max-width: 720px) {
+  .sides { grid-template-columns: 1fr; }
+  .link-glyph { display: none; }
+}

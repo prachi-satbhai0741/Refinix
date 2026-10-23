@@ -1,0 +1,349 @@
+/* Refinix design tokens — "Control Room", light and dark.
+ *
+ * Palette: a NEUTRAL black ground, silver type, sky blue as the live accent,
+ * one green, one purple. Discipline is borrowed from process-industry HMI
+ * practice: the normal state of the plant is grey, and colour is spent only
+ * where something is abnormal, measured, absent, or attributable. That is the
+ * same rule docs/security.md#12 places on the Control Center, so the aesthetic
+ * and the requirement agree rather than compete.
+ *
+ * NEUTRAL IS LOAD-BEARING. An earlier build read as navy, and it was never one
+ * token: the grey ramp leaned blue (#0E1218 / #151A22 / #242C38), the
+ * atmosphere ran a rgba(109,179,242,.13) field over all of it, and the glass
+ * carried saturate(150%), which amplifies whatever tint it refracts. Three
+ * small blue biases stack into a blue room. So:
+ *
+ *   - every grey here is R = G = B. If you edit one and the channels stop
+ *     matching, the room turns blue again.
+ *   - the atmosphere is white lift plus one whisper of violet. No blue field.
+ *   - glass saturate stays near 100%. It multiplies tint; it cannot add
+ *     neutrality.
+ *
+ * Colour lands on small bits of text and small marks, never on large fills.
+ * Each colour has exactly one job, and the jobs do not overlap:
+ *
+ *   silver   the resting state of everything. Most of the UI is this.
+ *   sky blue live — running now, focused, selected, awaiting you.
+ *   green    scarce, and spent on two things only: --st-enforced (a named
+ *            control is active) and the completed mark on a plan, pipeline or
+ *            job lifecycle. Never decorative, and never used for "unavailable",
+ *            which is grey and hatched by rule.
+ *   purple   ONLY --agent. This came from the local model's own reasoning:
+ *            plan steps, pipeline stages, agent profiles. It is a provenance
+ *            mark, not a state claim, which is why it cannot be confused with
+ *            enforced / observed / unavailable.
+ *   amber    caution.
+ *   wine     fault. A deep, blue-leaning red (hue ~349 deg), not a bright or
+ *            orange one — failure should read as grave rather than loud.
+ *            LIGHT gets a literal dark wine, #6E2230. DARK cannot: that same
+ *            value on a near-black ground measures about 2:1 and is simply
+ *            unreadable, so dark keeps the HUE and lifts the luminance until
+ *            it clears 4.5:1. It is still a real shift — the old dark value
+ *            was a salmon at hue 3.5 deg, which is an orange-red.
+ *
+ * One deliberate exception: the diff in the Code surface uses green and red for
+ * added and removed lines. That is diff notation, a convention older than this
+ * palette and one a reader already knows, so it keeps the notation — it just
+ * spends the palette's own wine and green on it rather than inventing a second
+ * pair of reds and greens.
+ *
+ * Theme resolution has three states, not two. A bare :root carries the complete
+ * light palette; the media query covers viewers on the system default; the
+ * [data-theme] blocks cover an explicit in-app choice. Never declare a colour
+ * only inside a media or [data-theme] block.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* --- surfaces: neutral daylight, deliberately not white and not blue --- */
+  --bg:            #E7E7E5;
+  --surface:       #F3F3F1;
+  --surface-raised:#FBFBFA;
+  --surface-sunken:#DDDDDA;
+  --line:          #C3C3BF;
+  --line-soft:     #DBDBD7;
+
+  /* --- text ---------------------------------------------------------------
+   * Every tier is measured against the darkest ground it can land on
+   * (--surface-sunken) AND the lightest (--surface-raised), because this UI is
+   * read at 10-13px all day and cards sit on the raised tone. */
+  --text:          #171717;
+  --text-dim:      #464646;
+  --text-faint:    #545454;
+  --text-invert:   #FBFBFA;
+
+  /* --- signal: live. Focus, selection, running, awaiting you. ------------ */
+  --brand:         #6B6B6B;
+  --signal:        #175C95;
+  --signal-soft:   #DCE7F1;
+
+  /* --- the brand strip -----------------------------------------------------
+   * The supplied REFINIX lockup is brushed metal on a black ground, and it is
+   * a raster: it cannot recolour for a light theme the way drawn artwork can.
+   * So the strip that carries it keeps its own near-black ground in BOTH
+   * themes, and the mark reads identically everywhere rather than sitting in
+   * a grey box on light. These three are deliberately not theme-scoped — they
+   * are the same value in every block, which is the point. */
+  --brand-ground:  #050505;
+  --brand-edge:    #242424;
+  /* Anything set on that strip is measured against #050505, not against the
+     theme's ground, in both themes. 5.90:1 — --text-faint would be wrong here
+     in light, where it is a dark grey. */
+  --brand-tag:     #8A8A8A;
+
+  /* --- agent provenance. Not a state. See the header note. --------------- */
+  --agent:         #57379B;
+  --agent-soft:    #E6E0F3;
+
+  /* --- semantic state. Not interchangeable with --signal or --agent. ----- */
+  --st-enforced:   #196248;  /* a named control is active — the only green */
+  --st-observed:   #464646;  /* an observer saw this; silver on purpose */
+  --st-unknown:    #565656;  /* no evidence. never green, never red */
+  --st-caution:    #77490A;
+  --st-fault:      #6E2230;  /* dark wine — 10.5:1 on raised, 7.99:1 on sunken */
+
+  /* --- Document: the artifact treatment ----------------------------------
+   * Formerly a cyanotype — a prussian-blue ground with white lines. That was
+   * the single largest blue object on the Chat surface, so it is now graphite:
+   * neutral paper in light, neutral slate in dark. Still opaque, still square,
+   * still unmistakably a document rather than another panel. */
+  --bp-ground:     #EFEFED;
+  --bp-surface:    #F7F7F5;
+  --bp-ink:        #1F1F1F;
+  --bp-line:       #C4C4C0;
+  --bp-dim:        #5A5A58;
+  --bp-void:       rgba(31, 31, 31, .10);
+
+  /* --- type ----------------------------------------------------------------
+   * The UI face is IBM Plex Sans, NOT the condensed cut. Condensed reads as
+   * instrumentation; the product is a chat application people sit in all day,
+   * and the running app has always fallen back to a non-condensed system face
+   * anyway (frontend/README.md). Using the normal cut here makes the design
+   * track and the shipped application agree instead of diverging by a metric.
+   * Mono stays for machine-side labels and every readout. */
+  --font-ui:   'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-doc:  'Spectral', Georgia, 'Times New Roman', serif;
+
+  --fs-micro: 10px;
+  --fs-label: 11px;
+  --fs-sm:    12px;
+  --fs-body:  13px;
+  --fs-lg:    15px;
+  --fs-xl:    19px;
+  /* The conversation reads at a document size, not a chrome size. Chat prose
+     and the composer use this; dense readouts keep --fs-body and below. */
+  --fs-read:  15.5px;
+  --tracking-label: .11em;
+
+  /* --- geometry ------------------------------------------------------------
+   * One rule decides whether a thing curves:
+   *
+   *   Things you touch or talk to curve.  Buttons, chips, bubbles, the
+   *   composer, cards, panels, dialogs, nav items — anything that responds.
+   *
+   *   Things you read as a measurement stay square.  Dense claim tables,
+   *   diffs, run output, meters, and the artifact document. A readout is an
+   *   instrument face, and rounding it makes it look like a suggestion.
+   *
+   * So --radius-data exists and is 0. It is not an oversight, and it should
+   * stay 0 — the squareness is doing work. */
+  --radius-xl:    26px;  /* dialogs and the largest panels */
+  --radius-lg:    18px;  /* panels, cards */
+  --radius:       13px;  /* buttons, composer, containers */
+  --radius-sm:    10px;  /* nav items, small controls, inline tags */
+  --radius-bubble:20px;  /* a chat turn — the most oval thing here */
+  --radius-pill: 999px;  /* state chips, stepper dots, counts */
+  --radius-data:   0px;  /* readouts and documents — square on purpose */
+
+  /* --- glass ---------------------------------------------------------------
+   * Glass is now spent, not spread. It belongs on things that float over the
+   * conversation — the sticky header, the composer, a dialog, an approval
+   * gate, a floating control — because there the blur is doing real work:
+   * content scrolls underneath it. The nav and the rail are FLAT. They are
+   * full-height walls with nothing moving behind them, so blurring them only
+   * produced the haze that made the whole app read as one washed tone.
+   *
+   * Two tiers, because blurring an already-blurred surface costs a lot and
+   * shows almost nothing:
+   *   --glass-*  floating surfaces. Carries the backdrop blur.
+   *   --veil-*   containers nested inside those. Fill only, no blur.
+   *
+   * Verbatim output and documents take neither. See the geometry note.
+   *
+   * saturate() stays near 100%. At 150% it multiplied every tint behind the
+   * glass, which is a large part of why the old build read blue. */
+  /* In light the fields must LIFT, not tint down: a dark wash at 10% over a
+     light ground costs contrast for dark text. */
+  --atmo-1: rgba(255, 255, 255, .58);
+  --atmo-2: rgba(228, 218, 250, .30);
+  --atmo-3: rgba(255, 255, 255, .34);
+
+  --glass-base:  rgba(255, 255, 255, .62);
+  --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.58), rgba(255,255,255,.24));
+  --glass-line:  rgba(255, 255, 255, .82);
+  --glass-edge:  rgba(120, 120, 118, .28);
+  --glass-blur:  blur(20px) saturate(108%);
+  --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .90);
+  --glass-shadow: 0 14px 34px rgba(0, 0, 0, .09);
+
+  --veil:        rgba(255, 255, 255, .46);
+  --veil-sunken: rgba(120, 120, 118, .13);
+
+  /* Row states on the flat walls. --veil is a white lift, which is invisible
+     on a near-black sidebar, so the nav and rail get their own pair. */
+  --wall-hover:  rgba(23, 23, 23, .06);
+  --wall-active: rgba(23, 23, 23, .10);
+
+  /* What you said, as an object. Solid rather than glass — see chat.css. */
+  --bubble-fill: #FFFFFF;
+
+  /* A modal is the one surface that must stay readable regardless of what is
+     behind it, so it gets a much higher base than ordinary glass — a .55 white
+     panel over a heavy scrim composites to mud, and the scrim itself is
+     tokenised so light does not dim to near-black. */
+  --glass-modal: rgba(255, 255, 255, .94);
+  --scrim:       rgba(18, 18, 18, .34);
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;
+  --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+
+  --rail-w: 244px;
+  --nav-w:  246px;
+  /* The conversation's reading column. Capped and centred so folding the walls
+     away moves the text to the middle of the screen rather than stretching a
+     line past the point where it is comfortable to read. */
+  --read-w: 46rem;
+
+  --dur-fast: 90ms;
+  --dur: 160ms;
+  --dur-panel: 220ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+}
+
+/* Viewers on the system default: only prefers-color-scheme separates them.
+ * Guarded so an explicit in-app light choice still beats a dark OS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    /* Neutral black. Every channel matches — see the header note. */
+    --bg:            #0A0A0A;
+    --surface:       #131313;
+    --surface-raised:#1B1B1B;
+    --surface-sunken:#050505;
+    --line:          #2C2C2C;
+    --line-soft:     #1E1E1E;
+
+    --text:          #ECECEC;
+    --text-dim:      #B0B0B0;
+    --text-faint:    #949494;
+    --text-invert:   #0A0A0A;
+
+    --brand:         #CFCFCF;
+    --signal:        #74B7F5;
+    --signal-soft:   #12181E;
+
+    --agent:         #B693F0;
+    --agent-soft:    #17141E;
+
+    --st-enforced:   #5CC79C;
+    --st-observed:   #B0B0B0;
+    --st-unknown:    #9A9A9A;  /* 4.45:1 on a veiled panel at #8C8C8C — raised */
+    --st-caution:    #E8B96A;
+    --st-fault:      #CC6B7D;  /* the same wine hue, lifted to clear 4.5:1 on #1B1B1B */
+
+    /* Graphite, not cyanotype. A document, still — just not a blue one. */
+    --bp-ground:     #121212;
+    --bp-surface:    #171717;
+    --bp-ink:        #E6E6E6;
+    --bp-line:       #3A3A3A;
+    --bp-dim:        #A2A2A2;
+    --bp-void:       rgba(230, 230, 230, .10);
+
+    /* White lift plus one whisper of violet. No blue field. */
+    --atmo-1: rgba(255, 255, 255, .045);
+    --atmo-2: rgba(182, 147, 240, .038);
+    --atmo-3: rgba(255, 255, 255, .022);
+
+    --glass-base:  rgba(24, 24, 24, .64);
+    --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.012));
+    --glass-line:  rgba(255, 255, 255, .10);
+    --glass-edge:  rgba(255, 255, 255, .075);
+    --glass-blur:  blur(24px) saturate(105%);
+    --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .06);
+    --glass-shadow: 0 16px 40px rgba(0, 0, 0, .55);
+
+    --veil:        rgba(255, 255, 255, .04);
+    --veil-sunken: rgba(0, 0, 0, .32);
+
+    --wall-hover:  rgba(255, 255, 255, .055);
+    --wall-active: rgba(255, 255, 255, .09);
+
+    --bubble-fill: #242424;
+
+    --glass-modal: rgba(20, 20, 20, .94);
+    --scrim:       rgba(0, 0, 0, .66);
+  }
+}
+
+/* Explicit in-app dark choice wins over a light OS. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg:            #0A0A0A;
+  --surface:       #131313;
+  --surface-raised:#1B1B1B;
+  --surface-sunken:#050505;
+  --line:          #2C2C2C;
+  --line-soft:     #1E1E1E;
+
+  --text:          #ECECEC;
+  --text-dim:      #B0B0B0;
+  --text-faint:    #949494;
+  --text-invert:   #0A0A0A;
+
+  --brand:         #CFCFCF;
+  --signal:        #74B7F5;
+  --signal-soft:   #12181E;
+
+  --agent:         #B693F0;
+  --agent-soft:    #17141E;
+
+  --st-enforced:   #5CC79C;
+  --st-observed:   #B0B0B0;
+  --st-unknown:    #9A9A9A;  /* 4.45:1 on a veiled panel at #8C8C8C — raised */
+  --st-caution:    #E8B96A;
+  --st-fault:      #CC6B7D;  /* the same wine hue, lifted to clear 4.5:1 on #1B1B1B */
+
+  --bp-ground:     #121212;
+  --bp-surface:    #171717;
+  --bp-ink:        #E6E6E6;
+  --bp-line:       #3A3A3A;
+  --bp-dim:        #A2A2A2;
+  --bp-void:       rgba(230, 230, 230, .10);
+
+  --atmo-1: rgba(255, 255, 255, .045);
+  --atmo-2: rgba(182, 147, 240, .038);
+  --atmo-3: rgba(255, 255, 255, .022);
+
+  --glass-base:  rgba(24, 24, 24, .64);
+  --glass-fill:  linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.012));
+  --glass-line:  rgba(255, 255, 255, .10);
+  --glass-edge:  rgba(255, 255, 255, .075);
+  --glass-blur:  blur(24px) saturate(105%);
+  --glass-hi:    inset 0 1px 0 rgba(255, 255, 255, .06);
+  --glass-shadow: 0 16px 40px rgba(0, 0, 0, .55);
+
+  --veil:        rgba(255, 255, 255, .04);
+  --veil-sunken: rgba(0, 0, 0, .32);
+
+  --wall-hover:  rgba(255, 255, 255, .055);
+  --wall-active: rgba(255, 255, 255, .09);
+
+  --bubble-fill: #242424;
+
+  --glass-modal: rgba(20, 20, 20, .94);
+  --scrim:       rgba(0, 0, 0, .66);
+}

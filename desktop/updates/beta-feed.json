@@ -1,0 +1,6 @@
+{
+  "metadata_url": "https://refinix.runs-on.dev/updates/beta/metadata/",
+  "targets_url": "https://refinix.runs-on.dev/updates/beta/targets/",
+  "packages_url": "https://github.com/prachi-satbhai0741/Refinix/releases/download/",
+  "package_hosts": ["release-assets.githubusercontent.com"]
+}

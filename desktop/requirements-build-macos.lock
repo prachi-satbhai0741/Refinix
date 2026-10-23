@@ -1,0 +1,7 @@
+# macOS arm64, CPython 3.12; PyPI metadata inspected 2026-09-04.
+# Exact upstream artifacts, unmodified. Hashes are checked before installation.
+# Bootstrap the pinned build backend before the proxy-tools source build.
+
+# https://pypi.org/pypi/setuptools/80.9.0/json
+# setuptools-80.9.0-py3-none-any.whl | 1201486 bytes | MIT
+setuptools==80.9.0 --hash=sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922

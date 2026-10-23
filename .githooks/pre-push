@@ -1,0 +1,66 @@
+#!/bin/sh
+#
+# AegisForge pre-push hook.
+#
+# Rejects any direct push to `main` or `dev` before it leaves this machine.
+#
+#   member branch  ->  dev  ->  main   (pull requests only)
+#
+# This is a local convenience guard so an honest mistake fails fast with a
+# useful message. It is NOT the security boundary — anyone can skip it with
+# --no-verify or a fresh clone. The real enforcement is the server-side
+# ruleset applied by scripts/setup-branch-protection.sh.
+#
+# Install:  ./scripts/install-hooks.sh
+
+PROTECTED="main dev"
+
+RED=''; YEL=''; NC=''
+if [ -t 2 ]; then
+  RED="$(printf '\033[0;31m')"; YEL="$(printf '\033[0;33m')"; NC="$(printf '\033[0m')"
+fi
+
+# stdin: <local ref> <local sha> <remote ref> <remote sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "$remote_ref" ] && continue
+
+  branch="${remote_ref#refs/heads/}"
+
+  for protected in $PROTECTED; do
+    if [ "$branch" = "$protected" ]; then
+      current="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+
+      echo "" >&2
+      echo "${RED}BLOCKED: direct push to '$protected'${NC}" >&2
+      echo "" >&2
+      echo "  'main' and 'dev' are pull-request only in AegisForge." >&2
+      echo "" >&2
+      echo "  The flow is:" >&2
+      echo "    your branch  ->  PR into dev  ->  PR from dev into main" >&2
+      echo "" >&2
+
+      if [ "$current" = "$protected" ]; then
+        echo "  You are currently ON '$protected'. Move your work to your own branch:" >&2
+        echo "" >&2
+        echo "    git switch -c <your-name>            # or: git switch <your-name>" >&2
+        echo "    git push -u origin <your-name>" >&2
+        echo "    gh pr create --base dev" >&2
+      else
+        echo "  You are on '$current'. Push that instead:" >&2
+        echo "" >&2
+        echo "    git push -u origin $current" >&2
+        echo "    gh pr create --base dev" >&2
+      fi
+
+      echo "" >&2
+      echo "  Releasing to main? Open a PR from 'dev':" >&2
+      echo "    gh pr create --base main --head dev" >&2
+      echo "" >&2
+      echo "${YEL}  If you genuinely need to bypass this, talk to the team first.${NC}" >&2
+      echo "" >&2
+      exit 1
+    fi
+  done
+done
+
+exit 0

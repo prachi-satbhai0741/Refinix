@@ -1,0 +1,47 @@
+name: PR Flow Guard
+
+# Enforces the release half of the AegisForge branch flow:
+#   dev  ->  main
+# Member -> dev remains a team convention and does not run automated PR checks.
+#
+# This workflow is the release gate that enforces the source of a pull request
+# into `main`. Register `pr-flow-guard` as a required check on `main` only.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  pr-flow-guard:
+    name: pr-flow-guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce branch flow
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$HEAD_REF" != "dev" ]; then
+            message="Pull requests into 'main' may only come from 'dev'. Merge '$HEAD_REF' into 'dev' first, then open a dev -> main pull request."
+            echo "::error title=Branch flow violation::$message"
+            echo ""
+            echo "----------------------------------------------------------"
+            echo " BLOCKED: $HEAD_REF  ->  $BASE_REF"
+            echo "----------------------------------------------------------"
+            echo "$message"
+            echo ""
+            echo "Allowed flow:"
+            echo "  dev  ->  main"
+            echo ""
+            echo "See CONTRIBUTING.md for the full workflow."
+            exit 1
+          fi
+
+          echo "OK: dev -> main is the release path."

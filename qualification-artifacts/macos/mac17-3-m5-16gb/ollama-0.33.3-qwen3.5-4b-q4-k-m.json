@@ -1,0 +1,254 @@
+{
+  "artifact_version": "1.0",
+  "generated_at": "2026-09-21T15:27:02Z",
+  "device": {
+    "os_family": "macos",
+    "os_release": "25.6.0",
+    "architecture": "arm64",
+    "target_profile_id": "mac17-3-m5-16gb"
+  },
+  "observed_model": {
+    "model_id": "qwen3.5:4b-q4_K_M",
+    "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+    "runtime": "ollama",
+    "runtime_version": "0.33.3"
+  },
+  "result": "passed",
+  "release_accepted": false,
+  "workflows": [
+    {
+      "profile": {
+        "profile_id": "b97d55b3ba3326226f5022a3fd89bee5988e880bc168114d36bcc3d22fb63807",
+        "model": {
+          "model_id": "qwen3.5:4b-q4_K_M",
+          "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+          "runtime": "ollama",
+          "runtime_version": "0.33.3"
+        },
+        "target_profile_id": "mac17-3-m5-16gb",
+        "workflow_mode": "chat",
+        "qualified_context_tokens": 8192,
+        "default_output_tokens": 2048,
+        "max_output_tokens": 2048,
+        "reasoning_modes": [
+          "disabled",
+          "enabled"
+        ],
+        "default_reasoning": "disabled",
+        "decoder_modes": [
+          "text"
+        ],
+        "qualified_memory_bytes": null,
+        "qualification_state": "candidate",
+        "eligible": false,
+        "evidence_kind": "unverified",
+        "evidence_ref": "qualification-run:pending-review"
+      },
+      "result": "passed",
+      "evidence": [
+        {
+          "reasoning": "disabled",
+          "decoder": "text",
+          "requested_profile_id": "b97d55b3ba3326226f5022a3fd89bee5988e880bc168114d36bcc3d22fb63807",
+          "actual_profile_id": "b97d55b3ba3326226f5022a3fd89bee5988e880bc168114d36bcc3d22fb63807",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 385,
+          "output_tokens": 14,
+          "total_ms": 512,
+          "output_sha256": "94171329985df268b709ab3eba4a66305687d56e9e536593ee3c882d6e84be98",
+          "thinking_observed": false,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.disabled",
+            "answer.nonempty"
+          ]
+        },
+        {
+          "reasoning": "enabled",
+          "decoder": "text",
+          "requested_profile_id": "b97d55b3ba3326226f5022a3fd89bee5988e880bc168114d36bcc3d22fb63807",
+          "actual_profile_id": "b97d55b3ba3326226f5022a3fd89bee5988e880bc168114d36bcc3d22fb63807",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 383,
+          "output_tokens": 552,
+          "total_ms": 18270,
+          "output_sha256": "94171329985df268b709ab3eba4a66305687d56e9e536593ee3c882d6e84be98",
+          "thinking_observed": true,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.separated",
+            "answer.nonempty"
+          ]
+        }
+      ]
+    },
+    {
+      "profile": {
+        "profile_id": "cf1fa18e009aba16dd12fe199be4c3a1d2668056cfaab08a578bcc5cd015debb",
+        "model": {
+          "model_id": "qwen3.5:4b-q4_K_M",
+          "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+          "runtime": "ollama",
+          "runtime_version": "0.33.3"
+        },
+        "target_profile_id": "mac17-3-m5-16gb",
+        "workflow_mode": "code.whole_file",
+        "qualified_context_tokens": 8192,
+        "default_output_tokens": 2048,
+        "max_output_tokens": 2048,
+        "reasoning_modes": [
+          "disabled",
+          "enabled"
+        ],
+        "default_reasoning": "disabled",
+        "decoder_modes": [
+          "json_schema"
+        ],
+        "qualified_memory_bytes": null,
+        "qualification_state": "candidate",
+        "eligible": false,
+        "evidence_kind": "unverified",
+        "evidence_ref": "qualification-run:pending-review"
+      },
+      "result": "passed",
+      "evidence": [
+        {
+          "reasoning": "disabled",
+          "decoder": "json_schema",
+          "requested_profile_id": "cf1fa18e009aba16dd12fe199be4c3a1d2668056cfaab08a578bcc5cd015debb",
+          "actual_profile_id": "cf1fa18e009aba16dd12fe199be4c3a1d2668056cfaab08a578bcc5cd015debb",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 471,
+          "output_tokens": 140,
+          "total_ms": 4448,
+          "output_sha256": "ee5ebdd3121e06a0248dd521912338733c548a843a97248dc80f4480bfddd3b8",
+          "thinking_observed": false,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.disabled",
+            "structured.decoder",
+            "proposal.schema",
+            "canonical.unchanged"
+          ]
+        },
+        {
+          "reasoning": "enabled",
+          "decoder": "json_schema",
+          "requested_profile_id": "cf1fa18e009aba16dd12fe199be4c3a1d2668056cfaab08a578bcc5cd015debb",
+          "actual_profile_id": "cf1fa18e009aba16dd12fe199be4c3a1d2668056cfaab08a578bcc5cd015debb",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 2048,
+          "done_reason": "stop",
+          "prompt_tokens": 469,
+          "output_tokens": 271,
+          "total_ms": 8544,
+          "output_sha256": "819aa3fe51278f8d5c530ef17c85e3a4584e053a2acb09376dfb61d526a6c5f8",
+          "thinking_observed": true,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.separated",
+            "structured.decoder",
+            "proposal.schema",
+            "canonical.unchanged"
+          ]
+        }
+      ]
+    },
+    {
+      "profile": {
+        "profile_id": "7f593bfa689e2184f856e7223e2d4e7a08e62de3fdb921c46a0097df3a25bba3",
+        "model": {
+          "model_id": "qwen3.5:4b-q4_K_M",
+          "manifest_sha256": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+          "runtime": "ollama",
+          "runtime_version": "0.33.3"
+        },
+        "target_profile_id": "mac17-3-m5-16gb",
+        "workflow_mode": "documents.structured",
+        "qualified_context_tokens": 8192,
+        "default_output_tokens": 3072,
+        "max_output_tokens": 3072,
+        "reasoning_modes": [
+          "disabled",
+          "enabled"
+        ],
+        "default_reasoning": "disabled",
+        "decoder_modes": [
+          "json_schema"
+        ],
+        "qualified_memory_bytes": null,
+        "qualification_state": "candidate",
+        "eligible": false,
+        "evidence_kind": "unverified",
+        "evidence_ref": "qualification-run:pending-review"
+      },
+      "result": "passed",
+      "evidence": [
+        {
+          "reasoning": "disabled",
+          "decoder": "json_schema",
+          "requested_profile_id": "7f593bfa689e2184f856e7223e2d4e7a08e62de3fdb921c46a0097df3a25bba3",
+          "actual_profile_id": "7f593bfa689e2184f856e7223e2d4e7a08e62de3fdb921c46a0097df3a25bba3",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 3072,
+          "done_reason": "stop",
+          "prompt_tokens": 332,
+          "output_tokens": 60,
+          "total_ms": 2559,
+          "output_sha256": "bce646ed94caf154aa019905cf400a45403dba235a7ecb97036ebe1d8f0af9f5",
+          "thinking_observed": false,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.disabled",
+            "structured.decoder",
+            "document.schema",
+            "document.readable",
+            "document.required_facts",
+            "source.fenced"
+          ]
+        },
+        {
+          "reasoning": "enabled",
+          "decoder": "json_schema",
+          "requested_profile_id": "7f593bfa689e2184f856e7223e2d4e7a08e62de3fdb921c46a0097df3a25bba3",
+          "actual_profile_id": "7f593bfa689e2184f856e7223e2d4e7a08e62de3fdb921c46a0097df3a25bba3",
+          "context_window_tokens": 8192,
+          "output_allowance_tokens": 3072,
+          "done_reason": "stop",
+          "prompt_tokens": 334,
+          "output_tokens": 2659,
+          "total_ms": 95699,
+          "output_sha256": "9c86563896884062dd2b142f1bd62652cc247dabf7e36aa41325849d85a2cc29",
+          "thinking_observed": true,
+          "verifications": [
+            "runtime.identity",
+            "profile.identity",
+            "workflow.completed",
+            "reasoning.separated",
+            "structured.decoder",
+            "document.schema",
+            "document.readable",
+            "document.required_facts",
+            "source.fenced"
+          ]
+        }
+      ]
+    }
+  ]
+}

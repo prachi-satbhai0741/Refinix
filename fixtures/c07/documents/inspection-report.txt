@@ -1,0 +1,55 @@
+SYNTHETIC INSPECTION REPORT — NOT A REAL DOCUMENT
+Northgate Water Reclamation Site (fictional)
+
+--- PAGE 1 ---
+
+ROUTINE MECHANICAL INSPECTION
+Report number:            NG-2026-0417
+Asset:                    Transfer pump P-204
+Asset location:           Pump house B, bay 3
+Inspection date:          2026-04-17
+Inspector:                A. Okonkwo (synthetic name)
+Inspection standard:      SOP-MECH-014 rev 3
+
+CONDITION SUMMARY
+
+Casing:                   Serviceable. Light surface corrosion, no through-wall
+                          loss observed.
+Coupling guard:           Serviceable.
+Baseplate anchor bolts:   Two of four found loose. Torque not recorded at the
+                          time of inspection.
+Suction pressure gauge:   Illegible. Face fogged; reading could not be taken.
+
+--- PAGE 2 ---
+
+MEASUREMENTS
+
+Vibration, drive end:     7.9 mm/s RMS
+Vibration, non-drive end: 4.1 mm/s RMS
+Bearing temperature, DE:  71 C
+Bearing temperature, NDE: 58 C
+Discharge pressure:       3.4 bar
+Suction pressure:         not recorded (gauge illegible)
+Motor current:            18.2 A
+
+ACCEPTANCE LIMITS APPLIED
+
+Vibration alarm limit:    7.1 mm/s RMS
+Bearing temperature limit: 80 C
+
+--- PAGE 3 ---
+
+FINDINGS
+
+F-1  Vibration at the drive end exceeds the alarm limit of 7.1 mm/s RMS.
+     Recorded 7.9 mm/s RMS.
+F-2  Two baseplate anchor bolts are loose.
+F-3  Suction pressure could not be verified because the gauge is illegible.
+
+DISPOSITION
+
+The pump remains in service pending corrective action. Re-inspection is
+required within 14 days of this report.
+
+Signed:                   A. Okonkwo
+Countersigned:            not countersigned at time of issue

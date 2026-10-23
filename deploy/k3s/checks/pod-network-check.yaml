@@ -1,0 +1,65 @@
+# Cluster networking check, run after the guard is applied and before any
+# workload is deployed.
+#
+# It proves two things the guard could plausibly have broken: that a Pod
+# resolves names through CoreDNS, and that a Pod reaches the Kubernetes API
+# through its Service. The LAN interface is dropped for 6443 and 10250, so a
+# mistake in that rule set shows up here rather than as a mystery later.
+#
+# This replaces an inline `kubectl run --overrides` blob. That version ran
+# `/dev/tcp` under `sh` — a bash feature, and `sh` is dash on this image, so it
+# could never succeed — and ended in `|| echo RESULT=...`, which made the
+# container exit 0 whatever happened. A check that cannot fail is not a check.
+#
+# Expect: RESULT=pod-to-api-ok, exit 0.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: netcheck-pod-network
+  namespace: aegisforge
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10002
+    runAsGroup: 10002
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probe
+      image: redis@sha256:e17e3a1993da428251cbd88dbdb3de8c8d4007f840d7350eb17a2d8695fa705f
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -u
+          api=kubernetes.default.svc.cluster.local
+          # bash is invoked explicitly and only for /dev/tcp; the outer shell
+          # stays POSIX sh. Absence is reported, never assumed away.
+          command -v bash    >/dev/null || { echo "RESULT=tooling-missing (bash)"; exit 3; }
+          command -v timeout >/dev/null || { echo "RESULT=tooling-missing (timeout)"; exit 3; }
+
+          getent hosts "$api" >/dev/null 2>&1 \
+            || { echo "RESULT=dns-failed"; exit 4; }
+
+          timeout 5 bash -c "exec 3<>/dev/tcp/$api/443" 2>/dev/null
+          status=$?
+          case "$status" in
+            0)   echo "RESULT=pod-to-api-ok"; exit 0 ;;
+            124) echo "RESULT=api-timeout-or-blocked (check the cluster guard)"; exit 7 ;;
+            *)   echo "RESULT=api-unreachable (status=$status)"; exit 9 ;;
+          esac
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits:   {cpu: 200m, memory: 64Mi}
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: tmp
+      emptyDir: {}
