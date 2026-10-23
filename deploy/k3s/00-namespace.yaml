@@ -1,0 +1,46 @@
+# AegisForge C05 — namespace and default-deny baseline.
+#
+# Applied first so no workload ever exists in this namespace without a
+# default-deny NetworkPolicy already in force.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aegisforge
+  labels:
+    name: aegisforge
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+# Deny all ingress and egress in the namespace. Everything below is an
+# explicit, narrow exception to this rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: aegisforge
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Cluster DNS only. Without this every name lookup fails under default-deny.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: aegisforge
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

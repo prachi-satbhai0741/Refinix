@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documents — Refinix</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Spectral:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="documents.css">
+</head>
+<body data-surface="documents">
+
+<!--
+  Refinix Documents surface — static design reference.
+
+  Draws inspection_report_to_approval_note (docs/workflows.md section 5).
+  State names come from backend/contracts/v1.py. Sample content only; nothing
+  on this page is a measurement.
+-->
+
+<div class="app">
+
+  <!-- ============================================================== nav -->
+  <nav class="nav" id="nav" aria-label="Surfaces and documents">
+    <div class="nav-brand">
+      <img class="brand-logo" src="assets/refinix-wordmark.png"
+           alt="Refinix" width="594" height="112">
+      <span>v0.1-alpha</span>
+    </div>
+
+    <div class="surfaces">
+      <a class="surface-link" href="chat.html">Chat <span class="k">1</span></a>
+      <a class="surface-link" href="documents.html" aria-current="page">Documents <span class="k">2</span></a>
+      <a class="surface-link" href="code.html">Code <span class="k">3</span></a>
+      <a class="surface-link" href="control.html">Control Center <span class="k">4</span></a>
+    </div>
+
+    <div class="nav-list">
+      <p class="lbl nav-list-h">Workflows</p>
+      <button class="nav-item" type="button" aria-current="true">
+        SR-4471 approval note <small>running &middot; step 4 of 7</small>
+      </button>
+      <button class="nav-item" type="button">
+        P&amp;ID revision check <small>awaiting_approval</small>
+      </button>
+      <button class="nav-item" type="button">
+        Vendor quote extract <small>completed</small>
+      </button>
+      <button class="nav-item" type="button">
+        Weld log digitisation <small>failed &middot; validator</small>
+      </button>
+    </div>
+
+    <div class="nav-foot">
+      <div class="node-line"><span class="lbl">Local index</span><b>1,284 docs</b></div>
+      <div class="node-line"><span class="lbl">Embeddings</span><b>on device</b></div>
+      <div class="node-line"><span class="lbl">Egress</span><span class="chip chip-enforced">Enforced</span></div>
+    </div>
+  </nav>
+
+  <!-- ============================================================= main -->
+  <main class="main">
+    <header class="main-head">
+      <button class="panel-toggle panel-toggle-left" type="button"
+              data-panel-toggle="nav" aria-controls="nav" aria-expanded="true"
+              aria-label="Navigation panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
+      <h1>SR-4471 &mdash; inspection report to approval note</h1>
+      <span class="chip chip-running">Running</span>
+      <div class="head-spacer"></div>
+      <span class="sample">Sample data</span>
+      <span class="lbl">Job 7a02c1</span>
+      <button class="panel-toggle panel-toggle-right" type="button"
+              data-panel-toggle="rail" aria-controls="rail" aria-expanded="true"
+              aria-label="Details panel">
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <line x1="2.5" y1="4.5" x2="13.5" y2="4.5"/>
+          <line x1="2.5" y1="8" x2="13.5" y2="8"/>
+          <line x1="2.5" y1="11.5" x2="13.5" y2="11.5"/>
+        </svg>
+      </button>
+    </header>
+
+    <div class="body">
+
+      <!-- 1. sources, with hashes recorded at creation -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Sources</h2>
+          <em>hashes recorded when the workflow was created</em>
+        </div>
+        <div class="intake">
+          <article class="source">
+            <h3>SR-4471.pdf</h3>
+            <span class="meta">scan &middot; 14 pages &middot; 300 dpi</span>
+            <span class="meta">sha256:3f9c&hellip;a81d</span>
+          </article>
+          <article class="source">
+            <h3>SOP-114.pdf</h3>
+            <span class="meta">corpus &middot; 62 pages &middot; text layer</span>
+            <span class="meta">sha256:c740&hellip;19be</span>
+          </article>
+          <article class="source">
+            <h3>Template — approval note</h3>
+            <span class="meta">docx &middot; organisation template</span>
+            <span class="meta">sha256:8be1&hellip;4c02</span>
+          </article>
+        </div>
+      </section>
+
+      <!-- 2. the fixed pipeline -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Pipeline</h2>
+          <em>each step may run on a different eligible node</em>
+        </div>
+        <ol class="pipe">
+          <li class="step-done"><span class="mark">[&times;]</span>
+            <span class="txt">Recorded source hashes and created the workflow</span>
+            <span class="cap">coordinator</span><span class="on">node-01</span></li>
+          <li class="step-done"><span class="mark">[&times;]</span>
+            <span class="txt">Extracted content with page association and uncertainty</span>
+            <span class="cap">document.extract</span><span class="on">node-02</span></li>
+          <li class="step-done"><span class="mark">[&times;]</span>
+            <span class="txt">Validator rejected fabricated values, kept unresolved fields</span>
+            <span class="cap">validator</span><span class="on">node-01</span></li>
+          <li class="step-run"><span class="mark">[&gt;]</span>
+            <span class="txt">Selecting SOP passages with section metadata</span>
+            <span class="cap">knowledge.retrieve</span><span class="on">node-01</span></li>
+          <li class="step-idle"><span class="mark">[&nbsp;]</span>
+            <span class="txt">Draft from validated extraction and retrieved passages only</span>
+            <span class="cap">text.generate</span><span class="on">&mdash;</span></li>
+          <li class="step-idle"><span class="mark">[&nbsp;]</span>
+            <span class="txt">Produce the Word artifact</span>
+            <span class="cap">document.generate</span><span class="on">&mdash;</span></li>
+          <li class="step-idle"><span class="mark">[&nbsp;]</span>
+            <span class="txt">Validate the artifact, then request approval to write</span>
+            <span class="cap">validator</span><span class="on">&mdash;</span></li>
+        </ol>
+      </section>
+
+      <!-- 3. findings — every one carries its page; unsure ones stay unsure -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Extracted findings</h2>
+          <em>6 found &middot; 1 unresolved &middot; page association from the extractor</em>
+        </div>
+        <ul class="findings">
+          <li>
+            <span class="page">p. 6</span>
+            <span class="txt">Shell thickness 8.2 mm at CML-04, below the 9.0 mm retirement limit
+              <small>confidence 0.94 &middot; exceeds SOP-114 clause 4.2 threshold</small></span>
+            <span class="chip chip-caution">Sign-off</span>
+          </li>
+          <li>
+            <span class="page">p. 9</span>
+            <span class="txt">Coating breakdown over 0.4 m&sup2; on the north head
+              <small>confidence 0.91</small></span>
+            <span class="chip chip-caution">Sign-off</span>
+          </li>
+          <li>
+            <span class="page">p. 4</span>
+            <span class="txt">Insulation intact, no CUI indication at inspected points
+              <small>confidence 0.88</small></span>
+            <span class="chip chip-observed">Recorded</span>
+          </li>
+          <li>
+            <span class="page">p. 11</span>
+            <span class="txt">Nozzle N3 weld visually acceptable
+              <small>confidence 0.86</small></span>
+            <span class="chip chip-observed">Recorded</span>
+          </li>
+          <li>
+            <span class="page">p. 12</span>
+            <span class="txt">Support saddle corrosion, surface only
+              <small>confidence 0.83</small></span>
+            <span class="chip chip-observed">Recorded</span>
+          </li>
+          <li class="finding-unsure">
+            <span class="page">p. 7</span>
+            <span class="txt">Handwritten reading in the CML-07 row
+              <small><em>Not resolved. The extractor read &ldquo;7.?4&rdquo; and the digit is
+              illegible. No value was inferred; the field is carried forward blank for a
+              person to complete.</em></small></span>
+            <span class="chip chip-unknown">Unresolved</span>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 4. retrieval, cited to section -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Retrieved passages</h2>
+          <em>local index only &middot; citations point at documents on this device</em>
+        </div>
+        <div class="cites">
+          <span class="cite"><b>SOP-114</b> &sect;4.2 &middot; p. 18</span>
+          <span class="cite"><b>SOP-114</b> &sect;9.1 &middot; p. 41</span>
+          <span class="cite"><b>SOP-114</b> Annex C &middot; p. 58</span>
+          <span class="cite"><b>SR-4392</b> prior report &middot; p. 3</span>
+        </div>
+      </section>
+
+      <!-- 5. the artifact and its validation record -->
+      <section class="block">
+        <div class="block-h">
+          <h2>Artifact</h2>
+          <em>not yet written to the workspace</em>
+        </div>
+        <div class="artifact artifact-draft">
+          <div>
+            <div class="artifact-name">Approval note &mdash; SR-4471</div>
+            <div class="artifact-sub">docx &middot; 41 KB &middot; draft, unsigned</div>
+          </div>
+          <button class="artifact-open" type="button">Open</button>
+        </div>
+
+        <ul class="checks">
+          <li><span>Opens in Word without repair
+            <span class="detail">validator: docx structural check</span></span>
+            <span class="chip chip-enforced">Passed</span></li>
+          <li><span>Every claim carries a citation
+            <span class="detail">4 citations, 0 uncited claims</span></span>
+            <span class="chip chip-enforced">Passed</span></li>
+          <li><span>Origin job recorded
+            <span class="detail">job 7a02c1 &middot; attempt 1</span></span>
+            <span class="chip chip-enforced">Passed</span></li>
+          <li><span>Checksum
+            <span class="detail">sha256:9b5c2e17&hellip;4f8a6d90</span></span>
+            <span class="chip chip-observed">Recorded</span></li>
+          <li class="unavailable"><span>Template conformance
+            <span class="detail">no organisation template registered on this install</span></span>
+            <span class="chip chip-unknown">Unavailable</span></li>
+        </ul>
+      </section>
+
+      <!-- 6. the gate -->
+      <section class="block">
+        <div class="gate">
+          <div class="gate-h">
+            <span class="lbl">Approval required</span>
+            <b>Write the approval note into the workspace</b>
+          </div>
+          <dl class="gate-facts">
+            <dt>action</dt>       <dd>canonical.write</dd>
+            <dt>target</dt>       <dd>workspace/notes/SR-4471-approval.docx</dd>
+            <dt>digest</dt>       <dd>sha256:9b5c2e17&hellip;4f8a6d90</dd>
+            <dt>requested by</dt> <dd>coordinator &middot; node-01</dd>
+          </dl>
+          <div class="gate-actions">
+            <button class="btn btn-primary" type="button">Approve write</button>
+            <button class="btn btn-deny" type="button">Deny</button>
+            <span class="lbl gate-expiry">Expires 15:04:52</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ============================================================= rail -->
+  <aside class="rail" id="rail" aria-label="Workflow inspector">
+    <section class="rail-sec">
+      <span class="lbl">Lifecycle</span>
+      <ol class="life">
+        <li class="st-done"><span class="dot"></span><span>created<time>14:52:10</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>context_preparing<time>14:52:11</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>queued<time>14:52:14</time></span></li>
+        <li class="st-done"><span class="dot"></span><span>routing<time>14:52:16</time></span></li>
+        <li class="st-now"><span class="dot"></span><span>running<time>14:53:02</time></span></li>
+        <li class="st-todo"><span class="dot"></span><span>validating</span></li>
+        <li class="st-todo"><span class="dot"></span><span>awaiting_approval</span></li>
+        <li class="st-todo"><span class="dot"></span><span>completed</span></li>
+      </ol>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Routing decision</span>
+      <dl class="kv">
+        <div><dt>Requested</dt><dd>Auto</dd></div>
+        <div><dt>Extraction</dt><dd>node-02</dd></div>
+        <div><dt>Reason</dt><dd>vision resident</dd></div>
+        <div><dt>Other steps</dt><dd>node-01</dd></div>
+        <div><dt>Overridable</dt><dd>yes</dd></div>
+      </dl>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Events</span>
+      <ul class="events">
+        <li><time>14:52:10</time><span class="kind">job.state</span></li>
+        <li><time>14:52:16</time><span class="kind">attempt.state</span></li>
+        <li><time>14:52:48</time><span class="kind">artifact.created</span></li>
+        <li><time>14:53:02</time><span class="kind">output.delta</span></li>
+        <li><time>14:53:40</time><span class="kind">proof.updated</span></li>
+      </ul>
+    </section>
+
+    <section class="rail-sec">
+      <span class="lbl">Sovereignty evidence</span>
+      <div class="proof-row"><span>Public egress policy</span><span class="chip chip-enforced">Enforced</span></div>
+      <div class="proof-row"><span>External AI calls</span><span class="chip chip-observed">0 observed</span></div>
+      <div class="proof-row"><span>Retrieval scope</span><span class="chip chip-observed">local only</span></div>
+      <div class="proof-row unavailable"><span>Kernel packet capture</span><span class="chip chip-unknown">Unavailable</span></div>
+      <p class="lbl" style="margin: var(--sp-3) 0 0">
+        Observer: coordinator &middot; window 30 min. Enforcer: host firewall.
+      </p>
+    </section>
+  </aside>
+</div>
+
+<script src="shell.js"></script>
+
+</body>
+</html>

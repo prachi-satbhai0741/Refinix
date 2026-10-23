@@ -1,0 +1,19 @@
+# Forwards accepted connections to the worker's loopback NodePort.
+#
+# systemd-socket-proxyd copies bytes; it does not parse or terminate TLS. The
+# pinned OD-06 session is therefore end-to-end between the Mac and the worker
+# Pod, and this host never sees inside it and holds no key.
+[Unit]
+Description=AegisForge LAN forwarder to the worker's loopback NodePort
+Requires=aegisforge-worker-proxy.socket aegisforge-worker-guard.service
+After=aegisforge-worker-proxy.socket aegisforge-worker-guard.service k3s.service
+
+[Service]
+# systemd-socket-proxyd ships with systemd; nothing is installed for this.
+ExecStart=SOCKET_PROXY_PATH 127.0.0.1:30443
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

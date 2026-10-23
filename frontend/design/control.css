@@ -1,0 +1,145 @@
+/* Refinix — Control Center.
+ * Load after tokens.css and app.css.
+ *
+ * Covers the eight groups docs/workflows.md section 10 requires. The binding
+ * constraint from docs/security.md section 12: this surface must not use
+ * hard-coded healthy, secure, blocked or zero-traffic values. So every row
+ * that makes a claim states the layer that enforces it or the observer that
+ * saw it, and a row with neither renders as unavailable — hatched, grey, and
+ * impossible to mistake for a healthy zero.
+ */
+
+/* the dashboard is a two-column flow of panels, not one long column */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--sp-5);
+  align-items: start;
+}
+.grid .block { margin-bottom: 0; }
+.span-2 { grid-column: 1 / -1; }
+
+/* ------------------------------------------------------------- panels --- */
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.panel-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: 9px var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--veil-sunken);
+  flex-wrap: wrap;
+}
+.panel-h h2 { margin: 0; font-size: var(--fs-sm); font-weight: 600; }
+.panel-h em {
+  font-style: normal;
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+.panel-h .head-spacer { flex: 1; }
+.panel-b { padding: var(--sp-3); }
+.panel .rows { border: 0; }
+.panel .rows > li { padding: 8px 0; background: transparent; }
+.panel .rows > li:last-child { border-bottom: 0; }
+
+/* ------------------------------------------------------------- device --- */
+
+.dev {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.dev:last-child { border-bottom: 0; }
+.dev-name { font-size: var(--fs-sm); font-weight: 600; }
+.dev-meta {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  grid-column: 1 / -1;
+}
+.dev-caps { display: flex; flex-wrap: wrap; gap: 5px; grid-column: 1 / -1; }
+.cap-tag {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  border: 1px solid var(--glass-edge);
+  background: var(--veil);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  color: var(--text-dim);
+}
+.dev-actions { grid-column: 1 / -1; display: flex; gap: var(--sp-2); margin-top: 2px; }
+
+/* --------------------------------------------------------------- jobs --- */
+
+.jobs { list-style: none; margin: 0; padding: 0; }
+.jobs > li {
+  display: grid;
+  grid-template-columns: 70px 1fr auto auto;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-sm);
+}
+.jobs > li:last-child { border-bottom: 0; }
+.jobs .id { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--text-faint); }
+.jobs .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jobs .on { font-family: var(--font-data); font-size: var(--fs-micro); color: var(--text-faint); }
+
+/* --------------------------------------------------------- proof card --- */
+/* The exportable record. Drawn in the document treatment because that is what
+   it is: a signed sheet, not a dashboard tile. */
+
+/* the exportable sheet stays square — it is a document, not a tile */
+.proof-card {
+  background: var(--bp-surface);
+  border: 1px solid var(--bp-line);
+  border-radius: var(--radius-data);
+  color: var(--bp-ink);
+  font-family: var(--font-doc);
+  padding: var(--sp-4);
+}
+.proof-card h3 { margin: 0 0 2px; font-size: var(--fs-lg); font-weight: 700; }
+.proof-card .win {
+  font-family: var(--font-data);
+  font-size: var(--fs-micro);
+  color: var(--bp-dim);
+  display: block;
+  margin-bottom: var(--sp-3);
+}
+.proof-card dl {
+  margin: 0 0 var(--sp-3);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px var(--sp-3);
+  font-family: var(--font-data);
+  font-size: var(--fs-label);
+}
+.proof-card dt { color: var(--bp-dim); }
+.proof-card dd { margin: 0; text-align: right; }
+.proof-card .void {
+  background: repeating-linear-gradient(-45deg, transparent 0 5px, var(--bp-void) 5px 6px);
+}
+.proof-card .btn { border-color: var(--bp-line); color: var(--bp-ink); }
+.proof-card .btn:hover { background: var(--bp-void); border-color: var(--bp-ink); }
+
+/* ------------------------------------------------------------- meters --- */
+/* A meter is only drawn when the operating system reports the figure
+   reliably. Where it does not, the row says so instead of showing an empty
+   bar, which would read as zero usage. */
+
+/* square and opaque, like every other readout: a meter is a measurement, and
+   a translucent bar over a lit ground is not a number you can trust */
+.meter { height: 4px; background: var(--surface-sunken); border: 1px solid var(--line); margin-top: 5px; }
+.meter i { display: block; height: 100%; background: var(--st-observed); }
+.meter.warn i { background: var(--signal); }
+
+.retention { display: flex; flex-wrap: wrap; gap: var(--sp-2); }

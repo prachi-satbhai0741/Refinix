@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime exceptions for the release-signed Refinix.app (desktop/build.py
+  --signing release). Only one: the bundled CPython and PyObjC create libffi
+  closures for ctypes and Objective-C callbacks, which need writable-then-
+  executable memory. No JIT, no disabled library validation (every bundled
+  library is signed with Refinix's own Team ID), no sandbox exceptions.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

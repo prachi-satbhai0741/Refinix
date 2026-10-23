@@ -1,0 +1,55 @@
+SYNTHETIC STANDARD OPERATING PROCEDURE — NOT A REAL DOCUMENT
+Northgate Water Reclamation Site (fictional)
+
+--- PAGE 1 ---
+
+SOP-MECH-014 rev 3
+ROUTINE MECHANICAL INSPECTION OF TRANSFER PUMPS
+
+1. SCOPE
+
+This procedure covers routine mechanical inspection of transfer pumps in the
+P-200 series. It does not cover overhaul, alignment or electrical testing.
+
+2. ACCEPTANCE LIMITS
+
+2.1  Vibration velocity at any bearing housing shall not exceed 7.1 mm/s RMS.
+     A reading above this limit is an alarm condition.
+
+2.2  Bearing temperature shall not exceed 80 C measured at the housing.
+
+2.3  Where a reading cannot be taken, the field shall be recorded as
+     "not recorded" together with the reason. A missing reading shall never be
+     entered as zero, as in specification, or inferred from a previous report.
+
+--- PAGE 2 ---
+
+3. RESPONSE TO AN ALARM CONDITION
+
+3.1  A vibration alarm requires re-inspection within 14 days.
+
+3.2  A vibration alarm does not by itself require removal from service. The
+     pump may remain in service where bearing temperature is within limit and
+     no leakage is observed.
+
+3.3  Loose baseplate anchor bolts shall be re-torqued to 95 Nm and the torque
+     value recorded before the pump is returned to unattended operation.
+
+4. INSTRUMENTATION
+
+4.1  An illegible or damaged gauge shall be reported as a finding and replaced
+     before the next routine inspection.
+
+--- PAGE 3 ---
+
+5. APPROVAL NOTE
+
+5.1  An approval note raised from an inspection report shall state, for each
+     finding, the SOP clause applied and the required action.
+
+5.2  An approval note shall list every value the report recorded as
+     "not recorded" as an open item. It shall not close a finding on a value
+     that was never measured.
+
+5.3  An approval note is countersigned before the pump is returned to
+     unattended operation.

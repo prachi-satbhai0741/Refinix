@@ -1,0 +1,265 @@
+# AegisForge worker — the only workload exposed to the trusted LAN.
+#
+# The image is pinned by the manifest digest produced by the C04 Ubuntu build
+# and imported into containerd from the preserved archive. imagePullPolicy is
+# Never: this node must not reach a registry to run it.
+#
+# C06 adds TLS at this listener rather than a sidecar or an Ingress: uvicorn is
+# already in the image and terminates TLS with two flags, so the pinned OD-06
+# certificate needs no new component, no new port and no new build dependency.
+# The coordinator trusts that certificate and nothing else.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-config
+  namespace: aegisforge
+data:
+  # Observed cni0 address on the Ubuntu worker. The host forwarder accepts only
+  # the Pod CIDR, and 30-runtime-egress.yaml permits only this /32 and port.
+  AEGIS_RUNTIME_HOST: "http://10.42.0.1:11434"
+  AEGIS_MODEL: "qwen3.5:4b-q4_K_M"
+  AEGIS_NUM_CTX: "4096"
+  AEGIS_NUM_PREDICT: "2048"
+  AEGIS_NODE_NAME: "ubuntu-worker"
+  AEGIS_MAX_ACTIVE: "2"
+  # AF-005. Without an address the job routes stay fail-closed, which is the
+  # correct pre-C06 state; with one, the API writes the durable receipt before
+  # it answers 202.
+  AEGIS_REDIS_HOST: "redis"
+  AEGIS_REDIS_PORT: "6379"
+  # OD-06 pairing state, on the PVC below so a restart does not silently
+  # unpair the coordinator.
+  AEGIS_PAIRING_STATE: "/var/lib/aegisforge/pairing.json"
+---
+# OD-06 needs the relationship hashes to survive a Pod restart. 64Mi because
+# the file holds at most sixteen relationship records; local-path is K3s's
+# built-in provisioner, already present, so this adds no component.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: worker-state
+  namespace: aegisforge
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aegisforge-worker
+  namespace: aegisforge
+spec:
+  type: NodePort
+  # Two labels. The NetworkPolicy selects on `app` alone, so an isolation probe
+  # carrying only that label is covered by the policy without ever becoming an
+  # endpoint of this Service.
+  selector:
+    app: aegisforge-worker
+    component: api
+  ports:
+    - name: worker
+      port: 8443            # WORKER_PORT from backend/contracts/v1.py
+      targetPort: 8443
+      nodePort: 30443       # WORKER_NODE_PORT from the same contract
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegisforge-worker
+  namespace: aegisforge
+spec:
+  replicas: 1               # a second replica is post-C11 scope
+  selector:
+    matchLabels:
+      app: aegisforge-worker
+      component: api
+  template:
+    metadata:
+      labels:
+        app: aegisforge-worker
+        component: api
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          # C09 Ubuntu build, 2026-09-06. Recorded in
+          # backend/worker-image/provenance.json.
+          image: docker.io/library/aegisforge-worker@sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a
+          imagePullPolicy: Never
+          # TLS terminated by uvicorn itself. The image's CMD serves plain HTTP,
+          # which was correct while the port was closed to the LAN; C06 opens it
+          # to the confirmed Mac address, so the listener must be the pinned
+          # OD-06 certificate from the first byte.
+          command: ["python", "-m", "uvicorn", "backend.worker.app:app",
+                    "--host", "0.0.0.0", "--port", "8443", "--no-server-header",
+                    "--ssl-certfile", "/etc/aegisforge/tls/tls.crt",
+                    "--ssl-keyfile", "/etc/aegisforge/tls/tls.key"]
+          ports:
+            - containerPort: 8443
+              name: worker
+          envFrom:
+            - configMapRef:
+                name: worker-config
+          env:
+            - name: AEGIS_WORKER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: worker-credential   # created by the operator, never committed
+                  key: token
+            - name: AEGIS_NODE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: worker-credential
+                  key: node-id
+            - name: AEGIS_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credential
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: state
+              mountPath: /var/lib/aegisforge
+            # AF-010 job packages. A SEPARATE volume from `state` above, which
+            # holds the pairing store: the executor and the validation Pod are
+            # given this one and never that one.
+            - name: jobs
+              mountPath: /var/lib/aegisforge-jobs
+            - name: tls
+              mountPath: /etc/aegisforge/tls
+              readOnly: true
+          # Authenticated exec probes. An httpGet probe cannot send the bearer
+          # credential or the contract header, so /v1/health would answer 401
+          # and Kubernetes would restart a healthy Pod forever. Running inside
+          # the container lets the probe read the credential from its own
+          # environment without weakening the endpoint.
+          #
+          # READY here means the API answers, NOT that the worker accepts jobs.
+          # Job routes stay fail-closed until OD-06 pairing and the AF-005
+          # receipt exist; that state is reported in the Node record's
+          # `capabilities`, which stays empty. Tying readiness to acceptance
+          # would leave the Pod permanently NotReady and hide a working API.
+          startupProbe:
+            exec: &authenticated_health
+              command:
+                - python
+                - -c
+                - |
+                  import os, ssl, sys, urllib.request
+                  request = urllib.request.Request(
+                      "https://127.0.0.1:8443/v1/health",
+                      headers={
+                          "Authorization": "Bearer " + os.environ["AEGIS_WORKER_TOKEN"],
+                          "X-AegisForge-Contract": "1.0"})
+                  # The probe talks to this container's own loopback, inside
+                  # the Pod's network namespace, so there is no peer to
+                  # authenticate: the certificate is self-signed and names an
+                  # address, not a host. Verification here would fail on a
+                  # correctly configured worker. The COORDINATOR is where the
+                  # certificate is pinned and verified, and that check is not
+                  # weakened by this one.
+                  unverified = ssl._create_unverified_context()
+                  # 15s clears the ~13s worst case below and stays under
+                  # timeoutSeconds: 20. A 3s budget failed a healthy Pod
+                  # in exactly the state the comment calls normal.
+                  with urllib.request.urlopen(request, timeout=15,
+                                              context=unverified) as response:
+                      sys.exit(0 if response.status == 200 else 1)
+            # /v1/health calls runtime.probe(), which makes three HTTP calls
+            # with 3s + 5s + 5s timeouts — about 13s worst case when the runtime
+            # is unreachable, which is the normal C05 state. A 5s probe timeout
+            # would fail a healthy Pod into a restart loop.
+            timeoutSeconds: 20
+            periodSeconds: 30
+            failureThreshold: 10          # up to 5 minutes to become live
+          readinessProbe:
+            exec: *authenticated_health
+            timeoutSeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+          livenessProbe:
+            exec: *authenticated_health
+            timeoutSeconds: 20
+            periodSeconds: 60
+            failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: state
+          persistentVolumeClaim:
+            claimName: worker-state
+        - name: jobs
+          persistentVolumeClaim:
+            claimName: aegisforge-jobs
+        - name: tls
+          secret:
+            # Created by the operator from the worker's own self-signed
+            # certificate. NEVER committed: the private key is the worker's
+            # identity, and the coordinator pins the public half by hand.
+            secretName: worker-tls
+            defaultMode: 0440
+---
+# The worker is reachable only on its contract port, and may talk only to Redis
+# plus the runtime host named in the ConfigMap.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-ingress
+  namespace: aegisforge
+spec:
+  podSelector:
+    matchLabels:
+      app: aegisforge-worker
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-egress
+  namespace: aegisforge
+spec:
+  podSelector:
+    matchLabels:
+      app: aegisforge-worker
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Redis only. Reaching the model runtime needs an address that does not
+    # exist yet — Ollama binds host loopback, which no Pod can reach — so that
+    # egress is NOT granted here. It arrives as a separate reviewed manifest
+    # once the address is decided at the checkpoint. A guessed CIDR here would
+    # be either useless or far wider than intended.

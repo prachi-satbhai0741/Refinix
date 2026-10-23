@@ -1,0 +1,16 @@
+# Protects the Kubernetes API listener. k3s.service is made to require this, so
+# a failure to establish protection prevents the cluster from starting.
+[Unit]
+Description=AegisForge C05 exposure controls for the Kubernetes API
+Before=k3s.service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/aegisforge/aegisforge-guard.sh apply cluster
+ExecStop=/usr/local/lib/aegisforge/aegisforge-guard.sh remove cluster
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,260 @@
+{
+  "recorded_on": "2026-09-06",
+  "status": "C09 worker image built and tested on the Ubuntu worker; import and rollout are pending.",
+  "target": {
+    "os": "linux",
+    "architecture": "amd64",
+    "python": "3.13"
+  },
+  "base": {
+    "image": "docker.io/library/python:3.13-slim-bookworm",
+    "manifest_sha256": "2f2e5a876c71a6757f55ec57f2add0225ddaf01c802a33fcc29073943f94d907",
+    "source": "https://hub.docker.com/_/python",
+    "registry_manifest_url": "https://registry-1.docker.io/v2/library/python/manifests/sha256:2f2e5a876c71a6757f55ec57f2add0225ddaf01c802a33fcc29073943f94d907",
+    "license": "PSF for Python; Debian packages retain their individual licences",
+    "compressed_layer_bytes": 44358563
+  },
+  "packages": [
+    {
+      "name": "annotated-doc",
+      "version": "0.0.5",
+      "license": "MIT",
+      "metadata_url": "https://pypi.org/pypi/annotated-doc/0.0.5/json",
+      "requires_python": ">=3.9",
+      "dependencies_for_target": [],
+      "wheel": "annotated_doc-0.0.5-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/3e/30/e900b21425a860e195f32e37657aa1f7c7f2b1bfb26f03ca209b90933c06/annotated_doc-0.0.5-py3-none-any.whl",
+      "sha256": "117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101",
+      "size_bytes": 5302
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "license": "MIT",
+      "metadata_url": "https://pypi.org/pypi/annotated-types/0.7.0/json",
+      "requires_python": ">=3.8",
+      "dependencies_for_target": [],
+      "wheel": "annotated_types-0.7.0-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl",
+      "sha256": "1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53",
+      "size_bytes": 13643
+    },
+    {
+      "name": "anyio",
+      "version": "4.12.1",
+      "license": "MIT",
+      "metadata_url": "https://pypi.org/pypi/anyio/4.12.1/json",
+      "requires_python": ">=3.9",
+      "dependencies_for_target": [
+        "idna>=2.8"
+      ],
+      "wheel": "anyio-4.12.1-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/38/0e/27be9fdef66e72d64c0cdc3cc2823101b80585f8119b5c112c2e8f5f7dab/anyio-4.12.1-py3-none-any.whl",
+      "sha256": "d405828884fc140aa80a3c667b8beed277f1dfedec42ba031bd6ac3db606ab6c",
+      "size_bytes": 113592
+    },
+    {
+      "name": "click",
+      "version": "8.5.0",
+      "license": "BSD-3-Clause",
+      "metadata_url": "https://pypi.org/pypi/click/8.5.0/json",
+      "requires_python": ">=3.10",
+      "dependencies_for_target": [],
+      "wheel": "click-8.5.0-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+      "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+      "size_bytes": 125251
+    },
+    {
+      "name": "fastapi",
+      "version": "0.141.1",
+      "license": "MIT",
+      "metadata_url": "https://pypi.org/pypi/fastapi/0.141.1/json",
+      "requires_python": ">=3.10",
+      "dependencies_for_target": [
+        "starlette>=0.46.0",
+        "pydantic>=2.9.0",
+        "typing-extensions>=4.8.0",
+        "typing-inspection>=0.4.2",
+        "annotated-doc>=0.0.2"
+      ],
+      "wheel": "fastapi-0.141.1-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/cb/03/10388a42375ee7e4ac9b94eb2c5c569c8b5795e377e701c9ac3ad63de890/fastapi-0.141.1-py3-none-any.whl",
+      "sha256": "bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3",
+      "size_bytes": 131954
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "license": "MIT",
+      "metadata_url": "https://pypi.org/pypi/h11/0.16.0/json",
+      "requires_python": ">=3.8",
+      "dependencies_for_target": [],
+      "wheel": "h11-0.16.0-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl",
+      "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+      "size_bytes": 37515
+    },
+    {
+      "name": "idna",
+      "version": "3.19",
+      "license": "BSD-3-Clause",
+      "metadata_url": "https://pypi.org/pypi/idna/3.19/json",
+      "requires_python": ">=3.9",
+      "dependencies_for_target": [],
+      "wheel": "idna-3.19-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/57/b0/0e52c878c53f245edd3a11020f20979b3f490f245af532c7cae3027754b5/idna-3.19-py3-none-any.whl",
+      "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4",
+      "size_bytes": 68550
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.5",
+      "license": "MIT",
+      "metadata_url": "https://pypi.org/pypi/pydantic/2.13.5/json",
+      "requires_python": ">=3.9",
+      "dependencies_for_target": [
+        "annotated-types>=0.6.0",
+        "pydantic-core==2.46.5",
+        "typing-extensions>=4.14.1",
+        "typing-inspection>=0.4.2"
+      ],
+      "wheel": "pydantic-2.13.5-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/eb/47/c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464/pydantic-2.13.5-py3-none-any.whl",
+      "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73",
+      "size_bytes": 472589
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.46.5",
+      "license": "MIT",
+      "metadata_url": "https://pypi.org/pypi/pydantic-core/2.46.5/json",
+      "requires_python": ">=3.9",
+      "dependencies_for_target": [
+        "typing-extensions>=4.14.1"
+      ],
+      "wheel": "pydantic_core-2.46.5-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "download_url": "https://files.pythonhosted.org/packages/d3/f2/9e4de77a6271e07a76d2d58b11c091a979c191ed2939bf80067568b369d2/pydantic_core-2.46.5-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "sha256": "6f7b393a8b3da82f5c1fc0751e6d01ac6c55b93c18226a60bdfba4a724efafd1",
+      "size_bytes": 2066633
+    },
+    {
+      "name": "starlette",
+      "version": "1.6.0",
+      "license": "BSD-3-Clause",
+      "metadata_url": "https://pypi.org/pypi/starlette/1.6.0/json",
+      "requires_python": ">=3.10",
+      "dependencies_for_target": [
+        "anyio<5,>=3.6.2"
+      ],
+      "wheel": "starlette-1.6.0-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/c8/cb/6a6a47d5b464bd08695d254f3da6e7986cc70c9fa5d778eda57538edfe56/starlette-1.6.0-py3-none-any.whl",
+      "sha256": "a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c",
+      "size_bytes": 75969
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.15.0",
+      "license": "PSF-2.0",
+      "metadata_url": "https://pypi.org/pypi/typing-extensions/4.15.0/json",
+      "requires_python": ">=3.9",
+      "dependencies_for_target": [],
+      "wheel": "typing_extensions-4.15.0-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl",
+      "sha256": "f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548",
+      "size_bytes": 44614
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "license": "MIT",
+      "metadata_url": "https://pypi.org/pypi/typing-inspection/0.4.2/json",
+      "requires_python": ">=3.9",
+      "dependencies_for_target": [
+        "typing-extensions>=4.12.0"
+      ],
+      "wheel": "typing_inspection-0.4.2-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl",
+      "sha256": "4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7",
+      "size_bytes": 14611
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.52.4",
+      "license": "BSD-3-Clause",
+      "metadata_url": "https://pypi.org/pypi/uvicorn/0.52.4/json",
+      "requires_python": ">=3.10",
+      "dependencies_for_target": [
+        "click>=7.0",
+        "h11>=0.8"
+      ],
+      "wheel": "uvicorn-0.52.4-py3-none-any.whl",
+      "download_url": "https://files.pythonhosted.org/packages/f1/79/4a20b54ab0491485ccd8c077db2d39187c7f12b3e15485d38a7be37c81b4/uvicorn-0.52.4-py3-none-any.whl",
+      "sha256": "f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1",
+      "size_bytes": 79871
+    }
+  ],
+  "package_wheel_bytes": 3250094,
+  "material_upstream_changes": "None; packaging only. No FastAPI or Uvicorn optional extras.",
+  "verification_build": {
+    "device": "macOS coordinator, arm64, emulated linux/amd64",
+    "recorded_on": "2026-09-04",
+    "build_flags": "--provenance=false --sbom=false (single unambiguous manifest)",
+    "manifest_digest": "sha256:82d723e60ac2610ba7722d61fe6ba700c9eed43a8ebad16f9e7e8db1130374a0",
+    "config_digest": "sha256:24041a3fdac168e5ab26cc9fbc6b0f5ba86ff9eac2f645c03d9559e03f3de434",
+    "archive_sha256": "sha256:50a6c9c76fe6ebc5ba6a2f46a49586830ef5659728522f29a821a0dbbd4a3b22",
+    "archive_bytes": 49528832,
+    "layers": 11,
+    "user": "10001:10001",
+    "checks_in_image": "37 passed with --network=none (8 contract, 10 runtime, 19 worker behaviour)",
+    "streaming": "first output event at 2.73s of a 15.98s generation, 417 deltas",
+    "note": "Historical 37-check Mac build, reported by Claude; these digests do not identify the later fail-closed 52-check source. Never pushed; not the Ubuntu deployment artifact."
+  },
+  "reported_follow_up": {
+    "recorded_on": "2026-09-04",
+    "reported_by": "Claude via requester",
+    "checks_in_image_reported": 52,
+    "check_breakdown": {
+      "contracts": 8,
+      "runtime": 10,
+      "worker": 34
+    },
+    "source_count_checked_by_codex": true,
+    "container_run_reproduced_by_codex": false,
+    "artifact_digests": null
+  },
+  "oci_export_builder": {
+    "version": "v0.33.0",
+    "image": "docker.io/moby/buildkit:v0.33.0@sha256:a461e7f0ce921972028acfbed628d45663d83e67ac1230722c2b34cf72760a0d",
+    "platform": "linux/amd64",
+    "license": "Apache-2.0",
+    "source": "https://github.com/moby/buildkit/releases/tag/v0.33.0",
+    "license_url": "https://github.com/moby/buildkit/blob/v0.33.0/LICENSE",
+    "manifest_url": "https://registry-1.docker.io/v2/moby/buildkit/manifests/sha256:a461e7f0ce921972028acfbed628d45663d83e67ac1230722c2b34cf72760a0d",
+    "compressed_layers_bytes": 112271581,
+    "verification": "Manifest bytes SHA-256 checked and config reports linux/amd64; metadata only, image not downloaded or run by Codex.",
+    "driver": "docker-container",
+    "exporter": "type=oci",
+    "storage_allowance_bytes": 2147483648,
+    "memory_bytes": 2147483648,
+    "cpus": 2
+  },
+  "ubuntu_build": {
+    "device": "Ubuntu worker, Ubuntu 24.04.4 LTS, x86_64",
+    "recorded_on": "2026-09-06",
+    "docker_server": "native unix:///var/run/docker.sock endpoint",
+    "platform": "linux/amd64",
+    "build_flags": "--pull=false --provenance=false --sbom=false",
+    "base_image_digest": "sha256:2f2e5a876c71a6757f55ec57f2add0225ddaf01c802a33fcc29073943f94d907",
+    "manifest_digest": "sha256:774218db4646daf7f350d7a90a17d2e90dd6dca472755220a0b462a82fbc090a",
+    "config_digest": "sha256:873cd89cb9a3305abf9af52525ebc804538dfc8cffd29d1912b12da799b49f5a",
+    "archive_sha256": "sha256:060134139b7bcb4e51d555d192b45ddba1c1a8e5d62150b1cd978760b8428fa9",
+    "archive_bytes_approx": 49579008,
+    "layers": null,
+    "checks_in_image": "Six C09 offline suites passed under --network=none in the authoritative Ubuntu build",
+    "wheels": "13 installed under --require-hashes; pip check found no broken requirements",
+    "health_observed": null,
+    "cross_check": "the manifest digest matches both the Ubuntu build output and docker image inspect; the config digest matches the build export output; the archive hash and byte size were observed separately",
+    "note": "The root-owned mode-0600 archive is outside the repository at /home/prachi/aegisforge-artifacts/aegisforge-worker-c09.tar. It has not yet been imported into K3s containerd."
+  }
+}

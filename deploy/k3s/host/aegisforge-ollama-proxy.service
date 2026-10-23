@@ -1,0 +1,14 @@
+[Unit]
+Description=AegisForge forwarder to the local Ollama loopback listener
+Requires=aegisforge-ollama-proxy.socket aegisforge-ollama-guard.service
+After=aegisforge-ollama-proxy.socket aegisforge-ollama-guard.service ollama.service
+
+[Service]
+# systemd-socket-proxyd ships with systemd; nothing is installed for this.
+ExecStart=SOCKET_PROXY_PATH 127.0.0.1:11434
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

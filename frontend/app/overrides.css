@@ -1,0 +1,522 @@
+/* Application-owned styling, loaded after app.css.
+ *
+ * Kept separate so app.css stays a clean derivation of the design track's
+ * stylesheet. No external font, no remote asset, no network request.
+ *
+ * Two colour families are kept apart on purpose:
+ *   - OPERATIONAL state (chips, health, evidence) keeps the design's meanings.
+ *   - PROSE colour is presentation only. Green code does NOT mean the code is
+ *     trusted or validated; blue link does NOT mean a verified citation.
+ */
+
+/* Prose greys are NEUTRAL, like every other grey in the palette. They used to
+   lean blue (#E6E9F0 text, #A8B0C2 muted, a #181C24 raised tone) and, because
+   the reading column is the largest block of colour on the Chat surface, that
+   tint set the temperature of the whole application. The link, code and
+   emphasis accents keep their hues — those are doing a job. See the header
+   note in app.css: a grey that is not R = G = B turns the room blue. */
+/* Three states, the same three app.css uses: a bare :root carrying the whole
+   LIGHT palette, a media query for viewers on the system default, and a
+   [data-theme] block for an explicit in-app choice.
+
+   This block used to be inverted — dark on bare :root, light only inside
+   @media (prefers-color-scheme: light) — which was survivable while the theme
+   could only come from the machine. It is not survivable now that the header
+   carries a toggle: choosing light on a dark-set machine matched neither the
+   media query nor any [data-theme] block, so the chrome went light while the
+   prose text stayed #ECECEC on it. Every value below is declared in all three
+   states, exactly as the note at the top of app.css requires. */
+:root {
+  /* The conversation's cap, shared by the replies and the composer.
+     76ch -> 88ch -> 104ch over two passes, because the column still read as
+     compact against a wide window. Note the unit is measured on the 13px UI
+     font while the prose sets at 16px, so 104ch here is nearer 90 rendered
+     characters a line than 104 — the top of the comfortable range rather than
+     past it, and in the same territory as other chat surfaces. */
+  --read-width: 104ch;
+
+  /* Every tier a shade darker than it was, and the raised tone is now the
+     same white as everything else. The reading column is the largest block of
+     text in the product, so this is where "dark in light mode" is felt. */
+  --prose-link: #0A4FAE;      /*  7.4:1 on white */
+  --prose-code: #0E5540;      /*  8.0:1 */
+  --prose-code-bg: rgba(14, 85, 64, .07);
+  --prose-emphasis: #7C3A0C;  /*  8.1:1 — was 5.9:1 */
+  --prose-text: #0B0B0B;      /* 19.6:1 */
+  --prose-muted: #3C3C3C;     /* 10.9:1 */
+  --prose-rule: rgba(60, 60, 60, .28);
+  --surface-raised: #FFFFFF;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --prose-link: #78B7FF;
+    --prose-code: #92D5AA;
+    --prose-code-bg: rgba(146, 213, 170, .10);
+    --prose-emphasis: #E6A36C;
+    --prose-text: #ECECEC;
+    --prose-muted: #ABABAB;
+    --prose-rule: rgba(171, 171, 171, .22);
+    --surface-raised: #1B1B1B;
+  }
+}
+
+:root[data-theme="dark"] {
+  --prose-link: #78B7FF;
+  --prose-code: #92D5AA;
+  --prose-code-bg: rgba(146, 213, 170, .10);
+  --prose-emphasis: #E6A36C;
+  --prose-text: #ECECEC;
+  --prose-muted: #ABABAB;
+  --prose-rule: rgba(171, 171, 171, .22);
+  --surface-raised: #1B1B1B;
+}
+
+/* ---- reading column -------------------------------------------------- */
+
+.thread { scroll-behavior: smooth; }
+
+.thread > .turn,
+.composer .composer-box,
+.context-notice {
+  max-width: var(--read-width);
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+.turn-user .bubble { margin-left: auto; max-width: 85%; }
+
+.prose {
+  font-size: 16px;
+  line-height: 1.62;
+  color: var(--prose-text);
+  overflow-wrap: anywhere;
+}
+
+.prose > *:first-child { margin-top: 0; }
+.prose > *:last-child { margin-bottom: 0; }
+.prose p { margin: 0 0 .95em; }
+
+.prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+  color: var(--prose-emphasis);
+  line-height: 1.3;
+  margin: 1.5em 0 .5em;
+}
+.prose h2 { font-size: 1.28em; }
+.prose h3 { font-size: 1.14em; }
+.prose h4, .prose h5, .prose h6 { font-size: 1em; }
+
+.prose strong { color: var(--prose-emphasis); font-weight: 650; }
+.prose em { font-style: italic; }
+.prose del { opacity: .65; }
+
+.prose ul, .prose ol { margin: 0 0 1em; padding-left: 1.5em; }
+.prose li { margin: .3em 0; }
+.prose li > ul, .prose li > ol { margin: .3em 0 .1em; }
+
+.prose blockquote {
+  margin: 1em 0;
+  padding: .1em 0 .1em 1em;
+  border-left: 3px solid var(--prose-rule);
+  color: var(--prose-muted);
+}
+
+.prose hr { border: 0; border-top: 1px solid var(--prose-rule); margin: 1.6em 0; }
+
+/* Links: recognisable without relying on colour alone. */
+.prose a {
+  color: var(--prose-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose a:hover { text-decoration-thickness: 2px; }
+.link-host { color: var(--prose-muted); font-size: .85em; }
+.link-blocked {
+  color: var(--prose-muted);
+  border-bottom: 1px dashed var(--prose-rule);
+  font-style: italic;
+}
+
+/* Inline code and code blocks. Green is presentation, not a trust signal. */
+.prose code {
+  font-family: var(--font-data);
+  font-size: .92em;
+  color: var(--prose-code);
+  background: var(--prose-code-bg);
+  padding: .08em .32em;
+  border-radius: 3px;
+}
+
+.code-block {
+  margin: 1em 0;
+  border: 1px solid var(--prose-rule);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5em;
+  padding: .35em .6em;
+  border-bottom: 1px solid var(--prose-rule);
+  font-family: var(--font-data);
+  font-size: .78em;
+  color: var(--prose-muted);
+}
+.code-lang { text-transform: lowercase; letter-spacing: .04em; }
+.code-copy {
+  font: inherit;
+  color: var(--prose-muted);
+  background: transparent;
+  border: 1px solid var(--prose-rule);
+  border-radius: 4px;
+  padding: .1em .55em;
+  cursor: pointer;
+}
+.code-copy:hover { color: var(--prose-text); }
+.code-block pre {
+  margin: 0;
+  padding: .75em .8em;
+  overflow-x: auto;          /* the block scrolls, the page never does */
+}
+.code-block pre code {
+  background: none;
+  padding: 0;
+  color: var(--prose-code);
+  font-size: .88em;
+  line-height: 1.5;
+}
+.code-open { margin: 0; padding: .3em .8em .5em; font-size: .8em; color: var(--prose-muted); }
+
+.table-scroll { overflow-x: auto; margin: 1em 0; }
+.prose table { border-collapse: collapse; font-size: .94em; min-width: 100%; }
+.prose th, .prose td {
+  border: 1px solid var(--prose-rule);
+  padding: .4em .65em;
+  text-align: left;
+  vertical-align: top;
+}
+.prose th { color: var(--prose-emphasis); font-weight: 600; }
+
+/* ---- context notice beside a reply ----------------------------------- */
+
+.context-notice {
+  margin: .4em auto 1.1em;
+  padding: .5em .7em;
+  border-left: 3px solid var(--prose-emphasis);
+  background: rgba(230, 163, 108, .08);
+  font-size: .87em;
+  color: var(--prose-muted);
+  border-radius: 0 4px 4px 0;
+}
+.context-notice summary { cursor: pointer; color: var(--prose-text); }
+.context-notice dl { margin: .5em 0 0; font-size: .95em; }
+.context-notice dt { color: var(--prose-muted); }
+.context-notice dd { margin: 0 0 .3em; }
+
+/* ---- application notices (not model speech) -------------------------- */
+
+.app-notice {
+  max-width: var(--read-width);
+  margin: .5em auto;
+  padding: .55em .75em;
+  border-radius: 5px;
+  border: 1px solid var(--prose-rule);
+  background: var(--surface-raised);
+  font-size: .9em;
+}
+/* --st-fault, not a hardcoded red. The literal #F0A79F here had no light
+   variant, so an error notice measured 1.89:1 on the light ground — the one
+   message that most needs to be read was the least readable. The token is
+   themed in both directions. */
+.app-notice[data-kind="error"] { border-color: var(--st-fault); color: var(--st-fault); }
+.app-notice[data-kind="warn"]  { border-color: var(--prose-emphasis); }
+.app-notice .why { color: var(--prose-muted); display: block; margin-top: .2em; }
+
+/* ---- navigation ------------------------------------------------------ */
+
+/* The design marks the current surface with aria-current; the app used a
+   class. Support both so the marker is never invisible. */
+.surface-link[aria-current="page"],
+.surface-link.is-active { color: var(--prose-text); }
+
+.surface-link, .nav-item {
+  display: flex;
+  align-items: center;
+  gap: .55em;
+  text-align: left;
+}
+.surface-link .k { margin-left: 0; flex: 0 0 auto; }
+.surface-link[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+
+/* The current conversation is a filled pill, matching the design track. It
+   used to carry an amber left border, which spent a state colour — amber means
+   caution everywhere else in this palette — on "you are here". */
+.nav-item[aria-current="true"] {
+  color: var(--prose-text);
+  background: var(--wall-active);
+}
+
+/* ---- panel toggles --------------------------------------------------
+ * The two text buttons that used to live here ("Menu" and "Details") were
+ * display:none until the window got narrow, so on a desktop there was no way
+ * to reclaim the middle column at all. They are now the .panel-toggle control
+ * defined in app.css — visible at every width, folding the grid track on a
+ * wide window and opening an overlay on a narrow one. Nothing is redeclared
+ * here; app.css owns the control, and app.js owns the state.
+ *
+ * .scrim keeps its app.css definition too. It is only raised by the overlay
+ * media queries, so on a wide window it stays inert. */
+
+/* Keeps the glass app.css gives it: this button genuinely floats over the
+   conversation, and it sits outside .thread, so its backdrop-filter can sample
+   the thread painted beneath it rather than being cut off by that element's
+   mask. Only the geometry is set here. */
+/* A round icon rather than a labelled pill, and centred over the reading
+   column rather than pushed into the corner: the arrow already says which
+   way it goes, and centred is where the eye is when it is following a reply
+   down the page. Sized past the 24px touch floor.
+
+   Anchored to the composer, not to a fixed offset from the bottom of .main.
+   The old 7.5rem was measured against one particular composer height, and
+   the composer is not one height: the prompt box grows to 14em as you type
+   and the working indicator adds a row above it. Either one slid the button
+   down over the box it was supposed to sit above. bottom:100% cannot. */
+.composer { position: relative; }
+
+.jump-latest {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 100%;
+  margin-bottom: var(--sp-2);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--text-dim);
+  border: 1px solid var(--glass-edge);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: var(--glass-hi), var(--glass-shadow);
+  transition: color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+}
+.jump-latest svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jump-latest:hover { color: var(--text); border-color: var(--text-faint); }
+.main { position: relative; }
+
+/* The overlay behaviour for both walls now lives in app.css, keyed off
+   .app[data-nav] / .app[data-rail] rather than a per-panel [data-open]. Only
+   the reading column needs a narrow-window adjustment here. */
+@media (max-width: 760px) {
+  :root { --read-width: 100%; }
+}
+
+/* ---- composer -------------------------------------------------------- */
+
+.composer-input {
+  font-size: 15px;
+  line-height: 1.5;
+  min-height: 3.2em;
+  max-height: 14em;      /* grows, but never swallows the conversation */
+  resize: vertical;
+  overflow-y: auto;
+}
+.composer-input:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ---- Control Center grid -------------------------------------------- */
+
+/* Two columns only where there is room for them. The rail is ~14rem wide, so a
+   9rem label column left the value one character wide and it rendered
+   vertically. Stack there instead. */
+.kv div {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .1em;
+  padding: .3em 0;
+  border-bottom: 1px solid rgba(171, 171, 171, .08);
+}
+.kv div:last-child { border-bottom: 0; }
+
+.block .kv div,
+.body .kv div {
+  grid-template-columns: minmax(8rem, 13rem) 1fr;
+  gap: .4em 1rem;
+  align-items: baseline;
+}
+
+@media (max-width: 900px) {
+  .block .kv div,
+  .body .kv div { grid-template-columns: 1fr; gap: .1em; }
+}
+.kv dt { color: var(--prose-muted); }
+.kv dd {
+  margin: 0;
+  text-align: left;
+  overflow-wrap: break-word;   /* wrap at word boundaries, not mid-word */
+  word-break: normal;
+  min-width: 0;
+}
+.rail .kv dt { font-size: .82em; }
+.kv dd.num { font-variant-numeric: tabular-nums; }
+
+/* ---- events rail ----------------------------------------------------- */
+
+.events .kind { white-space: nowrap; }
+.events .count { opacity: .75; }
+.events li[data-stream] { font-variant-numeric: tabular-nums; }
+
+.rail details.quiet > summary {
+  cursor: pointer; list-style: none; font: inherit; opacity: .78;
+}
+.rail details.quiet > summary::-webkit-details-marker { display: none; }
+.rail details.quiet > summary::after { content: " ▸"; opacity: .6; }
+.rail details.quiet[open] > summary::after { content: " ▾"; }
+
+/* ---- accessibility --------------------------------------------------- */
+
+:focus-visible {
+  outline: 2px solid var(--prose-link);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread { scroll-behavior: auto; }
+  .rail, .nav { transition: none; }
+}
+
+/* ---- conversation management ----------------------------------------- */
+
+.chat-search {
+  width: 100%;
+  font: inherit;
+  font-size: .9em;
+  color: var(--prose-text);
+  background: var(--surface-raised);
+  border: 1px solid var(--prose-rule);
+  border-radius: 5px;
+  padding: .35em .6em;
+  margin: 0 0 .5em;
+}
+.search-state { margin: 0 0 .5em; }
+
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: .35em;
+}
+.chat-row .nav-item { flex: 1 1 auto; min-width: 0; }
+.chat-row .nav-item .title {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-row .pin-mark { flex: 0 0 auto; opacity: .85; }
+.chat-row .snippet {
+  display: block;
+  font-size: .82em;
+  color: var(--prose-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* The row menu must be reachable by keyboard and touch, not only on hover. */
+.row-menu-btn {
+  flex: 0 0 auto;
+  font: inherit;
+  color: var(--prose-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0 .35em;
+  cursor: pointer;
+}
+.row-menu-btn:hover, .row-menu-btn:focus-visible {
+  color: var(--prose-text);
+  border-color: var(--prose-rule);
+}
+/* Border, radius, fill and shadow come from the shared floating-surface rule
+   in refinix.css, so this menu matches the + menu and the model popover. */
+.row-menu {
+  position: absolute;
+  z-index: 50;
+  min-width: 12rem;
+  padding: var(--sp-1);
+}
+.row-menu button {
+  display: block; width: 100%; text-align: left;
+  font: inherit; font-size: .9em;
+  color: var(--prose-text);
+  background: transparent; border: 0; border-radius: 4px;
+  padding: .35em .55em; cursor: pointer;
+}
+.row-menu button:hover, .row-menu button:focus-visible {
+  background: rgba(171, 171, 171, .12);
+}
+.row-menu button[data-danger] { color: var(--st-fault); }
+
+.rename-input {
+  flex: 1 1 auto; min-width: 0;
+  font: inherit; font-size: .9em;
+  color: var(--prose-text);
+  background: var(--surface-raised);
+  border: 1px solid var(--prose-link);
+  border-radius: 4px;
+  padding: .3em .45em;
+}
+
+dialog.confirm {
+  border: 1px solid var(--prose-rule);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--prose-text);
+  max-width: 30rem;
+  padding: 1.1em 1.2em;
+}
+dialog.confirm::backdrop { background: rgba(0, 0, 0, .5); }
+dialog.confirm h2 { margin: 0 0 .5em; font-size: 1.05em; }
+dialog.confirm p { margin: 0 0 1em; color: var(--prose-muted); font-size: .92em; }
+dialog.confirm .row { display: flex; gap: .5em; justify-content: flex-end; }
+
+.draft-restored {
+  font-size: .82em;
+  color: var(--prose-emphasis);
+}
+
+/* AF-014 Proof Card, rendered inside the Control Center's work card.
+   Deliberately plain: this is evidence, not a dashboard. The source line is
+   secondary text beside each value so a reader can see at a glance which
+   values were measured and which are absent. */
+.proof-card {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+}
+.proof-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+.proof-attempt { margin-bottom: 1rem; }
+.proof-attempt h4 { margin: 0 0 0.35rem; font-size: 0.85rem; font-weight: 600; }
+.proof-source { opacity: 0.65; font-size: 0.8em; }
+.proof-note, .proof-validation { font-size: 0.8rem; opacity: 0.8; }
+.proof-artifacts, .proof-citations { margin: 0.35rem 0; padding-left: 1.1rem; }
+.proof-artifacts li, .proof-citations li { font-size: 0.8rem; }
+.btn-proof { margin-right: 0.35rem; }

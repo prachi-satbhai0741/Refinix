@@ -1,0 +1,203 @@
+name: Internal test packages
+
+# Builds unsigned internal test packages for macOS (arm64), Windows (x64) and
+# Ubuntu (x86_64) from one source snapshot, with desktop/build.py on each OS's
+# own runner. Started by hand only. Nothing here signs, publishes, tags,
+# releases or writes to the repository; packages are kept as run artifacts
+# for testers. See docs/releases.md, "Internal test artifacts".
+#
+# Caches hold verified *inputs* only (pip wheels checked by --require-hashes,
+# engine archives and AppImage tools checked against their pinned SHA-256 by
+# the driver before use). Built packages are never cached or restored.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Internal version, for example 0.1.0-internal.1"
+        required: true
+        type: string
+      build_set:
+        description: "Build-set label, for example bs-0001"
+        required: true
+        type: string
+      lanes:
+        description: "Which packages to build"
+        required: true
+        default: all
+        type: choice
+        options: [all, macos-arm64, windows-x64, linux-x64]
+      rebuild_reason:
+        description: "Why these inputs are built again (empty for a new build)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: internal-packages-${{ inputs.build_set }}
+  cancel-in-progress: false
+
+jobs:
+  lanes:
+    name: Choose lanes
+    runs-on: ubuntu-24.04
+    outputs:
+      include: ${{ steps.choose.outputs.include }}
+    steps:
+      - id: choose
+        env:
+          LANES: ${{ inputs.lanes }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          lanes = [
+              {"lane": "macos-arm64", "runner": "macos-15",
+               "locks": "desktop/requirements-macos.lock backend/requirements-runtime.lock desktop/requirements-build-macos.lock"},
+              {"lane": "windows-x64", "runner": "windows-2025",
+               "locks": "desktop/requirements-windows.lock backend/requirements-runtime.lock backend/requirements-render.lock desktop/requirements-build-windows.lock"},
+              {"lane": "linux-x64", "runner": "ubuntu-24.04",
+               "locks": "desktop/requirements-linux.lock backend/requirements-runtime.lock backend/requirements-render.lock desktop/requirements-build-linux.lock"},
+          ]
+          wanted = os.environ["LANES"]
+          chosen = [item for item in lanes if wanted in ("all", item["lane"])]
+          print("include=" + json.dumps(chosen))
+          PY
+
+  package:
+    name: ${{ matrix.lane }}
+    needs: lanes
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.lanes.outputs.include) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      # Inputs reach scripts through the environment, never by interpolation.
+      REFINIX_VERSION: ${{ inputs.version }}
+      REFINIX_BUILD_SET: ${{ inputs.build_set }}
+      REFINIX_REBUILD_REASON: ${{ inputs.rebuild_reason }}
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check the requested labels
+        run: |
+          [[ "$REFINIX_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-internal\.[0-9]+$ ]] || {
+            echo "version must look like 0.1.0-internal.1"; exit 1; }
+          [[ "$REFINIX_BUILD_SET" =~ ^bs-[0-9A-Za-z-]{1,32}$ ]] || {
+            echo "build_set must look like bs-0001"; exit 1; }
+
+      - name: Check out the source snapshot
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # The runner context only exists inside steps, never in job-level env.
+      - name: Name the cache folder
+        run: echo "REFINIX_CACHE=$RUNNER_TEMP/refinix-build-cache" >> "$GITHUB_ENV"
+
+      # Ubuntu: the system Python 3.12, because the GTK/WebKitGTK bindings come
+      # from Ubuntu's own python3-gi package rather than a wheel.
+      - name: Install Ubuntu build packages
+        if: matrix.lane == 'linux-x64'
+        timeout-minutes: 17
+        uses: ./.github/actions/refinix-apt
+        with:
+          packages: >-
+            python3-venv python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+            libwebkit2gtk-4.1-0 dpkg-dev libpython3.12
+
+      # macOS and Windows: python.org's pinned 3.13 installer, verified;
+      # Ubuntu: the distribution's python3.12 (desktop/python_runtime.py).
+      - name: Set up the pinned build Python
+        uses: ./.github/actions/refinix-python
+        with:
+          lane: ${{ matrix.lane }}
+          venv: ${{ runner.temp }}/venv
+
+      - name: Restore verified pip downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/pip-cache
+          key: pip-${{ matrix.lane }}-${{ runner.arch }}-${{ hashFiles('desktop/requirements-*.lock', 'backend/requirements-*.lock') }}
+
+      - name: Install pinned dependencies
+        env:
+          PIP_CACHE_DIR: ${{ runner.temp }}/pip-cache
+        run: |
+          args=()
+          for lock in ${{ matrix.locks }}; do args+=(-r "$lock"); done
+          python -m pip install --require-hashes "${args[@]}"
+          python -m pip check
+
+      - name: Restore verified engine archives and packaging tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/refinix-build-cache
+          key: engine-${{ matrix.lane }}-${{ runner.arch }}-${{ hashFiles('desktop/engine/engine-pins.json', 'desktop/packaging-tools.json') }}
+
+      - name: Check Inno Setup is present
+        if: matrix.lane == 'windows-x64'
+        run: |
+          if ! command -v iscc >/dev/null \
+              && [ ! -f "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ] \
+              && [ ! -f "/c/Program Files/Inno Setup 6/ISCC.exe" ]; then
+            echo "Inno Setup 6 (ISCC.exe) is not on this runner image."
+            echo "Use a Windows image that includes it, or set ISCC to its path."
+            exit 1
+          fi
+
+      - name: Run the build driver's offline checks
+        run: python -m unittest desktop.test_build -q
+
+      # The internal channel's public trust root and feed, once the key holder
+      # has added them (scripts/update_repository.py init). Without them the
+      # package says it cannot check for updates.
+      - name: Choose update trust files
+        run: |
+          flags=""
+          if [ -f desktop/updates/internal-root.json ]; then
+            flags="$flags --trust-root desktop/updates/internal-root.json"
+          fi
+          if [ -f desktop/updates/internal-feed.json ]; then
+            flags="$flags --update-feed desktop/updates/internal-feed.json"
+          fi
+          echo "REFINIX_UPDATE_FLAGS=$flags" >> "$GITHUB_ENV"
+
+      - name: Show the build plan
+        run: |
+          python desktop/build.py --version "$REFINIX_VERSION" --build-set "$REFINIX_BUILD_SET" \
+            --source-commit "$GITHUB_SHA" --cache "$REFINIX_CACHE" $REFINIX_UPDATE_FLAGS --plan
+
+      # A GitHub-hosted runner is a fresh virtual machine discarded after the
+      # job, so the Windows installer may be installed and removed there to
+      # read its embedded identity back.
+      - name: Build the package
+        run: |
+          extra=()
+          if [ -n "$REFINIX_REBUILD_REASON" ]; then
+            extra+=(--rebuild-reason "$REFINIX_REBUILD_REASON")
+          fi
+          python desktop/build.py --version "$REFINIX_VERSION" --build-set "$REFINIX_BUILD_SET" \
+            --source-commit "$GITHUB_SHA" --cache "$REFINIX_CACHE" --out out \
+            --disposable-host $REFINIX_UPDATE_FLAGS "${extra[@]}"
+
+      - name: Show the recorded hashes
+        run: cat out/*.sha256
+
+      - name: Keep the package and its records
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: refinix-${{ inputs.version }}-${{ matrix.lane }}
+          path: |
+            out/Refinix-*
+            out/refinix_*
+            out/build-record-*.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
