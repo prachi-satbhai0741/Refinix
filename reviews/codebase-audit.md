@@ -3,20 +3,20 @@
 ## Review contract
 
 - Requested: 24 October 2026. Review the entire repository vertically across workflows and horizontally across subsystems, over multiple sessions as needed.
-- Review only. No implementation, new review tasks/chats, delegation, installations, live inference, deployments or device changes. Git/GitHub writes were excluded in Sessions 01–03; Session 04 explicitly authorises publishing these findings in a non-mergeable context PR only.
+- Review only. No implementation, new review tasks/chats, delegation, installations, live inference, deployments or device changes. Git/GitHub writes were excluded in Sessions 01–03; Session 04 authorises the non-mergeable context PR, and Session 05 authorises continuing the review and writing findings into that same PR.
 - Review records are explicitly requested. Application source and protected project documentation stay unchanged.
 - Tests are inspected as source; executing tests requires separate permission under AGENTS.md.
 - Expected load: one local desktop user, potentially concurrent chats/jobs and background operations. Deferred workers and managed deployment remain in scope, with their product status distinguished from Beta.
 - A finding requires a concrete trigger, reachable code path, observable consequence, exact source references and a minimal correction recommendation. Static evidence is not a runtime reproduction.
 
-## Current checkpoint — Session 04 re-review and independent-review context
+## Current checkpoint — Session 05 pairing, revocation and release-evidence review
 
-Re-reviewed both findings batches at the unchanged source commit. **22 retained static findings: 4 P1 and 18 P2; R01 remains withdrawn/unresolved.** Session 04 records the new counterchecks and the independent-review handoff. No finding is approval to implement. The whole-codebase audit remains open; no application implementation or test execution has been performed.
+Continued the full-source audit at the unchanged source commit. **27 retained static findings: 4 P1 and 23 P2; R01 remains withdrawn/unresolved.** Session 05 adds R24–R28: three deferred-worker trust/state defects and two release-tooling correctness/evidence defects. Session 04 preserves the prior re-review and merge guard. No finding is approval to implement. The whole-codebase audit remains open; no application implementation or test execution has been performed.
 
 ### Independent reviewer: start here
 
 - Review the findings against source commit `e6b9858d880c8200cce6e8a4ca2784190c662f44`. Its tree `5bf84e96e683d2bfe9cbf5fd6160587054a7ee46` also matches the source snapshot in [PR #86](https://github.com/prachi-satbhai0741/Refinix/pull/86). The audit report is added separately; application source is not changed.
-- Batch 1 is R02–R17, with the Session 02 corrections taking precedence over Session 01 history. Batch 2 is R18–R23, described in Session 03. **Do not implement R01** as an established expiry bug; post-approval lifetime remains a policy question.
+- Batch 1 is R02–R17, with the Session 02 corrections taking precedence over Session 01 history. Batch 2 is R18–R23, described in Session 03. Batch 3 is R24–R28, described in Session 05. **Do not implement R01** as an established expiry bug; post-approval lifetime remains a policy question.
 - All findings are static review conclusions. No tests, adversarial payloads, model calls, installers or device journeys were run for this audit. Existing earlier project qualification is separate evidence, not fresh validation of these cases.
 - For each ID, return `accept`, `reject` or `needs evidence`, with a source-supported reason; correct severity and product exposure where needed. Reconcile any overlap with PR #86. A review pass should identify the coherent scope eligible for a later implementation decision; this context PR contains no fixes and must remain unmerged.
 - R07 is the P1 local-sandbox journal issue. R09/R10 are P1 **deferred worker** issues. R12 is P1 **operator/public-verifier tooling**, not the in-app updater. R14 is a retained credential path requiring an observer able to read process arguments. Do not flatten these into claims that all four P1s affect ordinary packaged-Beta use.
@@ -417,3 +417,105 @@ Baseline remains branch `aditya`, HEAD `e6b9858d880c8200cce6e8a4ca2784190c662f44
 ### Boundaries
 
 The re-review used static source and Git/GitHub reads. No test, payload, application, model, installer, package journey or device was executed. GitHub writes for the report-only context PR are the explicit exception introduced in this user message. No implementation approval or completed full-repository audit is claimed.
+
+### Publication receipt
+
+- Created and attached [PR #88 — Review only: both audit batches for independent approval — DO NOT MERGE](https://github.com/prachi-satbhai0741/Refinix/pull/88).
+- GitHub returned **`draft: true`, `mergeable: false`, `mergeable_state: dirty`, `auto_merge: null`** after creation. This is an observed merge conflict, not a title/label convention.
+- Head `28d756301c9b62ee5366b09c51c0512ac62bae0b`; isolated base `739c9c0f247a5cced5fe76fe50f832bbb551efb7`. Both have the audited source as parent; neither production branch was updated.
+- Verified the PR file list and audited-source-to-head comparison: **one added file, `reviews/codebase-audit.md`**. Application source, product authorities and dependency/configuration files match the audited source.
+- The immutable report published in the PR ends at the Session 04 boundaries paragraph. This local receipt is appended after publication; the PR description carries the merge-verification receipt. Local request/change ledger appends were not included in the remote context commit.
+- The connector rejected Git-tree creation with an integration permission error. Publication used the existing authenticated GitHub CLI with the user's current explicit PR permission; no credentials were read or printed. No repository-wide rules/settings were changed, and no message or review request was sent to another agent.
+
+## Session 05 — 24 October 2026 — Continue review and publish findings in PR #88
+
+The user asked to proceed with the review and write findings in the PR itself. This authorises updating the existing review-only PR and its report, not application changes, tests, merge or deployment. Baseline remains local branch `aditya`, source commit `e6b9858d880c8200cce6e8a4ca2784190c662f44`, source tree `5bf84e96e683d2bfe9cbf5fd6160587054a7ee46`.
+
+What this repository does: Refinix is an offline-first desktop AI workbench with local Chat, Code, Documents and a user-initiated signed update path. Retained distributed-worker code serves bounded jobs for separately owned workspaces. This pass assumes one desktop user with concurrent operations; the explicitly separate worker API, host CLI and executor processes matter even at one API replica.
+
+### Coverage added or deepened
+
+This table supplements, rather than replaces, the earlier partial coverage ledger. References are repository-relative; reading a test is not running it. Search results and truncated output are not counted as full-file reads.
+
+| Area | Source inspected | Boundary / remaining work |
+| --- | --- | --- |
+| HTTP and browser event recovery | `server.py:4130-4199,4298-4773`; `app.js:151-160,366-386,5720-5731,6010-6075`; `server.py:157-184` | Checked body limits, Host/Origin checks, containment, SSE shutdown, sequence repair and polling. Much of the UI, rendering/accessibility and other HTTP consumers remain partial. No browser/server was started. |
+| Pairing and revocation | Coordinator `pairing.py` and worker `pairing.py` / `pairing_cli.py` in full; coordinator `server.py:2997-3352,3390-3548`; worker authentication/pairing routes and `831-910`; focused `credentials.py` store/deletion paths; `db.py:2892-3100` | Traced canonical state, OS-store removal, shared-file updates, existing streams and executor cancellation. Earlier worker reads remain subject to their recorded limits; this is not a full deployment or TLS/device qualification. |
+| Deferred execution plumbing | Worker `dispatch.py:270-407,450-519`; `executor.py:215-282,440-end`; Redis adapter `1-238`; executor deployment in full, selected worker/network/validation policy | Reviewed API/executor revocation signal and its failure handling. Remaining Redis helpers, pod construction, validation/RBAC/network policy and image provenance still need completion. The validation manifest's truncated middle was not treated as fully read. |
+| Release assembly and qualification | `scripts/release_assemble.py` and `qualification_record.py` in full; `qualify_macos.py`, `qualify_windows.py`, `qualify_package_launch.py` in full; `qualify_update_journey.py:173-212,242-323,328-454`; `.github/workflows/release.yml` in full | Byte binding, two-host Mac checks, native launch/cleanup, assembly admission and selected update journeys were reviewed statically. No native command, installer, package or journey was executed. Build driver and the remaining qualification scripts remain incomplete. |
+| Signed-feed publication | `scripts/update_repository.py:120-219,316-364,413-1183`; connected client `updates.py:465-510,848-960,1372-1402` | Stage, advance, refresh, withdrawal, root rotation, exact-feed verification and bundle assembly were inspected. Other key-management/init/internal-channel ranges and the CLI tail remain partial/unread. No key or live feed was accessed. |
+| Counterexample/test source | Pairing tests in `worker/test_executor.py:1205-1303`, worker credential tests `test_worker_app.py:357-387`, coordinator revocation tests `test_dispatch.py:749-800`, release-record tests `scripts/test_release_assemble.py:179-213`, native-qualifier test `scripts/test_verify_public.py:162-193`, withdrawal fixture/test `coordinator/test_updates_beta.py:84-125,438-461`; focused workflow/test searches | Existing coverage informs the gaps below. No test command, reproduction, adversarial payload or model was run. |
+
+GitHub reconciliation: PR #86 still returned no published comments/reviews when checked again during this pass. This proves only that no findings were published on the inspected timeline; it does not establish whether another agent is running or has unpublished work. PR #88 was still a draft with `mergeable=false` and `mergeable_state=dirty` before updating it. Its isolated base and deliberate review-document conflict must remain unchanged.
+
+### R24 — P2 — Separate pairing processes can restore spent codes and lose relationships
+
+- Exposure: **deferred worker pairing**, not packaged Beta. One API replica is sufficient because the host CLI is a separate process.
+- Source: `backend/worker/pairing.py:105-108,125-145,149-165,181-224,246-259`; `backend/worker/pairing_cli.py:71-95`; API singleton and redemption in `backend/worker/app.py:120-122,376-378`. Single-use authority is explicit in `docs/security.md:145-151,195-197`.
+- Trigger: an existing code X is on disk. A host `code` command loads that state, then the running API redeems X and saves relationship B. Before the CLI exits, it adds its new code Y and saves its earlier snapshot. Equivalently, two mutating processes can both load before either saves.
+- Evidence: `RLock` only serializes threads in one store instance. Atomic replace prevents a torn file, but it does not serialize separate read/modify/write transactions. `issue_code` and `revoke` never reload their cached state; `redeem` reloads but holds no process lock through saving. In the ordering above the CLI overwrites the API's completed save, restoring X and removing B from durable state. A subsequent redemption explicitly reloads that resurrected code and can spend it again before its original TTL expires.
+- Consequence: a supposedly single-use code becomes usable again, and a successfully paired relationship can disappear after a reload/restart. The same stale-snapshot mechanism can overwrite a revocation. Reusing a code still requires possession of that high-entropy code; this is not a claim that an unauthenticated stranger can guess it.
+- Countercheck: the default deployment has one API replica and redemption does not yield during its synchronous store operation, so two HTTP requests on that default loop are not the asserted race. The source explicitly supports a concurrent host CLI. Private temporary filenames, fsync and mode `0600` protect different properties and do not prevent lost updates. The documented restart requirement for host-local revocation is not itself reported as a defect.
+- Minimal correction recommendation: give all mutations one process owner, or lock across processes around reload, validation, mutation and save for every mutating operation. Preserve single-use behavior, expiry and hashed-only storage.
+- Test gap: `test_executor.py:1291-1297` covers a sequential CLI issue followed by API redemption. The inspected cases do not interleave two stores' mutations or assert that a consumed code cannot be restored by a concurrent writer. No such interleaving was executed here.
+
+### R25 — P2 — Worker revocation acknowledges success after losing its only executor fence
+
+- Exposure: **deferred worker/executor revocation**. Separate API and executor processes have separate Redis connections.
+- Source: `backend/worker/app.py:390-412`; `backend/worker/dispatch.py:303-319,493-498`; `backend/worker/executor.py:229-272`; `backend/worker/redis_client.py:183-200`; `deploy/k3s/40-executor.yaml:90-108`. Required in-flight fencing: `docs/security.md:184-189`.
+- Trigger: a relationship has work already queued/running. Its authenticated DELETE succeeds in deleting the worker hash, but the API's Redis SET fails before the revocation key is stored (for example, an API-connection fault while the executor retains its healthy Redis connection).
+- Evidence: `DispatchQueue.revoke_relationship` catches both Redis exception types and discards them; the route still returns HTTP 204. The executor checks the Redis relationship cancellation key, not the API's pairing file, and no retry/outbox is retained. The per-attempt lease epoch only protects ownership of that lease; it is not rechecked against the pairing file's bumped epoch.
+- Consequence: new authenticated requests are refused, but previously admitted work can continue until its ordinary limit or completion despite the successful revocation acknowledgement. Retrying the same authenticated DELETE is also obstructed by the already-deleted credential. This is distinct from whether the coordinator accepts the eventual output (R26).
+- Countercheck: if Redis is unavailable to the executor too, its poll stops work on a Redis exception. The finding requires a missing revocation write while executor Redis access remains or becomes healthy, not a claim that all Redis outages leave work running. The deployed executor deliberately has no pairing-credential mount; giving it secret hashes is not the recommended repair.
+- Minimal correction recommendation: make revocation a durable, retryable fencing operation before reporting completion. Retain enough non-secret revocation intent to retry after the hash is removed, and preserve a visible failed/pending outcome if the executor fence is not committed.
+- Test gap: the inspected tests cover successful cancellation/revocation and invalid credentials; they do not fail the API's revocation SET while keeping the executor's connection healthy. Static path confirmed; fault behavior not executed.
+
+### R26 — P2 — Locally revoked worker streams can keep writing canonical attempt output
+
+- Exposure: **deferred coordinator remote Chat**; ordinary packaged Beta disables mesh.
+- Source: `backend/coordinator/server.py:3320-3349,3459-3480,3500-3515`; `backend/coordinator/dispatch.py:531-559`; `backend/coordinator/db.py:2957-2987,3066-3100`; worker stream lifetime in `backend/worker/app.py:856-906`.
+- Trigger: a remote attempt is streaming. The user revokes its pairing locally, but the separate remote DELETE fails before reaching the worker while the existing stream remains usable. The coordinator intentionally still revokes the relationship and marks its attempt/job interrupted.
+- Evidence: that local fence changes database state but does not signal the consuming thread. Its cancellation callback only checks the job's separate `_cancelled` set and application shutdown. `keep` unconditionally appends every subsequent delta and emits a new canonical event; `db.append_output` and `append_event` have no relationship/state fence. The client already owns its credential copy, so deleting it from the OS store does not close an existing stream. The worker authenticates an event stream at entry rather than consulting the coordinator's local relationship state.
+- Consequence: output from an authority the user has just revoked can continue mutating the canonical interrupted attempt and reaching the UI until the stream ends or its other bounds expire. A completion/revocation interleaving can also pass the validating transition before revocation, then insert an assistant message before the later completion transition refuses.
+- Countercheck: lifecycle validation does reject `interrupted -> validating/completed`; this is **not** a claim that ordinary late completion always resurrects the attempt as completed. Existing output already accepted before revocation should remain historical. The defect is accepting new output/final writes after the fence. A successful remote fence often narrows the window; local authority must also hold when the notification fails.
+- Minimal correction recommendation: signal active consumers when revocation is recorded, and enforce the relationship/attempt fence inside the serialized output and final-message commit boundary. Stop accepting new deltas after the fence without rewriting the preserved interrupted history.
+- Test gap: `test_dispatch.py:764-777` asserts the database state immediately after fencing, without calling the live consumer again or interleaving final-message insertion. No live stream or race was run in this review.
+
+### R27 — P2 — Mac qualification merges checks without binding them to the same packages
+
+- Exposure: **release-qualification tooling**, especially manual reruns or mixed artifacts. This is an evidence-binding bug, not a claim of a network attacker controlling trusted release operators.
+- Source: `scripts/qualify_macos.py:124-168,189-217`; `scripts/qualification_record.py:90-122,143-168`; consumer `scripts/release_assemble.py:302-322`; normal workflow `.github/workflows/release.yml:288-297`.
+- Trigger: run first-stage qualification on package set A. Before the floor run, replace the ZIP with a separately rebuilt ZIP B bearing the same public version, or accidentally select another set, then run `--floor --merge <A's partial report>`.
+- Evidence: `main` copies only the earlier report's checks into the new report. It never compares the earlier `packages`, lane, source or identities with the current files. The floor branch launches the DMG app and returns before the ZIP seal, DMG/ZIP equality, binary-floor and first-stage ZIP launch checks. The final `package_entry` calls then hash the **current** files, binding A's carried checks to B's bytes in a new passing record.
+- Consequence: release assembly and feed staging can receive an exact-current-hash record that claims first-stage checks which were actually performed on another package set. In particular, a current ZIP need not have passed the carried equality/launch/minimum-OS checks. Assembly independently rechecks Mac seals, so this finding does not claim that it accepts an invalid signature solely because of the merged report.
+- Countercheck: the committed workflow downloads the same named artifact for both hosts; that normal path reduces the chance of mismatched inputs. `qualification_record.check` correctly rejects an unchanged old report beside new bytes. It cannot recover the lost provenance once the merger itself has rehashed new files and copied old check booleans. Version equality alone is insufficient for a release-bytes record.
+- Minimal correction recommendation: reject merging unless the prior record names exactly the same packages, sizes, hashes and embedded identities, with the expected lane/source. Preserve each host's observations only after that match; otherwise rerun the missing checks on the new bytes.
+- Test gap: the inspected record tests reject old reports and missing checks; the native qualifier test replaces qualification with simulated checks. No inspected test merges a valid partial record with different current bytes. No native qualifier was run here.
+
+### R28 — P2 — Withdrawing a release keeps the withdrawn build's compatibility requirements
+
+- Exposure: **signed Beta/preview feed publication and installed update admission** after a withdrawal. The publisher is trusted; the problem is incorrectly constructed signed metadata.
+- Source: `scripts/update_repository.py:654-661,869-910`; validation `675-702`; client `backend/coordinator/updates.py:899-906,928-953`; withdrawal test `backend/coordinator/test_updates_beta.py:454-461`.
+- Trigger: a Mac on 14.x runs beta.1; beta.2 supports macOS 14.0; beta.3 raises the minimum to 15.0. Withdraw beta.3 by pointing `latest.json` back to beta.2. Keep schema/signing otherwise equal so the OS gate is the decisive failure.
+- Evidence: `withdraw` loads the **current** pointer and changes its version, maturity, public build, build set, payload names and notes. It leaves `min_os`, `schema_version`, `qualified_migrations`, engine release and prerequisites from beta.3. `_check_staged` validates payload version/format, but does not detect this mismatch. The client compares the carried `min_os` before offering beta.2, so it reports that beta.2 needs 15.0 even though its original offer supported 14.0.
+- Consequence: an intended recovery of the last good update can remain unavailable to eligible older installations. Differing schemas/migrations can similarly produce a false incompatibility decision; displayed prerequisites/engine information can name the wrong release. This is not an instruction to downgrade installations already running beta.3.
+- Countercheck: a client already at beta.2 correctly sees the restored pointer as not newer, and an existing beta.3 installation is not automatically downgraded. The present withdrawal test covers that not-newer case with identical compatibility fixtures; it does not cover an earlier client still eligible for beta.2.
+- Minimal correction recommendation: restore the original compatibility metadata of the selected historical release along with its payloads, using its authenticated historical offer. If that evidence cannot be recovered, refuse withdrawal visibly rather than inherit the withdrawn release's requirements. Preserve signed-package immutability and anti-rollback behavior.
+- Test gap: add a three-release withdrawal case with different OS minimums/schema metadata and an earlier eligible client when offline tests are authorised. This review did not execute it or alter a feed.
+
+### Rejected candidates and evidence limits
+
+- **Dropped SSE events permanently strand Chat:** rejected. The browser repairs sequence gaps and polls the canonical job events every two seconds while work is active (`app.js:366-374,6055-6060`). Queue-full drops alone do not support the proposed permanent-stall finding.
+- **SSE creates an unconditional update-drain deadlock:** rejected. Shutdown signals `stopping` before the HTTP shutdown/drain, and the SSE loop observes it. This is separate from retained R06's Code cancellation mismatch.
+- **Generic local HTTP CSRF/path traversal:** not established by the inspected paths. Strict Host/Origin/fetch-site checks, bounded typed bodies and resolved static-file containment are present. This is not an exhaustive web-security clearance.
+- **Missing lanes make release assembly automatically unsafe:** not promoted. The assembler deliberately records unavailable lanes; strict Beta feed staging has its own all-lane gate. Product availability, publication and device acceptance must remain distinct.
+- **Credential deletion can abort the local revocation before its database fence:** rejected for the inspected supported backends. The shared delete wrapper converts missing/failed store deletion to `False`; deleting the credential copy also does not cancel a stream, which is why R26 remains valid.
+- No speculative performance/style cleanup or new P1 was added. R24–R28 are five distinct P2 failures at persistence, executor-fence, canonical-consumption, qualification-merge and signed-offer boundaries. Existing findings retain their Session 04 dispositions: **27 retained total (4 P1, 23 P2), plus withdrawn/unresolved R01**.
+
+### Session outcome and continuation
+
+Verdict: retained worker code does not yet enforce revocation consistently across its process and persistence boundaries. Release tooling also needs its carried qualification and withdrawal metadata bound to the actual release. These are review findings for independent accept/reject/needs-evidence decisions, not an execution pass.
+
+Continue the existing audit through the still-unread build driver, remaining qualification/key-management helpers, contracts/profile/hardware/catalog/provenance code, deployment policy and remaining browser/storage paths. Reconcile any later PR #86 findings before duplicating them. No task tree, new chat or delegation is created.
+
+Not checked: test/reproduction execution, faults or races in a running process, model accuracy, physical devices, real OS credential observation, native installation/update journeys, live feed assets and complete repository coverage. Only review records and append-only ledgers are changed locally; the remote update is confined to this report and PR #88's description/conversation. Application source and protected documentation stay unchanged. The PR remains a draft with its intentional review-document conflict; no implementation, merge or five-hour/full-audit completion is claimed.
