@@ -9,14 +9,14 @@
 - Expected load: one local desktop user, potentially concurrent chats/jobs and background operations. Deferred workers and managed deployment remain in scope, with their product status distinguished from Beta.
 - A finding requires a concrete trigger, reachable code path, observable consequence, exact source references and a minimal correction recommendation. Static evidence is not a runtime reproduction.
 
-## Current checkpoint — Session 05 pairing, revocation and release-evidence review
+## Current checkpoint — Session 06 build and package-boundary review
 
-Continued the full-source audit at the unchanged source commit. **27 retained static findings: 4 P1 and 23 P2; R01 remains withdrawn/unresolved.** Session 05 adds R24–R28: three deferred-worker trust/state defects and two release-tooling correctness/evidence defects. Session 04 preserves the prior re-review and merge guard. No finding is approval to implement. The whole-codebase audit remains open; no application implementation or test execution has been performed.
+Continued the full-source audit at the unchanged source commit. **29 retained static findings: 4 P1 and 25 P2; R01 remains withdrawn/unresolved.** Session 05 adds R24–R28: three deferred-worker trust/state defects and two release-tooling correctness/evidence defects. Session 06 adds R29–R30: untracked frontend content entering public packages and the build-number guard preventing valid retained-artifact reuse. Session 04 preserves the prior re-review and merge guard. No finding is approval to implement. The whole-codebase audit remains open; no application implementation or test execution has been performed.
 
 ### Independent reviewer: start here
 
 - Review the findings against source commit `e6b9858d880c8200cce6e8a4ca2784190c662f44`. Its tree `5bf84e96e683d2bfe9cbf5fd6160587054a7ee46` also matches the source snapshot in [PR #86](https://github.com/prachi-satbhai0741/Refinix/pull/86). The audit report is added separately; application source is not changed.
-- Batch 1 is R02–R17, with the Session 02 corrections taking precedence over Session 01 history. Batch 2 is R18–R23, described in Session 03. Batch 3 is R24–R28, described in Session 05. **Do not implement R01** as an established expiry bug; post-approval lifetime remains a policy question.
+- Batch 1 is R02–R17, with the Session 02 corrections taking precedence over Session 01 history. Batch 2 is R18–R23, described in Session 03. Batch 3 is R24–R28, described in Session 05. Batch 4 is R29–R30, described in Session 06. **Do not implement R01** as an established expiry bug; post-approval lifetime remains a policy question.
 - All findings are static review conclusions. No tests, adversarial payloads, model calls, installers or device journeys were run for this audit. Existing earlier project qualification is separate evidence, not fresh validation of these cases.
 - For each ID, return `accept`, `reject` or `needs evidence`, with a source-supported reason; correct severity and product exposure where needed. Reconcile any overlap with PR #86. A review pass should identify the coherent scope eligible for a later implementation decision; this context PR contains no fixes and must remain unmerged.
 - R07 is the P1 local-sandbox journal issue. R09/R10 are P1 **deferred worker** issues. R12 is P1 **operator/public-verifier tooling**, not the in-app updater. R14 is a retained credential path requiring an observer able to read process arguments. Do not flatten these into claims that all four P1s affect ordinary packaged-Beta use.
@@ -519,3 +519,51 @@ Verdict: retained worker code does not yet enforce revocation consistently acros
 Continue the existing audit through the still-unread build driver, remaining qualification/key-management helpers, contracts/profile/hardware/catalog/provenance code, deployment policy and remaining browser/storage paths. Reconcile any later PR #86 findings before duplicating them. No task tree, new chat or delegation is created.
 
 Not checked: test/reproduction execution, faults or races in a running process, model accuracy, physical devices, real OS credential observation, native installation/update journeys, live feed assets and complete repository coverage. Only review records and append-only ledgers are changed locally; the remote update is confined to this report and PR #88's description/conversation. Application source and protected documentation stay unchanged. The PR remains a draft with its intentional review-document conflict; no implementation, merge or five-hour/full-audit completion is claimed.
+
+### Session 05 publication receipt — completed on resumption, 26 October 2026
+
+- Session 05 was published on 24 October as head `1a844526ef5cf736fd78c20b47f542440b09af88`, report blob `01b67c69f283a12f51337898c5199f29cdfaf95b`.
+- All five findings were also posted directly in [PR #88's conversation](https://github.com/prachi-satbhai0741/Refinix/pull/88#issuecomment-6385618078). The comment was retrieved on resumption and contains R24–R28.
+- On 26 October, updated the PR title to **Review only: cumulative whole-codebase findings — DO NOT MERGE** and corrected its description to the Session 05 count, current report link and conversation link.
+- Fresh GitHub reads returned `draft=true`, `mergeable=false`, `mergeable_state=dirty`, `auto_merge=null`; base remains `739c9c0f247a5cced5fe76fe50f832bbb551efb7`. Both the PR file list and audited-source-to-head comparison contain only `reviews/codebase-audit.md`. Local source HEAD/branch/index were preserved.
+
+## Session 06 — 26 October 2026 — Build driver and package boundary
+
+Resumed the authorised review and PR publication. The source is still `e6b9858d880c8200cce6e8a4ca2784190c662f44` on local `aditya`; no source drift is asserted. Preserved the review-only scope under the replacement agent instructions: no implementation, tests, live runtimes, installers, new tasks/chats or delegation.
+
+Coverage: read `desktop/build.py` and `desktop/packaging_plan.py` completely; read `desktop/refinix.spec` completely; selected `setup_py2app.py:42-85,105-150`; build/reuse/public-checkout tests `desktop/test_build.py:150-234,453-495,577-602,620-650`; focused `docs/releases.md:250-285` and package workflow `174-203`. This traces source enumeration and staging, hashes, build numbering/reuse, OS-native package creation, engine placement, signing and final embedded-identity extraction. OS tools, dependency artifacts, engine downloads and finished packages were not run or inspected as runtime evidence. No private/untracked payload was created for a demonstration.
+
+PR reconciliation: #86 still returned no published comments/reviews on resumption. #88 contained the agent's Session 05 publication and no independent verdict. Absence of published findings does not establish the other agent's execution status.
+
+### R29 — P2 — A public build can package untracked frontend files outside its designated commit
+
+- Exposure: **public build tooling on a reused/local checkout**. Fresh hosted checkouts reduce the chance of leftover files; this is not a claim that the current published packages contain private data.
+- Source: `desktop/build.py:771-781,1431-1436,1494-1503`; `desktop/packaging_plan.py:230-247,396-406,430-440`; PyInstaller inclusion in `desktop/refinix.spec:23-25`; shared macOS frontend provider in `desktop/setup_py2app.py:52-53`. The designated-commit contract is also stated in `docs/releases.md:285`.
+- Trigger: a checkout is at the designated commit and all tracked files are clean, but `frontend/app/local-debug.json` exists as a non-hidden untracked local file. Run a public build without `--scratch` on an otherwise qualified build host.
+- Evidence: `check_release_checkout` asks Git to exclude untracked files. `frontend_data_files` recursively includes every non-hidden regular frontend file except two development names and `.cjs` suffixes, without checking commit membership. The same list supplies package data. `publishable` is then set true and the identity names the designated commit despite the extra packaged file not being in it.
+- Consequence: local-only frontend material can enter a publishable package, and a later consumer cannot reproduce that package's application source from the recorded commit alone. If such a local file contains private debug information, packaging can disclose it. This is a conditional consequence, not an observation of a real secret or published leak.
+- Countercheck: the extra file does affect the snapshot digests. That records the actual local content but never compares it with the designated commit, so it does not enforce the claimed clean-source boundary. Cross-lane digest agreement may catch contamination present on only one lane, and a fresh CI checkout generally excludes it; neither makes the builder's public admission correct for supported local invocations. Tracked dirty-file rejection and `--scratch` marking still work.
+- Minimal correction recommendation: require every selected shipping/build source input to belong to and match the designated commit, or build public packages from a clean materialisation of that commit. Keep generated output/cache files outside that comparison; merely rejecting all unrelated untracked outputs is unnecessary.
+- Test gap: `test_build.py:623-633` mocks clean/dirty tracked status. The inspected packaging/release tests do not connect an untracked shippable frontend file to the public-build guard. No untracked payload or package build was executed here.
+
+### R30 — P2 — Normal retained-build reuse is rejected before the reuse check
+
+- Exposure: **retained-artifact build tooling**, with prior build records supplied through `--records`. This does not break a first build on a fresh CI runner.
+- Source: `desktop/build.py:180-223,540-574,1441-1467,1510-1522`; retained-byte reuse contract in `docs/releases.md:262-265`.
+- Trigger: retain an internal.1 build's complete output and successful build record, place that record in the `--records` list, and rerun the identical internal.1 invocation with `--store` pointing at the unchanged artifacts. The record has the matching lane/input digest, all artifact names/hashes and `bundle_build=1` as emitted by `main`.
+- Evidence: `main` calls `bundle_build` before computing the input identity or invoking `find_reuse`. `recorded_numbers` sees the prior build's 1; `bundle_build` immediately rejects the requested 1 as not above 1. The verified-byte reuse return is therefore unreachable for that ordinary repeat. `--plan` also comes after the refusal. A same-number repeat of a recorded public build has the same ordering problem.
+- Consequence: an unchanged, complete retained build cannot be reused through the real CLI under its original label/number, despite being accepted by the isolated `find_reuse` helper. The operator is forced into a new label/build or a manual workaround, defeating the reuse contract and wasting a native build/qualification cycle.
+- Countercheck: refusing lower/reused numbers is correct when producing **new** bytes; it should not reject returning already recorded, hash-verified bytes. The helper still rejects missing, changed, partial and unsafe artifact records. Its tests omit the real main path and their synthetic matching record lacks the emitted build number/version that triggers the earlier guard. No recommendation is made to relax publication immutability or relabel old bytes.
+- Minimal correction recommendation: validate the requested label/number's shape, perform matching-input and retained-byte reuse, then apply strict increasing-number checks only if a new build will actually be created. Preserve every hash/completeness check and the monotonic rule for fresh artifacts.
+- Test gap: `test_build.py:161-232` exercises `find_reuse` directly; `455-491` tests numbering separately. Their interaction through `main` is the missing case. No build, plan invocation or test was run in this review.
+
+### Counterchecks and remaining scope
+
+- Public packaging's engine/archive hashes, embedded-identity extraction, platform signing checks and private-build marking remain present in source. R29 does not claim those checks are absent or that an arbitrary remote actor can write the release host's files.
+- Unchecked metadata is not automatically a security exploit: the builder's explicit `--macos-minimum` is absent from the reuse-input components, but that candidate is left unpromoted here while the earlier reuse failure and intended label/number semantics are distinguished. It is not included in the finding count.
+- Device acceptance records are tied to lane/shared source and required observed checks; a local record is not itself physical-device evidence from this audit. No acceptance forgery payload was created.
+- The existing four P1 findings remain in their previously qualified product scopes. Session 06 adds two P2 findings, for **29 retained static findings (4 P1, 25 P2)**; R01 remains withdrawn/unresolved. These are findings for independent review, not repair tasks or approval to execute.
+
+Verdict: complete the public package-input boundary and the CLI's reuse ordering before treating the build driver as enforcing its stated source/reuse contract. The whole-codebase audit remains open. Next coverage should continue through the remaining native qualification/key-management helpers, dependency provenance, contract/profile/model selection, deployment policy and browser/storage paths recorded earlier.
+
+Not checked: application/test execution, actual build/reuse, native tools, models, downloads, physical-device acceptance, live feeds and complete repository coverage. Only the cumulative review file, local request/change ledgers and PR #88's report/summary/conversation are in scope. No application fix, protected-document change, production branch update, merge, new task/chat or delegation is performed.
