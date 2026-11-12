@@ -2528,3 +2528,14 @@ whose exact form affects scope. Never store secrets or confidential payloads.
 - observed: The user confirmed the website merge and approved beta-publish. Feed signing and deployment succeeded; its hosted live verifier failed with a missing pydantic import.
 - constraints: Preserve immutable packages, production trust/target bytes and user data. Website owner merge and physical-device testing remain human checkpoints; protected documentation and private keys/passphrases stay untouched.
 - linked_changes: [AC-20261013-CPB-LIVE-DEPENDENCIES](agentchangelog.md#ac-20261013-cpb-live-dependencies)
+
+<a id="up-20261112-distributed-plan"></a>
+## UP-20261112-DISTRIBUTED-PLAN — Plan graphical trusted-device architecture
+- date: 2026-11-12
+- scope: documentation-only architecture/execution plan and new pull request
+- tags: distributed, post-beta-phase3, discovery, pairing, connected-models, auto-routing
+- paths: docs/plans/distributed-architecture-initial-plan.md, agent-memory/userprompts.md, agent-memory/agentchangelog.md
+- summary: Plan Bluetooth-style discovery of Refinix installations on one LAN/hotspot without Internet, receiver-approved pairing, changing IP addresses, local/connected model views and Auto. Treat the UI analogy as provisional; include dependencies and reasoning.
+- authorised: Create the plan and a separate PR (requested number 89 if assigned by GitHub); use web research and subagents to review alignment. Builder/model/subscription choices remain undecided.
+- constraints: No application implementation, dependency installation, model/runtime/device checks, deployment or merge. Preserve existing source, protected authorities and unrelated dirty audit records.
+- linked_changes: [AC-20261112-DISTRIBUTED-PLAN](agentchangelog.md#ac-20261112-distributed-plan)
