@@ -3176,3 +3176,15 @@ work. No repository file change means no changelog entry.
 - changed: Set PYTHONUTF8=1 for the native public-verification matrix and guard that setting in the existing workflow regression. Application and package bytes are unchanged.
 - verified: All 22 workflow tests pass after the additional repair; native Windows public verification still requires a fresh run.
 - remaining: Integrate the additional workflow fix through dev to main, rerun public verification, and have the website owner merge the two-template dependency repair before its forward-only hosted feed check. Preserve the initial run/logs and pending physical-device acceptance.
+
+<a id="ac-20261112-distributed-plan"></a>
+## AC-20261112-DISTRIBUTED-PLAN — Prepared distributed architecture initial plan
+- date: 2026-11-12
+- status: docs-only
+- prompt_id: [UP-20261112-DISTRIBUTED-PLAN](userprompts.md#up-20261112-distributed-plan)
+- changed: Added a proposed post-Beta Phase 3 execution plan covering reachable-LAN discovery, stable authenticated identities, bilateral directional pairing, private model inventory, model/device Auto routing, portable receiver dependencies, aggregate admission, durable receipts/recovery and qualified workflow/platform acceptance.
+- reviewed: Two read-only subagents examined architecture/source reuse and trust/recovery, then reviewed the full draft. Applied method-name, default-deny activation, identity-before-secret and private-key-clone limitation corrections. Current harness, strict legacy remote profiles, canonical coordinator ownership and standalone Beta scope remain intact.
+- evidence: Local source e6b9858d880c8200cce6e8a4ca2784190c662f44; remote dev bbaaf14f701f0bbec76ec13d346ad725ca7a44db; differences limited to five workflow files. Primary mDNS/DNS-SD, platform and discovery-library sources linked in the plan; no dependency adopted.
+- verified: Documentation-relative links and ten future test paths exist; Markdown whitespace/fences and git diff --check passed. Existing ledger prefixes, review files, local HEAD and index preserved. Isolated PR payload uses the remote integration baseline plus this plan and only the two new ledger entries.
+- limits: Static planning/review only. No application tests, implementation, installer/migration, live model/runtime/worker/device checks, network/service changes, release action or merge. Future builder/model undecided. New plan is proposed, not device-observed or release-accepted.
+- next: Review the plan, then separately authorise a coherent implementation outcome and its applicable checks; secure bootstrap and any remote-admission policy change remain explicit pre-exposure gates.
